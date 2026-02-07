@@ -51,17 +51,47 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
       }
     }
 
+    // CLEANUP: Remove duplicate events (keep only the most recent one per googleCalendarId)
+    const seenGoogleIds = new Map<string, string>(); // googleCalendarId -> most recent itemId
+    for (const item of syncedItems) {
+      if (!item.googleCalendarId) continue;
+      
+      const existing = seenGoogleIds.get(item.googleCalendarId);
+      if (existing) {
+        // Duplicate found - keep the newer one, delete the older one
+        const existingItem = orbitItems.find(i => i.id === existing);
+        if (existingItem && item.createdAt > existingItem.createdAt) {
+          console.log(`[ORBIT Sync] Removing duplicate: ${existingItem.title}`);
+          await deleteItem(existing);
+          seenGoogleIds.set(item.googleCalendarId, item.id);
+        } else {
+          console.log(`[ORBIT Sync] Removing duplicate: ${item.title}`);
+          await deleteItem(item.id);
+        }
+      } else {
+        seenGoogleIds.set(item.googleCalendarId, item.id);
+      }
+    }
+
+    // Refresh syncedItems after cleanup
+    const cleanedOrbitItems = useOrbitStore.getState().items;
+    const cleanedSyncedItems = cleanedOrbitItems.filter(i => i.googleCalendarId);
+
+    // Track imported IDs in this sync run to prevent duplicates
+    const importedInThisRun = new Set<string>();
+
     // 1. IMPORT: Create new events from Google Calendar
     for (const [gcalId, gcalEvent] of googleEventMap) {
-      const alreadyExists = orbitItems.some(i => i.googleCalendarId === gcalId);
-      if (!alreadyExists) {
+      const alreadyExists = cleanedOrbitItems.some(i => i.googleCalendarId === gcalId);
+      if (!alreadyExists && !importedInThisRun.has(gcalId)) {
         console.log(`[ORBIT Sync] New event from Google: ${gcalEvent.summary}`);
         await importGoogleEvent(gcalEvent, userId);
+        importedInThisRun.add(gcalId);
       }
     }
 
     // 2. UPDATE: Check for changes in existing events
-    for (const orbitItem of syncedItems) {
+    for (const orbitItem of cleanedSyncedItems) {
       if (!orbitItem.googleCalendarId) continue;
 
       const gcalEvent = googleEventMap.get(orbitItem.googleCalendarId);
@@ -76,7 +106,7 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
     }
 
     // 3. DELETE: Remove events deleted from Google Calendar
-    for (const orbitItem of syncedItems) {
+    for (const orbitItem of cleanedSyncedItems) {
       if (!orbitItem.googleCalendarId) continue;
 
       const stillExistsInGoogle = googleEventMap.has(orbitItem.googleCalendarId);
