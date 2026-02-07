@@ -73,40 +73,8 @@ export function disableOverscroll() {
   if (typeof document === 'undefined') return;
   if (!isStandalone()) return;
 
-  let startY = 0;
-
-  document.addEventListener('touchstart', (e) => {
-    startY = e.touches[0].pageY;
-  }, { passive: true });
-
-  document.addEventListener('touchmove', (e) => {
-    const el = e.target as HTMLElement;
-    // Find the nearest scrollable ancestor
-    let scrollable = el;
-    while (scrollable && scrollable !== document.body) {
-      const style = window.getComputedStyle(scrollable);
-      if (
-        style.overflowY === 'auto' ||
-        style.overflowY === 'scroll' ||
-        style.overflow === 'auto' ||
-        style.overflow === 'scroll'
-      ) {
-        const atTop = scrollable.scrollTop <= 0;
-        const atBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight;
-        const goingUp = e.touches[0].pageY > startY;
-        const goingDown = e.touches[0].pageY < startY;
-
-        // Allow scrolling if not at edges
-        if (!(atTop && goingUp) && !(atBottom && goingDown)) {
-          return;
-        }
-        break;
-      }
-      scrollable = scrollable.parentElement!;
-    }
-    // At edges or no scrollable parent — prevent bounce
-    if (scrollable === document.body || !scrollable) {
-      e.preventDefault();
-    }
-  }, { passive: false });
+  // CSS handles most of this via overscroll-behavior: none on html,body
+  // This catches edge cases in standalone PWA mode
+  document.body.style.overscrollBehavior = 'none';
+  document.documentElement.style.overscrollBehavior = 'none';
 }

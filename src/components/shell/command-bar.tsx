@@ -43,37 +43,9 @@ export function CommandBar() {
   const { commandBarOpen, setCommandBarOpen, items } = useOrbitStore();
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-
-  // Track keyboard height via visualViewport API
-  useEffect(() => {
-    if (!commandBarOpen) {
-      setKeyboardHeight(0);
-      return;
-    }
-
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    const onResize = () => {
-      // The keyboard height is the difference between window height and visual viewport height
-      const kbHeight = window.innerHeight - vv.height;
-      setKeyboardHeight(kbHeight > 50 ? kbHeight : 0);
-    };
-
-    vv.addEventListener('resize', onResize);
-    vv.addEventListener('scroll', onResize);
-    // Initial check
-    onResize();
-
-    return () => {
-      vv.removeEventListener('resize', onResize);
-      vv.removeEventListener('scroll', onResize);
-    };
-  }, [commandBarOpen]);
 
   // Prevent background scroll when command bar is open
   useEffect(() => {
@@ -88,13 +60,9 @@ export function CommandBar() {
     };
 
     document.addEventListener('touchmove', preventScroll, { passive: false });
-    // Also lock body overflow
-    const orig = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
 
     return () => {
       document.removeEventListener('touchmove', preventScroll);
-      document.body.style.overflow = orig;
     };
   }, [commandBarOpen]);
 
@@ -218,41 +186,32 @@ export function CommandBar() {
   const isCreateMode = input.startsWith('/') || (input.trim() && filteredItems.length === 0);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[18vh] lg:pt-[18vh]">
+    <div className="fixed inset-0 z-[100]">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-background/80 backdrop-blur-sm"
+        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
         onClick={() => setCommandBarOpen(false)}
       />
 
-      {/* Dialog — bottom sheet on mobile that rises above keyboard, centered on desktop */}
+      {/* Dialog — top-aligned on mobile (stays above keyboard), centered on desktop */}
       <div 
         ref={dialogRef}
         className={cn(
           'relative z-10 w-full',
-          // Mobile: bottom sheet style
-          'fixed left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto',
-          'lg:max-w-[520px] lg:mx-4',
-          'animate-slide-up-spring lg:animate-scale-in'
+          // Mobile: top-aligned card with safe area
+          'pt-[max(env(safe-area-inset-top,0px),8px)] px-3',
+          // Desktop: centered
+          'lg:absolute lg:top-[18vh] lg:left-1/2 lg:-translate-x-1/2 lg:pt-0 lg:px-0',
+          'lg:max-w-[520px]',
+          'animate-slide-down-spring lg:animate-scale-in'
         )}
-        style={{
-          // On mobile: position above the keyboard
-          bottom: keyboardHeight > 0 ? `${keyboardHeight}px` : '0px',
-          paddingBottom: keyboardHeight > 0 ? '0px' : 'env(safe-area-inset-bottom, 0px)',
-          // Smooth keyboard tracking
-          transition: 'bottom 0.15s ease-out',
-        }}
       >
         <div className={cn(
-          'overflow-hidden bg-popover shadow-[0_-8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
-          'rounded-t-2xl lg:rounded-xl',
-          'border-t border-border/60 lg:border'
+          'overflow-hidden bg-popover',
+          'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
+          'rounded-2xl lg:rounded-xl',
+          'border border-border/60'
         )}>
-          {/* Mobile drag handle */}
-          <div className="flex justify-center pt-2 pb-1 lg:hidden">
-            <div className="h-1 w-10 rounded-full bg-foreground/10" />
-          </div>
-
           {/* Input */}
           <div className="flex items-center gap-3 px-4 py-3 lg:py-3">
             <Search className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
@@ -281,6 +240,8 @@ export function CommandBar() {
               placeholder="What do you need?"
               className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
               autoFocus
+              autoComplete="off"
+              autoCorrect="off"
               enterKeyHint="done"
             />
             <div className="flex items-center gap-1">
@@ -302,10 +263,7 @@ export function CommandBar() {
           {/* Results */}
           <div 
             data-command-scroll
-            className={cn(
-              'overflow-y-auto overscroll-contain py-1.5',
-              keyboardHeight > 0 ? 'max-h-[30vh]' : 'max-h-[50vh] lg:max-h-[300px]'
-            )}
+            className="overflow-y-auto overscroll-contain py-1.5 max-h-[40vh] lg:max-h-[300px]"
           >
             {/* Search results */}
             {filteredItems.length > 0 && !input.startsWith('/') && (

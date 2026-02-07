@@ -47,40 +47,7 @@ export function DetailPanel() {
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
-  const [mobileKeyboardHeight, setMobileKeyboardHeight] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  // Track keyboard on mobile for detail panel
-  useEffect(() => {
-    if (!detailPanelOpen) {
-      setMobileKeyboardHeight(0);
-      return;
-    }
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    const onResize = () => {
-      const kbHeight = window.innerHeight - vv.height;
-      setMobileKeyboardHeight(kbHeight > 50 ? kbHeight : 0);
-    };
-    vv.addEventListener('resize', onResize);
-    vv.addEventListener('scroll', onResize);
-    return () => {
-      vv.removeEventListener('resize', onResize);
-      vv.removeEventListener('scroll', onResize);
-    };
-  }, [detailPanelOpen]);
-
-  // Auto-scroll to focused input when keyboard opens
-  useEffect(() => {
-    if (mobileKeyboardHeight <= 0 || !scrollContainerRef.current) return;
-    const active = document.activeElement as HTMLElement;
-    if (active && scrollContainerRef.current.contains(active)) {
-      setTimeout(() => {
-        active.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
-    }
-  }, [mobileKeyboardHeight]);
 
   useEffect(() => {
     if (item) {
@@ -238,9 +205,7 @@ export function DetailPanel() {
       </div>
 
       {/* ── Body ── */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-5"
-        style={{ paddingBottom: mobileKeyboardHeight > 0 ? `${mobileKeyboardHeight + 16}px` : undefined }}
-      >
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-5">
         {/* Title */}
         <input
           value={title}
@@ -627,15 +592,7 @@ export function DetailPanel() {
           <div className="flex justify-center pt-2 pb-1 sticky top-0 z-10 bg-background rounded-t-2xl">
             <div className="h-1 w-10 rounded-full bg-foreground/10" />
           </div>
-          <div 
-            className="overflow-hidden"
-            style={{
-              height: mobileKeyboardHeight > 0
-                ? `calc(92dvh - 24px - ${mobileKeyboardHeight}px)`
-                : 'calc(92dvh - 24px)',
-              transition: 'height 0.15s ease-out',
-            }}
-          >
+          <div className="h-[calc(92dvh-24px)] overflow-hidden">
             {content}
           </div>
         </SheetContent>
