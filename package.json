@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy:rules": "./scripts/deploy-firestore-rules.sh"
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.19.0",
