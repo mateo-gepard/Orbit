@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
+import { useAuth } from '@/components/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import {
   format,
@@ -16,10 +17,19 @@ import {
   isSameMonth,
   isToday,
 } from 'date-fns';
+import { 
+  fetchGoogleEvents, 
+  hasCalendarPermission, 
+  requestCalendarPermission 
+} from '@/lib/google-calendar';
+import { createItem } from '@/lib/firestore';
+import type { OrbitItem } from '@/lib/types';
 
 export default function CalendarPage() {
+  const { user } = useAuth();
   const { items, setSelectedItemId } = useOrbitStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [importing, setImporting] = useState(false);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -46,33 +56,104 @@ export default function CalendarPage() {
     );
   };
 
+  const handleImportFromGoogle = async () => {
+    if (!user) return;
+    setImporting(true);
+    try {
+      if (!hasCalendarPermission()) {
+        await requestCalendarPermission();
+      }
+
+      const timeMin = monthStart.toISOString();
+      const timeMax = monthEnd.toISOString();
+      
+      const googleEvents = await fetchGoogleEvents(timeMin, timeMax);
+      
+      // Import events that don't already exist
+      let importedCount = 0;
+      for (const gcalEvent of googleEvents) {
+        const eventData: any = gcalEvent;
+        // Check if already imported
+        const alreadyExists = items.some(
+          i => i.googleCalendarId === eventData.id
+        );
+        if (!alreadyExists && eventData.id) {
+          // Convert and import
+          const startDate = eventData.start?.date || eventData.start?.dateTime?.split('T')[0];
+          const endDate = eventData.end?.date || eventData.end?.dateTime?.split('T')[0];
+          const startTime = eventData.start?.dateTime?.split('T')[1]?.substring(0, 5);
+          const endTime = eventData.end?.dateTime?.split('T')[1]?.substring(0, 5);
+
+          await createItem({
+            type: 'event',
+            title: eventData.summary || 'Untitled Event',
+            content: eventData.description || '',
+            status: 'active',
+            startDate,
+            endDate,
+            startTime,
+            endTime,
+            googleCalendarId: eventData.id,
+            calendarSynced: true,
+            userId: user.uid,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          importedCount++;
+        }
+      }
+      
+      console.log(`[ORBIT] Imported ${importedCount} events from Google Calendar`);
+      alert(`Imported ${importedCount} event(s) from Google Calendar`);
+    } catch (err) {
+      console.error('[ORBIT] Import failed:', err);
+      alert('Failed to import from Google Calendar. Check console for details.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">Calendar</h1>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+            onClick={handleImportFromGoogle}
+            disabled={importing}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors flex items-center gap-1.5',
+              'bg-foreground/[0.05] text-foreground hover:bg-foreground/[0.1]',
+              importing && 'opacity-50 cursor-not-allowed'
+            )}
           >
-            <ChevronLeft className="h-4 w-4" />
+            <RefreshCw className={cn('h-3 w-3', importing && 'animate-spin')} />
+            {importing ? 'Importing...' : 'Import from Google'}
           </button>
-          <button
-            onClick={() => setCurrentMonth(new Date())}
-            className="rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
-          >
-            Today
-          </button>
-          <span className="text-[13px] font-semibold min-w-[130px] text-center tabular-nums">
-            {format(currentMonth, 'MMMM yyyy')}
-          </span>
-          <button
-            onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+              className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setCurrentMonth(new Date())}
+              className="rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+            >
+              Today
+            </button>
+            <span className="text-[13px] font-semibold min-w-[130px] text-center tabular-nums">
+              {format(currentMonth, 'MMMM yyyy')}
+            </span>
+            <button
+              onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+              className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 

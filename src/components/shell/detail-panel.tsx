@@ -59,6 +59,17 @@ export function DetailPanel() {
       if (!item) return;
       try {
         await updateItem(item.id, updates);
+        
+        // Auto-sync event changes to Google Calendar
+        if (item.type === 'event' && item.googleCalendarId && hasCalendarPermission()) {
+          try {
+            const updatedItem = { ...item, ...updates };
+            await syncEventToGoogle(updatedItem as OrbitItem);
+            console.log('[ORBIT] Event changes auto-synced to Google Calendar');
+          } catch (syncErr) {
+            console.warn('[ORBIT] Auto-sync failed (non-blocking):', syncErr);
+          }
+        }
       } catch (err) {
         console.error('[ORBIT] Update failed:', err);
       }

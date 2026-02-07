@@ -16,6 +16,7 @@ import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { parseCommand } from '@/lib/command-parser';
 import { createItem } from '@/lib/firestore';
+import { syncEventToGoogle, hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
 import type { ItemType, NoteSubtype, OrbitItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -109,8 +110,43 @@ export function CommandBar() {
       ...(noteSubtype && { noteSubtype }),
     };
 
+    // Auto-add defaults for events
+    if (parsed.type === 'event') {
+      const startDate = parsed.startDate || new Date().toISOString().split('T')[0];
+      Object.assign(newItem, {
+        startDate,
+        endDate: startDate, // Default: same day
+        startTime: '09:00', // Default start time
+        endTime: '10:00',   // Default end time (1 hour duration)
+      });
+    }
+
     try {
-      await createItem(newItem);
+      const itemId = await createItem(newItem);
+      
+      // Auto-sync events to Google Calendar
+      if (parsed.type === 'event' && itemId) {
+        try {
+          if (!hasCalendarPermission()) {
+            await requestCalendarPermission();
+          }
+          // Build full item for sync
+          const fullItem: OrbitItem = { ...newItem, id: itemId } as OrbitItem;
+          const googleCalendarId = await syncEventToGoogle(fullItem);
+          // Update item with Google Calendar ID (silent update)
+          await import('@/lib/firestore').then(m => 
+            m.updateItem(itemId, { 
+              googleCalendarId, 
+              calendarSynced: true 
+            })
+          );
+          console.log('[ORBIT] Event auto-synced to Google Calendar');
+        } catch (syncErr) {
+          console.warn('[ORBIT] Auto-sync failed (non-blocking):', syncErr);
+          // Don't block item creation if sync fails
+        }
+      }
+      
       setInput('');
       setCommandBarOpen(false);
     } catch (err) {
