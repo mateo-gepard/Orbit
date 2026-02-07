@@ -4,7 +4,8 @@
 
 import { 
   fetchGoogleEvents, 
-  hasCalendarPermission 
+  hasCalendarPermission,
+  googleToOrbitEvent
 } from './google-calendar';
 import { createItem, updateItem, deleteItem } from './firestore';
 import { useOrbitStore } from './store';
@@ -69,7 +70,7 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
         const hasChanges = eventHasChanges(orbitItem, gcalEvent);
         if (hasChanges) {
           console.log(`[ORBIT Sync] Updating event from Google: ${gcalEvent.summary}`);
-          await updateFromGoogleEvent(orbitItem.id, gcalEvent);
+          await updateFromGoogleEvent(orbitItem.id, gcalEvent, userId);
         }
       }
     }
@@ -97,14 +98,12 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
 // ═══════════════════════════════════════════════════════════
 
 async function importGoogleEvent(gcalEvent: any, userId: string): Promise<void> {
-  const startDate = gcalEvent.start?.date || gcalEvent.start?.dateTime?.split('T')[0];
-  const endDate = gcalEvent.end?.date || gcalEvent.end?.dateTime?.split('T')[0];
-  const startTime = gcalEvent.start?.dateTime?.split('T')[1]?.substring(0, 5);
-  const endTime = gcalEvent.end?.dateTime?.split('T')[1]?.substring(0, 5);
-
+  // Use the proper conversion function that handles multi-day events correctly
+  const convertedEvent = await googleToOrbitEvent(gcalEvent, userId);
+  
   const newEvent: any = {
     type: 'event',
-    title: gcalEvent.summary || 'Untitled Event',
+    title: convertedEvent.title || 'Untitled Event',
     status: 'active',
     googleCalendarId: gcalEvent.id,
     calendarSynced: true,
@@ -114,31 +113,29 @@ async function importGoogleEvent(gcalEvent: any, userId: string): Promise<void> 
   };
 
   // Only add fields if they have values
-  if (gcalEvent.description) newEvent.content = gcalEvent.description;
-  if (startDate) newEvent.startDate = startDate;
-  if (endDate) newEvent.endDate = endDate;
-  if (startTime) newEvent.startTime = startTime;
-  if (endTime) newEvent.endTime = endTime;
+  if (convertedEvent.content) newEvent.content = convertedEvent.content;
+  if (convertedEvent.startDate) newEvent.startDate = convertedEvent.startDate;
+  if (convertedEvent.endDate) newEvent.endDate = convertedEvent.endDate;
+  if (convertedEvent.startTime) newEvent.startTime = convertedEvent.startTime;
+  if (convertedEvent.endTime) newEvent.endTime = convertedEvent.endTime;
 
   await createItem(newEvent);
 }
 
-async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: any): Promise<void> {
-  const startDate = gcalEvent.start?.date || gcalEvent.start?.dateTime?.split('T')[0];
-  const endDate = gcalEvent.end?.date || gcalEvent.end?.dateTime?.split('T')[0];
-  const startTime = gcalEvent.start?.dateTime?.split('T')[1]?.substring(0, 5);
-  const endTime = gcalEvent.end?.dateTime?.split('T')[1]?.substring(0, 5);
+async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: any, userId: string): Promise<void> {
+  // Use the proper conversion function that handles multi-day events correctly
+  const convertedEvent = await googleToOrbitEvent(gcalEvent, userId);
 
   const updates: any = {
-    title: gcalEvent.summary || 'Untitled Event',
+    title: convertedEvent.title || 'Untitled Event',
     updatedAt: Date.now(),
   };
 
-  if (gcalEvent.description !== undefined) updates.content = gcalEvent.description;
-  if (startDate) updates.startDate = startDate;
-  if (endDate) updates.endDate = endDate;
-  if (startTime) updates.startTime = startTime;
-  if (endTime) updates.endTime = endTime;
+  if (convertedEvent.content !== undefined) updates.content = convertedEvent.content;
+  if (convertedEvent.startDate) updates.startDate = convertedEvent.startDate;
+  if (convertedEvent.endDate) updates.endDate = convertedEvent.endDate;
+  if (convertedEvent.startTime) updates.startTime = convertedEvent.startTime;
+  if (convertedEvent.endTime) updates.endTime = convertedEvent.endTime;
 
   await updateItem(orbitItemId, updates);
 }
@@ -147,17 +144,44 @@ function eventHasChanges(orbitItem: OrbitItem, gcalEvent: any): boolean {
   // Check title
   if ((gcalEvent.summary || 'Untitled Event') !== orbitItem.title) return true;
 
-  // Check dates
-  const gcalStartDate = gcalEvent.start?.date || gcalEvent.start?.dateTime?.split('T')[0];
-  const gcalEndDate = gcalEvent.end?.date || gcalEvent.end?.dateTime?.split('T')[0];
-  if (gcalStartDate !== orbitItem.startDate) return true;
-  if (gcalEndDate !== orbitItem.endDate) return true;
-
-  // Check times
-  const gcalStartTime = gcalEvent.start?.dateTime?.split('T')[1]?.substring(0, 5);
-  const gcalEndTime = gcalEvent.end?.dateTime?.split('T')[1]?.substring(0, 5);
-  if (gcalStartTime !== orbitItem.startTime) return true;
-  if (gcalEndTime !== orbitItem.endTime) return true;
+  // For proper comparison, we need to convert the Google event using the same logic
+  const isAllDay = !!gcalEvent.start?.date;
+  
+  if (isAllDay) {
+    // All-day event comparison
+    const gcalStartDate = gcalEvent.start?.date;
+    if (gcalStartDate !== orbitItem.startDate) return true;
+    
+    // For end date, we need to account for Google's exclusive end date
+    if (gcalEvent.end?.date) {
+      const [year, month, day] = gcalEvent.end.date.split('-').map(Number);
+      const endDateObj = new Date(Date.UTC(year, month - 1, day));
+      endDateObj.setUTCDate(endDateObj.getUTCDate() - 1);
+      
+      const endYear = endDateObj.getUTCFullYear();
+      const endMonth = String(endDateObj.getUTCMonth() + 1).padStart(2, '0');
+      const endDay = String(endDateObj.getUTCDate()).padStart(2, '0');
+      const gcalEndDate = `${endYear}-${endMonth}-${endDay}`;
+      
+      // Compare to orbit's endDate (undefined if single-day)
+      const orbitEndDate = gcalEndDate === gcalStartDate ? undefined : gcalEndDate;
+      if (orbitEndDate !== orbitItem.endDate) return true;
+    }
+  } else {
+    // Timed event comparison
+    const gcalStartDate = gcalEvent.start?.dateTime?.split('T')[0];
+    const gcalEndDate = gcalEvent.end?.dateTime?.split('T')[0];
+    const gcalStartTime = gcalEvent.start?.dateTime?.split('T')[1]?.substring(0, 5);
+    const gcalEndTime = gcalEvent.end?.dateTime?.split('T')[1]?.substring(0, 5);
+    
+    if (gcalStartDate !== orbitItem.startDate) return true;
+    if (gcalStartTime !== orbitItem.startTime) return true;
+    if (gcalEndTime !== orbitItem.endTime) return true;
+    
+    // For timed events, only set endDate if different from startDate
+    const orbitEndDate = gcalEndDate === gcalStartDate ? undefined : gcalEndDate;
+    if (orbitEndDate !== orbitItem.endDate) return true;
+  }
 
   return false;
 }

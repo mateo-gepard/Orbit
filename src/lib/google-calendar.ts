@@ -174,7 +174,7 @@ function orbitToGoogleEvent(item: OrbitItem): any {
   return event;
 }
 
-function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<OrbitItem> {
+export function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<OrbitItem> {
   // Google Calendar uses different formats for all-day vs timed events
   const isAllDay = !!gcalEvent.start?.date;
   
