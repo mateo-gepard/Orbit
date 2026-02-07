@@ -10,9 +10,15 @@ import {
   Check,
   Plus,
   Calendar as CalendarIcon,
+  Circle,
+  Clock,
+  CheckCircle2,
+  Target,
+  LayoutList,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
-import { updateItem, deleteItem } from '@/lib/firestore';
+import { updateItem, deleteItem, createItem } from '@/lib/firestore';
+import { useAuth } from '@/components/providers/auth-provider';
 import { syncEventToGoogle, requestCalendarPermission, hasCalendarPermission } from '@/lib/google-calendar';
 import type { OrbitItem, ItemType, ItemStatus, Priority, ChecklistItem, GoalTimeframe, HabitFrequency, NoteSubtype } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
@@ -43,6 +49,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 export function DetailPanel() {
   const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getItemById } = useOrbitStore();
+  const { user } = useAuth();
   const item = selectedItemId ? getItemById(selectedItemId) : undefined;
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
@@ -148,8 +155,408 @@ export function DetailPanel() {
     handleUpdate({ tags: updated });
   };
 
+  const handleNewTask = async (projectId: string, status: ItemStatus = 'inbox') => {
+    if (!user) return;
+    const id = await createItem({
+      type: 'task',
+      status,
+      title: 'New Task',
+      parentId: projectId,
+      tags: [],
+      userId: user.uid,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    setSelectedItemId(id);
+  };
+
+  const handleNewMilestone = async (projectId: string) => {
+    if (!user) return;
+    const id = await createItem({
+      type: 'goal',
+      status: 'active',
+      title: 'New Milestone',
+      parentId: projectId,
+      tags: [],
+      userId: user.uid,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    setSelectedItemId(id);
+  };
+
   if (!item) return null;
 
+  // Project Dashboard View
+  if (item.type === 'project') {
+    const projectTasks = items.filter((i) => i.parentId === item.id && i.type === 'task');
+    const projectMilestones = items.filter((i) => i.parentId === item.id && i.type === 'goal');
+    
+    const stats = {
+      total: projectTasks.length,
+      done: projectTasks.filter((t) => t.status === 'done').length,
+      active: projectTasks.filter((t) => t.status === 'active').length,
+      waiting: projectTasks.filter((t) => t.status === 'waiting').length,
+      inbox: projectTasks.filter((t) => t.status === 'inbox').length,
+      progress: 0,
+    };
+    stats.progress = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
+
+    const tasksByStatus = {
+      inbox: projectTasks.filter((t) => t.status === 'inbox'),
+      active: projectTasks.filter((t) => t.status === 'active'),
+      waiting: projectTasks.filter((t) => t.status === 'waiting'),
+      done: projectTasks.filter((t) => t.status === 'done'),
+    };
+
+    const content = (
+      <div className="flex h-full flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{item.emoji || '📁'}</span>
+            <span className="text-[11px] text-muted-foreground/50">Project Dashboard</span>
+          </div>
+          <div className="flex items-center gap-0.5">
+            {item.status === 'archived' ? (
+              <button onClick={handleRestore} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors" title="Restore">
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <button onClick={handleArchive} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors" title="Archive">
+                <Archive className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button onClick={handleDelete} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-red-500 hover:bg-red-500/[0.05] transition-colors" title="Delete">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={() => setDetailPanelOpen(false)} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors ml-1">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-5">
+          {/* Title */}
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => handleUpdate({ title })}
+            onKeyDown={(e) => e.key === 'Enter' && handleUpdate({ title })}
+            className="w-full bg-transparent text-[18px] font-bold leading-snug outline-none placeholder:text-muted-foreground/30"
+            placeholder="Project name…"
+          />
+
+          {/* Description */}
+          <Textarea
+            value={item.content || ''}
+            onChange={(e) => handleUpdate({ content: e.target.value })}
+            className="text-[13px] min-h-16 border-border/50 leading-relaxed resize-none"
+            placeholder="Project description…"
+          />
+
+          {/* Stats Overview */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-border/60 bg-card p-3">
+              <div className="text-[11px] text-muted-foreground/50 uppercase tracking-wider mb-1">Progress</div>
+              <div className="text-2xl font-bold tabular-nums">{stats.progress}%</div>
+              <div className="text-[11px] text-muted-foreground/40 mt-0.5">{stats.done}/{stats.total} tasks</div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-card p-3">
+              <div className="text-[11px] text-muted-foreground/50 uppercase tracking-wider mb-1">Status</div>
+              <div className="text-[13px] font-semibold capitalize">{item.status}</div>
+              <div className="text-[11px] text-muted-foreground/40 mt-0.5">{stats.active} active</div>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleNewTask(item.id, 'inbox')}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2 text-[12px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add Task
+            </button>
+            <button
+              onClick={() => handleNewMilestone(item.id)}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2 text-[12px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
+            >
+              <Target className="h-3.5 w-3.5" />
+              Add Milestone
+            </button>
+          </div>
+
+          {/* Milestones */}
+          {projectMilestones.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <Target className="h-3.5 w-3.5 text-muted-foreground/50" />
+                <FieldLabel>Milestones · {projectMilestones.length}</FieldLabel>
+              </div>
+              <div className="space-y-1">
+                {projectMilestones.map((milestone) => (
+                  <button
+                    key={milestone.id}
+                    onClick={() => setSelectedItemId(milestone.id)}
+                    className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                  >
+                    <CheckCircle2 className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      milestone.status === 'done' ? 'text-foreground/30' : 'text-muted-foreground/30'
+                    )} />
+                    <span className={cn(
+                      "text-[13px] font-medium flex-1",
+                      milestone.status === 'done' ? 'text-muted-foreground/40 line-through' : 'text-foreground/80 group-hover:text-foreground'
+                    )}>
+                      {milestone.title}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Kanban Board */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-3">
+              <LayoutList className="h-3.5 w-3.5 text-muted-foreground/50" />
+              <FieldLabel>Tasks · {stats.total}</FieldLabel>
+            </div>
+            <div className="space-y-3">
+              {/* Inbox */}
+              {(tasksByStatus.inbox.length > 0 || stats.total === 0) && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h4 className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">Inbox</h4>
+                    <span className="text-[10px] text-muted-foreground/40 tabular-nums">{tasksByStatus.inbox.length}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {tasksByStatus.inbox.map((task) => (
+                      <button
+                        key={task.id}
+                        onClick={() => setSelectedItemId(task.id)}
+                        className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                      >
+                        <p className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground">
+                          {task.title}
+                        </p>
+                        {task.dueDate && (
+                          <p className="text-[11px] text-muted-foreground/40 mt-0.5">Due {task.dueDate}</p>
+                        )}
+                      </button>
+                    ))}
+                    {tasksByStatus.inbox.length === 0 && (
+                      <button
+                        onClick={() => handleNewTask(item.id, 'inbox')}
+                        className="w-full px-3 py-2 rounded-lg border border-dashed border-border/40 hover:border-border hover:bg-foreground/[0.02] transition-colors text-[12px] text-muted-foreground/40 hover:text-muted-foreground flex items-center gap-1.5"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add task
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Active */}
+              {tasksByStatus.active.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h4 className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">In Progress</h4>
+                    <span className="text-[10px] text-muted-foreground/40 tabular-nums">{tasksByStatus.active.length}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {tasksByStatus.active.map((task) => (
+                      <button
+                        key={task.id}
+                        onClick={() => setSelectedItemId(task.id)}
+                        className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Circle className="h-2 w-2 text-blue-500 fill-blue-500" />
+                          <p className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground flex-1">
+                            {task.title}
+                          </p>
+                        </div>
+                        {task.dueDate && (
+                          <p className="text-[11px] text-muted-foreground/40 mt-0.5 ml-4">Due {task.dueDate}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Waiting */}
+              {tasksByStatus.waiting.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h4 className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">Waiting</h4>
+                    <span className="text-[10px] text-muted-foreground/40 tabular-nums">{tasksByStatus.waiting.length}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {tasksByStatus.waiting.map((task) => (
+                      <button
+                        key={task.id}
+                        onClick={() => setSelectedItemId(task.id)}
+                        className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-3 w-3 text-amber-500" />
+                          <p className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground flex-1">
+                            {task.title}
+                          </p>
+                        </div>
+                        {task.dueDate && (
+                          <p className="text-[11px] text-muted-foreground/40 mt-0.5 ml-5">Due {task.dueDate}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Done */}
+              {tasksByStatus.done.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h4 className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">Done</h4>
+                    <span className="text-[10px] text-muted-foreground/40 tabular-nums">{tasksByStatus.done.length}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {tasksByStatus.done.slice(0, 5).map((task) => (
+                      <button
+                        key={task.id}
+                        onClick={() => setSelectedItemId(task.id)}
+                        className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-3 w-3 text-foreground/30" />
+                          <p className="text-[13px] font-medium text-muted-foreground/40 line-through flex-1">
+                            {task.title}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                    {tasksByStatus.done.length > 5 && (
+                      <p className="text-[11px] text-muted-foreground/30 text-center py-1">
+                        +{tasksByStatus.done.length - 5} more completed
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Settings */}
+          <div className="h-px bg-border/40" />
+          <div>
+            <FieldLabel>Project Settings</FieldLabel>
+            <div className="mt-2 space-y-2.5">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-[11px] text-muted-foreground/50 block mb-1">Emoji</label>
+                  <Input 
+                    value={item.emoji || ''} 
+                    onChange={(e) => handleUpdate({ emoji: e.target.value })} 
+                    className="h-8 text-[12px] border-border/50" 
+                    placeholder="🚀" 
+                    maxLength={2} 
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-muted-foreground/50 block mb-1">Color</label>
+                  <Input 
+                    type="color" 
+                    value={item.color || '#6366f1'} 
+                    onChange={(e) => handleUpdate({ color: e.target.value })} 
+                    className="h-8 border-border/50" 
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground/50 block mb-1">Status</label>
+                <Select value={item.status} onValueChange={(v) => handleUpdate({ status: v as ItemStatus })}>
+                  <SelectTrigger className="h-8 text-[12px] border-border/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((s) => (
+                      <SelectItem key={s} value={s} className="capitalize text-[12px]">{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <FieldLabel>Tags</FieldLabel>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {LIFE_AREA_TAGS.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => toggleTag(tag)}
+                  className={cn(
+                    'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
+                    (item.tags || []).includes(tag)
+                      ? 'bg-foreground text-background'
+                      : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08] hover:text-muted-foreground'
+                  )}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Meta */}
+          <div className="h-px bg-border/40" />
+          <div className="space-y-0.5 text-[11px] text-muted-foreground/40 pb-4">
+            <p>Created {format(new Date(item.createdAt), 'dd MMM yyyy · HH:mm')}</p>
+            <p>Updated {format(new Date(item.updatedAt), 'dd MMM yyyy · HH:mm')}</p>
+          </div>
+        </div>
+      </div>
+    );
+
+    return (
+      <>
+        {/* Desktop */}
+        <div className={cn(
+          'hidden lg:block border-l border-border/60 bg-background transition-all duration-200',
+          detailPanelOpen ? 'w-96' : 'w-0 overflow-hidden'
+        )}>
+          {content}
+        </div>
+
+        {/* Mobile */}
+        <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
+          <SheetContent
+            side="bottom"
+            className="h-[92dvh] rounded-t-2xl p-0 border-0"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>Project Dashboard</SheetTitle>
+            </SheetHeader>
+            <div className="flex justify-center pt-2 pb-1 sticky top-0 z-10 bg-background rounded-t-2xl">
+              <div className="h-1 w-10 rounded-full bg-foreground/10" />
+            </div>
+            <div className="h-[calc(92dvh-24px)] overflow-hidden">
+              {content}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </>
+    );
+  }
+
+  // Regular detail panel for non-project items
   const parentItem = item.parentId ? getItemById(item.parentId) : undefined;
   const linkedItems = (item.linkedIds || [])
     .map((id) => getItemById(id))
@@ -245,7 +652,7 @@ export function DetailPanel() {
           </div>
 
           {/* Priority */}
-          {(item.type === 'task' || item.type === 'project') && (
+          {item.type === 'task' && (
             <div>
               <FieldLabel>Priority</FieldLabel>
               <Select value={item.priority || ''} onValueChange={(v) => handleUpdate({ priority: v as Priority })}>
@@ -260,7 +667,7 @@ export function DetailPanel() {
           )}
 
           {/* Due Date */}
-          {(item.type === 'task' || item.type === 'project') && (
+          {item.type === 'task' && (
             <div>
               <FieldLabel>Due date</FieldLabel>
               <Input
@@ -413,37 +820,21 @@ export function DetailPanel() {
             </div>
           )}
 
-          {/* Project fields */}
-          {item.type === 'project' && (
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <FieldLabel>Emoji</FieldLabel>
-                <Input value={item.emoji || ''} onChange={(e) => handleUpdate({ emoji: e.target.value })} className="mt-1 h-8 text-[12px] border-border/50" placeholder="🚀" maxLength={2} />
-              </div>
-              <div>
-                <FieldLabel>Color</FieldLabel>
-                <Input type="color" value={item.color || '#6366f1'} onChange={(e) => handleUpdate({ color: e.target.value })} className="mt-1 h-8 border-border/50" />
-              </div>
-            </div>
-          )}
-
           {/* Parent project */}
-          {item.type !== 'project' && (
-            <div>
-              <FieldLabel>Project</FieldLabel>
-              <Select value={item.parentId || 'none'} onValueChange={(v) => handleUpdate({ parentId: v === 'none' ? undefined : v })}>
-                <SelectTrigger className="mt-1 h-8 text-[12px] border-border/50"><SelectValue placeholder="None" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none" className="text-[12px]">None</SelectItem>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id} className="text-[12px]">
-                      {p.emoji || '📁'} {p.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <div>
+            <FieldLabel>Project</FieldLabel>
+            <Select value={item.parentId || 'none'} onValueChange={(v) => handleUpdate({ parentId: v === 'none' ? undefined : v })}>
+              <SelectTrigger className="mt-1 h-8 text-[12px] border-border/50"><SelectValue placeholder="None" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none" className="text-[12px]">None</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="text-[12px]">
+                    {p.emoji || '📁'} {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* ── Divider ── */}
@@ -482,7 +873,7 @@ export function DetailPanel() {
         </div>
 
         {/* ── Checklist ── */}
-        {(item.type === 'task' || item.type === 'project') && (
+        {item.type === 'task' && (
           <div>
             <FieldLabel>Checklist</FieldLabel>
             <div className="mt-2 space-y-0.5">
