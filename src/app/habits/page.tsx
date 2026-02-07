@@ -1,12 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Repeat, Flame, Plus, CheckSquare, CalendarDays, Calendar } from 'lucide-react';
+import { Repeat, Flame, Plus, CheckSquare, CalendarDays, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem, updateItem } from '@/lib/firestore';
 import { cn } from '@/lib/utils';
-import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from 'date-fns';
+import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, addMonths, subMonths } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate, getWeekCompletionRate } from '@/lib/habits';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -17,12 +17,13 @@ export default function HabitsPage() {
   const { items, setSelectedItemId } = useOrbitStore();
   const { user } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('week');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
   const today = new Date();
   const weekStart = startOfWeek(today, { weekStartsOn: 1 });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   
-  const monthStart = startOfMonth(today);
-  const monthEnd = endOfMonth(today);
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
   const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
   const habits = useMemo(
@@ -65,6 +66,31 @@ export default function HabitsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Month navigation - only show in month view */}
+          {viewMode === 'month' && (
+            <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 p-0.5">
+              <button
+                onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+                className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-background transition-all"
+                aria-label="Previous month"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setCurrentMonth(new Date())}
+                className="px-2.5 py-1 text-[12px] font-medium text-foreground/80 hover:text-foreground transition-colors"
+              >
+                {format(currentMonth, 'MMM yyyy')}
+              </button>
+              <button
+                onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+                className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-background transition-all"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           {/* View mode toggle */}
           <div className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5">
             <button
