@@ -31,16 +31,21 @@ export function MobileNav() {
   useEffect(() => {
     const update = () => {
       const vh = window.innerHeight;
+      const screenH = window.screen.height;
       const vvh = window.visualViewport?.height ?? 0;
-      const bodyH = document.body.clientHeight;
+      const vvTop = window.visualViewport?.offsetTop ?? 0;
+      const scrollY = window.scrollY;
       const nav = document.querySelector('nav');
       const navRect = nav ? nav.getBoundingClientRect() : null;
       const navBottom = navRect ? Math.round(navRect.bottom) : 0;
-      const navTop = navRect ? Math.round(navRect.top) : 0;
       const gap = navRect ? Math.round(vh - navRect.bottom) : 0;
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as unknown as { standalone: boolean }).standalone === true;
+      const cs = nav ? getComputedStyle(nav) : null;
+      const navPos = cs?.position ?? '?';
+      const navBot = cs?.bottom ?? '?';
+      const htmlOH = document.documentElement.offsetHeight;
+      const bodyOH = document.body.offsetHeight;
       
-      setDebug(`ih:${vh} vv:${Math.round(vvh)} bh:${bodyH} navT:${navTop} navB:${navBottom} gap:${gap} pwa:${isStandalone}`);
+      setDebug(`scr:${screenH} ih:${vh} vv:${Math.round(vvh)} vvT:${Math.round(vvTop)} sY:${scrollY} htmlOH:${htmlOH} bodyOH:${bodyOH} nB:${navBottom} gap:${gap} pos:${navPos} bot:${navBot}`);
     };
     update();
     const t = setInterval(update, 1000);
