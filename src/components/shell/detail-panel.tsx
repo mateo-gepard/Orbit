@@ -9,9 +9,11 @@ import {
   Link2,
   Check,
   Plus,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem } from '@/lib/firestore';
+import { syncEventToGoogle, requestCalendarPermission, hasCalendarPermission } from '@/lib/google-calendar';
 import type { OrbitItem, ItemType, ItemStatus, Priority, ChecklistItem, GoalTimeframe, HabitFrequency, NoteSubtype } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -44,6 +46,7 @@ export function DetailPanel() {
   const item = selectedItemId ? getItemById(selectedItemId) : undefined;
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
+  const [syncingCalendar, setSyncingCalendar] = useState(false);
 
   useEffect(() => {
     if (item) {
@@ -62,6 +65,29 @@ export function DetailPanel() {
     },
     [item]
   );
+
+  const handleSyncToGoogleCalendar = async () => {
+    if (!item || item.type !== 'event') return;
+    setSyncingCalendar(true);
+    try {
+      // Check if user has granted permission
+      if (!hasCalendarPermission()) {
+        await requestCalendarPermission();
+      }
+      // Sync event
+      const googleCalendarId = await syncEventToGoogle(item);
+      await handleUpdate({ 
+        googleCalendarId, 
+        calendarSynced: true 
+      });
+      console.log('[ORBIT] Event synced to Google Calendar');
+    } catch (err) {
+      console.error('[ORBIT] Calendar sync failed:', err);
+      alert('Failed to sync with Google Calendar. Check console for details.');
+    } finally {
+      setSyncingCalendar(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!item) return;
@@ -256,6 +282,34 @@ export function DetailPanel() {
                   <FieldLabel>Time to</FieldLabel>
                   <Input type="time" value={item.endTime || ''} onChange={(e) => handleUpdate({ endTime: e.target.value || undefined })} className="mt-1 h-8 text-[12px] border-border/50" />
                 </div>
+              </div>
+              
+              {/* Google Calendar Sync */}
+              <div>
+                <FieldLabel>Google Calendar</FieldLabel>
+                <button
+                  onClick={handleSyncToGoogleCalendar}
+                  disabled={syncingCalendar}
+                  className={cn(
+                    'mt-1.5 flex items-center gap-2 rounded-md px-3 py-2 text-[12px] font-medium transition-colors w-full',
+                    item.calendarSynced
+                      ? 'bg-green-500/10 text-green-600 hover:bg-green-500/20'
+                      : 'bg-foreground/[0.05] text-foreground hover:bg-foreground/[0.1]',
+                    syncingCalendar && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  <CalendarIcon className="h-3.5 w-3.5" />
+                  {syncingCalendar
+                    ? 'Syncing...'
+                    : item.calendarSynced
+                    ? 'Synced ✓'
+                    : 'Sync to Google Calendar'}
+                </button>
+                {item.googleCalendarId && (
+                  <p className="mt-1 text-[10px] text-muted-foreground/50">
+                    ID: {item.googleCalendarId.substring(0, 20)}...
+                  </p>
+                )}
               </div>
             </>
           )}
