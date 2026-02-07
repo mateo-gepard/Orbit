@@ -19,6 +19,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
+  interactiveWidget: "resizes-content",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#faf9f7" },
     { media: "(prefers-color-scheme: dark)", color: "#1c1917" },
@@ -48,8 +49,14 @@ export default function RootLayout({
         <script src="https://accounts.google.com/gsi/client" async defer></script>
         {/* PWA: Apple Touch Icon */}
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="ORBIT" />
+        {/* Splash screens for iOS standalone */}
+        <meta name="format-detection" content="telephone=no" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

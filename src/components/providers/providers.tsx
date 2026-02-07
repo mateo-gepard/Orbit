@@ -4,6 +4,7 @@ import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { ThemeProvider } from './theme-provider';
 import { AuthProvider } from './auth-provider';
 import { DataProvider } from './data-provider';
+import { PWAProvider } from './pwa-provider';
 import { AppShell } from '@/components/shell/app-shell';
 
 // ── Error Boundary ──
@@ -63,11 +64,13 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <AuthProvider>
-          <DataProvider>
-            <AppShell>{children}</AppShell>
-          </DataProvider>
-        </AuthProvider>
+        <PWAProvider>
+          <AuthProvider>
+            <DataProvider>
+              <AppShell>{children}</AppShell>
+            </DataProvider>
+          </AuthProvider>
+        </PWAProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

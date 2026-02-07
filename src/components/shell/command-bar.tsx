@@ -43,31 +43,59 @@ export function CommandBar() {
   const { commandBarOpen, setCommandBarOpen, items } = useOrbitStore();
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Lock body scroll when command bar is open (prevents weird scrolling on mobile)
+  // Track keyboard height via visualViewport API
   useEffect(() => {
-    if (commandBarOpen) {
-      const originalOverflow = document.body.style.overflow;
-      const originalPosition = document.body.style.position;
-      const originalTop = document.body.style.top;
-      const scrollY = window.scrollY;
-
-      // Lock scroll position
-      document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollY}px`;
-      document.body.style.width = '100%';
-
-      return () => {
-        document.body.style.overflow = originalOverflow;
-        document.body.style.position = originalPosition;
-        document.body.style.top = originalTop;
-        window.scrollTo(0, scrollY);
-      };
+    if (!commandBarOpen) {
+      setKeyboardHeight(0);
+      return;
     }
+
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const onResize = () => {
+      // The keyboard height is the difference between window height and visual viewport height
+      const kbHeight = window.innerHeight - vv.height;
+      setKeyboardHeight(kbHeight > 50 ? kbHeight : 0);
+    };
+
+    vv.addEventListener('resize', onResize);
+    vv.addEventListener('scroll', onResize);
+    // Initial check
+    onResize();
+
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      vv.removeEventListener('scroll', onResize);
+    };
+  }, [commandBarOpen]);
+
+  // Prevent background scroll when command bar is open
+  useEffect(() => {
+    if (!commandBarOpen) return;
+
+    // Prevent touch scrolling on the backdrop
+    const preventScroll = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      // Allow scrolling inside the results container
+      if (target.closest('[data-command-scroll]')) return;
+      e.preventDefault();
+    };
+
+    document.addEventListener('touchmove', preventScroll, { passive: false });
+    // Also lock body overflow
+    const orig = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.removeEventListener('touchmove', preventScroll);
+      document.body.style.overflow = orig;
+    };
   }, [commandBarOpen]);
 
   // ⌘K shortcut
@@ -197,18 +225,22 @@ export function CommandBar() {
         onClick={() => setCommandBarOpen(false)}
       />
 
-      {/* Dialog — full-width bottom sheet on mobile, centered on desktop */}
+      {/* Dialog — bottom sheet on mobile that rises above keyboard, centered on desktop */}
       <div 
         ref={dialogRef}
         className={cn(
           'relative z-10 w-full',
           // Mobile: bottom sheet style
-          'fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto',
+          'fixed left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto',
           'lg:max-w-[520px] lg:mx-4',
           'animate-slide-up-spring lg:animate-scale-in'
         )}
         style={{
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          // On mobile: position above the keyboard
+          bottom: keyboardHeight > 0 ? `${keyboardHeight}px` : '0px',
+          paddingBottom: keyboardHeight > 0 ? '0px' : 'env(safe-area-inset-bottom, 0px)',
+          // Smooth keyboard tracking
+          transition: 'bottom 0.15s ease-out',
         }}
       >
         <div className={cn(
@@ -268,7 +300,13 @@ export function CommandBar() {
           <div className="h-px bg-border" />
 
           {/* Results */}
-          <div className="max-h-[50vh] lg:max-h-[300px] overflow-y-auto py-1.5">
+          <div 
+            data-command-scroll
+            className={cn(
+              'overflow-y-auto overscroll-contain py-1.5',
+              keyboardHeight > 0 ? 'max-h-[30vh]' : 'max-h-[50vh] lg:max-h-[300px]'
+            )}
+          >
             {/* Search results */}
             {filteredItems.length > 0 && !input.startsWith('/') && (
               <div>

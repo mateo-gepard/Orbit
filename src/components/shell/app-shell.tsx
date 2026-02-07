@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Menu, Search } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -7,9 +8,15 @@ import { Sidebar } from './sidebar';
 import { DetailPanel } from './detail-panel';
 import { CommandBar } from './command-bar';
 import { MobileNav } from './mobile-nav';
+import { isStandalone } from '@/lib/mobile';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, setCommandBarOpen } = useOrbitStore();
+  const [standalone, setStandalone] = useState(false);
+
+  useEffect(() => {
+    setStandalone(isStandalone());
+  }, []);
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-background">
@@ -17,8 +24,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile header — compact, translucent */}
-        <header className="flex items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4 pt-safe lg:hidden"
-          style={{ minHeight: '48px' }}
+        <header 
+          className="flex items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4 lg:hidden"
+          style={{ 
+            minHeight: '48px',
+            paddingTop: standalone ? 'max(env(safe-area-inset-top, 0px), 12px)' : 'env(safe-area-inset-top, 0px)',
+          }}
         >
           <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-4 w-4" />
@@ -56,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex flex-1 overflow-hidden">
           {/* Main content — needs bottom padding on mobile for nav bar */}
-          <main className="flex-1 overflow-y-auto pb-0 lg:pb-0">
+          <main className="flex-1 overflow-y-auto overscroll-contain pb-0 lg:pb-0">
             <div className="lg:hidden mb-bottom-nav">
               {children}
             </div>
