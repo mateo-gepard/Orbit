@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Sun,
@@ -25,9 +26,35 @@ export function MobileNav() {
   const pathname = usePathname();
   const { items, setCommandBarOpen } = useOrbitStore();
   const inboxCount = items.filter((i) => i.status === 'inbox').length;
+  const [debug, setDebug] = useState('');
+
+  useEffect(() => {
+    const update = () => {
+      const vh = window.innerHeight;
+      const vvh = window.visualViewport?.height ?? 0;
+      const dvh = document.documentElement.clientHeight;
+      const bodyH = document.body.clientHeight;
+      const rootDiv = document.body.firstElementChild;
+      const rootH = rootDiv ? (rootDiv as HTMLElement).clientHeight : 0;
+      const safeBottom = getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom');
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as unknown as { standalone: boolean }).standalone === true;
+      
+      setDebug(`ih:${vh} vv:${Math.round(vvh)} dh:${dvh} bh:${bodyH} rh:${rootH} sb:${safeBottom.trim()} pwa:${isStandalone}`);
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   return (
     <>
+      {/* DEBUG: Temporary overlay to diagnose positioning */}
+      {debug && (
+        <div className="fixed top-12 left-2 right-2 z-[9999] bg-red-500 text-white text-[10px] font-mono p-1 rounded lg:hidden">
+          {debug}
+        </div>
+      )}
+
       {/* Floating Action Button */}
       <button
         onClick={() => setCommandBarOpen(true)}
@@ -48,11 +75,14 @@ export function MobileNav() {
 
       {/* Bottom Tab Bar */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
+        className="fixed left-0 right-0 z-40 lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
         style={{
+          bottom: 0,
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
+        {/* DEBUG: Red line = exact bottom edge of nav */}
+        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-red-500 z-50" />
         <div
           className="flex items-center justify-around"
           style={{ height: 'var(--bottom-nav-height)' }}
