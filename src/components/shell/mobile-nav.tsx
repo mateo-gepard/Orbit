@@ -48,19 +48,14 @@ export function MobileNav() {
 
       {/* Bottom Tab Bar */}
       <nav
-        className={cn(
-          'fixed bottom-0 left-0 right-0 z-40 lg:hidden',
-          'border-t border-border/40',
-          'bg-background/80 backdrop-blur-xl backdrop-saturate-150',
-          'animate-slide-up-spring'
-        )}
+        className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
       >
         <div
           className="flex items-center justify-around"
-          style={{ 
-            height: 'var(--bottom-nav-height)',
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)'
-          }}
+          style={{ height: 'var(--bottom-nav-height)' }}
         >
           {TABS.map((tab) => {
             const isActive =

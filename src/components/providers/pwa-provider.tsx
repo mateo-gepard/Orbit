@@ -38,14 +38,6 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
       document.documentElement.classList.add('standalone');
     }
 
-    // Force layout recalculation after mount (fixes bottom nav position on load)
-    requestAnimationFrame(() => {
-      document.body.style.display = 'none';
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      document.body.offsetHeight; // Force reflow
-      document.body.style.display = '';
-    });
-
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };

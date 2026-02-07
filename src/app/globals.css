@@ -122,17 +122,16 @@
   * {
     @apply border-border outline-ring/50;
   }
-  html {
+  html, body {
     height: 100%;
-    height: 100dvh; /* Fallback for modern browsers */
+    height: 100dvh;
     overflow: hidden;
     overscroll-behavior: none;
+    margin: 0;
+    padding: 0;
   }
   body {
     @apply bg-background text-foreground antialiased;
-    height: 100%;
-    overflow: hidden;
-    overscroll-behavior: none;
     font-feature-settings: "ss01", "ss02", "cv01";
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
@@ -140,8 +139,8 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
-  /* Next.js root container */
-  #__next {
+  /* Next.js root container — body > div is the actual root in Next.js 14+ App Router */
+  body > div {
     height: 100%;
     overflow: hidden;
   }

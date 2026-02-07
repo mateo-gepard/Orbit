@@ -60,9 +60,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Main content */}
-          <main className="flex-1 overflow-y-auto overscroll-contain">
-            {/* Mobile: add bottom padding for the fixed bottom nav */}
-            <div className="pb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom,0px)+16px)] lg:pb-0">
+          <main 
+            className="flex-1 overflow-y-auto overscroll-contain pb-0 lg:pb-0"
+          >
+            {/* Mobile: bottom padding so content isn't hidden behind fixed nav */}
+            <div className="pb-[calc(52px+env(safe-area-inset-bottom,0px)+16px)] lg:pb-0">
               {children}
             </div>
           </main>
