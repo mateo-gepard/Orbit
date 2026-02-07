@@ -32,16 +32,14 @@ export function MobileNav() {
     const update = () => {
       const vh = window.innerHeight;
       const screenH = window.screen.height;
+      const htmlH = document.documentElement.clientHeight;
       const nav = document.getElementById('mobile-nav');
       const navRect = nav ? nav.getBoundingClientRect() : null;
       const navBottom = navRect ? Math.round(navRect.bottom) : 0;
-      const gap = navRect ? Math.round(vh - navRect.bottom) : 0;
-      const cs = nav ? getComputedStyle(nav) : null;
-      const navPos = cs?.position ?? '?';
-      const navBot = cs?.bottom ?? '?';
-      const inlineStyle = nav?.getAttribute('style') ?? 'none';
+      const gapFromIH = navRect ? Math.round(vh - navRect.bottom) : 0;
+      const gapFromScreen = navRect ? Math.round(screenH - navRect.bottom) : 0;
       
-      setDebug(`scr:${screenH} ih:${vh} nB:${navBottom} gap:${gap} pos:${navPos} bot:${navBot} style:${inlineStyle.substring(0, 80)}`);
+      setDebug(`scr:${screenH} ih:${vh} html:${htmlH} nB:${navBottom} gapIH:${gapFromIH} gapScr:${gapFromScreen}`);
     };
     update();
     const t = setInterval(update, 2000);

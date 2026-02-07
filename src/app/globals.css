@@ -124,11 +124,10 @@
   }
   html, body {
     height: 100%;
-    height: 100dvh;
-    overflow: hidden;
-    overscroll-behavior: none;
     margin: 0;
     padding: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
   body {
     @apply bg-background text-foreground antialiased;
