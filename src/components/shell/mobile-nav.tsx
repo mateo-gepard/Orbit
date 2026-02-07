@@ -32,23 +32,19 @@ export function MobileNav() {
     const update = () => {
       const vh = window.innerHeight;
       const screenH = window.screen.height;
-      const vvh = window.visualViewport?.height ?? 0;
-      const vvTop = window.visualViewport?.offsetTop ?? 0;
-      const scrollY = window.scrollY;
-      const nav = document.querySelector('nav');
+      const nav = document.getElementById('mobile-nav');
       const navRect = nav ? nav.getBoundingClientRect() : null;
       const navBottom = navRect ? Math.round(navRect.bottom) : 0;
       const gap = navRect ? Math.round(vh - navRect.bottom) : 0;
       const cs = nav ? getComputedStyle(nav) : null;
       const navPos = cs?.position ?? '?';
       const navBot = cs?.bottom ?? '?';
-      const htmlOH = document.documentElement.offsetHeight;
-      const bodyOH = document.body.offsetHeight;
+      const inlineStyle = nav?.getAttribute('style') ?? 'none';
       
-      setDebug(`scr:${screenH} ih:${vh} vv:${Math.round(vvh)} vvT:${Math.round(vvTop)} sY:${scrollY} htmlOH:${htmlOH} bodyOH:${bodyOH} nB:${navBottom} gap:${gap} pos:${navPos} bot:${navBot}`);
+      setDebug(`scr:${screenH} ih:${vh} nB:${navBottom} gap:${gap} pos:${navPos} bot:${navBot} style:${inlineStyle.substring(0, 80)}`);
     };
     update();
-    const t = setInterval(update, 1000);
+    const t = setInterval(update, 2000);
     return () => clearInterval(t);
   }, []);
 
@@ -83,6 +79,7 @@ export function MobileNav() {
 
       {/* Bottom Tab Bar */}
       <nav
+        id="mobile-nav"
         className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
         style={{
           position: 'fixed',
