@@ -146,18 +146,28 @@ async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: any, userId
 
 function eventHasChanges(orbitItem: OrbitItem, gcalEvent: any): boolean {
   // Check title
-  if ((gcalEvent.summary || 'Untitled Event') !== orbitItem.title) return true;
+  if ((gcalEvent.summary || 'Untitled Event') !== orbitItem.title) {
+    console.log(`[eventHasChanges] ${gcalEvent.summary}: Title changed`);
+    return true;
+  }
 
   // For proper comparison, we need to convert the Google event using the same logic
   const isAllDay = !!gcalEvent.start?.date;
   
+  console.log(`[eventHasChanges] ${gcalEvent.summary}: isAllDay=${isAllDay}, orbit.startDate=${orbitItem.startDate}, orbit.endDate=${orbitItem.endDate}`);
+  
   if (isAllDay) {
     // All-day event comparison
     const gcalStartDate = gcalEvent.start?.date;
-    if (gcalStartDate !== orbitItem.startDate) return true;
+    console.log(`[eventHasChanges] ${gcalEvent.summary}: gcalStartDate=${gcalStartDate}`);
+    if (gcalStartDate !== orbitItem.startDate) {
+      console.log(`[eventHasChanges] ${gcalEvent.summary}: Start date changed`);
+      return true;
+    }
     
     // For end date, we need to account for Google's exclusive end date
     if (gcalEvent.end?.date) {
+      console.log(`[eventHasChanges] ${gcalEvent.summary}: gcal.end.date=${gcalEvent.end.date}`);
       const [year, month, day] = gcalEvent.end.date.split('-').map(Number);
       const endDateObj = new Date(Date.UTC(year, month - 1, day));
       endDateObj.setUTCDate(endDateObj.getUTCDate() - 1);
@@ -169,7 +179,11 @@ function eventHasChanges(orbitItem: OrbitItem, gcalEvent: any): boolean {
       
       // Compare to orbit's endDate (undefined if single-day)
       const orbitEndDate = gcalEndDate === gcalStartDate ? undefined : gcalEndDate;
-      if (orbitEndDate !== orbitItem.endDate) return true;
+      console.log(`[eventHasChanges] ${gcalEvent.summary}: calculated orbitEndDate=${orbitEndDate}, actual orbit.endDate=${orbitItem.endDate}`);
+      if (orbitEndDate !== orbitItem.endDate) {
+        console.log(`[eventHasChanges] ${gcalEvent.summary}: End date changed - SHOULD UPDATE`);
+        return true;
+      }
     }
   } else {
     // Timed event comparison
