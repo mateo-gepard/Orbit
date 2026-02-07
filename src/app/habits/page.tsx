@@ -6,7 +6,7 @@ import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem, updateItem } from '@/lib/firestore';
 import { cn } from '@/lib/utils';
-import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, addMonths, subMonths } from 'date-fns';
+import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, addMonths, subMonths, getDay } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate, getWeekCompletionRate } from '@/lib/habits';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -25,6 +25,10 @@ export default function HabitsPage() {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  
+  // Calculate padding days to align first day with correct weekday (Monday = 0)
+  const firstDayOfMonth = monthStart.getDay();
+  const paddingDays = (firstDayOfMonth + 6) % 7; // Convert Sunday=0 to Monday=0
 
   const habits = useMemo(
     () => items.filter((i) => i.type === 'habit' && i.status === 'active'),
@@ -244,6 +248,10 @@ export default function HabitsPage() {
                   {/* Month calendar grid */}
                   <div className="p-3">
                     <div className="grid grid-cols-7 gap-1">
+                      {/* Padding days before month starts */}
+                      {Array.from({ length: paddingDays }).map((_, i) => (
+                        <div key={`padding-${i}`} className="aspect-square" />
+                      ))}
                       {monthDays.map((day) => {
                         const scheduled = isHabitScheduledForDate(habit, day);
                         const dayCompleted = isHabitCompletedForDate(habit, day);
@@ -437,6 +445,10 @@ export default function HabitsPage() {
                       <div key={label} className="text-center text-[10px] font-medium text-muted-foreground/40 uppercase pb-1">
                         {label}
                       </div>
+                    ))}
+                    {/* Padding days before month starts */}
+                    {Array.from({ length: paddingDays }).map((_, i) => (
+                      <div key={`padding-${i}`} className="aspect-square" />
                     ))}
                     {/* Days */}
                     {monthDays.map((day) => {
