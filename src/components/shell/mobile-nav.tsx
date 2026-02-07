@@ -40,7 +40,7 @@ export function MobileNav() {
           'animate-scale-in'
         )}
         style={{
-          bottom: 'calc(var(--bottom-nav-height) + max(env(safe-area-inset-bottom, 0px), 8px) + 12px)',
+          bottom: 'calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 12px)',
         }}
       >
         <Plus className="h-6 w-6" strokeWidth={2.5} />
@@ -55,11 +55,12 @@ export function MobileNav() {
           'animate-slide-up-spring'
         )}
         style={{
-          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          height: 'calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px))',
         }}
       >
         <div
-          className="mx-auto flex items-center justify-around"
+          className="flex items-center justify-around"
           style={{ height: 'var(--bottom-nav-height)' }}
         >
           {TABS.map((tab) => {
