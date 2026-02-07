@@ -65,15 +65,17 @@ export function MobileNav() {
       <button
         onClick={() => setCommandBarOpen(true)}
         className={cn(
-          'fixed z-50 lg:hidden',
-          'right-4 flex h-14 w-14 items-center justify-center',
+          'lg:hidden',
+          'flex h-14 w-14 items-center justify-center',
           'rounded-full bg-foreground text-background',
           'shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]',
           'active:scale-95 transition-transform duration-150',
-          'animate-scale-in'
         )}
         style={{
-          bottom: 'calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 12px)',
+          position: 'fixed',
+          right: '16px',
+          zIndex: 50,
+          bottom: 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)',
         }}
       >
         <Plus className="h-6 w-6" strokeWidth={2.5} />
@@ -81,9 +83,13 @@ export function MobileNav() {
 
       {/* Bottom Tab Bar */}
       <nav
-        className="fixed left-0 right-0 z-40 lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
+        className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
         style={{
-          bottom: 0,
+          position: 'fixed',
+          bottom: '0px',
+          left: '0px',
+          right: '0px',
+          zIndex: 40,
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
