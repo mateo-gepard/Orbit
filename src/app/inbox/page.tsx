@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Inbox as InboxIcon, ArrowRight, Archive } from 'lucide-react';
+import { Inbox as InboxIcon, ArrowRight, Trash2 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
-import { updateItem } from '@/lib/firestore';
+import { updateItem, deleteItem } from '@/lib/firestore';
 import { ItemRow } from '@/components/items/item-row';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
@@ -22,6 +22,11 @@ export default function InboxPage() {
     await updateItem(id, { status });
   };
 
+  const quickDelete = async (id: string) => {
+    haptic('medium');
+    await deleteItem(id);
+  };
+
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-3xl mx-auto">
       <div>
@@ -32,7 +37,7 @@ export default function InboxPage() {
         </p>
         {inboxItems.length > 0 && (
           <p className="text-[11px] text-muted-foreground/40 mt-1 lg:hidden">
-            ← Swipe right to activate · Swipe left to archive →
+            ← Swipe right to activate · Swipe left to delete →
           </p>
         )}
       </div>
@@ -44,11 +49,11 @@ export default function InboxPage() {
             <div className="lg:hidden">
               <SwipeableRow
                 onSwipeRight={() => quickSetStatus(item.id, 'active')}
-                onSwipeLeft={() => quickSetStatus(item.id, 'archived')}
+                onSwipeLeft={() => quickDelete(item.id)}
                 rightLabel="Activate"
-                leftLabel="Archive"
+                leftLabel="Delete"
                 rightIcon={ArrowRight}
-                leftIcon={Archive}
+                leftIcon={Trash2}
               >
                 <ItemRow item={item} showType compact enableSwipe={false} />
               </SwipeableRow>

@@ -43,8 +43,25 @@ export function CommandBar() {
   const { commandBarOpen, setCommandBarOpen, items } = useOrbitStore();
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  // Track keyboard height on mobile
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+
+    const handleResize = () => {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      // Calculate how much the viewport has shrunk (keyboard is open)
+      const offset = window.innerHeight - vv.height;
+      setKeyboardOffset(offset > 100 ? offset : 0); // Only apply if keyboard is actually open
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    return () => window.visualViewport?.removeEventListener('resize', handleResize);
+  }, []);
 
   // ⌘K shortcut
   useEffect(() => {
@@ -65,6 +82,7 @@ export function CommandBar() {
     if (commandBarOpen) {
       setInput('');
       setSelectedIndex(0);
+      setKeyboardOffset(0);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [commandBarOpen]);
@@ -179,10 +197,12 @@ export function CommandBar() {
         // Mobile: bottom sheet style
         'fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto',
         'lg:max-w-[520px] lg:mx-4',
-        'animate-slide-up-spring lg:animate-scale-in'
+        'animate-slide-up-spring lg:animate-scale-in',
+        'transition-transform duration-200'
       )}
       style={{
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        transform: keyboardOffset > 0 ? `translateY(-${keyboardOffset}px)` : undefined,
       }}
       >
         <div className={cn(
