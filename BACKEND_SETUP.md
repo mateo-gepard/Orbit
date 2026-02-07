@@ -25,15 +25,27 @@ Für **echte Cloud-Synchronisation** über mehrere Geräte brauchst du Firebase.
 Du bekommst jetzt ein Code-Snippet mit deinen Firebase-Config-Werten:
 
 ```javascript
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIza...",
-  authDomain: "orbit-xyz.firebaseapp.com",
-  projectId: "orbit-xyz",
-  storageBucket: "orbit-xyz.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abc123"
+  apiKey: "AIzaSyBOqJE0MVXrfBwTope_4vgCTMeAM_omY-E",
+  authDomain: "orbit-9e0b6.firebaseapp.com",
+  projectId: "orbit-9e0b6",
+  storageBucket: "orbit-9e0b6.firebasestorage.app",
+  messagingSenderId: "631355120389",
+  appId: "1:631355120389:web:42c163eae64bc3dfe5f56c",
+  measurementId: "G-D2797TDQZ5"
 };
-```
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
 
 **⚠️ Diese Werte brauchst du gleich!**
 
