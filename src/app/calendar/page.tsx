@@ -22,6 +22,11 @@ import {
   hasCalendarPermission, 
   requestCalendarPermission 
 } from '@/lib/google-calendar';
+import { 
+  syncGoogleCalendar, 
+  getLastSyncTime, 
+  isSyncRunning 
+} from '@/lib/google-calendar-sync';
 import { createItem } from '@/lib/firestore';
 import type { OrbitItem } from '@/lib/types';
 
@@ -30,6 +35,15 @@ export default function CalendarPage() {
   const { items, setSelectedItemId } = useOrbitStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [importing, setImporting] = useState(false);
+  const [lastSync, setLastSync] = useState<number>(0);
+
+  // Update last sync time every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLastSync(getLastSyncTime());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -121,7 +135,17 @@ export default function CalendarPage() {
     <div className="p-4 lg:p-8 space-y-5 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight">Calendar</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold tracking-tight">Calendar</h1>
+          {isSyncRunning() && lastSync > 0 && (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span>
+                Synced {Math.floor((Date.now() - lastSync) / 1000)}s ago
+              </span>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleImportFromGoogle}

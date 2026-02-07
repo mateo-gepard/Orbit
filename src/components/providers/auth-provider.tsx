@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut, type User } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
+import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
+import { hasCalendarPermission } from '@/lib/google-calendar';
 
 interface AuthContextType {
   user: User | null;
@@ -64,6 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setUser(firebaseUser);
         setLoading(false);
+        
+        // Start Google Calendar sync if user has permission
+        if (firebaseUser && hasCalendarPermission()) {
+          startGoogleCalendarSync(firebaseUser.uid);
+        }
       },
       (error) => {
         console.error('[ORBIT Auth] Auth state error:', error);
@@ -78,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
       unsubscribe();
+      stopGoogleCalendarSync(); // Stop sync on unmount
     };
   }, []);
 
