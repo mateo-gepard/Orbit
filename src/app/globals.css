@@ -125,7 +125,84 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "ss01", "ss02", "cv01";
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    overscroll-behavior-y: none;
   }
+}
+
+/* ─── PWA Safe Areas ─── */
+@layer base {
+  :root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --bottom-nav-height: 52px;
+  }
+}
+
+/* ─── Mobile bottom nav safe area ─── */
+@layer utilities {
+  .pb-safe {
+    padding-bottom: max(var(--safe-bottom), 8px);
+  }
+  .pt-safe {
+    padding-top: max(var(--safe-top), 0px);
+  }
+  .mb-bottom-nav {
+    margin-bottom: calc(var(--bottom-nav-height) + max(var(--safe-bottom), 8px));
+  }
+}
+
+/* ─── Swipe item animations ─── */
+@layer utilities {
+  .swipe-item {
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+/* ─── Spring animations ─── */
+@keyframes slide-up-spring {
+  0% { transform: translateY(100%); opacity: 0; }
+  60% { transform: translateY(-4%); opacity: 1; }
+  80% { transform: translateY(1%); }
+  100% { transform: translateY(0); }
+}
+@keyframes slide-down-spring {
+  0% { transform: translateY(-20px); opacity: 0; }
+  60% { transform: translateY(2px); opacity: 1; }
+  100% { transform: translateY(0); }
+}
+@keyframes scale-in {
+  0% { transform: scale(0.9); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes fab-pulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+  50% { box-shadow: 0 6px 28px rgba(0,0,0,0.25); }
+}
+
+@layer utilities {
+  .animate-slide-up-spring {
+    animation: slide-up-spring 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  .animate-slide-down-spring {
+    animation: slide-down-spring 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  .animate-scale-in {
+    animation: scale-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+}
+
+/* ─── Pull to refresh indicator ─── */
+@keyframes ptr-spin {
+  to { transform: rotate(360deg); }
+}
+.ptr-spinner {
+  animation: ptr-spin 0.6s linear infinite;
 }
 
 /* ─── Smooth scrolling & scrollbar ─── */
@@ -168,5 +245,12 @@
     transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
     transition-duration: 200ms;
     will-change: transform;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }

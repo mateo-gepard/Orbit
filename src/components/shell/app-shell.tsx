@@ -6,18 +6,21 @@ import { Button } from '@/components/ui/button';
 import { Sidebar } from './sidebar';
 import { DetailPanel } from './detail-panel';
 import { CommandBar } from './command-bar';
+import { MobileNav } from './mobile-nav';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, setCommandBarOpen } = useOrbitStore();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-[100dvh] overflow-hidden bg-background">
       <Sidebar />
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Mobile header */}
-        <header className="flex items-center gap-3 border-b border-border px-4 py-2.5 lg:hidden">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSidebarOpen(true)}>
+        {/* Mobile header — compact, translucent */}
+        <header className="flex items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4 pt-safe lg:hidden"
+          style={{ minHeight: '48px' }}
+        >
+          <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-4 w-4" />
           </Button>
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-background font-semibold text-[10px]">
@@ -52,10 +55,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <div className="flex flex-1 overflow-hidden">
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          {/* Main content — needs bottom padding on mobile for nav bar */}
+          <main className="flex-1 overflow-y-auto pb-0 lg:pb-0">
+            <div className="lg:hidden mb-bottom-nav">
+              {children}
+            </div>
+            <div className="hidden lg:block">
+              {children}
+            </div>
+          </main>
           <DetailPanel />
         </div>
       </div>
+
+      {/* Mobile bottom nav + FAB */}
+      <MobileNav />
 
       <CommandBar />
     </div>

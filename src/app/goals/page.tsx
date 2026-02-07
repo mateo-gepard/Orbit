@@ -61,7 +61,7 @@ export default function GoalsPage() {
   }, [goals]);
 
   return (
-    <div className="p-4 lg:p-8 space-y-6 max-w-4xl mx-auto">
+    <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Goals</h1>
@@ -71,7 +71,7 @@ export default function GoalsPage() {
         </div>
         <button
           onClick={handleNewGoal}
-          className="flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+          className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform"
         >
           <Plus className="h-3.5 w-3.5" />
           New
@@ -94,10 +94,10 @@ export default function GoalsPage() {
                   <button
                     key={goal.id}
                     onClick={() => setSelectedItemId(goal.id)}
-                    className="flex flex-col gap-2.5 rounded-xl border border-border/60 bg-card p-4 text-left transition-all hover:bg-foreground/[0.02] hover:border-border group"
+                    className="flex flex-col gap-2.5 rounded-xl border border-border/60 bg-card p-4 text-left transition-all hover:bg-foreground/[0.02] hover:border-border group active:scale-[0.98]"
                   >
                     <div>
-                      <h3 className="text-[13px] font-semibold group-hover:text-foreground transition-colors">
+                      <h3 className="text-[14px] lg:text-[13px] font-semibold group-hover:text-foreground transition-colors">
                         {goal.title}
                       </h3>
                       {goal.metric && (

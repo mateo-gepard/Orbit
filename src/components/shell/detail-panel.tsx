@@ -577,13 +577,22 @@ export function DetailPanel() {
         {content}
       </div>
 
-      {/* Mobile */}
+      {/* Mobile — full-screen sheet with drag handle */}
       <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
-        <SheetContent side="right" className="w-full p-0 sm:max-w-md">
+        <SheetContent
+          side="bottom"
+          className="h-[92dvh] rounded-t-2xl p-0 border-0"
+        >
           <SheetHeader className="sr-only">
             <SheetTitle>Item Details</SheetTitle>
           </SheetHeader>
-          {content}
+          {/* Drag handle */}
+          <div className="flex justify-center pt-2 pb-1 sticky top-0 z-10 bg-background rounded-t-2xl">
+            <div className="h-1 w-10 rounded-full bg-foreground/10" />
+          </div>
+          <div className="h-[calc(92dvh-24px)] overflow-hidden">
+            {content}
+          </div>
         </SheetContent>
       </Sheet>
     </>

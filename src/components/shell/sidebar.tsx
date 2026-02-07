@@ -78,16 +78,20 @@ export function Sidebar() {
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[3px] lg:hidden transition-opacity duration-300"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       <aside
         className={cn(
-          'fixed left-0 top-0 z-50 flex h-full w-[260px] flex-col bg-sidebar transition-transform duration-300 ease-out lg:relative lg:translate-x-0',
+          'fixed left-0 top-0 z-50 flex h-full w-[280px] flex-col bg-sidebar transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:relative lg:w-[260px] lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
+        style={{
+          paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)',
+          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)',
+        }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">

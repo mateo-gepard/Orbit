@@ -39,7 +39,7 @@ export default function TodayPage() {
   const totalTasks = overdue.length + todayTasks.length;
 
   return (
-    <div className="p-4 lg:p-8 space-y-6 max-w-3xl mx-auto">
+    <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div>
         <p className="text-[13px] text-muted-foreground/60">{format(today, 'EEEE')}</p>

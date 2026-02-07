@@ -44,7 +44,7 @@ export default function NotesPage() {
 	};
 
 	return (
-		<div className="p-4 lg:p-8 space-y-6 max-w-4xl mx-auto">
+		<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto">
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-xl font-semibold tracking-tight">Notes</h1>
@@ -54,21 +54,21 @@ export default function NotesPage() {
 				</div>
 				<button
 					onClick={handleNewNote}
-					className="flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+					className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform"
 				>
 					<Plus className="h-3.5 w-3.5" />
 					New
 				</button>
 			</div>
 
-			{/* Filter tabs */}
-			<div className="flex gap-0.5 overflow-x-auto">
+			{/* Filter tabs — scrollable on mobile */}
+			<div className="flex gap-0.5 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0" style={{ scrollbarWidth: 'none' }}>
 				{FILTERS.map((f) => (
 					<button
 						key={f.value}
 						onClick={() => setFilter(f.value)}
 						className={cn(
-							'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors shrink-0',
+							'rounded-xl lg:rounded-md px-3 lg:px-2.5 py-1.5 lg:py-1 text-[13px] lg:text-[12px] font-medium transition-colors shrink-0 active:scale-95',
 							filter === f.value
 								? 'bg-foreground text-background'
 								: 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]'

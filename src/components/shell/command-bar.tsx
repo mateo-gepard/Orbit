@@ -166,19 +166,38 @@ export function CommandBar() {
   const isCreateMode = input.startsWith('/') || (input.trim() && filteredItems.length === 0);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[18vh]">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[18vh] lg:pt-[18vh]">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-background/80 backdrop-blur-sm"
         onClick={() => setCommandBarOpen(false)}
       />
 
-      {/* Dialog */}
-      <div className="relative z-10 w-full max-w-[520px] mx-4">
-        <div className="overflow-hidden rounded-xl border border-border bg-popover shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]">
+      {/* Dialog — full-width bottom sheet on mobile, centered on desktop */}
+      <div className={cn(
+        'relative z-10 w-full',
+        // Mobile: bottom sheet style
+        'fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto',
+        'lg:max-w-[520px] lg:mx-4',
+        'animate-slide-up-spring lg:animate-scale-in'
+      )}
+      style={{
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}
+      >
+        <div className={cn(
+          'overflow-hidden bg-popover shadow-[0_-8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
+          'rounded-t-2xl lg:rounded-xl',
+          'border-t border-border/60 lg:border'
+        )}>
+          {/* Mobile drag handle */}
+          <div className="flex justify-center pt-2 pb-1 lg:hidden">
+            <div className="h-1 w-10 rounded-full bg-foreground/10" />
+          </div>
+
           {/* Input */}
-          <div className="flex items-center gap-3 px-4 py-3">
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+          <div className="flex items-center gap-3 px-4 py-3 lg:py-3">
+            <Search className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
             <input
               ref={inputRef}
               value={input}
@@ -202,10 +221,18 @@ export function CommandBar() {
                 }
               }}
               placeholder="What do you need?"
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/40"
+              className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
+              autoFocus
+              enterKeyHint="done"
             />
             <div className="flex items-center gap-1">
-              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/60">
+              <button
+                onClick={() => setCommandBarOpen(false)}
+                className="rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/50 hover:text-muted-foreground lg:hidden"
+              >
+                Cancel
+              </button>
+              <kbd className="hidden lg:inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/60">
                 esc
               </kbd>
             </div>
@@ -215,7 +242,7 @@ export function CommandBar() {
           <div className="h-px bg-border" />
 
           {/* Results */}
-          <div className="max-h-[300px] overflow-y-auto py-1.5">
+          <div className="max-h-[50vh] lg:max-h-[300px] overflow-y-auto py-1.5">
             {/* Search results */}
             {filteredItems.length > 0 && !input.startsWith('/') && (
               <div>
@@ -229,11 +256,11 @@ export function CommandBar() {
                       key={item.id}
                       onClick={() => handleSelectItem(item.id)}
                       className={cn(
-                        'flex w-full items-center gap-3 px-3 py-2 text-[13px] text-left transition-colors',
+                        'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
                         idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
                       )}
                     >
-                      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
+                      <Icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
                       <span className="flex-1 truncate">{item.title}</span>
                       <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wider">
                         {item.type}
@@ -252,11 +279,11 @@ export function CommandBar() {
                 </div>
                 <button
                   onClick={handleSubmit}
-                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.03]"
+                  className="flex w-full items-center gap-3 px-3 py-3.5 lg:py-2.5 text-left transition-colors hover:bg-foreground/[0.03] active:bg-foreground/[0.06]"
                 >
-                  <TypeIcon className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
+                  <TypeIcon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium truncate">{parsed.title || 'Untitled'}</div>
+                    <div className="text-[14px] lg:text-[13px] font-medium truncate">{parsed.title || 'Untitled'}</div>
                     {(parsed.tags.length > 0 || parsed.priority || parsed.dueDate) && (
                       <div className="flex items-center gap-2 mt-0.5">
                         {parsed.tags.map((tag) => (
@@ -282,16 +309,15 @@ export function CommandBar() {
                 <div className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
                   Commands
                 </div>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-3 lg:grid-cols-2 gap-1.5">
                   {Object.entries(TYPE_ICONS).map(([type, Icon]) => (
                     <button
                       key={type}
                       onClick={() => setInput(`/${type} `)}
-                      className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground transition-colors"
+                      className="flex flex-col lg:flex-row items-center gap-1.5 lg:gap-2 rounded-xl lg:rounded-md px-2.5 py-3 lg:py-1.5 text-[12px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground transition-colors active:bg-foreground/[0.06]"
                     >
-                      <Icon className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
-                      <span className="capitalize">{type}</span>
-                      <span className="ml-auto text-[10px] font-mono text-muted-foreground/30">/{type}</span>
+                      <Icon className="h-5 w-5 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
+                      <span className="capitalize text-[11px] lg:text-[12px]">{type}</span>
                     </button>
                   ))}
                 </div>

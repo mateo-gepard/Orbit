@@ -39,10 +39,10 @@ import Link from 'next/link';
 /* ── Login ── */
 function LoginScreen({ onSignIn }: { onSignIn: () => void }) {
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="flex min-h-[100dvh] items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-8">
         <div className="space-y-2 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-foreground text-background font-bold text-lg">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-foreground text-background font-bold text-xl">
             O
           </div>
           <h1 className="text-2xl font-bold tracking-tight mt-4">Welcome to ORBIT</h1>
@@ -53,7 +53,7 @@ function LoginScreen({ onSignIn }: { onSignIn: () => void }) {
         <div className="space-y-2.5">
           <button
             onClick={onSignIn}
-            className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+            className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 active:scale-[0.98] transition-transform"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
@@ -65,7 +65,7 @@ function LoginScreen({ onSignIn }: { onSignIn: () => void }) {
           </button>
           <button
             onClick={onSignIn}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.03]"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-[15px] font-medium text-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
           >
             Try without account
           </button>
@@ -226,7 +226,7 @@ export default function DashboardPage() {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-8">
+    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6 lg:space-y-8">
       {/* ── Header ── */}
       <div className="flex items-end justify-between">
         <div>
@@ -246,42 +246,42 @@ export default function DashboardPage() {
 
       {/* ── Principles ── */}
       {principles.length > 0 && (
-        <div className="rounded-lg bg-foreground/[0.02] border border-border/40 px-4 py-3">
+        <div className="rounded-xl bg-foreground/[0.02] border border-border/40 px-4 py-3">
           <p className="text-[13px] italic text-foreground/70 leading-relaxed">
             &ldquo;{principles[Math.floor(Math.random() * principles.length)]?.title}&rdquo;
           </p>
         </div>
       )}
 
-      {/* ── Stats strip ── */}
-      <div className="flex items-center gap-6 text-[13px]">
+      {/* ── Stats strip — scrollable on mobile ── */}
+      <div className="flex items-center gap-4 lg:gap-6 text-[13px] overflow-x-auto -mx-4 px-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
         {inboxCount > 0 && (
-          <Link href="/inbox" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors">
+          <Link href="/inbox" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors shrink-0">
             <Inbox className="h-3.5 w-3.5" strokeWidth={1.5} />
             <span className="tabular-nums font-medium">{inboxCount}</span>
             <span className="text-muted-foreground/60">inbox</span>
           </Link>
         )}
-        <div className="flex items-center gap-1.5 text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
           <span className="tabular-nums font-medium">{todayTasks.length + overdueItems.length}</span>
           <span className="text-muted-foreground/60">tasks</span>
         </div>
         {todayHabits.length > 0 && (
-          <div className="flex items-center gap-1.5 text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
             <Repeat className="h-3.5 w-3.5" strokeWidth={1.5} />
             <span className="tabular-nums font-medium">{completedHabitsToday}/{todayHabits.length}</span>
             <span className="text-muted-foreground/60">habits</span>
           </div>
         )}
-        <div className="flex items-center gap-1.5 text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
           <FolderKanban className="h-3.5 w-3.5" strokeWidth={1.5} />
           <span className="tabular-nums font-medium">{activeProjects.length}</span>
           <span className="text-muted-foreground/60">projects</span>
         </div>
       </div>
 
-      {/* ── Week strip ── */}
+      {/* ── Week strip — larger touch targets on mobile ── */}
       <div className="flex items-center gap-1">
         {weekDays.map((day) => {
           const dayStr = format(day, 'yyyy-MM-dd');
@@ -296,7 +296,7 @@ export default function DashboardPage() {
             <div
               key={dayStr}
               className={cn(
-                'flex flex-1 flex-col items-center rounded-lg py-2 transition-colors',
+                'flex flex-1 flex-col items-center rounded-xl py-2.5 lg:py-2 transition-colors active:scale-95',
                 isCurrentDay ? 'bg-foreground text-background' : 'hover:bg-foreground/[0.03]'
               )}
             >
@@ -324,8 +324,8 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* ── Content grid ── */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* ── Content grid — single column mobile, two column desktop ── */}
+      <div className="grid gap-4 lg:gap-6 lg:grid-cols-2">
         {/* Tasks */}
         <Section
           title="Today"

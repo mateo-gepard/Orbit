@@ -49,7 +49,7 @@ export default function HabitsPage() {
   };
 
   return (
-    <div className="p-4 lg:p-8 space-y-6 max-w-4xl mx-auto">
+    <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Habits</h1>
@@ -59,15 +59,110 @@ export default function HabitsPage() {
         </div>
         <button
           onClick={handleNewHabit}
-          className="flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+          className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform"
         >
           <Plus className="h-3.5 w-3.5" />
           New
         </button>
       </div>
 
-      {/* Habit tracker grid */}
-      <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
+      {/* ── Mobile: Card-based habit list ── */}
+      <div className="lg:hidden space-y-3">
+        {habits.map((habit) => {
+          const streak = calculateStreak(habit);
+          const completed = isHabitCompletedForDate(habit, today);
+          return (
+            <div
+              key={habit.id}
+              className="rounded-xl border border-border/60 bg-card overflow-hidden"
+            >
+              {/* Habit header */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                <button
+                  onClick={() => toggleDay(habit, today)}
+                  className={cn(
+                    'relative flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-[1.5px] transition-all',
+                    'before:absolute before:inset-[-8px]',
+                    completed
+                      ? 'border-foreground/20 bg-foreground/10'
+                      : 'border-foreground/20 hover:border-foreground/40'
+                  )}
+                >
+                  {completed && <CheckSquare className="h-3.5 w-3.5 text-foreground/50" />}
+                </button>
+                <button
+                  onClick={() => setSelectedItemId(habit.id)}
+                  className={cn(
+                    'flex-1 text-[14px] font-medium text-left truncate transition-colors',
+                    completed ? 'text-muted-foreground/50 line-through' : 'text-foreground'
+                  )}
+                >
+                  {habit.title}
+                </button>
+                {streak > 0 && (
+                  <span className="flex items-center gap-0.5 text-[12px] text-muted-foreground/50 tabular-nums font-medium shrink-0">
+                    <Flame className="h-3.5 w-3.5" />
+                    {streak}
+                  </span>
+                )}
+              </div>
+              {/* Week dots */}
+              <div className="flex items-center justify-around px-4 pb-3">
+                {weekDays.map((day) => {
+                  const scheduled = isHabitScheduledForDate(habit, day);
+                  const dayCompleted = isHabitCompletedForDate(habit, day);
+                  const isFuture = day > today && !isToday(day);
+                  const isCurrentDay = isToday(day);
+                  return (
+                    <div key={day.toISOString()} className="flex flex-col items-center gap-1">
+                      <span className={cn(
+                        'text-[9px] font-medium uppercase',
+                        isCurrentDay ? 'text-foreground' : 'text-muted-foreground/40'
+                      )}>
+                        {DAY_LABELS[(day.getDay() + 6) % 7].charAt(0)}
+                      </span>
+                      {scheduled ? (
+                        <button
+                          onClick={() => !isFuture && toggleDay(habit, day)}
+                          disabled={isFuture}
+                          className={cn(
+                            'h-8 w-8 rounded-lg flex items-center justify-center transition-all active:scale-90',
+                            dayCompleted
+                              ? 'bg-foreground/10'
+                              : isCurrentDay
+                              ? 'border-[1.5px] border-foreground/25'
+                              : isFuture
+                              ? 'border border-border/30 opacity-30'
+                              : 'border border-foreground/10'
+                          )}
+                        >
+                          {dayCompleted && <CheckSquare className="h-3.5 w-3.5 text-foreground/40" />}
+                        </button>
+                      ) : (
+                        <div className="h-8 w-8 flex items-center justify-center">
+                          <div className="h-1 w-1 rounded-full bg-foreground/10" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {habits.length === 0 && (
+          <div className="py-16 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
+              <Repeat className="h-5 w-5 text-muted-foreground/30" />
+            </div>
+            <p className="text-[13px] text-muted-foreground/50">No habits yet</p>
+            <p className="text-[11px] text-muted-foreground/30 mt-1">Tap + to create your first habit</p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Desktop: Grid-based tracker ── */}
+      <div className="hidden lg:block rounded-xl border border-border/60 bg-card overflow-hidden">
         {/* Header row */}
         <div className="grid grid-cols-[1fr_repeat(7,40px)_56px] gap-px border-b border-border/40 px-4 py-2.5">
           <div />
