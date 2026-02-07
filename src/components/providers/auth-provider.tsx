@@ -5,6 +5,7 @@ import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut, type U
 import { auth, googleProvider } from '@/lib/firebase';
 import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { hasCalendarPermission } from '@/lib/google-calendar';
+import { initAnalytics, stopAnalytics } from '@/lib/analytics';
 
 interface AuthContextType {
   user: User | null;
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(createDemoUser());
       setIsDemo(true);
       setLoading(false);
+      initAnalytics('demo-user');
       return;
     }
 
@@ -66,6 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setUser(firebaseUser);
         setLoading(false);
+        
+        // Start analytics tracking
+        if (firebaseUser) {
+          initAnalytics(firebaseUser.uid);
+        }
         
         // Start Google Calendar sync if user has permission
         if (firebaseUser && hasCalendarPermission()) {
@@ -85,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
       unsubscribe();
+      stopAnalytics();          // Flush pending events
       stopGoogleCalendarSync(); // Stop sync on unmount
     };
   }, []);
@@ -111,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    stopAnalytics();
     if (isDemo) {
       setUser(null);
       setIsDemo(false);

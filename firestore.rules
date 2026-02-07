@@ -67,6 +67,26 @@ service cloud.firestore {
     }
     
     // ─────────────────────────────────────────────────────────
+    // Analytics Collection (append-heavy, user-scoped)
+    // ─────────────────────────────────────────────────────────
+    
+    match /analytics/{eventId} {
+      // READ: User kann nur eigene Events lesen
+      allow read: if isSignedIn()
+                  && isOwner(resource.data.userId);
+      
+      // CREATE: User kann Events für sich selbst schreiben
+      allow create: if isSignedIn()
+                    && isOwner(request.resource.data.userId)
+                    && request.resource.data.action is string
+                    && request.resource.data.timestamp is int
+                    && request.resource.data.date is string;
+      
+      // No update or delete — analytics are immutable
+      allow update, delete: if false;
+    }
+    
+    // ─────────────────────────────────────────────────────────
     // Deny all other paths
     // ─────────────────────────────────────────────────────────
     

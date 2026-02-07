@@ -97,3 +97,48 @@ export interface ParsedCommand {
   dueDate?: string;
   startDate?: string;
 }
+
+// ═══════════════════════════════════════════════════════════
+// Analytics Events
+// ═══════════════════════════════════════════════════════════
+
+export type AnalyticsAction =
+  | 'item_created'
+  | 'item_completed'
+  | 'item_uncompleted'
+  | 'item_archived'
+  | 'item_unarchived'
+  | 'item_updated'
+  | 'item_deleted'
+  | 'habit_checked'
+  | 'habit_unchecked'
+  | 'session_start'
+  | 'session_end';
+
+export interface AnalyticsEvent {
+  id: string;
+  userId: string;
+  action: AnalyticsAction;
+  timestamp: number;        // Date.now()
+  date: string;             // YYYY-MM-DD (for easy daily queries)
+  hour: number;             // 0–23 (for time-of-day patterns)
+
+  // Item context (what was acted on)
+  itemId?: string;
+  itemType?: ItemType;
+  itemTitle?: string;       // Snapshot — useful for timeline display
+
+  // Relationships
+  parentId?: string;        // Project or goal this belongs to
+  tags?: string[];
+
+  // Task-specific
+  priority?: Priority;
+  dueDate?: string;
+
+  // Duration context
+  durationMs?: number;      // Time from creation to completion (task cycle time)
+
+  // Session context
+  sessionId?: string;       // Groups events in one app open
+}

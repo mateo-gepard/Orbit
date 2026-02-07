@@ -15,6 +15,7 @@ import {
 import { db } from './firebase';
 import type { OrbitItem } from './types';
 import { useOrbitStore } from './store';
+import { trackItemEvent } from './analytics';
 
 // ═══════════════════════════════════════════════════════════
 // Constants
@@ -306,6 +307,7 @@ export async function createItem(
     if (!success) {
       throw new Error('Failed to create item — storage error');
     }
+    trackItemEvent('item_created', newItem);
     return id;
   }
 
@@ -323,6 +325,7 @@ export async function createItem(
       saveLocalItems(localItems);
     } catch { /* best-effort local backup */ }
 
+    trackItemEvent('item_created', { ...item, id: docRef.id } as OrbitItem);
     return docRef.id;
   }, 'createItem');
 }
@@ -332,6 +335,9 @@ export async function updateItem(
   updates: Partial<OrbitItem>
 ): Promise<void> {
   const now = Date.now();
+
+  // Snapshot the item before update for analytics diffing
+  const existingItem = useOrbitStore.getState().items.find((i) => i.id === id);
 
   if (!isFirebaseAvailable()) {
     const success = optimisticLocalUpdate((items) => {
@@ -346,6 +352,7 @@ export async function updateItem(
     if (!success) {
       throw new Error('Failed to update item — storage error');
     }
+    _trackUpdateAnalytics(existingItem, updates);
     return;
   }
 
@@ -361,6 +368,7 @@ export async function updateItem(
       const ref = doc(getDb(), ITEMS_COLLECTION, id);
       await updateDoc(ref, { ...updates, updatedAt: now });
     }, 'updateItem');
+    _trackUpdateAnalytics(existingItem, updates);
   } catch (err) {
     // Rollback optimistic update
     console.warn('[ORBIT] Rolling back optimistic update for', id);
@@ -370,6 +378,8 @@ export async function updateItem(
 }
 
 export async function deleteItem(id: string): Promise<void> {
+  const existingItem = useOrbitStore.getState().items.find((i) => i.id === id);
+
   if (!isFirebaseAvailable()) {
     const success = optimisticLocalUpdate((items) =>
       items.filter((i) => i.id !== id)
@@ -377,6 +387,7 @@ export async function deleteItem(id: string): Promise<void> {
     if (!success) {
       throw new Error('Failed to delete item — storage error');
     }
+    if (existingItem) trackItemEvent('item_deleted', existingItem);
     return;
   }
 
@@ -388,6 +399,7 @@ export async function deleteItem(id: string): Promise<void> {
     await withRetry(async () => {
       await deleteDoc(doc(getDb(), ITEMS_COLLECTION, id));
     }, 'deleteItem');
+    if (existingItem) trackItemEvent('item_deleted', existingItem);
   } catch (err) {
     // Rollback
     console.warn('[ORBIT] Rolling back delete for', id);
@@ -406,6 +418,56 @@ export async function getItem(id: string): Promise<OrbitItem | null> {
     if (!snap.exists()) return null;
     return sanitizeItem({ id: snap.id, ...snap.data() } as OrbitItem);
   }, 'getItem');
+}
+
+// ═══════════════════════════════════════════════════════════
+// Analytics helper — detects status transitions
+// ═══════════════════════════════════════════════════════════
+
+function _trackUpdateAnalytics(
+  existing: OrbitItem | undefined,
+  updates: Partial<OrbitItem>
+): void {
+  if (!existing) return;
+
+  const merged = { ...existing, ...updates };
+
+  // Status transitions
+  if (updates.status && updates.status !== existing.status) {
+    const oldStatus = existing.status;
+    const newStatus = updates.status;
+
+    if (newStatus === 'done') {
+      const durationMs = existing.createdAt ? Date.now() - existing.createdAt : undefined;
+      trackItemEvent('item_completed', merged, { durationMs });
+    } else if (newStatus === 'archived') {
+      trackItemEvent('item_archived', merged);
+    } else if (oldStatus === 'done') {
+      trackItemEvent('item_uncompleted', merged);
+    } else if (oldStatus === 'archived') {
+      trackItemEvent('item_unarchived', merged);
+    }
+    return; // Status change is the primary event
+  }
+
+  // Habit completions change
+  if (updates.completions && existing.type === 'habit') {
+    const oldKeys = Object.keys(existing.completions || {}).filter(
+      (k) => (existing.completions || {})[k]
+    );
+    const newKeys = Object.keys(updates.completions).filter(
+      (k) => updates.completions![k]
+    );
+    if (newKeys.length > oldKeys.length) {
+      trackItemEvent('habit_checked', merged);
+    } else if (newKeys.length < oldKeys.length) {
+      trackItemEvent('habit_unchecked', merged);
+    }
+    return;
+  }
+
+  // Generic update (title, priority, dueDate, etc.)
+  trackItemEvent('item_updated', merged);
 }
 
 // ═══════════════════════════════════════════════════════════
