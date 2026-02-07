@@ -190,9 +190,15 @@ function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<OrbitItem> 
     // Google Calendar's end.date is EXCLUSIVE (next day after event ends)
     // For multi-day events, we need to subtract 1 day to get the actual end date
     if (gcalEvent.end?.date) {
-      const endDateObj = new Date(gcalEvent.end.date);
-      endDateObj.setDate(endDateObj.getDate() - 1); // Subtract 1 day
-      endDate = endDateObj.toISOString().split('T')[0];
+      // Parse as UTC to avoid timezone issues with date-only strings
+      const [year, month, day] = gcalEvent.end.date.split('-').map(Number);
+      const endDateObj = new Date(Date.UTC(year, month - 1, day));
+      endDateObj.setUTCDate(endDateObj.getUTCDate() - 1); // Subtract 1 day
+      
+      const endYear = endDateObj.getUTCFullYear();
+      const endMonth = String(endDateObj.getUTCMonth() + 1).padStart(2, '0');
+      const endDay = String(endDateObj.getUTCDate()).padStart(2, '0');
+      endDate = `${endYear}-${endMonth}-${endDay}`;
       
       // Only set endDate if it's different from startDate (multi-day event)
       if (endDate === startDate) {
