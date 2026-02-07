@@ -120,43 +120,97 @@ function orbitToGoogleEvent(item: OrbitItem): any {
     description: item.content || '',
   };
 
-  // Build start/end datetime
+  // Determine if this is an all-day event (no start/end times)
+  const isAllDay = !item.startTime && !item.endTime;
+
   if (item.startDate) {
-    const startDateTime = item.startTime
-      ? `${item.startDate}T${item.startTime}:00`
-      : `${item.startDate}T00:00:00`;
+    if (isAllDay) {
+      // All-day event: use 'date' field (YYYY-MM-DD)
+      event.start = { date: item.startDate };
+      
+      // Google Calendar expects end.date to be EXCLUSIVE (next day after event ends)
+      if (item.endDate) {
+        const endDateObj = new Date(item.endDate);
+        endDateObj.setDate(endDateObj.getDate() + 1); // Add 1 day for exclusive end
+        event.end = { date: endDateObj.toISOString().split('T')[0] };
+      } else {
+        // Single-day all-day event: end is next day
+        const nextDay = new Date(item.startDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        event.end = { date: nextDay.toISOString().split('T')[0] };
+      }
+    } else {
+      // Timed event: use 'dateTime' field with timezone
+      const startDateTime = item.startTime
+        ? `${item.startDate}T${item.startTime}:00`
+        : `${item.startDate}T00:00:00`;
 
-    const endDateTime = item.endDate
-      ? item.endTime
-        ? `${item.endDate}T${item.endTime}:00`
-        : `${item.endDate}T23:59:59`
-      : item.endTime
-      ? `${item.startDate}T${item.endTime}:00`
-      : `${item.startDate}T23:59:59`;
+      const endDateTime = item.endDate
+        ? item.endTime
+          ? `${item.endDate}T${item.endTime}:00`
+          : `${item.endDate}T23:59:59`
+        : item.endTime
+        ? `${item.startDate}T${item.endTime}:00`
+        : `${item.startDate}T23:59:59`;
 
-    event.start = {
-      dateTime: startDateTime,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    };
-    event.end = {
-      dateTime: endDateTime,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    };
+      event.start = {
+        dateTime: startDateTime,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+      event.end = {
+        dateTime: endDateTime,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+    }
   } else {
     // Fallback: all-day event today
     const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
     event.start = { date: today };
-    event.end = { date: today };
+    event.end = { date: tomorrow.toISOString().split('T')[0] };
   }
 
   return event;
 }
 
 function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<OrbitItem> {
-  const startDate = gcalEvent.start?.date || gcalEvent.start?.dateTime?.split('T')[0];
-  const endDate = gcalEvent.end?.date || gcalEvent.end?.dateTime?.split('T')[0];
-  const startTime = gcalEvent.start?.dateTime?.split('T')[1]?.substring(0, 5);
-  const endTime = gcalEvent.end?.dateTime?.split('T')[1]?.substring(0, 5);
+  // Google Calendar uses different formats for all-day vs timed events
+  const isAllDay = !!gcalEvent.start?.date;
+  
+  let startDate: string | undefined;
+  let endDate: string | undefined;
+  let startTime: string | undefined;
+  let endTime: string | undefined;
+
+  if (isAllDay) {
+    // All-day event: uses 'date' field (YYYY-MM-DD)
+    startDate = gcalEvent.start.date;
+    
+    // Google Calendar's end.date is EXCLUSIVE (next day after event ends)
+    // For multi-day events, we need to subtract 1 day to get the actual end date
+    if (gcalEvent.end?.date) {
+      const endDateObj = new Date(gcalEvent.end.date);
+      endDateObj.setDate(endDateObj.getDate() - 1); // Subtract 1 day
+      endDate = endDateObj.toISOString().split('T')[0];
+      
+      // Only set endDate if it's different from startDate (multi-day event)
+      if (endDate === startDate) {
+        endDate = undefined;
+      }
+    }
+  } else {
+    // Timed event: uses 'dateTime' field (ISO 8601)
+    startDate = gcalEvent.start?.dateTime?.split('T')[0];
+    endDate = gcalEvent.end?.dateTime?.split('T')[0];
+    startTime = gcalEvent.start?.dateTime?.split('T')[1]?.substring(0, 5);
+    endTime = gcalEvent.end?.dateTime?.split('T')[1]?.substring(0, 5);
+    
+    // If end date is same as start date, don't store it (single-day event)
+    if (endDate === startDate) {
+      endDate = undefined;
+    }
+  }
 
   return {
     type: 'event',

@@ -43,25 +43,32 @@ export function CommandBar() {
   const { commandBarOpen, setCommandBarOpen, items } = useOrbitStore();
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Track keyboard height on mobile
+  // Lock body scroll when command bar is open (prevents weird scrolling on mobile)
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.visualViewport) return;
+    if (commandBarOpen) {
+      const originalOverflow = document.body.style.overflow;
+      const originalPosition = document.body.style.position;
+      const originalTop = document.body.style.top;
+      const scrollY = window.scrollY;
 
-    const handleResize = () => {
-      const vv = window.visualViewport;
-      if (!vv) return;
-      // Calculate how much the viewport has shrunk (keyboard is open)
-      const offset = window.innerHeight - vv.height;
-      setKeyboardOffset(offset > 100 ? offset : 0); // Only apply if keyboard is actually open
-    };
+      // Lock scroll position
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.width = '100%';
 
-    window.visualViewport.addEventListener('resize', handleResize);
-    return () => window.visualViewport?.removeEventListener('resize', handleResize);
-  }, []);
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        document.body.style.position = originalPosition;
+        document.body.style.top = originalTop;
+        window.scrollTo(0, scrollY);
+      };
+    }
+  }, [commandBarOpen]);
 
   // ⌘K shortcut
   useEffect(() => {
@@ -82,7 +89,6 @@ export function CommandBar() {
     if (commandBarOpen) {
       setInput('');
       setSelectedIndex(0);
-      setKeyboardOffset(0);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [commandBarOpen]);
@@ -192,18 +198,18 @@ export function CommandBar() {
       />
 
       {/* Dialog — full-width bottom sheet on mobile, centered on desktop */}
-      <div className={cn(
-        'relative z-10 w-full',
-        // Mobile: bottom sheet style
-        'fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto',
-        'lg:max-w-[520px] lg:mx-4',
-        'animate-slide-up-spring lg:animate-scale-in',
-        'transition-transform duration-200'
-      )}
-      style={{
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        transform: keyboardOffset > 0 ? `translateY(-${keyboardOffset}px)` : undefined,
-      }}
+      <div 
+        ref={dialogRef}
+        className={cn(
+          'relative z-10 w-full',
+          // Mobile: bottom sheet style
+          'fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto',
+          'lg:max-w-[520px] lg:mx-4',
+          'animate-slide-up-spring lg:animate-scale-in'
+        )}
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
       >
         <div className={cn(
           'overflow-hidden bg-popover shadow-[0_-8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
