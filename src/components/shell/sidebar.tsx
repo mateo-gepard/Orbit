@@ -17,6 +17,7 @@ import {
   Monitor,
   LogOut,
   Plus,
+  CheckSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
@@ -44,6 +45,7 @@ const NAV_SECTIONS = [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/today', label: 'Today', icon: Sun },
       { href: '/inbox', label: 'Inbox', icon: Inbox, badge: true },
+      { href: '/tasks', label: 'Tasks', icon: CheckSquare },
     ],
   },
   {

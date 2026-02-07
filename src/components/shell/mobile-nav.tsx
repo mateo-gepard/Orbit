@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   Sun,
   Inbox,
-  FolderKanban,
+  CheckSquare,
   Repeat,
   Plus,
 } from 'lucide-react';
@@ -17,8 +17,8 @@ const TABS = [
   { href: '/', icon: LayoutDashboard, label: 'Home' },
   { href: '/today', icon: Sun, label: 'Today' },
   { href: '/inbox', icon: Inbox, label: 'Inbox', badge: true },
+  { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { href: '/habits', icon: Repeat, label: 'Habits' },
-  { href: '/projects', icon: FolderKanban, label: 'Projects' },
 ];
 
 export function MobileNav() {
