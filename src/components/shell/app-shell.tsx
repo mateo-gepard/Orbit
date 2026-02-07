@@ -12,7 +12,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, setCommandBarOpen } = useOrbitStore();
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-background">
+    <div className="flex h-full w-full overflow-hidden bg-background">
       <Sidebar />
 
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">

@@ -122,19 +122,28 @@
   * {
     @apply border-border outline-ring/50;
   }
-  html, body {
+  html {
     height: 100%;
+    height: 100dvh; /* Fallback for modern browsers */
     overflow: hidden;
     overscroll-behavior: none;
   }
   body {
     @apply bg-background text-foreground antialiased;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
     font-feature-settings: "ss01", "ss02", "cv01";
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+  }
+  /* Next.js root container */
+  #__next {
+    height: 100%;
+    overflow: hidden;
   }
 }
 

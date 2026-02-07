@@ -59,13 +59,28 @@ export function setupViewportHeight() {
   if (typeof window === 'undefined') return;
 
   const setVH = () => {
-    const vh = window.innerHeight * 0.01;
+    // Use visualViewport if available (more accurate on mobile)
+    const height = window.visualViewport?.height || window.innerHeight;
+    const vh = height * 0.01;
     document.documentElement.style.setProperty('--vh', `${vh}px`);
+    
+    // Also set --real-vh for calculations
+    document.documentElement.style.setProperty('--real-vh', `${height}px`);
   };
 
   setVH();
+  
+  // Listen to both resize events
   window.addEventListener('resize', setVH);
-  window.visualViewport?.addEventListener('resize', setVH);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', setVH);
+    window.visualViewport.addEventListener('scroll', setVH);
+  }
+  
+  // Also run on orientation change
+  window.addEventListener('orientationchange', () => {
+    setTimeout(setVH, 100);
+  });
 }
 
 /** Disable rubber-band bouncing in standalone mode */
