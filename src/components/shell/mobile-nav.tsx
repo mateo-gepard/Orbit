@@ -54,14 +54,13 @@ export function MobileNav() {
           'bg-background/80 backdrop-blur-xl backdrop-saturate-150',
           'animate-slide-up-spring'
         )}
-        style={{
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-          height: 'calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px))',
-        }}
       >
         <div
           className="flex items-center justify-around"
-          style={{ height: 'var(--bottom-nav-height)' }}
+          style={{ 
+            height: 'var(--bottom-nav-height)',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+          }}
         >
           {TABS.map((tab) => {
             const isActive =
