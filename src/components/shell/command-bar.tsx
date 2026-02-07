@@ -99,13 +99,14 @@ export function CommandBar() {
       status: 'inbox',
       title: parsed.title,
       tags: parsed.tags,
-      priority: parsed.priority,
-      dueDate: parsed.dueDate,
-      startDate: parsed.startDate,
-      noteSubtype,
       userId: user.uid,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      // Only include optional fields if they have values
+      ...(parsed.priority && { priority: parsed.priority }),
+      ...(parsed.dueDate && { dueDate: parsed.dueDate }),
+      ...(parsed.startDate && { startDate: parsed.startDate }),
+      ...(noteSubtype && { noteSubtype }),
     };
 
     try {
