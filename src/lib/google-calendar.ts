@@ -200,14 +200,9 @@ export function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<Orbi
       const endDay = String(endDateObj.getUTCDate()).padStart(2, '0');
       endDate = `${endYear}-${endMonth}-${endDay}`;
       
-      console.log(`[googleToOrbitEvent] ${gcalEvent.summary}: Google end.date=${gcalEvent.end.date}, calculated endDate=${endDate}, startDate=${startDate}`);
-      
       // Only set endDate if it's different from startDate (multi-day event)
       if (endDate === startDate) {
         endDate = undefined;
-        console.log(`[googleToOrbitEvent] ${gcalEvent.summary}: Single-day event, clearing endDate`);
-      } else {
-        console.log(`[googleToOrbitEvent] ${gcalEvent.summary}: Multi-day event, keeping endDate=${endDate}`);
       }
     }
   } else {

@@ -65,7 +65,11 @@ export default function CalendarPage() {
     return items.filter(
       (i) =>
         i.status !== 'archived' &&
-        ((i.type === 'event' && i.startDate === dateStr) ||
+        ((i.type === 'event' && (
+          // Show event if date is on startDate OR between startDate and endDate
+          i.startDate === dateStr ||
+          (i.startDate && i.endDate && i.startDate <= dateStr && dateStr <= i.endDate)
+        )) ||
           (i.type === 'task' && i.dueDate === dateStr))
     );
   };

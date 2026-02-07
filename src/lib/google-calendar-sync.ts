@@ -101,8 +101,6 @@ async function importGoogleEvent(gcalEvent: any, userId: string): Promise<void> 
   // Use the proper conversion function that handles multi-day events correctly
   const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
   
-  console.log(`[importGoogleEvent] ${gcalEvent.summary}: startDate=${convertedEvent.startDate}, endDate=${convertedEvent.endDate}`);
-  
   const newEvent: any = {
     type: 'event',
     title: convertedEvent.title || 'Untitled Event',
@@ -127,8 +125,6 @@ async function importGoogleEvent(gcalEvent: any, userId: string): Promise<void> 
 async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: any, userId: string): Promise<void> {
   // Use the proper conversion function that handles multi-day events correctly
   const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
-  
-  console.log(`[updateFromGoogleEvent] ${gcalEvent.summary}: startDate=${convertedEvent.startDate}, endDate=${convertedEvent.endDate}`);
 
   const updates: any = {
     title: convertedEvent.title || 'Untitled Event',
@@ -146,28 +142,18 @@ async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: any, userId
 
 function eventHasChanges(orbitItem: OrbitItem, gcalEvent: any): boolean {
   // Check title
-  if ((gcalEvent.summary || 'Untitled Event') !== orbitItem.title) {
-    console.log(`[eventHasChanges] ${gcalEvent.summary}: Title changed`);
-    return true;
-  }
+  if ((gcalEvent.summary || 'Untitled Event') !== orbitItem.title) return true;
 
   // For proper comparison, we need to convert the Google event using the same logic
   const isAllDay = !!gcalEvent.start?.date;
   
-  console.log(`[eventHasChanges] ${gcalEvent.summary}: isAllDay=${isAllDay}, orbit.startDate=${orbitItem.startDate}, orbit.endDate=${orbitItem.endDate}`);
-  
   if (isAllDay) {
     // All-day event comparison
     const gcalStartDate = gcalEvent.start?.date;
-    console.log(`[eventHasChanges] ${gcalEvent.summary}: gcalStartDate=${gcalStartDate}`);
-    if (gcalStartDate !== orbitItem.startDate) {
-      console.log(`[eventHasChanges] ${gcalEvent.summary}: Start date changed`);
-      return true;
-    }
+    if (gcalStartDate !== orbitItem.startDate) return true;
     
     // For end date, we need to account for Google's exclusive end date
     if (gcalEvent.end?.date) {
-      console.log(`[eventHasChanges] ${gcalEvent.summary}: gcal.end.date=${gcalEvent.end.date}`);
       const [year, month, day] = gcalEvent.end.date.split('-').map(Number);
       const endDateObj = new Date(Date.UTC(year, month - 1, day));
       endDateObj.setUTCDate(endDateObj.getUTCDate() - 1);
@@ -179,11 +165,7 @@ function eventHasChanges(orbitItem: OrbitItem, gcalEvent: any): boolean {
       
       // Compare to orbit's endDate (undefined if single-day)
       const orbitEndDate = gcalEndDate === gcalStartDate ? undefined : gcalEndDate;
-      console.log(`[eventHasChanges] ${gcalEvent.summary}: calculated orbitEndDate=${orbitEndDate}, actual orbit.endDate=${orbitItem.endDate}`);
-      if (orbitEndDate !== orbitItem.endDate) {
-        console.log(`[eventHasChanges] ${gcalEvent.summary}: End date changed - SHOULD UPDATE`);
-        return true;
-      }
+      if (orbitEndDate !== orbitItem.endDate) return true;
     }
   } else {
     // Timed event comparison
