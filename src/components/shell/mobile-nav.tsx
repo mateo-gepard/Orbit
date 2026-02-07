@@ -2,7 +2,6 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Sun,
@@ -26,35 +25,9 @@ export function MobileNav() {
   const pathname = usePathname();
   const { items, setCommandBarOpen } = useOrbitStore();
   const inboxCount = items.filter((i) => i.status === 'inbox').length;
-  const [debug, setDebug] = useState('');
-
-  useEffect(() => {
-    const update = () => {
-      const vh = window.innerHeight;
-      const screenH = window.screen.height;
-      const htmlH = document.documentElement.clientHeight;
-      const nav = document.getElementById('mobile-nav');
-      const navRect = nav ? nav.getBoundingClientRect() : null;
-      const navBottom = navRect ? Math.round(navRect.bottom) : 0;
-      const gapFromIH = navRect ? Math.round(vh - navRect.bottom) : 0;
-      const gapFromScreen = navRect ? Math.round(screenH - navRect.bottom) : 0;
-      
-      setDebug(`scr:${screenH} ih:${vh} html:${htmlH} nB:${navBottom} gapIH:${gapFromIH} gapScr:${gapFromScreen}`);
-    };
-    update();
-    const t = setInterval(update, 2000);
-    return () => clearInterval(t);
-  }, []);
 
   return (
     <>
-      {/* DEBUG: Temporary overlay to diagnose positioning */}
-      {debug && (
-        <div className="fixed top-12 left-2 right-2 z-[9999] bg-red-500 text-white text-[10px] font-mono p-1 rounded lg:hidden">
-          {debug}
-        </div>
-      )}
-
       {/* Floating Action Button */}
       <button
         onClick={() => setCommandBarOpen(true)}
@@ -88,10 +61,8 @@ export function MobileNav() {
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
-        {/* DEBUG: Red line = exact bottom edge of nav */}
-        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-red-500 z-50" />
         <div
-          className="flex items-center justify-around"
+          className="flex items-center justify-around pt-1"
           style={{ height: 'var(--bottom-nav-height)' }}
         >
           {TABS.map((tab) => {
