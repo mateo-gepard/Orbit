@@ -99,7 +99,9 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
 
 async function importGoogleEvent(gcalEvent: any, userId: string): Promise<void> {
   // Use the proper conversion function that handles multi-day events correctly
-  const convertedEvent = await googleToOrbitEvent(gcalEvent, userId);
+  const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
+  
+  console.log(`[importGoogleEvent] ${gcalEvent.summary}: startDate=${convertedEvent.startDate}, endDate=${convertedEvent.endDate}`);
   
   const newEvent: any = {
     type: 'event',
@@ -124,7 +126,9 @@ async function importGoogleEvent(gcalEvent: any, userId: string): Promise<void> 
 
 async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: any, userId: string): Promise<void> {
   // Use the proper conversion function that handles multi-day events correctly
-  const convertedEvent = await googleToOrbitEvent(gcalEvent, userId);
+  const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
+  
+  console.log(`[updateFromGoogleEvent] ${gcalEvent.summary}: startDate=${convertedEvent.startDate}, endDate=${convertedEvent.endDate}`);
 
   const updates: any = {
     title: convertedEvent.title || 'Untitled Event',
