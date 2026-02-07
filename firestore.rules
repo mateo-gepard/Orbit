@@ -1,0 +1,97 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════
+// ORBIT — Firestore Security Rules
+// ═══════════════════════════════════════════════════════════
+//
+// Diese Rules sorgen für:
+// ✅ Jeder User sieht nur seine eigenen Items
+// ✅ Keine Cross-User-Zugriffe möglich
+// ✅ Nur authentifizierte User können schreiben
+// ✅ Data Validation (userId muss gesetzt sein)
+//
+// Deploy via Firebase Console:
+// Firestore Database → Rules → Paste & Publish
+//
+// ═══════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ─────────────────────────────────────────────────────────
+    // Helper Functions
+    // ─────────────────────────────────────────────────────────
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isValidItem() {
+      let data = request.resource.data;
+      return data.userId is string
+          && data.title is string
+          && data.type in ['task', 'project', 'habit', 'event', 'goal', 'note']
+          && data.status in ['inbox', 'active', 'waiting', 'done', 'archived']
+          && data.createdAt is int
+          && data.updatedAt is int;
+    }
+    
+    // ─────────────────────────────────────────────────────────
+    // Items Collection
+    // ─────────────────────────────────────────────────────────
+    
+    match /items/{itemId} {
+      // READ: User kann nur eigene Items lesen
+      allow read: if isSignedIn() 
+                  && isOwner(resource.data.userId);
+      
+      // CREATE: User kann Items erstellen mit eigenem userId
+      allow create: if isSignedIn()
+                    && isOwner(request.resource.data.userId)
+                    && isValidItem();
+      
+      // UPDATE: User kann nur eigene Items updaten
+      // userId darf NICHT geändert werden (Sicherheit!)
+      allow update: if isSignedIn()
+                    && isOwner(resource.data.userId)
+                    && isOwner(request.resource.data.userId)
+                    && resource.data.userId == request.resource.data.userId;
+      
+      // DELETE: User kann nur eigene Items löschen
+      allow delete: if isSignedIn()
+                    && isOwner(resource.data.userId);
+    }
+    
+    // ─────────────────────────────────────────────────────────
+    // Deny all other paths
+    // ─────────────────────────────────────────────────────────
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Testing in Firebase Console
+// ═══════════════════════════════════════════════════════════
+//
+// Rules → "Rules Playground" Tab
+//
+// Test READ:
+// Location: /items/test-item-123
+// auth.uid: user-123
+// Simulator data: { "userId": "user-123", "title": "Test" }
+// → Should ALLOW
+//
+// Test READ (wrong user):
+// Location: /items/test-item-123
+// auth.uid: user-456
+// Simulator data: { "userId": "user-123", "title": "Test" }
+// → Should DENY
+//
+// ═══════════════════════════════════════════════════════════
