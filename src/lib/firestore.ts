@@ -88,8 +88,8 @@ function validateItem(item: Partial<OrbitItem>): boolean {
 }
 
 function sanitizeItem(item: OrbitItem): OrbitItem {
-  return {
-    ...item,
+  // Remove all undefined fields (Firestore doesn't accept undefined)
+  const sanitized: any = {
     id: item.id || crypto.randomUUID(),
     title: (item.title || '').trim() || 'Untitled',
     type: VALID_TYPES.has(item.type) ? item.type : 'task',
@@ -99,8 +99,48 @@ function sanitizeItem(item: OrbitItem): OrbitItem {
     userId: item.userId || 'demo-user',
     tags: Array.isArray(item.tags) ? item.tags : [],
     linkedIds: Array.isArray(item.linkedIds) ? item.linkedIds : [],
-    checklist: Array.isArray(item.checklist) ? item.checklist : undefined,
   };
+
+  // Only include optional fields if they have valid values
+  if (item.content) sanitized.content = item.content;
+  if (item.dueDate) sanitized.dueDate = item.dueDate;
+  if (item.priority) sanitized.priority = item.priority;
+  if (item.assignee) sanitized.assignee = item.assignee;
+  if (item.parentId) sanitized.parentId = item.parentId;
+  if (item.completedAt) sanitized.completedAt = item.completedAt;
+  
+  if (Array.isArray(item.checklist) && item.checklist.length > 0) {
+    sanitized.checklist = item.checklist;
+  }
+  
+  // Project-specific fields
+  if (item.emoji) sanitized.emoji = item.emoji;
+  if (item.color) sanitized.color = item.color;
+  
+  // Habit-specific fields
+  if (item.frequency) sanitized.frequency = item.frequency;
+  if (Array.isArray(item.customDays)) sanitized.customDays = item.customDays;
+  if (item.habitTime) sanitized.habitTime = item.habitTime;
+  if (item.completions && typeof item.completions === 'object') {
+    sanitized.completions = item.completions;
+  }
+  
+  // Event-specific fields
+  if (item.startDate) sanitized.startDate = item.startDate;
+  if (item.endDate) sanitized.endDate = item.endDate;
+  if (item.startTime) sanitized.startTime = item.startTime;
+  if (item.endTime) sanitized.endTime = item.endTime;
+  if (item.googleCalendarId) sanitized.googleCalendarId = item.googleCalendarId;
+  if (item.calendarSynced !== undefined) sanitized.calendarSynced = item.calendarSynced;
+  
+  // Goal-specific fields
+  if (item.timeframe) sanitized.timeframe = item.timeframe;
+  if (item.metric) sanitized.metric = item.metric;
+  
+  // Note-specific fields
+  if (item.noteSubtype) sanitized.noteSubtype = item.noteSubtype;
+
+  return sanitized as OrbitItem;
 }
 
 // ═══════════════════════════════════════════════════════════
