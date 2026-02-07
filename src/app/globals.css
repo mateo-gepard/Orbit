@@ -139,11 +139,6 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
-  /* Next.js root container — body > div is the actual root in Next.js 14+ App Router */
-  body > div {
-    height: 100%;
-    overflow: hidden;
-  }
 }
 
 /* ─── PWA Safe Areas ─── */

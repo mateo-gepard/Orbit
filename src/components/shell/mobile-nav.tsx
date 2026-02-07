@@ -32,18 +32,19 @@ export function MobileNav() {
     const update = () => {
       const vh = window.innerHeight;
       const vvh = window.visualViewport?.height ?? 0;
-      const dvh = document.documentElement.clientHeight;
       const bodyH = document.body.clientHeight;
-      const rootDiv = document.body.firstElementChild;
-      const rootH = rootDiv ? (rootDiv as HTMLElement).clientHeight : 0;
-      const safeBottom = getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom');
+      const nav = document.querySelector('nav');
+      const navRect = nav ? nav.getBoundingClientRect() : null;
+      const navBottom = navRect ? Math.round(navRect.bottom) : 0;
+      const navTop = navRect ? Math.round(navRect.top) : 0;
+      const gap = navRect ? Math.round(vh - navRect.bottom) : 0;
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as unknown as { standalone: boolean }).standalone === true;
       
-      setDebug(`ih:${vh} vv:${Math.round(vvh)} dh:${dvh} bh:${bodyH} rh:${rootH} sb:${safeBottom.trim()} pwa:${isStandalone}`);
+      setDebug(`ih:${vh} vv:${Math.round(vvh)} bh:${bodyH} navT:${navTop} navB:${navBottom} gap:${gap} pwa:${isStandalone}`);
     };
     update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
   }, []);
 
   return (
