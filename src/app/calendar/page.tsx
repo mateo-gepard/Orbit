@@ -84,21 +84,25 @@ export default function CalendarPage() {
           const startTime = eventData.start?.dateTime?.split('T')[1]?.substring(0, 5);
           const endTime = eventData.end?.dateTime?.split('T')[1]?.substring(0, 5);
 
-          await createItem({
+          const newEvent: any = {
             type: 'event',
             title: eventData.summary || 'Untitled Event',
-            content: eventData.description || '',
             status: 'active',
-            startDate,
-            endDate,
-            startTime,
-            endTime,
             googleCalendarId: eventData.id,
             calendarSynced: true,
             userId: user.uid,
             createdAt: Date.now(),
             updatedAt: Date.now(),
-          });
+          };
+
+          // Only add fields if they have values
+          if (eventData.description) newEvent.content = eventData.description;
+          if (startDate) newEvent.startDate = startDate;
+          if (endDate) newEvent.endDate = endDate;
+          if (startTime) newEvent.startTime = startTime;
+          if (endTime) newEvent.endTime = endTime;
+
+          await createItem(newEvent);
           importedCount++;
         }
       }
