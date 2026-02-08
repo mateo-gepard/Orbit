@@ -13,6 +13,7 @@ import {
   Circle,
   Clock,
   CheckCircle2,
+  CheckSquare,
   Target,
   LayoutList,
   CalendarClock,
@@ -697,28 +698,42 @@ export function DetailPanel() {
             </button>
           )}
           <span className="text-[11px] text-muted-foreground/50 capitalize">{item.type}</span>
-          <span className="text-[11px] text-muted-foreground/30">·</span>
-          <span className={cn(
-            'text-[11px] capitalize',
-            item.status === 'done' ? 'text-muted-foreground/40' : 'text-muted-foreground/50'
-          )}>
-            {item.status}
-          </span>
-        </div>
-        <div className="flex items-center gap-0.5">
-          {item.status === 'archived' ? (
-            <button onClick={handleRestore} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors" title="Restore">
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-          ) : (
-            <button onClick={handleArchive} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors" title="Archive">
-              <Archive className="h-3.5 w-3.5" />
-            </button>
+          {item.status === 'done' && (
+            <>
+              <span className="text-[11px] text-muted-foreground/30">·</span>
+              <span className="text-[11px] text-muted-foreground/40 capitalize">Done</span>
+            </>
           )}
-          <button onClick={handleDelete} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-red-500 hover:bg-red-500/[0.05] transition-colors" title="Delete">
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-          <button onClick={() => setDetailPanelOpen(false)} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors ml-1">
+        </div>
+        <div className="flex items-center gap-1">
+          {/* Three-dot menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+                <MoreVertical className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {item.status === 'archived' ? (
+                <DropdownMenuItem onClick={handleRestore}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                  Restore
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={handleArchive}>
+                  <Archive className="h-3.5 w-3.5 mr-2" />
+                  Archive
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleDelete} className="text-red-600 dark:text-red-400">
+                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <button onClick={() => setDetailPanelOpen(false)} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -1113,23 +1128,85 @@ export function DetailPanel() {
           </div>
         )}
 
-        {/* ── Child items ── */}
+        {/* ── Linked Items ── */}
         {childItems.length > 0 && (
           <div>
-            <FieldLabel>Sub-items · {childItems.length}</FieldLabel>
-            <div className="mt-1.5 space-y-0.5">
-              {childItems.map((child) => (
-                <button
-                  key={child.id}
-                  onClick={() => setSelectedItemId(child.id)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/[0.03] transition-colors text-left"
-                >
-                  <span className={cn(child.status === 'done' && 'line-through text-muted-foreground/40')}>
-                    {child.title}
-                  </span>
-                </button>
-              ))}
-            </div>
+            {/* Group child items by type */}
+            {(() => {
+              const childTasks = childItems.filter(i => i.type === 'task' || i.type === 'habit' || i.type === 'event' || i.type === 'goal');
+              const childNotes = childItems.filter(i => i.type === 'note');
+              
+              return (
+                <div className="space-y-4">
+                  {/* Tasks Section */}
+                  {childTasks.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <CheckSquare className="h-3.5 w-3.5 text-muted-foreground/50" />
+                        <FieldLabel>Tasks · {childTasks.length}</FieldLabel>
+                      </div>
+                      <div className="space-y-1">
+                        {childTasks.map((child) => {
+                          const Icon = TYPE_ICONS[child.type];
+                          const isDone = child.status === 'done';
+                          
+                          return (
+                            <button
+                              key={child.id}
+                              onClick={() => setSelectedItemId(child.id)}
+                              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors text-left group"
+                            >
+                              <Icon className={cn(
+                                "h-4 w-4 shrink-0",
+                                isDone ? 'text-muted-foreground/30' : 'text-muted-foreground/50'
+                              )} />
+                              <span className={cn(
+                                "text-[13px] flex-1",
+                                isDone ? 'line-through text-muted-foreground/40' : 'text-foreground/90 group-hover:text-foreground'
+                              )}>
+                                {child.title}
+                              </span>
+                              {isDone && <Check className="h-3.5 w-3.5 text-muted-foreground/30" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Notes Section */}
+                  {childNotes.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground/50" />
+                        <FieldLabel>Notes · {childNotes.length}</FieldLabel>
+                      </div>
+                      <div className="space-y-1">
+                        {childNotes.map((child) => (
+                          <button
+                            key={child.id}
+                            onClick={() => setSelectedItemId(child.id)}
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors text-left group"
+                          >
+                            <FileText className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] font-medium truncate text-foreground/90 group-hover:text-foreground">
+                                {child.title}
+                              </div>
+                              {child.content && (
+                                <div className="text-[11px] text-muted-foreground/50 truncate mt-0.5">
+                                  {child.content.substring(0, 60)}...
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
