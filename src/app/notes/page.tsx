@@ -33,6 +33,42 @@ export default function NotesPage() {
 		return all.filter((i) => i.noteSubtype === filter || i.tags?.includes(filter));
 	}, [items, filter]);
 
+	// Smart list formatting
+	const formatContent = (text: string): string => {
+		const lines = text.split('\n');
+		let formatted = '';
+		let inList = false;
+		
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i].trim();
+			
+			// Check if line starts with bullet point or number
+			if (line.match(/^[-•*]\s/) || line.match(/^\d+\.\s/)) {
+				if (!inList) {
+					formatted += '<ul>\n';
+					inList = true;
+				}
+				formatted += `<li>${line.replace(/^[-•*]\s/, '').replace(/^\d+\.\s/, '')}</li>\n`;
+			} else {
+				if (inList) {
+					formatted += '</ul>\n';
+					inList = false;
+				}
+				if (line) {
+					formatted += `<p>${line}</p>\n`;
+				} else {
+					formatted += '<br>\n';
+				}
+			}
+		}
+		
+		if (inList) {
+			formatted += '</ul>\n';
+		}
+		
+		return formatted.trim();
+	};
+
 	const handleCreateNote = async () => {
 		if (!user || (!newNoteTitle.trim() && !newNoteContent.trim())) {
 			setIsCreating(false);
@@ -41,11 +77,13 @@ export default function NotesPage() {
 			return;
 		}
 
+		const formattedContent = formatContent(newNoteContent.trim());
+
 		await createItem({
 			type: 'note',
 			status: 'active',
 			title: newNoteTitle.trim() || 'Untitled',
-			content: newNoteContent.trim(),
+			content: formattedContent,
 			noteSubtype: filter === 'all' ? 'general' : filter,
 			tags: filter !== 'all' ? [filter] : [],
 			userId: user.uid,
@@ -92,71 +130,82 @@ export default function NotesPage() {
 				))}
 			</div>
 
-			{/* Notes grid */}
-			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3" style={{ paddingBottom: isCreating ? '360px' : '16px' }}>
-				{/* Quick create card - Google Keep style */}
-				{isCreating && (
-					<div 
-						className="lg:relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-lg lg:shadow-sm"
-						style={{ 
-							position: isCreating ? 'fixed' : 'relative',
-							bottom: isCreating ? 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)' : 'auto',
-							left: isCreating ? '16px' : 'auto',
-							right: isCreating ? '16px' : 'auto',
-							zIndex: 50,
-						}}
-					>
-							<input
-								ref={titleInputRef}
-								value={newNoteTitle}
-								onChange={(e) => setNewNoteTitle(e.target.value)}
-								onKeyDown={(e) => {
-									if (e.key === 'Escape') {
-										setIsCreating(false);
-										setNewNoteTitle('');
-										setNewNoteContent('');
-									}
-								}}
-								placeholder="Title"
-								className="bg-transparent text-[13px] font-semibold outline-none placeholder:text-muted-foreground/40"
-								style={{ WebkitUserSelect: 'text' }}
-							/>
-							<textarea
-								ref={contentInputRef}
-								value={newNoteContent}
-								onChange={(e) => setNewNoteContent(e.target.value)}
-								onKeyDown={(e) => {
-									if (e.key === 'Escape') {
-										setIsCreating(false);
-										setNewNoteTitle('');
-										setNewNoteContent('');
-									}
-								}}
-								placeholder="Take a note..."
-								className="bg-transparent text-[11px] text-muted-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[60px] max-h-[200px]"
-								style={{ WebkitUserSelect: 'text' }}
-								rows={3}
-							/>
-							<div className="flex items-center justify-end gap-2 pt-1">
+			{/* Floating create card - positioned like command bar */}
+			{isCreating && (
+				<div
+					className="fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto p-4 lg:p-0 z-50 lg:z-auto"
+					style={{
+						paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)',
+					}}
+				>
+					<div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-lg lg:shadow-sm max-w-6xl mx-auto">
+						<input
+							ref={titleInputRef}
+							value={newNoteTitle}
+							onChange={(e) => setNewNoteTitle(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Escape') {
+									setIsCreating(false);
+									setNewNoteTitle('');
+									setNewNoteContent('');
+								} else if (e.key === 'Enter' && !e.shiftKey) {
+									e.preventDefault();
+									contentInputRef.current?.focus();
+								}
+							}}
+							placeholder="Title"
+							className="bg-transparent text-[13px] font-semibold outline-none placeholder:text-muted-foreground/40"
+							style={{ WebkitUserSelect: 'text' }}
+						/>
+						<textarea
+							ref={contentInputRef}
+							value={newNoteContent}
+							onChange={(e) => setNewNoteContent(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Escape') {
+									setIsCreating(false);
+									setNewNoteTitle('');
+									setNewNoteContent('');
+								} else if (e.key === 'Enter' && e.metaKey) {
+									e.preventDefault();
+									handleCreateNote();
+								}
+							}}
+							placeholder="Take a note... (use - or • for bullets, 1. 2. 3. for numbered lists)"
+							className="bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[80px] max-h-[40vh] overflow-y-auto leading-relaxed"
+							style={{ WebkitUserSelect: 'text' }}
+							rows={4}
+						/>
+						<div className="flex items-center justify-between pt-1">
+							<p className="text-[10px] text-muted-foreground/40">
+								<kbd className="font-mono">⌘↵</kbd> to save · <kbd className="font-mono">Esc</kbd> to cancel
+							</p>
+							<div className="flex gap-2">
 								<button
 									onClick={() => {
 										setIsCreating(false);
 										setNewNoteTitle('');
 										setNewNoteContent('');
 									}}
-									className="rounded-lg px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] transition-colors"
+									className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] transition-colors"
 								>
 									Cancel
 								</button>
 								<button
 									onClick={handleCreateNote}
-									className="rounded-lg px-3 py-1 text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
+									className="rounded-lg px-3 py-1.5 text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
 								>
 									Create
 								</button>
 							</div>
 						</div>
-				)}
+					</div>
+				</div>
+			)}
+
+			{/* Notes grid */}
+			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 pb-4">
+				{/* Quick add button */}
 				{!isCreating && (
 					<button
 						onClick={handleStartCreating}
