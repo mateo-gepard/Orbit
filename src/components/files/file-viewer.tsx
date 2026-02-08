@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Download, ExternalLink, ZoomIn, ZoomOut, RotateCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Download, ExternalLink, ZoomIn, ZoomOut, RotateCw, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ProjectFile } from '@/lib/types';
@@ -169,16 +169,26 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
             >
               <ExternalLink className="h-4 w-4" />
             </Button>
+
+            {/* Close Button - Desktop only */}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-9 w-9 shrink-0 text-white hover:bg-white/10"
+              onClick={onClose}
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
 
-          {/* Close Button - Single instance */}
+          {/* Back Button - Mobile only */}
           <Button
             size="icon"
             variant="ghost"
-            className="h-9 w-9 shrink-0 text-white hover:bg-white/10"
+            className="md:hidden h-9 w-9 shrink-0 text-white hover:bg-white/10"
             onClick={onClose}
           >
-            <X className="h-5 w-5" />
+            <ArrowLeft className="h-5 w-5" />
           </Button>
         </div>
       </div>
