@@ -694,7 +694,7 @@ export function DetailPanel() {
             </SheetHeader>
             {/* Swipe Handle */}
             <div 
-              className="absolute top-0 left-0 right-0 flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing z-10"
+              className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-10"
               onTouchStart={handleTouchStart}
               onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
@@ -704,7 +704,7 @@ export function DetailPanel() {
                 isDragging && "bg-muted-foreground/40 w-12"
               )} />
             </div>
-            <div className="h-[calc(92dvh-24px)] overflow-hidden pt-6">
+            <div className="h-[calc(92dvh-24px)] overflow-hidden pt-14">
               {content}
             </div>
           </SheetContent>
@@ -1248,7 +1248,7 @@ export function DetailPanel() {
           </SheetHeader>
           {/* Swipe Handle */}
           <div 
-            className="absolute top-0 left-0 right-0 flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing z-10"
+            className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-10"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -1258,7 +1258,7 @@ export function DetailPanel() {
               isDragging && "bg-muted-foreground/40 w-12"
             )} />
           </div>
-          <div className="h-[calc(92dvh-24px)] overflow-hidden pt-6">
+          <div className="h-[calc(92dvh-24px)] overflow-hidden pt-14">
             {content}
           </div>
         </SheetContent>
