@@ -41,7 +41,7 @@ const TYPE_LABELS: Record<ItemType, string> = {
 
 export function CommandBar() {
   const { user } = useAuth();
-  const { commandBarOpen, setCommandBarOpen, items, getAllTags } = useOrbitStore();
+  const { commandBarOpen, setCommandBarOpen, items, getAllTags, addCustomTag } = useOrbitStore();
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -117,6 +117,13 @@ export function CommandBar() {
     if (!input.trim() || !user) return;
 
     const parsed = parseCommand(input);
+
+    // Auto-create custom tags that don't exist yet
+    parsed.tags.forEach(tag => {
+      if (!allTags.includes(tag)) {
+        addCustomTag(tag);
+      }
+    });
 
     let noteSubtype: NoteSubtype | undefined;
     if (parsed.type === 'note') {

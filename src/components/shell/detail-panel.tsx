@@ -58,13 +58,12 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 export function DetailPanel() {
-  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getItemById, getAllTags, addCustomTag, removeCustomTag } = useOrbitStore();
+  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getItemById, getAllTags, removeCustomTag } = useOrbitStore();
   const { user } = useAuth();
   const item = selectedItemId ? getItemById(selectedItemId) : undefined;
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
-  const [newTagText, setNewTagText] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const allTags = getAllTags();
@@ -555,32 +554,10 @@ export function DetailPanel() {
                   )}
                 </div>
               ))}
-              <div className="flex items-center gap-1">
-                <input
-                  value={newTagText}
-                  onChange={(e) => setNewTagText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newTagText.trim()) {
-                      addCustomTag(newTagText);
-                      setNewTagText('');
-                    }
-                  }}
-                  placeholder="new tag"
-                  className="w-20 bg-transparent border-b border-dashed border-border/40 px-1 py-0.5 text-[11px] outline-none placeholder:text-muted-foreground/30"
-                />
-                {newTagText.trim() && (
-                  <button
-                    onClick={() => {
-                      addCustomTag(newTagText);
-                      setNewTagText('');
-                    }}
-                    className="rounded-md p-0.5 text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
             </div>
+            <p className="mt-1.5 text-[10px] text-muted-foreground/40">
+              Tip: Use <kbd className="font-mono text-[10px]">#tagname</kbd> in the command bar to add new tags
+            </p>
           </div>
 
           {/* Meta */}
@@ -993,32 +970,10 @@ export function DetailPanel() {
                 )}
               </div>
             ))}
-            <div className="flex items-center gap-1">
-              <input
-                value={newTagText}
-                onChange={(e) => setNewTagText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newTagText.trim()) {
-                    addCustomTag(newTagText);
-                    setNewTagText('');
-                  }
-                }}
-                placeholder="new tag"
-                className="w-20 bg-transparent border-b border-dashed border-border/40 px-1 py-0.5 text-[11px] outline-none placeholder:text-muted-foreground/30"
-              />
-              {newTagText.trim() && (
-                <button
-                  onClick={() => {
-                    addCustomTag(newTagText);
-                    setNewTagText('');
-                  }}
-                  className="rounded-md p-0.5 text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
-                >
-                  <Plus className="h-3 w-3" />
-                </button>
-              )}
-            </div>
           </div>
+          <p className="mt-1.5 text-[10px] text-muted-foreground/40">
+            Tip: Use <kbd className="font-mono text-[10px]">#tagname</kbd> in the command bar to add new tags
+          </p>
         </div>
 
         {/* ── Notes ── */}

@@ -200,7 +200,7 @@ const GROUP_OPTIONS: { key: GroupBy; label: string; icon: typeof FolderKanban }[
 ];
 
 export default function TasksPage() {
-  const { items, setSelectedItemId } = useOrbitStore();
+  const { items, setSelectedItemId, getAllTags, removeCustomTag } = useOrbitStore();
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('active');
@@ -219,6 +219,40 @@ export default function TasksPage() {
   // Toolbar open states (mobile)
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showGroupMenu, setShowGroupMenu] = useState(false);
+
+  // Tag delete confirmation
+  const [tagToDelete, setTagToDelete] = useState<string | null>(null);
+  const [tagLongPressTimer, setTagLongPressTimer] = useState<NodeJS.Timeout | null>(null);
+
+  const allTags = getAllTags();
+
+  const handleDeleteTag = (tag: string) => {
+    if (LIFE_AREA_TAGS.includes(tag as any)) {
+      return; // Don't allow deleting default tags
+    }
+    removeCustomTag(tag);
+    if (tagFilter === tag) {
+      setTagFilter(null);
+    }
+    setTagToDelete(null);
+  };
+
+  const handleTagLongPressStart = (tag: string) => {
+    if (LIFE_AREA_TAGS.includes(tag as any)) {
+      return; // Don't show delete for default tags
+    }
+    const timer = setTimeout(() => {
+      setTagToDelete(tag);
+    }, 500); // 500ms long press
+    setTagLongPressTimer(timer);
+  };
+
+  const handleTagLongPressEnd = () => {
+    if (tagLongPressTimer) {
+      clearTimeout(tagLongPressTimer);
+      setTagLongPressTimer(null);
+    }
+  };
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((prev) => {
@@ -355,19 +389,50 @@ export default function TasksPage() {
         {/* Tag filters */}
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0">
           <Tag className="h-3 w-3 text-muted-foreground/30 shrink-0 mr-0.5" />
-          {LIFE_AREA_TAGS.map((tag) => (
-            <button
-              key={tag}
-              onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-              className={cn(
-                'shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-all active:scale-95',
-                tagFilter === tag
-                  ? 'bg-foreground text-background'
-                  : 'text-muted-foreground/50 hover:bg-foreground/[0.05] hover:text-muted-foreground'
+          {allTags.map((tag) => (
+            <div key={tag} className="relative group">
+              <button
+                onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
+                onTouchStart={() => handleTagLongPressStart(tag)}
+                onTouchEnd={handleTagLongPressEnd}
+                onTouchCancel={handleTagLongPressEnd}
+                onMouseEnter={() => !LIFE_AREA_TAGS.includes(tag as any) && setTagToDelete(tag)}
+                onMouseLeave={() => setTagToDelete(null)}
+                className={cn(
+                  'shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-all active:scale-95',
+                  tagFilter === tag
+                    ? 'bg-foreground text-background'
+                    : 'text-muted-foreground/50 hover:bg-foreground/[0.05] hover:text-muted-foreground'
+                )}
+              >
+                {tag}
+              </button>
+              {tagToDelete === tag && !LIFE_AREA_TAGS.includes(tag as any) && (
+                <div className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border/60 rounded-lg shadow-lg p-2 min-w-[180px]">
+                  <p className="text-[11px] text-muted-foreground/80 mb-2">Delete tag "{tag}"?</p>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteTag(tag);
+                      }}
+                      className="flex-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 px-2 py-1 text-[11px] font-medium transition-colors"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTagToDelete(null);
+                      }}
+                      className="flex-1 rounded-md bg-foreground/[0.05] hover:bg-foreground/[0.1] text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
-            >
-              {tag}
-            </button>
+            </div>
           ))}
           {tagFilter && (
             <button
