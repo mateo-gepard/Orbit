@@ -85,11 +85,11 @@ export function CommandBar() {
     textAfterAt: lastAtIndex !== -1 ? input.slice(lastAtIndex + 1) : 'N/A'
   });
   
-  const linkableItems = items.filter(i => 
-    i.type === 'project' || i.type === 'goal' || i.type === 'note'
-  );
+  // Allow linking to ANY item type (projects, tasks, notes, goals, habits, events)
+  // Exclude only archived items to keep autocomplete clean
+  const linkableItems = items.filter(i => i.status !== 'archived');
   
-  console.log('🔍 [CommandBar] Linkable items:', linkableItems.length, linkableItems.map(i => ({ id: i.id, title: i.title, type: i.type })));
+  console.log('🔍 [CommandBar] Linkable items:', linkableItems.length, `(${linkableItems.filter(i => i.type === 'project').length} projects, ${linkableItems.filter(i => i.type === 'task').length} tasks, ${linkableItems.filter(i => i.type === 'note').length} notes)`);
   
   const suggestedLinks = isTypingLink && (linkQuery || lastAtIndex === input.length - 1)
     ? linkableItems.filter(item => 
@@ -509,6 +509,9 @@ export function CommandBar() {
                 </div>
                 {suggestedLinks.map((item, idx) => {
                   const Icon = TYPE_ICONS[item.type];
+                  const isProject = item.type === 'project';
+                  const isDone = item.status === 'done';
+                  
                   return (
                     <button
                       key={item.id}
@@ -516,7 +519,8 @@ export function CommandBar() {
                         console.log('🖱️ [CommandBar] Link suggestion clicked:', { 
                           itemId: item.id, 
                           itemTitle: item.title,
-                          itemType: item.type
+                          itemType: item.type,
+                          willSetParent: isProject
                         });
                         handleSelectLink(item);
                       }}
@@ -526,8 +530,16 @@ export function CommandBar() {
                       )}
                     >
                       <Icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
-                      <span className="flex-1 truncate">{item.title}</span>
-                      <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wider">
+                      <span className={cn(
+                        'flex-1 truncate',
+                        isDone && 'line-through opacity-60'
+                      )}>
+                        {item.title}
+                      </span>
+                      <span className={cn(
+                        'text-[10px] uppercase tracking-wider',
+                        isProject ? 'text-blue-500/60' : 'text-muted-foreground/40'
+                      )}>
                         {item.type}
                       </span>
                     </button>

@@ -49,6 +49,16 @@ const PRIORITY_OPTIONS: Priority[] = ['low', 'medium', 'high'];
 const TIMEFRAME_OPTIONS: GoalTimeframe[] = ['quarterly', 'yearly', 'longterm'];
 const FREQUENCY_OPTIONS: HabitFrequency[] = ['daily', 'weekly', 'custom'];
 const NOTE_SUBTYPE_OPTIONS: NoteSubtype[] = ['general', 'idea', 'principle', 'plan', 'journal'];
+
+// Icon mapping for each item type
+const TYPE_ICONS: Record<ItemType, typeof CheckCircle2> = {
+  task: CheckCircle2,
+  project: LayoutList,
+  habit: Target,
+  event: CalendarIcon,
+  goal: Target,
+  note: FileText,
+};
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -1127,16 +1137,36 @@ export function DetailPanel() {
               </span>
             </FieldLabel>
             <div className="mt-1.5 space-y-0.5">
-              {linkedItems.map((linked) => (
-                <button
-                  key={linked.id}
-                  onClick={() => setSelectedItemId(linked.id)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/[0.03] transition-colors text-left"
-                >
-                  <span className="text-[10px] text-muted-foreground/40 uppercase">{linked.type}</span>
-                  <span>{linked.title}</span>
-                </button>
-              ))}
+              {linkedItems.map((linked) => {
+                const Icon = TYPE_ICONS[linked.type];
+                const isDone = linked.status === 'done';
+                const isArchived = linked.status === 'archived';
+                
+                return (
+                  <button
+                    key={linked.id}
+                    onClick={() => setSelectedItemId(linked.id)}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/[0.03] transition-colors text-left',
+                      isArchived && 'opacity-40'
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
+                    <span className={cn(
+                      'flex-1 truncate',
+                      isDone && 'line-through text-muted-foreground/60'
+                    )}>
+                      {linked.title}
+                    </span>
+                    {isArchived && (
+                      <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">archived</span>
+                    )}
+                    {isDone && !isArchived && (
+                      <Check className="h-3 w-3 text-muted-foreground/40" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
