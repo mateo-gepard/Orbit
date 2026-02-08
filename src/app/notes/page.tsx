@@ -101,6 +101,67 @@ export default function NotesPage() {
 		setTimeout(() => titleInputRef.current?.focus(), 0);
 	};
 
+	// Smart list auto-increment for numbered lists
+	const handleContentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+		if (e.key === 'Escape') {
+			setIsCreating(false);
+			setNewNoteTitle('');
+			setNewNoteContent('');
+		} else if (e.key === 'Enter') {
+			if (e.metaKey) {
+				e.preventDefault();
+				handleCreateNote();
+				return;
+			}
+
+			// Smart list continuation
+			const textarea = e.currentTarget;
+			const cursorPos = textarea.selectionStart;
+			const textBeforeCursor = newNoteContent.substring(0, cursorPos);
+			const lines = textBeforeCursor.split('\n');
+			const currentLine = lines[lines.length - 1];
+
+			// Check for numbered list (e.g., "1. ", "2. ", etc.)
+			const numberedMatch = currentLine.match(/^(\s*)(\d+)\.\s/);
+			if (numberedMatch) {
+				e.preventDefault();
+				const indent = numberedMatch[1];
+				const currentNumber = parseInt(numberedMatch[2]);
+				const nextNumber = currentNumber + 1;
+				const insertion = `\n${indent}${nextNumber}. `;
+				
+				const textAfterCursor = newNoteContent.substring(cursorPos);
+				const newText = textBeforeCursor + insertion + textAfterCursor;
+				setNewNoteContent(newText);
+				
+				// Set cursor position after the inserted text
+				setTimeout(() => {
+					textarea.selectionStart = textarea.selectionEnd = cursorPos + insertion.length;
+				}, 0);
+				return;
+			}
+
+			// Check for bullet points (-, •, *)
+			const bulletMatch = currentLine.match(/^(\s*)([-•*])\s/);
+			if (bulletMatch) {
+				e.preventDefault();
+				const indent = bulletMatch[1];
+				const bullet = bulletMatch[2];
+				const insertion = `\n${indent}${bullet} `;
+				
+				const textAfterCursor = newNoteContent.substring(cursorPos);
+				const newText = textBeforeCursor + insertion + textAfterCursor;
+				setNewNoteContent(newText);
+				
+				// Set cursor position after the inserted text
+				setTimeout(() => {
+					textarea.selectionStart = textarea.selectionEnd = cursorPos + insertion.length;
+				}, 0);
+				return;
+			}
+		}
+	};
+
 	return (
 		<>
 			{/* Floating create card - EXACTLY like command bar */}
@@ -180,16 +241,7 @@ export default function NotesPage() {
 									ref={contentInputRef}
 									value={newNoteContent}
 									onChange={(e) => setNewNoteContent(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === 'Escape') {
-											setIsCreating(false);
-											setNewNoteTitle('');
-											setNewNoteContent('');
-										} else if (e.key === 'Enter' && e.metaKey) {
-											e.preventDefault();
-											handleCreateNote();
-										}
-									}}
+									onKeyDown={handleContentKeyDown}
 									placeholder="Take a note... (use - or • for bullets, 1. 2. 3. for numbered lists)"
 									className="w-full bg-transparent text-[14px] lg:text-[13px] text-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[120px] max-h-[40vh] overflow-y-auto leading-relaxed"
 									rows={6}
