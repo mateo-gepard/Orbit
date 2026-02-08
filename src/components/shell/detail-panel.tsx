@@ -26,6 +26,7 @@ import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
 import { useAuth } from '@/components/providers/auth-provider';
 import { syncEventToGoogle, requestCalendarPermission, hasCalendarPermission } from '@/lib/google-calendar';
+import { LinkManager } from '@/components/items/link-manager';
 import type { OrbitItem, ItemType, ItemStatus, Priority, ChecklistItem, GoalTimeframe, HabitFrequency, NoteSubtype } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -363,7 +364,14 @@ export function DetailPanel() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            
+            {/* Close button - Desktop only */}
             <button onClick={() => setDetailPanelOpen(false)} className="hidden lg:flex rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+              <X className="h-4 w-4" />
+            </button>
+            
+            {/* Close button - Mobile only */}
+            <button onClick={() => setDetailPanelOpen(false)} className="lg:hidden rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -654,6 +662,9 @@ export function DetailPanel() {
   // Regular detail panel for non-project items
   const parentItem = item.parentId ? items.find(i => i.id === item.parentId) : undefined;
   const childItems = items.filter((i) => i.parentId === item.id);
+  const linkedItems = (item.linkedIds || [])
+    .map(id => items.find(i => i.id === id))
+    .filter((i): i is OrbitItem => i !== undefined);
 
   const content = (
     <div className="flex h-full flex-col">
@@ -721,20 +732,16 @@ export function DetailPanel() {
 
               <DropdownMenuSeparator />
 
-              {/* Link to Item */}
+              {/* Links & Relations */}
               <div className="px-2 py-2">
-                <FieldLabel>Link to Item</FieldLabel>
-                <Select value={item.parentId || 'none'} onValueChange={(v) => handleUpdate({ parentId: v === 'none' ? undefined : v })}>
-                  <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    <SelectItem value="none" className="text-[12px]">None</SelectItem>
-                    {items.filter(i => i.id !== item.id && i.status !== 'archived').map((linkableItem) => (
-                      <SelectItem key={linkableItem.id} value={linkableItem.id} className="text-[12px]">
-                        {linkableItem.emoji || ''} {linkableItem.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <FieldLabel>Links & Relations</FieldLabel>
+                <div className="mt-2">
+                  <LinkManager
+                    item={item}
+                    allItems={items}
+                    onUpdate={handleUpdate}
+                  />
+                </div>
               </div>
 
               {/* Habit Settings */}
@@ -866,7 +873,13 @@ export function DetailPanel() {
             </DropdownMenuContent>
           </DropdownMenu>
           
+          {/* Close button - Desktop only */}
           <button onClick={() => setDetailPanelOpen(false)} className="hidden lg:flex rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+          
+          {/* Close button - Mobile only */}
+          <button onClick={() => setDetailPanelOpen(false)} className="lg:hidden rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -1046,30 +1059,83 @@ export function DetailPanel() {
           </div>
         </div>
 
-        {/* ── Linked Items ── */}
-        {childItems.length > 0 && (
-          <div>
-            <FieldLabel>Linked Items ({childItems.length})</FieldLabel>
-            <div className="mt-2 space-y-1">
-              {childItems.map((child) => {
-                const Icon = TYPE_ICONS[child.type];
-                const isDone = child.status === 'done';
-                
-                return (
+        {/* ── Relations ── */}
+        {(parentItem || linkedItems.length > 0 || childItems.length > 0) && (
+          <div className="space-y-3">
+            {/* Parent */}
+            {parentItem && (
+              <div>
+                <FieldLabel>Parent</FieldLabel>
+                <div className="mt-2">
                   <button
-                    key={child.id}
-                    onClick={() => setSelectedItemId(child.id)}
+                    onClick={() => setSelectedItemId(parentItem.id)}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors text-left group"
                   >
-                    <Icon className={cn("h-4 w-4 shrink-0", isDone ? 'text-muted-foreground/30' : 'text-muted-foreground/50')} />
-                    <span className={cn("text-[13px] flex-1", isDone ? 'line-through text-muted-foreground/40' : 'text-foreground/90 group-hover:text-foreground')}>
-                      {child.title}
+                    {(() => {
+                      const Icon = TYPE_ICONS[parentItem.type];
+                      return <Icon className="h-4 w-4 shrink-0 text-muted-foreground/50" />;
+                    })()}
+                    <span className="text-[13px] flex-1 text-foreground/90 group-hover:text-foreground">
+                      {parentItem.emoji && `${parentItem.emoji} `}{parentItem.title}
                     </span>
-                    {isDone && <Check className="h-3.5 w-3.5 text-green-600/50" />}
                   </button>
-                );
-              })}
-            </div>
+                </div>
+              </div>
+            )}
+
+            {/* Linked Items */}
+            {linkedItems.length > 0 && (
+              <div>
+                <FieldLabel>Linked Items ({linkedItems.length})</FieldLabel>
+                <div className="mt-2 space-y-1">
+                  {linkedItems.map((linked) => {
+                    const Icon = TYPE_ICONS[linked.type];
+                    const isDone = linked.status === 'done';
+                    
+                    return (
+                      <button
+                        key={linked.id}
+                        onClick={() => setSelectedItemId(linked.id)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors text-left group"
+                      >
+                        <Icon className={cn("h-4 w-4 shrink-0", isDone ? 'text-muted-foreground/30' : 'text-muted-foreground/50')} />
+                        <span className={cn("text-[13px] flex-1", isDone ? 'line-through text-muted-foreground/40' : 'text-foreground/90 group-hover:text-foreground')}>
+                          {linked.emoji && `${linked.emoji} `}{linked.title}
+                        </span>
+                        {isDone && <Check className="h-3.5 w-3.5 text-green-600/50" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Child Items */}
+            {childItems.length > 0 && (
+              <div>
+                <FieldLabel>Contains ({childItems.length})</FieldLabel>
+                <div className="mt-2 space-y-1">
+                  {childItems.map((child) => {
+                    const Icon = TYPE_ICONS[child.type];
+                    const isDone = child.status === 'done';
+                    
+                    return (
+                      <button
+                        key={child.id}
+                        onClick={() => setSelectedItemId(child.id)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors text-left group"
+                      >
+                        <Icon className={cn("h-4 w-4 shrink-0", isDone ? 'text-muted-foreground/30' : 'text-muted-foreground/50')} />
+                        <span className={cn("text-[13px] flex-1", isDone ? 'line-through text-muted-foreground/40' : 'text-foreground/90 group-hover:text-foreground')}>
+                          {child.emoji && `${child.emoji} `}{child.title}
+                        </span>
+                        {isDone && <Check className="h-3.5 w-3.5 text-green-600/50" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
