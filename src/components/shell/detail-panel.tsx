@@ -768,24 +768,23 @@ export function DetailPanel() {
             className="h-[92dvh] rounded-t-2xl p-0 border-0"
             showCloseButton={false}
             onOpenAutoFocus={(e) => e.preventDefault()}
+            style={swipeStyles}
           >
           <SheetHeader className="sr-only">
             <SheetTitle>Item Details</SheetTitle>
           </SheetHeader>
-          <div className="h-full" style={swipeStyles}>
-            {/* Swipe Handle */}
-            <div
-              className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-10"
-              {...swipeHandlers}
-            >
-              <div className={cn(
-                "w-10 h-1 rounded-full bg-muted-foreground/20 transition-all",
-                isDragging && "bg-muted-foreground/40 w-12"
-              )} />
-            </div>
-            <div className="h-[calc(92dvh-24px)] overflow-hidden pt-14">
-              {content}
-            </div>
+          {/* Swipe Handle */}
+          <div
+            className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-10"
+            {...swipeHandlers}
+          >
+            <div className={cn(
+              "w-10 h-1 rounded-full bg-muted-foreground/20 transition-all",
+              isDragging && "bg-muted-foreground/40 w-12"
+            )} />
+          </div>
+          <div className="h-[calc(92dvh-24px)] overflow-hidden pt-14">
+            {content}
           </div>
         </SheetContent>
       </Sheet>

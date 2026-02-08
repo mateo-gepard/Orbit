@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback, useEffect, useState } from 'react';
+import { useMemo, useCallback } from 'react';
 import {
   ReactFlow,
   MiniMap,
@@ -10,8 +10,6 @@ import {
   useNodesState,
   useEdgesState,
   type NodeMouseHandler,
-  type Node,
-  type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useSwipeToClose } from '@/lib/hooks/use-swipe-to-close';
@@ -36,37 +34,21 @@ interface LinkGraphProps {
 
 export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: LinkGraphProps) {
   const { isDragging, swipeStyles, handlers: swipeHandlers } = useSwipeToClose({ onClose });
-  const [graphReady, setGraphReady] = useState(false);
 
   const relationships = useMemo(
     () => getItemRelationships(currentItem, allItems),
     [currentItem, allItems]
   );
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const { nodes: initialNodes, edges: initialEdges } = useMemo(
+    () => buildGraphData(currentItem, relationships),
+    [currentItem, relationships]
+  );
 
-  // Build graph data asynchronously (dagre is lazy-loaded)
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
-    buildGraphData(currentItem, relationships).then(({ nodes: newNodes, edges: newEdges }) => {
-      if (!cancelled) {
-        setNodes(newNodes);
-        setEdges(newEdges);
-        setGraphReady(true);
-      }
-    });
-
-    return () => { cancelled = true; };
-  }, [open, currentItem, relationships, setNodes, setEdges]);
-
-  const hasRelationships = relationships.ancestors.length > 0 ||
-    relationships.descendants.length > 0 ||
-    relationships.linked.length > 0 ||
-    relationships.reverseLinked.length > 0 ||
-    relationships.children.length > 0;
+  const hasRelationships = initialNodes.length > 1;
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
@@ -86,12 +68,13 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
         className="h-[85dvh] rounded-t-2xl p-0 border-0"
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
+        style={swipeStyles}
       >
         <SheetHeader className="sr-only">
           <SheetTitle>Link Graph</SheetTitle>
         </SheetHeader>
 
-        <div className="h-full flex flex-col" style={swipeStyles}>
+        <div className="h-full flex flex-col">
           {/* Swipe Handle */}
           <div
             className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-20"
@@ -137,10 +120,6 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               <p className="text-sm text-muted-foreground/70 max-w-[280px] leading-relaxed">
                 Link this item to other projects, tasks, or notes to visualize relationships
               </p>
-            </div>
-          ) : !graphReady ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-sm text-muted-foreground/50">Loading graph...</div>
             </div>
           ) : (
             <div className="h-full w-full relative">
