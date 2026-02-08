@@ -102,7 +102,122 @@ export default function NotesPage() {
 	};
 
 	return (
-		<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto pb-safe">
+		<>
+			{/* Floating create card - EXACTLY like command bar */}
+			{isCreating && (
+				<div
+					className="fixed inset-0 z-50 flex items-start bg-background/80 backdrop-blur-sm"
+					onClick={(e) => {
+						if (e.target === e.currentTarget) {
+							setIsCreating(false);
+							setNewNoteTitle('');
+							setNewNoteContent('');
+						}
+					}}
+				>
+					<div 
+						className={cn(
+							'relative w-full',
+							// Mobile: top-aligned card with safe area
+							'pt-[max(env(safe-area-inset-top,0px),8px)] px-3',
+							// Desktop: centered
+							'lg:absolute lg:top-[18vh] lg:left-1/2 lg:-translate-x-1/2 lg:pt-0 lg:px-0',
+							'lg:max-w-[520px]',
+							'animate-slide-down-spring lg:animate-scale-in'
+						)}
+					>
+						<div className={cn(
+							'overflow-hidden bg-popover',
+							'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
+							'rounded-2xl lg:rounded-xl',
+							'border border-border/60'
+						)}>
+							{/* Title Input */}
+							<div className="flex items-center gap-3 px-4 py-3 lg:py-3">
+								<FileText className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
+								<input
+									ref={titleInputRef}
+									value={newNoteTitle}
+									onChange={(e) => setNewNoteTitle(e.target.value)}
+									onKeyDown={(e) => {
+										if (e.key === 'Escape') {
+											setIsCreating(false);
+											setNewNoteTitle('');
+											setNewNoteContent('');
+										} else if (e.key === 'Enter') {
+											e.preventDefault();
+											contentInputRef.current?.focus();
+										}
+									}}
+									placeholder="Note title..."
+									className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
+									autoFocus
+									autoComplete="off"
+									autoCorrect="off"
+									enterKeyHint="next"
+								/>
+								<button
+									onClick={() => {
+										setIsCreating(false);
+										setNewNoteTitle('');
+										setNewNoteContent('');
+									}}
+									className="rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/50 hover:text-muted-foreground lg:hidden"
+								>
+									Cancel
+								</button>
+								<kbd className="hidden lg:inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/60">
+									esc
+								</kbd>
+							</div>
+
+							{/* Divider */}
+							<div className="h-px bg-border" />
+
+							{/* Content Input */}
+							<div className="px-4 py-3 lg:py-3">
+								<textarea
+									ref={contentInputRef}
+									value={newNoteContent}
+									onChange={(e) => setNewNoteContent(e.target.value)}
+									onKeyDown={(e) => {
+										if (e.key === 'Escape') {
+											setIsCreating(false);
+											setNewNoteTitle('');
+											setNewNoteContent('');
+										} else if (e.key === 'Enter' && e.metaKey) {
+											e.preventDefault();
+											handleCreateNote();
+										}
+									}}
+									placeholder="Take a note... (use - or • for bullets, 1. 2. 3. for numbered lists)"
+									className="w-full bg-transparent text-[14px] lg:text-[13px] text-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[120px] max-h-[40vh] overflow-y-auto leading-relaxed"
+									rows={6}
+									enterKeyHint="done"
+								/>
+							</div>
+
+							{/* Divider */}
+							<div className="h-px bg-border" />
+
+							{/* Footer */}
+							<div className="flex items-center justify-between px-4 py-2.5 lg:py-2 bg-muted/30">
+								<p className="text-[10px] lg:text-[9px] text-muted-foreground/50 font-medium">
+									<kbd className="font-mono">⌘↵</kbd> save · <kbd className="font-mono">esc</kbd> cancel
+								</p>
+								<button
+									onClick={handleCreateNote}
+									className="rounded-lg px-3 py-1.5 text-[12px] lg:text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors active:scale-95"
+								>
+									Create
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
+			<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto pb-safe">
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-xl font-semibold tracking-tight">Notes</h1>
@@ -129,79 +244,6 @@ export default function NotesPage() {
 					</button>
 				))}
 			</div>
-
-			{/* Floating create card - positioned like command bar */}
-			{isCreating && (
-				<div
-					className="fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto p-4 lg:p-0 z-50 lg:z-auto"
-					style={{
-						paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)',
-					}}
-				>
-					<div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-lg lg:shadow-sm max-w-6xl mx-auto">
-						<input
-							ref={titleInputRef}
-							value={newNoteTitle}
-							onChange={(e) => setNewNoteTitle(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === 'Escape') {
-									setIsCreating(false);
-									setNewNoteTitle('');
-									setNewNoteContent('');
-								} else if (e.key === 'Enter' && !e.shiftKey) {
-									e.preventDefault();
-									contentInputRef.current?.focus();
-								}
-							}}
-							placeholder="Title"
-							className="bg-transparent text-[13px] font-semibold outline-none placeholder:text-muted-foreground/40"
-							style={{ WebkitUserSelect: 'text' }}
-						/>
-						<textarea
-							ref={contentInputRef}
-							value={newNoteContent}
-							onChange={(e) => setNewNoteContent(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === 'Escape') {
-									setIsCreating(false);
-									setNewNoteTitle('');
-									setNewNoteContent('');
-								} else if (e.key === 'Enter' && e.metaKey) {
-									e.preventDefault();
-									handleCreateNote();
-								}
-							}}
-							placeholder="Take a note... (use - or • for bullets, 1. 2. 3. for numbered lists)"
-							className="bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[80px] max-h-[40vh] overflow-y-auto leading-relaxed"
-							style={{ WebkitUserSelect: 'text' }}
-							rows={4}
-						/>
-						<div className="flex items-center justify-between pt-1">
-							<p className="text-[10px] text-muted-foreground/40">
-								<kbd className="font-mono">⌘↵</kbd> to save · <kbd className="font-mono">Esc</kbd> to cancel
-							</p>
-							<div className="flex gap-2">
-								<button
-									onClick={() => {
-										setIsCreating(false);
-										setNewNoteTitle('');
-										setNewNoteContent('');
-									}}
-									className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] transition-colors"
-								>
-									Cancel
-								</button>
-								<button
-									onClick={handleCreateNote}
-									className="rounded-lg px-3 py-1.5 text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
-								>
-									Create
-								</button>
-							</div>
-						</div>
-					</div>
-				</div>
-			)}
 
 			{/* Notes grid */}
 			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 pb-4">
@@ -262,5 +304,6 @@ export default function NotesPage() {
 				</div>
 			)}
 		</div>
+		</>
 	);
 }

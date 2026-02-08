@@ -27,6 +27,10 @@ interface OrbitStore {
   commandBarOpen: boolean;
   setCommandBarOpen: (open: boolean) => void;
 
+  // Completion Animation State
+  completionAnimation: { type: 'task' | 'habit'; streak?: number } | null;
+  setCompletionAnimation: (animation: { type: 'task' | 'habit'; streak?: number } | null) => void;
+
   // Filters
   activeTag: string | null;
   setActiveTag: (tag: string | null) => void;
@@ -84,16 +88,17 @@ export const useOrbitStore = create<OrbitStore>()(
   setDetailPanelOpen: (open) =>
     set({ detailPanelOpen: open, selectedItemId: open ? get().selectedItemId : null }),
 
-  sidebarOpen: true,
-  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      sidebarOpen: true,
+      setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
-  commandBarOpen: false,
-  setCommandBarOpen: (open) => set({ commandBarOpen: open }),
+      commandBarOpen: false,
+      setCommandBarOpen: (open) => set({ commandBarOpen: open }),
 
-  activeTag: null,
-  setActiveTag: (tag) => set({ activeTag: tag }),
+      completionAnimation: null,
+      setCompletionAnimation: (animation) => set({ completionAnimation: animation }),
 
-  // All selectors are safe — they handle missing/corrupt data gracefully
+      activeTag: null,
+      setActiveTag: (tag) => set({ activeTag: tag }),  // All selectors are safe — they handle missing/corrupt data gracefully
   getItemById: (id) => {
     try {
       return get().items.find((item) => item.id === id);

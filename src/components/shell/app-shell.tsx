@@ -7,9 +7,10 @@ import { Sidebar } from './sidebar';
 import { DetailPanel } from './detail-panel';
 import { CommandBar } from './command-bar';
 import { MobileNav } from './mobile-nav';
+import { CompletionAnimation } from '@/components/ui/completion-animation';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { setSidebarOpen, setCommandBarOpen } = useOrbitStore();
+  const { setSidebarOpen, setCommandBarOpen, completionAnimation, setCompletionAnimation } = useOrbitStore();
 
   return (
     <>
@@ -78,6 +79,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           so position:fixed works relative to the viewport */}
       <MobileNav />
       <CommandBar />
+      
+      {/* Completion Animation - render at app level for proper z-index */}
+      {completionAnimation && (
+        <CompletionAnimation
+          type={completionAnimation.type}
+          streak={completionAnimation.streak}
+          onComplete={() => setCompletionAnimation(null)}
+        />
+      )}
     </>
   );
 }
