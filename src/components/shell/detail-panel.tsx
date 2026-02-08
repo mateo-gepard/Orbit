@@ -73,9 +73,9 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 export function DetailPanel() {
-  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getItemById, getAllTags, removeCustomTag, setCompletionAnimation } = useOrbitStore();
+  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags, removeCustomTag, setCompletionAnimation } = useOrbitStore();
   const { user } = useAuth();
-  const item = selectedItemId ? getItemById(selectedItemId) : undefined;
+  const item = selectedItemId ? items.find(i => i.id === selectedItemId) : undefined;
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
@@ -675,7 +675,7 @@ export function DetailPanel() {
   }
 
   // Regular detail panel for non-project items
-  const parentItem = item.parentId ? getItemById(item.parentId) : undefined;
+  const parentItem = item.parentId ? items.find(i => i.id === item.parentId) : undefined;
   const childItems = items.filter((i) => i.parentId === item.id);
 
   const content = (
