@@ -12,6 +12,7 @@ interface OrbitStore {
   customTags: string[];
   addCustomTag: (tag: string) => void;
   removeCustomTag: (tag: string) => void;
+  renameCustomTag: (oldTag: string, newTag: string) => void;
   getAllTags: () => string[];
 
   // UI State
@@ -64,8 +65,33 @@ export const useOrbitStore = create<OrbitStore>()(
       },
       removeCustomTag: (tag) => {
         set({ customTags: get().customTags.filter((t) => t !== tag) });
-        // Note: Tag removal from items is handled by Firestore cleanup
-        // Items will automatically filter out deleted tags when displayed
+        // Also remove the tag from all items that have it
+        const items = get().items;
+        const updated = items.map((item) => {
+          if (item.tags?.includes(tag)) {
+            return { ...item, tags: item.tags.filter((t) => t !== tag) };
+          }
+          return item;
+        });
+        if (updated !== items) set({ items: updated });
+      },
+      renameCustomTag: (oldTag, newTag) => {
+        const trimmed = newTag.trim().toLowerCase();
+        if (!trimmed || trimmed === oldTag) return;
+        // Rename in customTags list
+        const tags = get().customTags;
+        if (!tags.includes(oldTag)) return;
+        if (tags.includes(trimmed) || (LIFE_AREA_TAGS as readonly string[]).includes(trimmed)) return;
+        set({ customTags: tags.map((t) => (t === oldTag ? trimmed : t)) });
+        // Rename in all items that have this tag
+        const items = get().items;
+        const updated = items.map((item) => {
+          if (item.tags?.includes(oldTag)) {
+            return { ...item, tags: item.tags.map((t) => (t === oldTag ? trimmed : t)) };
+          }
+          return item;
+        });
+        set({ items: updated });
       },
       getAllTags: () => {
         return [...LIFE_AREA_TAGS, ...get().customTags];

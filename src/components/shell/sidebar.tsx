@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -16,6 +17,9 @@ import {
   Plus,
   CheckSquare,
   Files,
+  Pencil,
+  Trash2,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
@@ -61,8 +65,54 @@ const NAV_SECTIONS = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut, isDemo } = useAuth();
-  const { sidebarOpen, setSidebarOpen, activeTag, setActiveTag, setCommandBarOpen } =
-    useOrbitStore();
+  const {
+    sidebarOpen, setSidebarOpen, activeTag, setActiveTag, setCommandBarOpen,
+    customTags, addCustomTag, removeCustomTag, renameCustomTag,
+  } = useOrbitStore();
+
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [newTagValue, setNewTagValue] = useState('');
+  const [editingTag, setEditingTag] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [deletingTag, setDeletingTag] = useState<string | null>(null);
+  const [isManaging, setIsManaging] = useState(false);
+  const addInputRef = useRef<HTMLInputElement>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  const allTags = [...LIFE_AREA_TAGS, ...customTags];
+  const lifeAreaSet = new Set<string>(LIFE_AREA_TAGS as unknown as string[]);
+
+  useEffect(() => {
+    if (isAddingTag) addInputRef.current?.focus();
+  }, [isAddingTag]);
+
+  useEffect(() => {
+    if (editingTag) editInputRef.current?.focus();
+  }, [editingTag]);
+
+  const handleAddTag = () => {
+    const trimmed = newTagValue.trim().toLowerCase();
+    if (trimmed) {
+      addCustomTag(trimmed);
+    }
+    setNewTagValue('');
+    setIsAddingTag(false);
+  };
+
+  const handleRenameTag = (oldTag: string) => {
+    const trimmed = editValue.trim().toLowerCase();
+    if (trimmed && trimmed !== oldTag) {
+      renameCustomTag(oldTag, trimmed);
+    }
+    setEditingTag(null);
+    setEditValue('');
+  };
+
+  const handleDeleteTag = (tag: string) => {
+    removeCustomTag(tag);
+    if (activeTag === tag) setActiveTag(null);
+    setDeletingTag(null);
+  };
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -159,24 +209,130 @@ export function Sidebar() {
 
           {/* Tags / Areas */}
           <div className="mt-5">
-            <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
-              Areas
-            </div>
-            <div className="flex flex-wrap gap-1 px-1 py-1">
-              {LIFE_AREA_TAGS.map((tag) => (
+            <div className="mb-1 px-2 flex items-center justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+                Areas
+              </span>
+              <div className="flex items-center gap-0.5">
                 <button
-                  key={tag}
-                  onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                  onClick={() => setIsManaging(!isManaging)}
                   className={cn(
-                    'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
-                    activeTag === tag
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-muted-foreground'
+                    'rounded p-0.5 transition-colors',
+                    isManaging
+                      ? 'text-foreground bg-foreground/10'
+                      : 'text-muted-foreground/40 hover:text-muted-foreground/70'
                   )}
+                  title={isManaging ? 'Done managing' : 'Manage tags'}
                 >
-                  {tag}
+                  <Pencil className="h-3 w-3" />
                 </button>
-              ))}
+                <button
+                  onClick={() => { setIsAddingTag(true); setIsManaging(true); }}
+                  className="rounded p-0.5 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
+                  title="Add tag"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1 px-1 py-1">
+              {allTags.map((tag) => {
+                const isCustom = !lifeAreaSet.has(tag);
+                const isEditing = editingTag === tag;
+                const isDeleting = deletingTag === tag;
+
+                if (isEditing) {
+                  return (
+                    <form
+                      key={tag}
+                      className="flex items-center gap-1"
+                      onSubmit={(e) => { e.preventDefault(); handleRenameTag(tag); }}
+                    >
+                      <input
+                        ref={editInputRef}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={() => handleRenameTag(tag)}
+                        onKeyDown={(e) => { if (e.key === 'Escape') { setEditingTag(null); setEditValue(''); } }}
+                        className="w-16 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </form>
+                  );
+                }
+
+                if (isDeleting) {
+                  return (
+                    <div key={tag} className="flex items-center gap-1 rounded-md bg-destructive/10 px-1.5 py-0.5">
+                      <span className="text-[10px] text-destructive font-medium">Delete &quot;{tag}&quot;?</span>
+                      <button
+                        onClick={() => handleDeleteTag(tag)}
+                        className="rounded p-0.5 text-destructive hover:bg-destructive/20"
+                      >
+                        <Check className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => setDeletingTag(null)}
+                        className="rounded p-0.5 text-muted-foreground hover:bg-foreground/10"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={tag} className="group relative flex items-center">
+                    <button
+                      onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                      className={cn(
+                        'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
+                        activeTag === tag
+                          ? 'bg-foreground text-background'
+                          : 'text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-muted-foreground'
+                      )}
+                    >
+                      {tag}
+                    </button>
+                    {isManaging && isCustom && (
+                      <div className="flex items-center gap-0.5 ml-0.5">
+                        <button
+                          onClick={() => { setEditingTag(tag); setEditValue(tag); }}
+                          className="rounded p-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+                          title="Rename"
+                        >
+                          <Pencil className="h-2.5 w-2.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeletingTag(tag)}
+                          className="rounded p-0.5 text-muted-foreground/40 hover:text-destructive transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Add new tag inline */}
+              {isAddingTag && (
+                <form
+                  className="flex items-center gap-1"
+                  onSubmit={(e) => { e.preventDefault(); handleAddTag(); }}
+                >
+                  <input
+                    ref={addInputRef}
+                    value={newTagValue}
+                    onChange={(e) => setNewTagValue(e.target.value)}
+                    onBlur={handleAddTag}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setIsAddingTag(false); setNewTagValue(''); } }}
+                    placeholder="new tag..."
+                    className="w-20 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/40"
+                  />
+                </form>
+              )}
             </div>
           </div>
         </nav>
