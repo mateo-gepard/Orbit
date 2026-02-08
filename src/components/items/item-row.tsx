@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { format, isPast, isToday, parseISO } from 'date-fns';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
+import { calculateStreak } from '@/lib/habits';
 
 const PRIORITY_DOTS: Record<Priority, string> = {
   low: 'bg-foreground/20',
@@ -37,9 +38,8 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     // Show completion animation when marking as done
     if (newStatus === 'done') {
       if (item.type === 'habit') {
-        // For habits, we'd need to calculate the streak
-        // For now, show without streak number in list view
-        setCompletionAnimation({ type: 'habit', streak: 1 });
+        const streak = calculateStreak(item) + 1; // +1 for the completion about to happen
+        setCompletionAnimation({ type: 'habit', streak });
       } else if (item.type === 'task') {
         setCompletionAnimation({ type: 'task' });
       }
@@ -56,7 +56,8 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     
     // Show completion animation
     if (item.type === 'habit') {
-      setCompletionAnimation({ type: 'habit', streak: 1 });
+      const streak = calculateStreak(item) + 1; // +1 for the completion about to happen
+      setCompletionAnimation({ type: 'habit', streak });
     } else if (item.type === 'task') {
       setCompletionAnimation({ type: 'task' });
     }
