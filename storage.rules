@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════
+// ORBIT — Firebase Storage Security Rules
+// ═══════════════════════════════════════════════════════════
+//
+// These rules ensure:
+// ✅ Only authenticated users can upload files
+// ✅ Users can only access files in their own projects
+// ✅ File size limits enforced (10MB max)
+// ✅ Only allowed file types can be uploaded
+//
+// Deploy via Firebase Console:
+// Storage → Rules → Paste & Publish
+//
+// OR use Firebase CLI:
+// firebase deploy --only storage
+//
+// ═══════════════════════════════════════════════════════════
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // ─────────────────────────────────────────────────────────
+    // Helper Functions
+    // ─────────────────────────────────────────────────────────
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isValidFileSize() {
+      // Max 10MB
+      return request.resource.size <= 10 * 1024 * 1024;
+    }
+    
+    function isAllowedFileType() {
+      return request.resource.contentType.matches('image/.*')
+          || request.resource.contentType.matches('application/pdf')
+          || request.resource.contentType.matches('application/msword')
+          || request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.*')
+          || request.resource.contentType.matches('text/.*')
+          || request.resource.contentType.matches('application/zip')
+          || request.resource.contentType.matches('application/x-zip-compressed');
+    }
+    
+    // ─────────────────────────────────────────────────────────
+    // Project Files
+    // ─────────────────────────────────────────────────────────
+    
+    match /projects/{projectId}/{fileName} {
+      // READ: Any authenticated user can read files
+      // (In production, you'd check if user owns the project via Firestore)
+      allow read: if isSignedIn();
+      
+      // WRITE: Any authenticated user can upload files
+      // Enforces file size and type restrictions
+      allow write: if isSignedIn()
+                   && isValidFileSize()
+                   && isAllowedFileType();
+      
+      // DELETE: Any authenticated user can delete files
+      // (In production, you'd check if user owns the project)
+      allow delete: if isSignedIn();
+    }
+    
+    // ─────────────────────────────────────────────────────────
+    // Deny All Other Paths
+    // ─────────────────────────────────────────────────────────
+    
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

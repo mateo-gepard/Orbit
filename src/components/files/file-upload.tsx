@@ -44,8 +44,13 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
 
       // Update project with new files
       const updatedFiles = [...files, ...uploadedFiles];
+      console.log('[FileUpload] Uploading complete, updating Firestore...');
+      console.log('[FileUpload] Project ID:', project.id);
+      console.log('[FileUpload] Updated files:', updatedFiles);
+      
       await updateItem(project.id, { files: updatedFiles });
-
+      
+      console.log('[FileUpload] ✅ Firestore updated successfully');
       onFilesChange?.();
       
       // Reset input
