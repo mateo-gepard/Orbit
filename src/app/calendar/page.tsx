@@ -271,147 +271,177 @@ export default function CalendarPage() {
               ))}
             </div>
 
-            {/* Calendar grid */}
-            <div className="grid grid-cols-7 flex-1">{calendarDays.map((day) => {
-                const dayItems = getItemsForDate(day);
-                const isCurrentMonth = isSameMonth(day, currentMonth);
-                const isTodayDate = isToday(day);
-                const tasks = dayItems.filter(i => i.type === 'task');
-                const singleDayEvents = dayItems.filter(i => 
-                  i.type === 'event' && 
-                  (!i.endDate || i.endDate === i.startDate)
-                );
+            {/* Calendar grid + multi-day overlay wrapper */}
+            <div className="relative flex-1">
+              <div className="grid grid-cols-7 h-full">{calendarDays.map((day) => {
+                  const dayItems = getItemsForDate(day);
+                  const isCurrentMonth = isSameMonth(day, currentMonth);
+                  const isTodayDate = isToday(day);
+                  const tasks = dayItems.filter(i => i.type === 'task');
+                  const singleDayEvents = dayItems.filter(i =>
+                    i.type === 'event' &&
+                    (!i.endDate || i.endDate === i.startDate)
+                  );
 
-                return (
-                  <button
-                    key={day.toISOString()}
-                    onClick={() => handleDayClick(day)}
-                    className={cn(
-                      'relative min-h-[70px] lg:min-h-[100px] xl:min-h-[120px] border-b border-r border-border/30 p-2 lg:p-2.5 transition-all text-left group',
-                      'hover:bg-foreground/[0.02] active:bg-foreground/[0.04]',
-                      !isCurrentMonth && 'opacity-40',
-                      isTodayDate && 'bg-blue-500/[0.04] hover:bg-blue-500/[0.06]'
-                    )}
-                  >
-                    <div
+                  return (
+                    <button
+                      key={day.toISOString()}
+                      onClick={() => handleDayClick(day)}
                       className={cn(
-                        'inline-flex h-7 w-7 lg:h-6 lg:w-6 items-center justify-center rounded-full text-[12px] lg:text-[11px] font-medium mb-1 tabular-nums transition-colors',
-                        isTodayDate
-                          ? 'bg-blue-500 text-white font-semibold'
-                          : 'text-muted-foreground/60 group-hover:text-foreground'
+                        'relative min-h-[70px] lg:min-h-[100px] xl:min-h-[120px] border-b border-r border-border/30 p-2 lg:p-2.5 transition-all text-left group',
+                        'hover:bg-foreground/[0.02] active:bg-foreground/[0.04]',
+                        !isCurrentMonth && 'opacity-40',
+                        isTodayDate && 'bg-blue-500/[0.04] hover:bg-blue-500/[0.06]'
                       )}
                     >
-                      {format(day, 'd')}
-                    </div>
-                    
-                    {/* Mobile: dots indicator */}
-                    <div className="lg:hidden absolute top-1.5 right-1.5 flex gap-0.5">
-                      {dayItems.length > 0 && (
-                        <div className="flex items-center gap-0.5">
-                          {dayItems.slice(0, 3).map((item, i) => (
-                            <div
-                              key={item.id || i}
-                              className={cn(
-                                'h-1.5 w-1.5 rounded-full',
-                                item.type === 'event' ? 'bg-blue-500' : 'bg-amber-500'
-                              )}
-                            />
-                          ))}
-                          {dayItems.length > 3 && (
-                            <span className="text-[8px] text-muted-foreground/40 ml-0.5">
-                              +{dayItems.length - 3}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Desktop: show items */}
-                    <div className="hidden lg:block space-y-1">
-                      {singleDayEvents.slice(0, 2).map((item) => (
-                        <div
-                          key={item.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedItemId(item.id);
-                          }}
-                          className={cn(
-                            'w-full truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors cursor-pointer',
-                            'bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20'
-                          )}
-                        >
-                          {item.startTime && (
-                            <span className="mr-1 text-[9px] opacity-60">{item.startTime}</span>
-                          )}
-                          {item.title}
-                        </div>
-                      ))}
-                      {tasks.slice(0, 2 - singleDayEvents.length).map((item) => (
-                        <div
-                          key={item.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedItemId(item.id);
-                          }}
-                          className={cn(
-                            'w-full truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors cursor-pointer',
-                            'bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20'
-                          )}
-                        >
-                          {item.title}
-                        </div>
-                      ))}
-                      {dayItems.length > 2 && (
-                        <span className="text-[9px] text-muted-foreground/40 px-1">
-                          +{dayItems.length - 2} more
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Multi-day events overlay */}
-            <div className="hidden lg:block relative pointer-events-none" style={{ marginTop: '-100%' }}>
-              <div className="grid grid-cols-7 gap-0" style={{ height: `${Math.ceil(calendarDays.length / 7) * 120}px` }}>
-                {multiDayEvents
-                  .filter(({ daysSpan }) => daysSpan > 1)
-                  .map(({ item, startDate, endDate, daysSpan }) => {
-                    // Calculate position
-                    const startIndex = calendarDays.findIndex(d => isSameDay(d, startDate));
-                    if (startIndex === -1) return null;
-
-                    const row = Math.floor(startIndex / 7);
-                    const col = startIndex % 7;
-                    const remainingInRow = 7 - col;
-                    const span = Math.min(daysSpan, remainingInRow);
-
-                    return (
                       <div
-                        key={item.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedItemId(item.id);
-                        }}
-                        className="absolute pointer-events-auto cursor-pointer"
-                        style={{
-                          top: `${row * 120 + 36}px`,
-                          left: `${(col / 7) * 100}%`,
-                          width: `calc(${(span / 7) * 100}% - 4px)`,
-                          marginLeft: '2px',
-                        }}
+                        className={cn(
+                          'inline-flex h-7 w-7 lg:h-6 lg:w-6 items-center justify-center rounded-full text-[12px] lg:text-[11px] font-medium mb-1 tabular-nums transition-colors',
+                          isTodayDate
+                            ? 'bg-blue-500 text-white font-semibold'
+                            : 'text-muted-foreground/60 group-hover:text-foreground'
+                        )}
                       >
-                        <div className="rounded-md px-2 py-1 text-[10px] font-medium bg-purple-500/90 text-white hover:bg-purple-600 transition-colors shadow-sm border border-purple-400/20">
-                          <div className="truncate">{item.title}</div>
-                          <div className="text-[9px] opacity-80">
-                            {format(startDate, 'd')}–{format(endDate, 'd')} {format(startDate, 'MMM')}
-                          </div>
-                        </div>
+                        {format(day, 'd')}
                       </div>
-                    );
-                  })}
+
+                      {/* Mobile: dots indicator */}
+                      <div className="lg:hidden absolute top-1.5 right-1.5 flex gap-0.5">
+                        {dayItems.length > 0 && (
+                          <div className="flex items-center gap-0.5">
+                            {dayItems.slice(0, 3).map((item, i) => (
+                              <div
+                                key={item.id || i}
+                                className={cn(
+                                  'h-1.5 w-1.5 rounded-full',
+                                  item.type === 'event' ? 'bg-blue-500' : 'bg-amber-500'
+                                )}
+                              />
+                            ))}
+                            {dayItems.length > 3 && (
+                              <span className="text-[8px] text-muted-foreground/40 ml-0.5">
+                                +{dayItems.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Desktop: show items */}
+                      <div className="hidden lg:block space-y-1">
+                        {singleDayEvents.slice(0, 2).map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedItemId(item.id);
+                            }}
+                            className={cn(
+                              'w-full truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors cursor-pointer',
+                              'bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20'
+                            )}
+                          >
+                            {item.startTime && (
+                              <span className="mr-1 text-[9px] opacity-60">{item.startTime}</span>
+                            )}
+                            {item.title}
+                          </div>
+                        ))}
+                        {tasks.slice(0, 2 - singleDayEvents.length).map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedItemId(item.id);
+                            }}
+                            className={cn(
+                              'w-full truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors cursor-pointer',
+                              'bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20'
+                            )}
+                          >
+                            {item.title}
+                          </div>
+                        ))}
+                        {dayItems.length > 2 && (
+                          <span className="text-[9px] text-muted-foreground/40 px-1">
+                            +{dayItems.length - 2} more
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* Multi-day events overlay — absolutely positioned over the grid */}
+              {(() => {
+                const totalRows = Math.ceil(calendarDays.length / 7);
+                return (
+                  <div
+                    className="hidden lg:grid absolute inset-0 pointer-events-none"
+                    style={{ gridTemplateColumns: 'repeat(7, 1fr)', gridTemplateRows: `repeat(${totalRows}, 1fr)` }}
+                  >
+                    {multiDayEvents
+                      .filter(({ daysSpan }) => daysSpan > 1)
+                      .flatMap(({ item, startDate, endDate, daysSpan }) => {
+                        const startIndex = calendarDays.findIndex(d => isSameDay(d, startDate));
+                        if (startIndex === -1) return [];
+
+                        // Generate segments for each row the event spans
+                        const segments: Array<{ row: number; col: number; span: number; isStart: boolean; isEnd: boolean }> = [];
+                        let remaining = daysSpan;
+                        let currentRow = Math.floor(startIndex / 7);
+                        let currentCol = startIndex % 7;
+
+                        while (remaining > 0 && currentRow < totalRows) {
+                          const spanInRow = Math.min(remaining, 7 - currentCol);
+                          segments.push({
+                            row: currentRow,
+                            col: currentCol,
+                            span: spanInRow,
+                            isStart: segments.length === 0,
+                            isEnd: remaining - spanInRow <= 0,
+                          });
+                          remaining -= spanInRow;
+                          currentRow++;
+                          currentCol = 0;
+                        }
+
+                        return segments.map((seg, segIdx) => (
+                          <div
+                            key={`${item.id}-seg-${segIdx}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedItemId(item.id);
+                            }}
+                            className="pointer-events-auto cursor-pointer pt-8 px-0.5"
+                            style={{
+                              gridRow: seg.row + 1,
+                              gridColumn: `${seg.col + 1} / span ${seg.span}`,
+                            }}
+                          >
+                            <div className={cn(
+                              'px-2 py-1 text-[10px] font-medium bg-purple-500/90 text-white hover:bg-purple-600 transition-colors shadow-sm border border-purple-400/20',
+                              seg.isStart && seg.isEnd && 'rounded-md',
+                              seg.isStart && !seg.isEnd && 'rounded-l-md rounded-r-none',
+                              !seg.isStart && seg.isEnd && 'rounded-r-md rounded-l-none',
+                              !seg.isStart && !seg.isEnd && 'rounded-none',
+                            )}>
+                              <div className="truncate">
+                                {seg.isStart ? item.title : `↳ ${item.title}`}
+                              </div>
+                              {seg.isStart && (
+                                <div className="text-[9px] opacity-80">
+                                  {format(startDate, 'd')}–{format(endDate, 'd')} {format(startDate, 'MMM')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ));
+                      })}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
