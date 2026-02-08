@@ -555,11 +555,15 @@ export function CommandBar() {
                   {Object.entries(TYPE_ICONS).map(([type, Icon]) => (
                     <button
                       key={type}
-                      onPointerDown={(e) => {
-                        e.preventDefault(); // Prevent keyboard from closing
+                      onMouseDown={(e) => {
+                        e.preventDefault(); // Prevent input from losing focus
+                      }}
+                      onClick={() => {
                         setInput(`/${type} `);
-                        // Refocus input after state update
-                        setTimeout(() => inputRef.current?.focus(), 0);
+                        // Keep input focused
+                        requestAnimationFrame(() => {
+                          inputRef.current?.focus();
+                        });
                       }}
                       className="flex flex-col lg:flex-row items-center gap-1.5 lg:gap-2 rounded-xl lg:rounded-md px-2.5 py-3 lg:py-1.5 text-[12px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground transition-colors active:bg-foreground/[0.06]"
                     >
