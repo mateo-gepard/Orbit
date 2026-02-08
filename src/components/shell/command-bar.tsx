@@ -148,13 +148,20 @@ export function CommandBar() {
     const parsed = parseCommand(input);
 
     // If only tags were typed (no actual title), don't create an item
-    if (!parsed.title && parsed.tags.length > 0) {
+    if (!parsed.title.trim() && parsed.tags.length > 0) {
       // Just auto-create the tags and close
       parsed.tags.forEach(tag => {
         if (!allTags.includes(tag)) {
           addCustomTag(tag);
         }
       });
+      setInput('');
+      setCommandBarOpen(false);
+      return;
+    }
+
+    // If there's no title at all, don't create anything
+    if (!parsed.title.trim()) {
       setInput('');
       setCommandBarOpen(false);
       return;

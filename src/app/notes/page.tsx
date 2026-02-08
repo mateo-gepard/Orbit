@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { FileText, Plus, Check } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -26,28 +26,6 @@ export default function NotesPage() {
 	const [newNoteContent, setNewNoteContent] = useState('');
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	const contentInputRef = useRef<HTMLTextAreaElement>(null);
-
-	// Handle keyboard visibility on mobile
-	useEffect(() => {
-		if (!isCreating) return;
-
-		const handleResize = () => {
-			// On mobile, when keyboard opens, scroll the focused input into view
-			if (window.visualViewport) {
-				const activeElement = document.activeElement;
-				if (activeElement && (activeElement === titleInputRef.current || activeElement === contentInputRef.current)) {
-					setTimeout(() => {
-						activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-					}, 100);
-				}
-			}
-		};
-
-		if (window.visualViewport) {
-			window.visualViewport.addEventListener('resize', handleResize);
-			return () => window.visualViewport?.removeEventListener('resize', handleResize);
-		}
-	}, [isCreating]);
 
 	const notes = useMemo(() => {
 		const all = items.filter((i) => i.type === 'note' && i.status !== 'archived');
@@ -115,14 +93,17 @@ export default function NotesPage() {
 			</div>
 
 			{/* Notes grid */}
-			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 pb-4">
+			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3" style={{ paddingBottom: isCreating ? '360px' : '16px' }}>
 				{/* Quick create card - Google Keep style */}
 				{isCreating ? (
 					<div 
-						className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm"
+						className="lg:relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-lg lg:shadow-sm"
 						style={{ 
-							position: 'relative',
-							zIndex: 10
+							position: 'fixed',
+							bottom: 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)',
+							left: '16px',
+							right: '16px',
+							zIndex: 50,
 						}}
 					>
 						<input

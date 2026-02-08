@@ -65,6 +65,8 @@ export function DetailPanel() {
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
+  const [tagToDelete, setTagToDelete] = useState<string | null>(null);
+  const [tagLongPressTimer, setTagLongPressTimer] = useState<NodeJS.Timeout | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const allTags = getAllTags();
@@ -181,6 +183,28 @@ export function DetailPanel() {
       ? tags.filter((t) => t !== tag)
       : [...tags, tag];
     handleUpdate({ tags: updated });
+  };
+
+  const handleTagLongPressStart = (tag: string) => {
+    if (LIFE_AREA_TAGS.includes(tag as any)) {
+      return; // Don't show delete for default tags
+    }
+    const timer = setTimeout(() => {
+      setTagToDelete(tag);
+    }, 500); // 500ms long press
+    setTagLongPressTimer(timer);
+  };
+
+  const handleTagLongPressEnd = () => {
+    if (tagLongPressTimer) {
+      clearTimeout(tagLongPressTimer);
+      setTagLongPressTimer(null);
+    }
+  };
+
+  const handleDeleteTag = (tag: string) => {
+    removeCustomTag(tag);
+    setTagToDelete(null);
   };
 
   // Filter item tags to only show valid tags (remove deleted custom tags)
@@ -981,9 +1005,26 @@ export function DetailPanel() {
           <FieldLabel>Tags</FieldLabel>
           <div className="mt-2 flex flex-wrap gap-1">
             {allTags.map((tag) => (
-              <div key={tag} className="relative group">
+              <div key={tag} className="relative">
                 <button
                   onClick={() => toggleTag(tag)}
+                  onTouchStart={(e) => {
+                    handleTagLongPressStart(tag);
+                  }}
+                  onTouchEnd={(e) => {
+                    handleTagLongPressEnd();
+                  }}
+                  onTouchCancel={(e) => {
+                    handleTagLongPressEnd();
+                  }}
+                  onMouseEnter={() => {
+                    if (!LIFE_AREA_TAGS.includes(tag as any)) {
+                      setTagToDelete(tag);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    setTagToDelete(null);
+                  }}
                   className={cn(
                     'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
                     validItemTags.includes(tag)
@@ -993,17 +1034,42 @@ export function DetailPanel() {
                 >
                   {tag}
                 </button>
-                {!LIFE_AREA_TAGS.includes(tag as any) && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeCustomTag(tag);
-                    }}
-                    className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center h-3.5 w-3.5 rounded-full bg-red-500 text-white text-[8px] hover:bg-red-600"
-                    title="Delete tag"
+                {tagToDelete === tag && !LIFE_AREA_TAGS.includes(tag as any) && (
+                  <div 
+                    className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border/60 rounded-lg shadow-lg p-2 min-w-[180px]"
+                    onMouseEnter={() => setTagToDelete(tag)}
+                    onMouseLeave={() => setTagToDelete(null)}
                   >
-                    ×
-                  </button>
+                    <p className="text-[11px] text-muted-foreground/80 mb-2">Delete tag "{tag}"?</p>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTag(tag);
+                        }}
+                        onTouchEnd={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTag(tag);
+                        }}
+                        className="flex-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 px-2 py-1 text-[11px] font-medium transition-colors"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTagToDelete(null);
+                        }}
+                        onTouchEnd={(e) => {
+                          e.stopPropagation();
+                          setTagToDelete(null);
+                        }}
+                        className="flex-1 rounded-md bg-foreground/[0.05] hover:bg-foreground/[0.1] text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             ))}
