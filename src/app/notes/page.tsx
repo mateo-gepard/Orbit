@@ -35,42 +35,6 @@ export default function NotesPage() {
 		return all.filter((i) => i.noteSubtype === filter || i.tags?.includes(filter));
 	}, [items, filter]);
 
-	// Smart list formatting
-	const formatContent = (text: string): string => {
-		const lines = text.split('\n');
-		let formatted = '';
-		let inList = false;
-		
-		for (let i = 0; i < lines.length; i++) {
-			const line = lines[i].trim();
-			
-			// Check if line starts with bullet point or number
-			if (line.match(/^[-•*]\s/) || line.match(/^\d+\.\s/)) {
-				if (!inList) {
-					formatted += '<ul>\n';
-					inList = true;
-				}
-				formatted += `<li>${line.replace(/^[-•*]\s/, '').replace(/^\d+\.\s/, '')}</li>\n`;
-			} else {
-				if (inList) {
-					formatted += '</ul>\n';
-					inList = false;
-				}
-				if (line) {
-					formatted += `<p>${line}</p>\n`;
-				} else {
-					formatted += '<br>\n';
-				}
-			}
-		}
-		
-		if (inList) {
-			formatted += '</ul>\n';
-		}
-		
-		return formatted.trim();
-	};
-
 	const handleCreateNote = async () => {
 		if (!user || (!newNoteTitle.trim() && !newNoteContent.trim())) {
 			setIsCreating(false);
@@ -79,13 +43,11 @@ export default function NotesPage() {
 			return;
 		}
 
-		const formattedContent = formatContent(newNoteContent.trim());
-
 		await createItem({
 			type: 'note',
 			status: 'active',
 			title: newNoteTitle.trim() || 'Untitled',
-			content: formattedContent,
+			content: newNoteContent.trim(),
 			noteSubtype: filter === 'all' ? 'general' : filter,
 			tags: filter !== 'all' ? [filter] : [],
 			userId: user.uid,
@@ -328,8 +290,8 @@ export default function NotesPage() {
 							)}
 						</div>
 						{note.content && (
-							<p className="text-[11px] text-muted-foreground/50 line-clamp-3 leading-relaxed">
-								{note.content.replace(/<[^>]*>/g, '')}
+							<p className="text-[11px] text-muted-foreground/50 line-clamp-3 leading-relaxed whitespace-pre-wrap">
+								{note.content}
 							</p>
 						)}
 						<div className="flex items-center justify-between mt-auto pt-1">

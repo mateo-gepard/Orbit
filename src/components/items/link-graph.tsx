@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { X, Network, CheckCircle2, Circle, Target, Calendar, FileText, ListTodo, Zap, ArrowDown, ArrowRight, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import type { OrbitItem, ItemType } from '@/lib/types';
+import { getItemRelationships } from '@/lib/links';
 
 const ITEM_TYPE_CONFIG: Record<ItemType, { icon: any; color: string; label: string }> = {
   task: { icon: CheckCircle2, color: 'text-blue-600', label: 'Task' },
@@ -24,140 +25,53 @@ interface LinkGraphProps {
   onNavigate: (itemId: string) => void;
 }
 
-// Helper function to recursively collect ALL related items through any connection
-function collectAllRelatedItems(
-  startItem: OrbitItem,
-  allItems: OrbitItem[],
-  visited: Set<string> = new Set()
-): OrbitItem[] {
-  if (visited.has(startItem.id)) return [];
-  visited.add(startItem.id);
-  
-  const related: OrbitItem[] = [];
-  
-  // 1. Get all items linked TO this item (linkedIds)
-  const directLinked = (startItem.linkedIds || [])
-    .map(id => allItems.find(i => i.id === id))
-    .filter((i): i is OrbitItem => i !== undefined && !visited.has(i.id));
-  
-  // 2. Get all items that link to THIS item (reverse links)
-  const reverseLinked = allItems.filter(i => 
-    i.linkedIds?.includes(startItem.id) && !visited.has(i.id)
-  );
-  
-  // 3. Get parent
-  const parent = startItem.parentId 
-    ? allItems.find(i => i.id === startItem.parentId && !visited.has(i.id))
-    : undefined;
-  
-  // 4. Get all children
-  const children = allItems.filter(i => i.parentId === startItem.id && !visited.has(i.id));
-  
-  // Collect all immediate connections
-  const immediateConnections = [
-    ...directLinked,
-    ...reverseLinked,
-    ...(parent ? [parent] : []),
-    ...children
-  ];
-  
-  // Add immediate connections and recurse through each
-  immediateConnections.forEach(connectedItem => {
-    if (!visited.has(connectedItem.id)) {
-      related.push(connectedItem);
-      // Recursively get ALL items connected to this one
-      const deeperConnections = collectAllRelatedItems(connectedItem, allItems, visited);
-      related.push(...deeperConnections);
-    }
-  });
-  
-  return related;
-}
-
-// Helper to collect all descendants (children, grandchildren, etc.)
-function collectAllDescendants(
-  item: OrbitItem,
-  allItems: OrbitItem[],
-  visited: Set<string> = new Set()
-): OrbitItem[] {
-  if (visited.has(item.id)) return [];
-  visited.add(item.id);
-  
-  const children = allItems.filter(i => i.parentId === item.id);
-  const allDescendants: OrbitItem[] = [...children];
-  
-  children.forEach(child => {
-    const grandchildren = collectAllDescendants(child, allItems, visited);
-    allDescendants.push(...grandchildren);
-  });
-  
-  return allDescendants;
-}
-
-// Helper to collect all ancestors (parent, grandparent, etc.)
-function collectAllAncestors(
-  item: OrbitItem,
-  allItems: OrbitItem[],
-  visited: Set<string> = new Set()
-): OrbitItem[] {
-  if (visited.has(item.id)) return [];
-  visited.add(item.id);
-  
-  if (!item.parentId) return [];
-  
-  const parent = allItems.find(i => i.id === item.parentId);
-  if (!parent) return [];
-  
-  const ancestors: OrbitItem[] = [parent];
-  const upperAncestors = collectAllAncestors(parent, allItems, visited);
-  ancestors.push(...upperAncestors);
-  
-  return ancestors;
-}
-
 export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: LinkGraphProps) {
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchCurrent, setTouchCurrent] = useState<number | null>(null);
+  
+  // Use unified relationship system
+  const relationships = useMemo(() => 
+    getItemRelationships(currentItem, allItems),
+    [currentItem, allItems]
+  );
+  
+  // Categorize for display
+  const graphData = useMemo(() => {
+    const directLinkedIds = new Set(currentItem.linkedIds || []);
+    const directReverseIds = new Set(relationships.reverseLinked.map(i => i.id));
+    const ancestorIds = new Set(relationships.ancestors.map(a => a.id));
+    const descendantIds = new Set(relationships.descendants.map(d => d.id));
+    const directChildIds = new Set(relationships.children.map(c => c.id));
+    
+    // Direct links (bidirectional peer links)
+    const directLinks = [...relationships.linked, ...relationships.reverseLinked];
+    
+    // Indirectly related (found through recursive traversal but not direct)
+    const indirectlyRelated = relationships.allRelated.filter((i: OrbitItem) => 
+      !directLinkedIds.has(i.id) && 
+      !directReverseIds.has(i.id) &&
+      !ancestorIds.has(i.id) &&
+      !descendantIds.has(i.id)
+    );
+    
+    return {
+      ancestors: relationships.ancestors,
+      descendants: relationships.descendants,
+      directLinks,
+      indirectlyRelated,
+      immediateChildren: relationships.children,
+      allRelatedItems: relationships.allRelated,
+      parent: relationships.parent
+    };
+  }, [currentItem, relationships]);
+  
   const [isDragging, setIsDragging] = useState(false);
-
-  // Collect ALL related items through ANY connection (links, parent, children)
-  const allRelatedItems = collectAllRelatedItems(currentItem, allItems);
+  const hasRelationships = graphData.ancestors.length > 0 || graphData.descendants.length > 0 || graphData.allRelatedItems.length > 0;
   
-  // Now categorize them intelligently
-  // Direct links are items that are explicitly linked to/from current item
-  const directLinkedIds = new Set(currentItem.linkedIds || []);
-  const directReverseIds = new Set(
-    allItems.filter(i => i.linkedIds?.includes(currentItem.id)).map(i => i.id)
-  );
-  
-  // Items that are directly linked (not their parents/children)
-  const directLinks = allRelatedItems.filter((i: OrbitItem) => 
-    directLinkedIds.has(i.id) || directReverseIds.has(i.id)
-  );
-  
-  // Collect ALL ancestors and descendants of current item
-  const allAncestors = collectAllAncestors(currentItem, allItems);
-  const allDescendants = collectAllDescendants(currentItem, allItems);
-  const immediateChildren = allItems.filter(i => i.parentId === currentItem.id);
-  
-  // Everything else that came through the connection chain
-  // Exclude items that are already in ancestors or descendants of the CURRENT item
-  const ancestorIds = new Set(allAncestors.map(a => a.id));
-  const descendantIds = new Set(allDescendants.map(d => d.id));
-  
-  const indirectlyRelated = allRelatedItems.filter((i: OrbitItem) => 
-    !directLinkedIds.has(i.id) && 
-    !directReverseIds.has(i.id) &&
-    !ancestorIds.has(i.id) &&
-    !descendantIds.has(i.id)
-  );
-
-  const hasRelationships = allAncestors.length > 0 || allDescendants.length > 0 || allRelatedItems.length > 0;
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
     setTouchStart(touch.clientY);
     setTouchCurrent(touch.clientY);
-    setIsDragging(false);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -327,13 +241,13 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               {/* Flowchart - Top to Bottom */}
               
               {/* All Ancestors (top to bottom) */}
-              {allAncestors.length > 0 && (
+              {graphData.ancestors.length > 0 && (
                 <>
-                  {allAncestors.slice().reverse().map((ancestor, idx) => (
+                  {graphData.ancestors.slice().reverse().map((ancestor: OrbitItem, idx: number) => (
                     <div key={ancestor.id}>
                       <div className="mb-2">
                         <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                          ↑ {idx === allAncestors.length - 1 ? 'Parent' : `Ancestor ${allAncestors.length - idx - 1} level${allAncestors.length - idx - 1 > 1 ? 's' : ''} up`}
+                          ↑ {idx === graphData.ancestors.length - 1 ? 'Parent' : `Ancestor ${graphData.ancestors.length - idx - 1} level${graphData.ancestors.length - idx - 1 > 1 ? 's' : ''} up`}
                         </div>
                         {renderItem(ancestor, false)}
                       </div>
@@ -354,15 +268,15 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               </div>
 
               {/* Direct Linked Items (immediate peers) */}
-              {directLinks.length > 0 && (
+              {graphData.directLinks.length > 0 && (
                 <>
                   {renderConnector('horizontal')}
                   <div className="mb-2">
                     <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                      ↔ Direct Links ({directLinks.length})
+                      ↔ Direct Links ({graphData.directLinks.length})
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      {directLinks.map(linked => renderItem(linked, false))}
+                      {graphData.directLinks.map((linked: OrbitItem) => renderItem(linked, false))}
                     </div>
                   </div>
                   {renderConnector('horizontal')}
@@ -370,14 +284,14 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               )}
 
               {/* Nested Linked Items (links of links) */}
-              {indirectlyRelated.length > 0 && (
+              {graphData.indirectlyRelated.length > 0 && (
                 <>
                   <div className="mb-2">
                     <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                      ⇄ Related via Links ({indirectlyRelated.length})
+                      ⇄ Related via Links ({graphData.indirectlyRelated.length})
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      {indirectlyRelated.map(linked => renderItem(linked, false))}
+                      {graphData.indirectlyRelated.map((linked: OrbitItem) => renderItem(linked, false))}
                     </div>
                   </div>
                   {renderConnector('horizontal')}
@@ -385,19 +299,19 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               )}
 
               {/* Immediate Children */}
-              {immediateChildren.length > 0 && (
+              {graphData.immediateChildren.length > 0 && (
                 <>
                   {renderConnector('down')}
                   <div className="mb-2">
                     <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                      ↓ Direct Children ({immediateChildren.length})
+                      ↓ Direct Children ({graphData.immediateChildren.length})
                     </div>
-                    {immediateChildren.length > 2 && renderConnector('branch')}
+                    {graphData.immediateChildren.length > 2 && renderConnector('branch')}
                     <div className="grid grid-cols-1 gap-2">
-                      {immediateChildren.map((child, idx) => (
+                      {graphData.immediateChildren.map((child: OrbitItem, idx: number) => (
                         <div key={child.id}>
                           {renderItem(child, false)}
-                          {idx < immediateChildren.length - 1 && (
+                          {idx < graphData.immediateChildren.length - 1 && (
                             <div className="flex justify-center py-1">
                               <div className="w-px h-4 bg-border/30" />
                             </div>
@@ -410,15 +324,15 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               )}
 
               {/* All Descendants (grandchildren and beyond) */}
-              {allDescendants.length > immediateChildren.length && (
+              {graphData.descendants.length > graphData.immediateChildren.length && (
                 <>
                   {renderConnector('down')}
                   <div>
                     <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                      ↓ All Descendants ({allDescendants.length - immediateChildren.length} more)
+                      ↓ All Descendants ({graphData.descendants.length - graphData.immediateChildren.length} more)
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      {allDescendants.filter(d => !immediateChildren.some(c => c.id === d.id)).map(desc => 
+                      {graphData.descendants.filter((d: OrbitItem) => !graphData.immediateChildren.some((c: OrbitItem) => c.id === d.id)).map((desc: OrbitItem) => 
                         renderItem(desc, false)
                       )}
                     </div>
@@ -430,9 +344,9 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               {hasRelationships && (
                 <div className="mt-6 pt-4 border-t border-border/30 text-center">
                   <p className="text-[11px] text-muted-foreground/50">
-                    Total: {allAncestors.length} ancestor{allAncestors.length !== 1 ? 's' : ''} · {' '}
-                    {allRelatedItems.length} related · {' '}
-                    {allDescendants.length} descendant{allDescendants.length !== 1 ? 's' : ''}
+                    Total: {graphData.ancestors.length} ancestor{graphData.ancestors.length !== 1 ? 's' : ''} · {' '}
+                    {graphData.allRelatedItems.length} related · {' '}
+                    {graphData.descendants.length} descendant{graphData.descendants.length !== 1 ? 's' : ''}
                   </p>
                 </div>
               )}

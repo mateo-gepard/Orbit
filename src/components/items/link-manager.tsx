@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { Plus, X, Link as LinkIcon, FolderOpen, Target, Calendar, StickyNote, CheckSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { OrbitItem, ItemType } from '@/lib/types';
+import { useLinks } from '@/lib/hooks/use-links';
 
 interface LinkManagerProps {
   item: OrbitItem;
@@ -28,39 +28,18 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
   const [selectedType, setSelectedType] = useState<ItemType | 'none'>('none');
   const [selectedItemId, setSelectedItemId] = useState<string>('none');
 
-  // Get parent item
-  const parentItem = item.parentId ? allItems.find(i => i.id === item.parentId) : undefined;
-
-  // Get linked items (excluding parent)
-  const linkedItems = (item.linkedIds || [])
-    .map(id => allItems.find(i => i.id === id))
-    .filter((i): i is OrbitItem => i !== undefined);
-
-  // Get child items
-  const childItems = allItems.filter(i => i.parentId === item.id);
-
-  // All connected items
-  const allConnectedIds = new Set([
-    item.id,
-    ...(item.parentId ? [item.parentId] : []),
-    ...(item.linkedIds || []),
-    ...childItems.map(i => i.id)
-  ]);
+  // Use unified linking system
+  const links = useLinks({ item, allItems, onUpdate });
 
   // Filter linkable items by selected type
   const linkableItems = selectedType === 'none' 
     ? []
-    : allItems.filter(i => 
-        i.type === selectedType &&
-        !allConnectedIds.has(i.id) &&
-        i.status !== 'archived'
-      );
+    : links.getLinkableByType(selectedType);
 
   const handleAddLink = () => {
     if (selectedItemId === 'none') return;
     
-    const newLinkedIds = [...(item.linkedIds || []), selectedItemId];
-    onUpdate({ linkedIds: newLinkedIds });
+    links.handleAddLink(selectedItemId);
     
     // Reset
     setSelectedType('none');
@@ -68,17 +47,8 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
     setShowAddLink(false);
   };
 
-  const handleRemoveLink = (linkId: string) => {
-    const newLinkedIds = (item.linkedIds || []).filter(id => id !== linkId);
-    onUpdate({ linkedIds: newLinkedIds });
-  };
-
-  const handleSetParent = (parentId: string) => {
-    onUpdate({ parentId: parentId === 'none' ? undefined : parentId });
-  };
-
   const handleRemoveParent = () => {
-    onUpdate({ parentId: undefined });
+    links.handleSetParent(undefined);
   };
 
   const renderItemBadge = (linkedItem: OrbitItem, onRemove?: () => void) => {
@@ -109,7 +79,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
   return (
     <div className="space-y-3">
       {/* Parent Link */}
-      {parentItem && (
+      {links.parentItem && (
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <FolderOpen className="h-3.5 w-3.5 text-muted-foreground/60" />
@@ -118,39 +88,39 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            {renderItemBadge(parentItem, handleRemoveParent)}
+            {renderItemBadge(links.parentItem, handleRemoveParent)}
           </div>
         </div>
       )}
 
       {/* Linked Items */}
-      {linkedItems.length > 0 && (
+      {links.linkedItems.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <LinkIcon className="h-3.5 w-3.5 text-muted-foreground/60" />
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider font-medium">
-              Linked Items ({linkedItems.length})
+              Linked Items ({links.linkedItems.length})
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {linkedItems.map(linkedItem =>
-              renderItemBadge(linkedItem, () => handleRemoveLink(linkedItem.id))
+            {links.linkedItems.map((linkedItem: OrbitItem) =>
+              renderItemBadge(linkedItem, () => links.handleRemoveLink(linkedItem.id))
             )}
           </div>
         </div>
       )}
 
       {/* Child Items (Read-only display) */}
-      {childItems.length > 0 && (
+      {links.childItems.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <Target className="h-3.5 w-3.5 text-muted-foreground/60" />
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider font-medium">
-              Contains ({childItems.length})
+              Contains ({links.childItems.length})
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {childItems.map(childItem => renderItemBadge(childItem))}
+            {links.childItems.map((childItem: OrbitItem) => renderItemBadge(childItem))}
           </div>
         </div>
       )}
@@ -251,25 +221,23 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
       )}
 
       {/* Set Parent (if no parent) */}
-      {!parentItem && (
+      {!links.parentItem && (
         <div className="pt-2 border-t border-border/40">
           <div className="text-[10px] text-muted-foreground/60 mb-1.5">Set Parent</div>
-          <Select value={item.parentId || 'none'} onValueChange={handleSetParent}>
+          <Select value={item.parentId || 'none'} onValueChange={(value) => links.handleSetParent(value === 'none' ? undefined : value)}>
             <SelectTrigger className="h-7 text-[11px]">
               <SelectValue placeholder="No parent" />
             </SelectTrigger>
             <SelectContent className="max-h-[200px]">
               <SelectItem value="none" className="text-[11px]">No parent</SelectItem>
-              {allItems
-                .filter(i => !allConnectedIds.has(i.id) && i.status !== 'archived')
-                .map(parentItem => {
-                  const config = ITEM_TYPE_CONFIG[parentItem.type];
+              {links.linkableItems.map((linkableItem: OrbitItem) => {
+                  const config = ITEM_TYPE_CONFIG[linkableItem.type];
                   const Icon = config.icon;
                   return (
-                    <SelectItem key={parentItem.id} value={parentItem.id} className="text-[11px]">
+                    <SelectItem key={linkableItem.id} value={linkableItem.id} className="text-[11px]">
                       <div className="flex items-center gap-2">
                         <Icon className={cn('h-3.5 w-3.5', config.color)} />
-                        {parentItem.emoji && `${parentItem.emoji} `}{parentItem.title}
+                        {linkableItem.emoji && `${linkableItem.emoji} `}{linkableItem.title}
                       </div>
                     </SelectItem>
                   );
