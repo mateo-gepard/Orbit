@@ -4,6 +4,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   query,
   where,
   orderBy,
@@ -366,7 +367,14 @@ export async function updateItem(
   try {
     await withRetry(async () => {
       const ref = doc(getDb(), ITEMS_COLLECTION, id);
-      await updateDoc(ref, { ...updates, updatedAt: now });
+      
+      // Convert undefined values to deleteField() for Firestore
+      const firestoreUpdates: Record<string, any> = { updatedAt: now };
+      for (const [key, value] of Object.entries(updates)) {
+        firestoreUpdates[key] = value === undefined ? deleteField() : value;
+      }
+      
+      await updateDoc(ref, firestoreUpdates);
     }, 'updateItem');
     _trackUpdateAnalytics(existingItem, updates);
   } catch (err) {
