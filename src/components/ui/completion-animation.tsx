@@ -40,19 +40,22 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
     return (
       <div
         className={cn(
-          'fixed inset-0 z-50 flex items-center justify-center pointer-events-none transition-opacity duration-300',
+          'fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none transition-opacity duration-300',
           stage === 'enter' ? 'opacity-0' : stage === 'celebrate' ? 'opacity-100' : 'opacity-0'
         )}
       >
+        {/* Full-screen backdrop */}
+        <div className="absolute inset-0 bg-background/20 backdrop-blur-[2px]" />
+        
         <div
           className={cn(
-            'flex items-center justify-center transition-all duration-500',
+            'relative z-10 flex items-center justify-center transition-all duration-500',
             stage === 'celebrate' ? 'scale-100' : 'scale-50'
           )}
         >
           {/* Check circle */}
           <div className="relative">
-            <div className="h-16 w-16 rounded-full bg-foreground/10 flex items-center justify-center">
+            <div className="h-16 w-16 rounded-full bg-foreground/10 backdrop-blur-sm flex items-center justify-center">
               <Check className="h-8 w-8 text-foreground/80" strokeWidth={2.5} />
             </div>
             {/* Ripple effect */}
@@ -72,13 +75,15 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center pointer-events-none transition-opacity duration-300',
+        'fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none transition-opacity duration-300',
         stage === 'enter' ? 'opacity-0' : stage === 'celebrate' ? 'opacity-100' : 'opacity-0'
       )}
     >
+      {/* Full-screen backdrop */}
+      <div className="absolute inset-0 bg-background/20 backdrop-blur-[2px]" />
       <div
         className={cn(
-          'flex flex-col items-center gap-3 transition-all duration-500',
+          'relative z-10 flex flex-col items-center gap-3 transition-all duration-500',
           stage === 'celebrate' ? 'scale-100' : 'scale-50'
         )}
       >
