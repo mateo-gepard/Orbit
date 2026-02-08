@@ -184,11 +184,11 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
       </div>
 
       {/* Content */}
-      <div className="absolute inset-0 flex items-center justify-center pt-16 pb-20 md:p-12">
+      <div className="absolute inset-0 flex items-center justify-center pt-16 pb-20 md:pt-20 md:pb-4">
         {isPreviewable ? (
           <>
             {isImage && (
-              <div className="relative w-full h-full flex items-center justify-center">
+              <div className="relative w-full h-full flex items-center justify-center p-4">
                 <img
                   src={currentFile.url}
                   alt={currentFile.name}
@@ -211,19 +211,23 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
             )}
 
             {isPDF && (
-              <iframe
-                src={currentFile.url}
-                className="w-full h-full border-0"
-                onLoad={() => setLoading(false)}
-              />
+              <div className="w-full h-full px-2 md:px-4">
+                <iframe
+                  src={currentFile.url}
+                  className="w-full h-full border-0 rounded-lg"
+                  onLoad={() => setLoading(false)}
+                />
+              </div>
             )}
 
             {isWord && (
-              <iframe
-                src={`https://docs.google.com/gview?url=${encodeURIComponent(currentFile.url)}&embedded=true`}
-                className="w-full h-full border-0"
-                onLoad={() => setLoading(false)}
-              />
+              <div className="w-full h-full px-2 md:px-4">
+                <iframe
+                  src={`https://docs.google.com/gview?url=${encodeURIComponent(currentFile.url)}&embedded=true`}
+                  className="w-full h-full border-0 rounded-lg bg-white"
+                  onLoad={() => setLoading(false)}
+                />
+              </div>
             )}
           </>
         ) : (

@@ -79,9 +79,6 @@ export function DetailPanel() {
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
-  const [tagToDelete, setTagToDelete] = useState<string | null>(null);
-  const [tagLongPressTimer, setTagLongPressTimer] = useState<NodeJS.Timeout | null>(null);
-  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const allTags = getAllTags();
@@ -210,26 +207,6 @@ export function DetailPanel() {
     handleUpdate({ tags: updated });
   };
 
-  const handleTagLongPressStart = (tag: string) => {
-    // Allow deletion of ALL tags (including life area tags)
-    const timer = setTimeout(() => {
-      setTagToDelete(tag);
-    }, 500); // 500ms long press
-    setTagLongPressTimer(timer);
-  };
-
-  const handleTagLongPressEnd = () => {
-    if (tagLongPressTimer) {
-      clearTimeout(tagLongPressTimer);
-      setTagLongPressTimer(null);
-    }
-  };
-
-  const handleDeleteTag = (tag: string) => {
-    removeCustomTag(tag);
-    setTagToDelete(null);
-  };
-
   // Filter item tags to only show valid tags (remove deleted custom tags)
   const validItemTags = (item?.tags || []).filter(tag => allTags.includes(tag));
 
@@ -295,7 +272,7 @@ export function DetailPanel() {
             <span className="text-[13px] font-semibold">{title || 'Project'}</span>
           </div>
           <div className="flex items-center gap-0.5">
-            <DropdownMenu open={showProjectSettings} onOpenChange={setShowProjectSettings}>
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
                   <MoreVertical className="h-4 w-4" />
@@ -662,9 +639,6 @@ export function DetailPanel() {
             <SheetHeader className="sr-only">
               <SheetTitle>Project Dashboard</SheetTitle>
             </SheetHeader>
-            <div className="flex justify-center pt-2 pb-1 sticky top-0 z-10 bg-background rounded-t-2xl">
-              <div className="h-1 w-10 rounded-full bg-foreground/10" />
-            </div>
             <div className="h-[calc(92dvh-24px)] overflow-hidden">
               {content}
             </div>
@@ -1053,71 +1027,18 @@ export function DetailPanel() {
           <FieldLabel>Tags</FieldLabel>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {allTags.map((tag) => (
-              <div key={tag} className="relative">
-                <button
-                  onClick={() => toggleTag(tag)}
-                  onTouchStart={(e) => {
-                    handleTagLongPressStart(tag);
-                  }}
-                  onTouchEnd={(e) => {
-                    handleTagLongPressEnd();
-                  }}
-                  onTouchCancel={(e) => {
-                    handleTagLongPressEnd();
-                  }}
-                  onMouseEnter={() => {
-                    setTagToDelete(tag);
-                  }}
-                  onMouseLeave={() => {
-                    setTagToDelete(null);
-                  }}
-                  className={cn(
-                    'rounded-md px-2.5 py-1 text-[12px] font-medium transition-all',
-                    validItemTags.includes(tag)
-                      ? 'bg-foreground text-background'
-                      : 'bg-foreground/[0.06] text-muted-foreground/70 hover:bg-foreground/[0.1]'
-                  )}
-                >
-                  {tag}
-                </button>
-                {tagToDelete === tag && (
-                  <div 
-                    className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border/60 rounded-lg shadow-lg p-2 min-w-[180px]"
-                    onMouseEnter={() => setTagToDelete(tag)}
-                    onMouseLeave={() => setTagToDelete(null)}
-                  >
-                    <p className="text-[11px] text-muted-foreground/80 mb-2">Delete tag "{tag}"?</p>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTag(tag);
-                        }}
-                        onTouchEnd={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTag(tag);
-                        }}
-                        className="flex-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 px-2 py-1 text-[11px] font-medium transition-colors"
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTagToDelete(null);
-                        }}
-                        onTouchEnd={(e) => {
-                          e.stopPropagation();
-                          setTagToDelete(null);
-                        }}
-                        className="flex-1 rounded-md bg-foreground/[0.05] hover:bg-foreground/[0.1] text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
+              <button
+                key={tag}
+                onClick={() => toggleTag(tag)}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-[12px] font-medium transition-all',
+                  validItemTags.includes(tag)
+                    ? 'bg-foreground text-background'
+                    : 'bg-foreground/[0.06] text-muted-foreground/70 hover:bg-foreground/[0.1]'
                 )}
-              </div>
+              >
+                {tag}
+              </button>
             ))}
           </div>
         </div>
@@ -1199,10 +1120,6 @@ export function DetailPanel() {
           <SheetHeader className="sr-only">
             <SheetTitle>Item Details</SheetTitle>
           </SheetHeader>
-          {/* Drag handle */}
-          <div className="flex justify-center pt-2 pb-1 sticky top-0 z-10 bg-background rounded-t-2xl">
-            <div className="h-1 w-10 rounded-full bg-foreground/10" />
-          </div>
           <div className="h-[calc(92dvh-24px)] overflow-hidden">
             {content}
           </div>
