@@ -8,6 +8,7 @@ import { useAuth } from '@/components/providers/auth-provider';
 import type { OrbitItem, ProjectFile } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { FileViewer } from '@/components/files/file-viewer';
 import { format } from 'date-fns';
 
 interface FileUploadProps {
@@ -20,6 +21,7 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [viewingFile, setViewingFile] = useState<ProjectFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const files = project.files || [];
@@ -165,15 +167,13 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
                   {/* Actions */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {isPrev && (
-                      <a
-                        href={file.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => setViewingFile(file)}
                         className="p-1.5 rounded-md hover:bg-foreground/[0.05] text-muted-foreground hover:text-foreground transition-colors"
                         title="Preview"
                       >
                         <Eye className="h-4 w-4" />
-                      </a>
+                      </button>
                     )}
                     <a
                       href={file.url}
@@ -196,6 +196,15 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
             })}
           </div>
         </div>
+      )}
+
+      {/* File Viewer Modal */}
+      {viewingFile && (
+        <FileViewer
+          file={viewingFile}
+          files={files}
+          onClose={() => setViewingFile(null)}
+        />
       )}
     </div>
   );
