@@ -24,21 +24,43 @@ interface ItemRowProps {
 }
 
 export function ItemRow({ item, showType = false, showProject = false, compact = false, enableSwipe = true }: ItemRowProps) {
-  const { setSelectedItemId, getItemById } = useOrbitStore();
+  const { setSelectedItemId, getItemById, setCompletionAnimation } = useOrbitStore();
   const parent = item.parentId ? getItemById(item.parentId) : undefined;
 
   const toggleComplete = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     haptic(item.status === 'done' ? 'light' : 'success');
+    
+    const newStatus = item.status === 'done' ? 'active' : 'done';
+    
+    // Show completion animation when marking as done
+    if (newStatus === 'done') {
+      if (item.type === 'habit') {
+        // For habits, we'd need to calculate the streak
+        // For now, show without streak number in list view
+        setCompletionAnimation({ type: 'habit', streak: 1 });
+      } else if (item.type === 'task') {
+        setCompletionAnimation({ type: 'task' });
+      }
+    }
+    
     await updateItem(item.id, {
-      status: item.status === 'done' ? 'active' : 'done',
-      completedAt: item.status === 'done' ? undefined : Date.now(),
+      status: newStatus,
+      completedAt: newStatus === 'done' ? Date.now() : undefined,
     });
   };
 
   const handleSwipeComplete = async () => {
     haptic('success');
+    
+    // Show completion animation
+    if (item.type === 'habit') {
+      setCompletionAnimation({ type: 'habit', streak: 1 });
+    } else if (item.type === 'task') {
+      setCompletionAnimation({ type: 'task' });
+    }
+    
     await updateItem(item.id, {
       status: 'done',
       completedAt: Date.now(),
