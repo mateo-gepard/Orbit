@@ -335,7 +335,12 @@ export function CommandBar() {
                   {Object.entries(TYPE_ICONS).map(([type, Icon]) => (
                     <button
                       key={type}
-                      onClick={() => setInput(`/${type} `)}
+                      onPointerDown={(e) => {
+                        e.preventDefault(); // Prevent keyboard from closing
+                        setInput(`/${type} `);
+                        // Refocus input after state update
+                        setTimeout(() => inputRef.current?.focus(), 0);
+                      }}
                       className="flex flex-col lg:flex-row items-center gap-1.5 lg:gap-2 rounded-xl lg:rounded-md px-2.5 py-3 lg:py-1.5 text-[12px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground transition-colors active:bg-foreground/[0.06]"
                     >
                       <Icon className="h-5 w-5 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
@@ -343,12 +348,19 @@ export function CommandBar() {
                     </button>
                   ))}
                 </div>
-                <p className="text-[11px] text-muted-foreground/40 pt-1">
-                  Tip: use <kbd className="font-mono text-[10px]">#tag</kbd>{' '}
-                  <kbd className="font-mono text-[10px]">!high</kbd>{' '}
-                  and dates like <kbd className="font-mono text-[10px]">morgen</kbd> or{' '}
-                  <kbd className="font-mono text-[10px]">15.03</kbd>
-                </p>
+                <div className="space-y-2 pt-1">
+                  <p className="text-[11px] text-muted-foreground/40">
+                    <span className="font-semibold text-muted-foreground/60">💡 Inbox: </span>
+                    Your capture zone. Items start here before you organize them.
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/40">
+                    <span className="font-semibold text-muted-foreground/60">Tip: </span>
+                    Use <kbd className="font-mono text-[10px]">#tag</kbd>{' '}
+                    <kbd className="font-mono text-[10px]">!high</kbd>{' '}
+                    and dates like <kbd className="font-mono text-[10px]">morgen</kbd> or{' '}
+                    <kbd className="font-mono text-[10px]">15.03</kbd>
+                  </p>
+                </div>
               </div>
             )}
           </div>

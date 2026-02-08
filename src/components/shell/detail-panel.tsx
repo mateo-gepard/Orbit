@@ -15,6 +15,9 @@ import {
   CheckCircle2,
   Target,
   LayoutList,
+  CalendarClock,
+  Sparkles,
+  Inbox as InboxIcon,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
@@ -32,6 +35,13 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
 const STATUS_OPTIONS: ItemStatus[] = ['inbox', 'active', 'waiting', 'done', 'archived'];
+const STATUS_DESCRIPTIONS: Record<ItemStatus, string> = {
+  inbox: 'Captured, not yet organized',
+  active: 'Currently working on this',
+  waiting: 'Blocked or waiting for someone',
+  done: 'Completed',
+  archived: 'No longer relevant',
+};
 const TYPE_OPTIONS: ItemType[] = ['task', 'project', 'habit', 'event', 'goal', 'note'];
 const PRIORITY_OPTIONS: Priority[] = ['low', 'medium', 'high'];
 const TIMEFRAME_OPTIONS: GoalTimeframe[] = ['quarterly', 'yearly', 'longterm'];
@@ -126,6 +136,14 @@ export function DetailPanel() {
       status: item?.status === 'done' ? 'active' : 'done',
       completedAt: item?.status === 'done' ? undefined : Date.now(),
     });
+
+  const handleAddToToday = () => {
+    const today = new Date().toISOString().split('T')[0];
+    handleUpdate({ 
+      dueDate: today,
+      status: item?.status === 'inbox' ? 'active' : item?.status 
+    });
+  };
 
   const addChecklistItem = () => {
     if (!newChecklistText.trim() || !item) return;
@@ -623,6 +641,50 @@ export function DetailPanel() {
           placeholder="Title…"
         />
 
+        {/* Add to Today - Quick Action */}
+        {item.type === 'task' && item.status !== 'done' && (
+          <div className="space-y-2">
+            {/* Inbox activation prompt */}
+            {item.status === 'inbox' && (
+              <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2.5">
+                <InboxIcon className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">
+                    In Inbox
+                  </p>
+                  <p className="text-[11px] text-amber-600/70 dark:text-amber-400/70 mt-0.5">
+                    Activate this task to work on it
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleUpdate({ status: 'active' })}
+                  className="rounded-md bg-amber-600 dark:bg-amber-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-700 dark:hover:bg-amber-600 transition-colors active:scale-95 shrink-0"
+                >
+                  Activate
+                </button>
+              </div>
+            )}
+            
+            {/* Add to Today button */}
+            {item.dueDate === new Date().toISOString().split('T')[0] ? (
+              <div className="flex items-center gap-2 rounded-lg bg-blue-500/10 border border-blue-500/20 px-3 py-2">
+                <Sparkles className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                <span className="text-[12px] font-medium text-blue-600 dark:text-blue-400">
+                  Scheduled for today
+                </span>
+              </div>
+            ) : (
+              <button
+                onClick={handleAddToToday}
+                className="flex items-center justify-center gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 text-[12px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors w-full active:scale-[0.98]"
+              >
+                <CalendarClock className="h-3.5 w-3.5 text-muted-foreground/60" />
+                <span>Add to Today</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* ── Fields ── */}
         <div className="space-y-3">
           {/* Type & Status row */}
@@ -644,7 +706,12 @@ export function DetailPanel() {
                 <SelectTrigger className="mt-1 h-8 text-[12px] border-border/50"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {STATUS_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s} className="capitalize text-[12px]">{s}</SelectItem>
+                    <SelectItem key={s} value={s} className="text-[12px]">
+                      <div className="flex flex-col">
+                        <span className="capitalize font-medium">{s}</span>
+                        <span className="text-[10px] text-muted-foreground/60">{STATUS_DESCRIPTIONS[s]}</span>
+                      </div>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

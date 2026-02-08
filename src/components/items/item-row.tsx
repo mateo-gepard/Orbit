@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, CalendarDays, Flag, Circle, Clock } from 'lucide-react';
+import { Check, CalendarDays, Flag, Circle, Clock, CalendarClock } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import type { OrbitItem, Priority } from '@/lib/types';
@@ -50,8 +50,21 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     await updateItem(item.id, { status: 'archived' });
   };
 
+  const handleAddToToday = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    haptic('success');
+    const today = new Date().toISOString().split('T')[0];
+    await updateItem(item.id, { 
+      dueDate: today,
+      status: item.status === 'inbox' ? 'active' : item.status 
+    });
+  };
+
   const isOverdue =
     item.dueDate && isPast(parseISO(item.dueDate)) && !isToday(parseISO(item.dueDate)) && item.status !== 'done';
+  
+  const isDueToday = item.dueDate && isToday(parseISO(item.dueDate));
 
   const row = (
     <div
@@ -119,8 +132,18 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           )}
         </div>
         {/* Meta row - always show on mobile for better scannability */}
-        {(showType || showProject || (item.tags && item.tags.length > 0) || item.startTime) && (
+        {(showType || showProject || item.status === 'inbox' || item.status === 'waiting' || (item.tags && item.tags.length > 0) || item.startTime) && (
           <div className="flex items-center gap-1.5 mt-0.5">
+            {item.status === 'inbox' && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                Inbox
+              </span>
+            )}
+            {item.status === 'waiting' && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-gray-500/10 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                Waiting
+              </span>
+            )}
             {showType && (
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
                 {item.type}
@@ -146,15 +169,32 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         )}
       </div>
 
+      {/* Add to Today button - shows on hover for tasks without due date or not due today */}
+      {item.type === 'task' && item.status !== 'done' && !isDueToday && (
+        <button
+          onClick={handleAddToToday}
+          className={cn(
+            'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all shrink-0',
+            'opacity-0 group-hover:opacity-100 lg:opacity-0 lg:group-hover:opacity-100',
+            'bg-foreground/[0.04] hover:bg-foreground/[0.08] text-muted-foreground/60 hover:text-foreground',
+            'before:absolute before:inset-[-10px] lg:before:inset-[-6px] before:content-[""]'
+          )}
+        >
+          <CalendarClock className="h-3 w-3" />
+          <span className="hidden lg:inline">Today</span>
+        </button>
+      )}
+
       {/* Due date */}
       {item.dueDate && (
         <span
           className={cn(
             'text-[11px] shrink-0 tabular-nums',
+            isDueToday ? 'text-blue-600 dark:text-blue-400 font-medium' :
             isOverdue ? 'text-destructive font-medium' : 'text-muted-foreground/60'
           )}
         >
-          {isToday(parseISO(item.dueDate))
+          {isDueToday
             ? 'today'
             : format(parseISO(item.dueDate), 'dd MMM')}
         </span>
