@@ -118,6 +118,19 @@ export function CommandBar() {
 
     const parsed = parseCommand(input);
 
+    // If only tags were typed (no actual title), don't create an item
+    if (!parsed.title && parsed.tags.length > 0) {
+      // Just auto-create the tags and close
+      parsed.tags.forEach(tag => {
+        if (!allTags.includes(tag)) {
+          addCustomTag(tag);
+        }
+      });
+      setInput('');
+      setCommandBarOpen(false);
+      return;
+    }
+
     // Auto-create custom tags that don't exist yet
     parsed.tags.forEach(tag => {
       if (!allTags.includes(tag)) {
@@ -136,7 +149,7 @@ export function CommandBar() {
     const newItem: Omit<OrbitItem, 'id'> = {
       type: parsed.type,
       status: 'inbox',
-      title: parsed.title,
+      title: parsed.title || 'Untitled',
       tags: parsed.tags,
       userId: user.uid,
       createdAt: Date.now(),

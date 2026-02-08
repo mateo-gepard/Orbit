@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useRef } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { FileText, Plus, Check } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -25,6 +25,29 @@ export default function NotesPage() {
 	const [newNoteTitle, setNewNoteTitle] = useState('');
 	const [newNoteContent, setNewNoteContent] = useState('');
 	const titleInputRef = useRef<HTMLInputElement>(null);
+	const contentInputRef = useRef<HTMLTextAreaElement>(null);
+
+	// Handle keyboard visibility on mobile
+	useEffect(() => {
+		if (!isCreating) return;
+
+		const handleResize = () => {
+			// On mobile, when keyboard opens, scroll the focused input into view
+			if (window.visualViewport) {
+				const activeElement = document.activeElement;
+				if (activeElement && (activeElement === titleInputRef.current || activeElement === contentInputRef.current)) {
+					setTimeout(() => {
+						activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					}, 100);
+				}
+			}
+		};
+
+		if (window.visualViewport) {
+			window.visualViewport.addEventListener('resize', handleResize);
+			return () => window.visualViewport?.removeEventListener('resize', handleResize);
+		}
+	}, [isCreating]);
 
 	const notes = useMemo(() => {
 		const all = items.filter((i) => i.type === 'note' && i.status !== 'archived');
@@ -63,7 +86,7 @@ export default function NotesPage() {
 	};
 
 	return (
-		<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto">
+		<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto pb-safe">
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-xl font-semibold tracking-tight">Notes</h1>
@@ -74,7 +97,7 @@ export default function NotesPage() {
 			</div>
 
 			{/* Filter tabs — scrollable on mobile */}
-			<div className="flex gap-0.5 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0" style={{ scrollbarWidth: 'none' }}>
+			<div className="flex gap-0.5 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 no-scrollbar">
 				{FILTERS.map((f) => (
 					<button
 						key={f.value}
@@ -92,10 +115,16 @@ export default function NotesPage() {
 			</div>
 
 			{/* Notes grid */}
-			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 pb-4">
 				{/* Quick create card - Google Keep style */}
 				{isCreating ? (
-					<div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm">
+					<div 
+						className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm"
+						style={{ 
+							position: 'relative',
+							zIndex: 10
+						}}
+					>
 						<input
 							ref={titleInputRef}
 							value={newNoteTitle}
@@ -109,8 +138,10 @@ export default function NotesPage() {
 							}}
 							placeholder="Title"
 							className="bg-transparent text-[13px] font-semibold outline-none placeholder:text-muted-foreground/40"
+							style={{ WebkitUserSelect: 'text' }}
 						/>
 						<textarea
+							ref={contentInputRef}
 							value={newNoteContent}
 							onChange={(e) => setNewNoteContent(e.target.value)}
 							onKeyDown={(e) => {
@@ -121,7 +152,9 @@ export default function NotesPage() {
 								}
 							}}
 							placeholder="Take a note..."
-							className="bg-transparent text-[11px] text-muted-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[60px]"
+							className="bg-transparent text-[11px] text-muted-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[60px] max-h-[200px]"
+							style={{ WebkitUserSelect: 'text' }}
+							rows={3}
 						/>
 						<div className="flex items-center justify-end gap-2 pt-1">
 							<button

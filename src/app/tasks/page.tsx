@@ -390,14 +390,26 @@ export default function TasksPage() {
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0">
           <Tag className="h-3 w-3 text-muted-foreground/30 shrink-0 mr-0.5" />
           {allTags.map((tag) => (
-            <div key={tag} className="relative group">
+            <div key={tag} className="relative">
               <button
                 onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-                onTouchStart={() => handleTagLongPressStart(tag)}
-                onTouchEnd={handleTagLongPressEnd}
-                onTouchCancel={handleTagLongPressEnd}
-                onMouseEnter={() => !LIFE_AREA_TAGS.includes(tag as any) && setTagToDelete(tag)}
-                onMouseLeave={() => setTagToDelete(null)}
+                onTouchStart={(e) => {
+                  handleTagLongPressStart(tag);
+                }}
+                onTouchEnd={(e) => {
+                  handleTagLongPressEnd();
+                }}
+                onTouchCancel={(e) => {
+                  handleTagLongPressEnd();
+                }}
+                onMouseEnter={() => {
+                  if (!LIFE_AREA_TAGS.includes(tag as any)) {
+                    setTagToDelete(tag);
+                  }
+                }}
+                onMouseLeave={() => {
+                  setTagToDelete(null);
+                }}
                 className={cn(
                   'shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-all active:scale-95',
                   tagFilter === tag
@@ -408,11 +420,19 @@ export default function TasksPage() {
                 {tag}
               </button>
               {tagToDelete === tag && !LIFE_AREA_TAGS.includes(tag as any) && (
-                <div className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border/60 rounded-lg shadow-lg p-2 min-w-[180px]">
+                <div 
+                  className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border/60 rounded-lg shadow-lg p-2 min-w-[180px]"
+                  onMouseEnter={() => setTagToDelete(tag)}
+                  onMouseLeave={() => setTagToDelete(null)}
+                >
                   <p className="text-[11px] text-muted-foreground/80 mb-2">Delete tag "{tag}"?</p>
                   <div className="flex gap-1">
                     <button
                       onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteTag(tag);
+                      }}
+                      onTouchEnd={(e) => {
                         e.stopPropagation();
                         handleDeleteTag(tag);
                       }}
@@ -422,6 +442,10 @@ export default function TasksPage() {
                     </button>
                     <button
                       onClick={(e) => {
+                        e.stopPropagation();
+                        setTagToDelete(null);
+                      }}
+                      onTouchEnd={(e) => {
                         e.stopPropagation();
                         setTagToDelete(null);
                       }}
