@@ -911,12 +911,12 @@ export function DetailPanel() {
         <div className="flex flex-wrap gap-2">
           {/* Priority (Task) */}
           {item.type === 'task' && (
-            <Select value={item.priority || ''} onValueChange={(v) => handleUpdate({ priority: v as Priority })}>
+            <Select value={item.priority || 'none'} onValueChange={(v) => handleUpdate({ priority: v === 'none' ? undefined : v as Priority })}>
               <SelectTrigger className="h-9 text-[13px] w-auto min-w-[100px]">
                 <SelectValue placeholder="Priority" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="" className="text-[12px]">No Priority</SelectItem>
+                <SelectItem value="none" className="text-[12px]">No Priority</SelectItem>
                 {PRIORITY_OPTIONS.map((p) => (
                   <SelectItem key={p} value={p} className="capitalize text-[12px]">{p}</SelectItem>
                 ))}

@@ -141,11 +141,12 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
           <div className="space-y-2">
             {files.map(file => {
               const isPrev = isPreviewable(file.type);
+              console.log('[FileUpload] File:', file.name, 'Type:', file.type, 'isPreviewable:', isPrev);
 
               return (
                 <div
                   key={file.id}
-                  className="group flex items-center gap-3 p-3 rounded-lg border border-border/60 hover:border-border hover:bg-foreground/[0.02] transition-all"
+                  className="flex items-center gap-3 p-3 rounded-lg border border-border/60 hover:border-border hover:bg-foreground/[0.02] transition-all"
                 >
                   {/* File Icon */}
                   <div className="text-2xl shrink-0">
@@ -165,11 +166,11 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 shrink-0">
                     {isPrev && (
                       <button
                         onClick={() => setViewingFile(file)}
-                        className="p-1.5 rounded-md hover:bg-foreground/[0.05] text-muted-foreground hover:text-foreground transition-colors"
+                        className="p-2 rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.08] text-muted-foreground hover:text-foreground transition-colors"
                         title="Preview"
                       >
                         <Eye className="h-4 w-4" />
@@ -178,14 +179,14 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
                     <a
                       href={file.url}
                       download={file.name}
-                      className="p-1.5 rounded-md hover:bg-foreground/[0.05] text-muted-foreground hover:text-foreground transition-colors"
+                      className="p-2 rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.08] text-muted-foreground hover:text-foreground transition-colors"
                       title="Download"
                     >
                       <Download className="h-4 w-4" />
                     </a>
                     <button
                       onClick={() => handleDeleteFile(file)}
-                      className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
+                      className="p-2 rounded-md bg-foreground/[0.04] hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
                       title="Delete"
                     >
                       <Trash2 className="h-4 w-4" />

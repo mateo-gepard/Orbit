@@ -17,13 +17,44 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
   const currentFile = files[currentIndex] || file;
   const canNavigate = files.length > 1;
 
   const isImage = currentFile.type.startsWith('image/');
   const isPDF = currentFile.type === 'application/pdf';
-  const isPreviewable = isImage || isPDF;
+  const isWord = currentFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+                 currentFile.type === 'application/msword';
+  const isPreviewable = isImage || isPDF || isWord;
+
+  // Minimum swipe distance (in px)
+  const minSwipeDistance = 50;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd || !canNavigate) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    
+    if (isLeftSwipe && currentIndex < files.length - 1) {
+      handleNext();
+    }
+    if (isRightSwipe && currentIndex > 0) {
+      handlePrevious();
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -68,39 +99,44 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm animate-in fade-in duration-200">
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 to-transparent p-4 md:p-6">
-        <div className="flex items-center justify-between gap-4">
+    <div 
+      className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm animate-in fade-in duration-200"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Header - Simplified for mobile */}
+      <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/90 to-transparent">
+        <div className="flex items-center justify-between gap-3 p-3 md:p-4">
           <div className="flex-1 min-w-0">
-            <h2 className="text-sm md:text-base font-medium text-white truncate">
+            <h2 className="text-xs md:text-sm font-medium text-white truncate">
               {currentFile.name}
             </h2>
-            <p className="text-xs text-white/60 mt-0.5">
-              {currentFile.type.split('/')[1]?.toUpperCase()} · {Math.round(currentFile.size / 1024)} KB
-              {canNavigate && ` · ${currentIndex + 1} of ${files.length}`}
+            <p className="text-[10px] md:text-xs text-white/60 mt-0.5">
+              {Math.round(currentFile.size / 1024)} KB
+              {canNavigate && ` · ${currentIndex + 1}/${files.length}`}
             </p>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-2">
+          {/* Desktop Actions */}
+          <div className="hidden md:flex items-center gap-2">
             {isImage && (
               <>
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8 md:h-9 md:w-9 text-white hover:bg-white/10"
+                  className="h-9 w-9 text-white hover:bg-white/10"
                   onClick={() => setZoom(z => Math.max(z - 25, 25))}
                 >
                   <ZoomOut className="h-4 w-4" />
                 </Button>
-                <span className="hidden md:inline text-xs text-white/80 min-w-[3ch] text-center">
+                <span className="text-xs text-white/80 min-w-[3ch] text-center">
                   {zoom}%
                 </span>
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8 md:h-9 md:w-9 text-white hover:bg-white/10"
+                  className="h-9 w-9 text-white hover:bg-white/10"
                   onClick={() => setZoom(z => Math.min(z + 25, 400))}
                 >
                   <ZoomIn className="h-4 w-4" />
@@ -108,7 +144,7 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8 md:h-9 md:w-9 text-white hover:bg-white/10"
+                  className="h-9 w-9 text-white hover:bg-white/10"
                   onClick={() => setRotation((rotation + 90) % 360)}
                 >
                   <RotateCw className="h-4 w-4" />
@@ -119,7 +155,7 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
             <Button
               size="icon"
               variant="ghost"
-              className="h-8 w-8 md:h-9 md:w-9 text-white hover:bg-white/10"
+              className="h-9 w-9 text-white hover:bg-white/10"
               onClick={handleDownload}
             >
               <Download className="h-4 w-4" />
@@ -128,30 +164,31 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
             <Button
               size="icon"
               variant="ghost"
-              className="hidden md:flex h-9 w-9 text-white hover:bg-white/10"
+              className="h-9 w-9 text-white hover:bg-white/10"
               onClick={handleOpenExternal}
             >
               <ExternalLink className="h-4 w-4" />
             </Button>
-
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 md:h-9 md:w-9 text-white hover:bg-white/10"
-              onClick={onClose}
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
+
+          {/* Close Button - Single instance */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-9 w-9 shrink-0 text-white hover:bg-white/10"
+            onClick={onClose}
+          >
+            <X className="h-5 w-5" />
+          </Button>
         </div>
       </div>
 
       {/* Content */}
-      <div className="absolute inset-0 flex items-center justify-center p-4 md:p-12">
+      <div className="absolute inset-0 flex items-center justify-center pt-16 pb-20 md:p-12">
         {isPreviewable ? (
           <>
             {isImage && (
-              <div className="relative max-w-full max-h-full overflow-auto">
+              <div className="relative w-full h-full flex items-center justify-center">
                 <img
                   src={currentFile.url}
                   alt={currentFile.name}
@@ -176,19 +213,27 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
             {isPDF && (
               <iframe
                 src={currentFile.url}
-                className="w-full h-full rounded-lg border border-white/10"
+                className="w-full h-full border-0"
+                onLoad={() => setLoading(false)}
+              />
+            )}
+
+            {isWord && (
+              <iframe
+                src={`https://docs.google.com/gview?url=${encodeURIComponent(currentFile.url)}&embedded=true`}
+                className="w-full h-full border-0"
                 onLoad={() => setLoading(false)}
               />
             )}
           </>
         ) : (
-          <div className="text-center max-w-md">
+          <div className="text-center max-w-md px-4">
             <div className="text-6xl mb-4">📄</div>
             <h3 className="text-lg font-medium text-white mb-2">Preview not available</h3>
             <p className="text-sm text-white/60 mb-6">
               This file type can't be previewed in the browser.
             </p>
-            <div className="flex gap-3 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button onClick={handleDownload} className="gap-2">
                 <Download className="h-4 w-4" />
                 Download File
@@ -233,15 +278,15 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
         </>
       )}
 
-      {/* Bottom Navigation (Mobile) */}
-      {canNavigate && (
-        <div className="md:hidden absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-          <div className="flex items-center justify-center gap-4">
+      {/* Bottom Navigation (Mobile) - Improved with actions */}
+      {canNavigate ? (
+        <div className="md:hidden absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-3">
+          <div className="flex items-center justify-between gap-3">
             <Button
               size="icon"
               variant="ghost"
               className={cn(
-                "h-10 w-10 rounded-full bg-white/10 text-white",
+                "h-10 w-10 rounded-full bg-white/10 text-white shrink-0",
                 currentIndex === 0 && "opacity-30"
               )}
               onClick={handlePrevious}
@@ -250,21 +295,47 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
               <ChevronLeft className="h-5 w-5" />
             </Button>
 
-            <span className="text-sm text-white/80 min-w-[4ch] text-center">
-              {currentIndex + 1} / {files.length}
-            </span>
+            <div className="flex items-center gap-2 flex-1 justify-center">
+              <span className="text-sm text-white/80">
+                {currentIndex + 1} / {files.length}
+              </span>
+            </div>
 
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-10 w-10 rounded-full bg-white/10 text-white"
+                onClick={handleDownload}
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+
+              <Button
+                size="icon"
+                variant="ghost"
+                className={cn(
+                  "h-10 w-10 rounded-full bg-white/10 text-white",
+                  currentIndex === files.length - 1 && "opacity-30"
+                )}
+                onClick={handleNext}
+                disabled={currentIndex === files.length - 1}
+              >
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="md:hidden absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-3">
+          <div className="flex items-center justify-center gap-3">
             <Button
               size="icon"
               variant="ghost"
-              className={cn(
-                "h-10 w-10 rounded-full bg-white/10 text-white",
-                currentIndex === files.length - 1 && "opacity-30"
-              )}
-              onClick={handleNext}
-              disabled={currentIndex === files.length - 1}
+              className="h-10 w-10 rounded-full bg-white/10 text-white"
+              onClick={handleDownload}
             >
-              <ChevronRight className="h-5 w-5" />
+              <Download className="h-4 w-4" />
             </Button>
           </div>
         </div>

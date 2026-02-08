@@ -173,6 +173,8 @@ export function isPreviewable(mimeType: string): boolean {
   return (
     mimeType.startsWith('image/') ||
     mimeType === 'application/pdf' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || // .docx
+    mimeType === 'application/msword' || // .doc
     mimeType.startsWith('text/')
   );
 }
