@@ -1,9 +1,11 @@
 import { MarkerType } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
-import type { OrbitItem } from '@/lib/types';
+import type { OrbitItem, ProjectFile } from '@/lib/types';
 
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 56;
+const FILE_NODE_WIDTH = 160;
+const FILE_NODE_HEIGHT = 40;
 const NODE_SEP = 60;
 const RANK_SEP = 100;
 const MAX_DEPTH = 3; // Traverse up to 3 degrees of separation
@@ -35,6 +37,12 @@ const EDGE_STYLES = {
     strokeDasharray: '2,4',
     stroke: '#f59e0b',
     opacity: 0.7,
+  },
+  file: {
+    strokeWidth: 1.5,
+    strokeDasharray: '4,3',
+    stroke: '#64748b',
+    opacity: 0.6,
   },
 } as const;
 
@@ -226,19 +234,46 @@ export function buildGraphData(
     }
   }
 
-  // Create React Flow nodes
-  const nodes: Node[] = Array.from(visited.values()).map((gi) => ({
-    id: gi.item.id,
-    type: 'orbitNode',
-    data: {
-      item: gi.item,
-      isCurrent: gi.item.id === currentItem.id,
-      depth: gi.depth,
-    },
-    position: { x: 0, y: 0 },
-  }));
+  // Collect file attachments from all visited items
+  const fileNodes: Array<{ file: ProjectFile; ownerId: string }> = [];
+  for (const [, gi] of visited) {
+    if (gi.item.files && gi.item.files.length > 0) {
+      for (const file of gi.item.files) {
+        const fileId = `file-${file.id}`;
+        fileNodes.push({ file, ownerId: gi.item.id });
+        addEdge({
+          id: `e-file-${gi.item.id}-${fileId}`,
+          source: gi.item.id,
+          target: fileId,
+          type: 'default',
+          markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
+          style: EDGE_STYLES.file,
+        });
+      }
+    }
+  }
 
-  return layoutGraph(nodes, edges, currentItem, visited);
+  // Create React Flow nodes
+  const nodes: Node[] = [
+    ...Array.from(visited.values()).map((gi) => ({
+      id: gi.item.id,
+      type: 'orbitNode',
+      data: {
+        item: gi.item,
+        isCurrent: gi.item.id === currentItem.id,
+        depth: gi.depth,
+      },
+      position: { x: 0, y: 0 },
+    })),
+    ...fileNodes.map(({ file }) => ({
+      id: `file-${file.id}`,
+      type: 'fileNode',
+      data: { file },
+      position: { x: 0, y: 0 },
+    })),
+  ];
+
+  return layoutGraph(nodes, edges, currentItem, visited, fileNodes);
 }
 
 // ─── Occupied-rect collision tracker ───────────────────────
@@ -288,6 +323,7 @@ function layoutGraph(
   edges: Edge[],
   currentItem: OrbitItem,
   visited: Map<string, GraphItem>,
+  fileNodes: Array<{ file: ProjectFile; ownerId: string }>,
 ): { nodes: Node[]; edges: Edge[] } {
   const positionMap = new Map<string, { x: number; y: number }>();
   const grid = new OccupiedGrid();
@@ -434,13 +470,33 @@ function layoutGraph(
     }
   }
 
+  // 8. File nodes — placed to the right of their owner item
+  const filesByOwner = new Map<string, Array<{ file: ProjectFile; id: string }>>();
+  for (const fn of fileNodes) {
+    const list = filesByOwner.get(fn.ownerId) || [];
+    list.push({ file: fn.file, id: `file-${fn.file.id}` });
+    filesByOwner.set(fn.ownerId, list);
+  }
+  for (const [ownerId, files] of filesByOwner) {
+    const ownerPos = positionMap.get(ownerId);
+    if (!ownerPos) continue;
+    for (let i = 0; i < files.length; i++) {
+      const idealX = ownerPos.x + NODE_WIDTH + NODE_SEP;
+      const idealY = ownerPos.y + i * (FILE_NODE_HEIGHT + 20);
+      const freeX = grid.findFreeX(idealX, idealY);
+      positionMap.set(files[i].id, { x: freeX, y: idealY });
+      grid.place(freeX, idealY);
+    }
+  }
+
   // Apply positions (shift by half node width so center aligns)
   const layoutedNodes = nodes.map((node) => {
     const pos = positionMap.get(node.id) || { x: 0, y: 0 };
+    const isFile = node.type === 'fileNode';
     return {
       ...node,
       position: {
-        x: pos.x - NODE_WIDTH / 2,
+        x: pos.x - (isFile ? FILE_NODE_WIDTH : NODE_WIDTH) / 2,
         y: pos.y,
       },
     };

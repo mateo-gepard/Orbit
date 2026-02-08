@@ -19,9 +19,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { cn } from '@/lib/utils';
 import type { OrbitItem } from '@/lib/types';
 import { OrbitNode } from './link-graph-node';
+import { FileNode } from './link-graph-file-node';
 import { buildGraphData } from './link-graph-utils';
 
-const nodeTypes = { orbitNode: OrbitNode };
+const nodeTypes = { orbitNode: OrbitNode, fileNode: FileNode };
 
 interface LinkGraphProps {
   open: boolean;
@@ -46,6 +47,13 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
+      if (node.type === 'fileNode') {
+        const data = node.data as { file: { url: string } };
+        if (data.file?.url) {
+          window.open(data.file.url, '_blank');
+        }
+        return;
+      }
       const data = node.data as { item: OrbitItem; isCurrent: boolean };
       if (!data.isCurrent) {
         onNavigate(data.item.id);
@@ -174,6 +182,10 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #f59e0b 0, #f59e0b 2px, transparent 2px, transparent 6px)' }} />
                     <span className="text-[10px] text-muted-foreground">Deep Link (2nd+)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #64748b 0, #64748b 3px, transparent 3px, transparent 6px)' }} />
+                    <span className="text-[10px] text-muted-foreground">File Attachment</span>
                   </div>
                 </div>
               </div>
