@@ -24,31 +24,116 @@ interface LinkGraphProps {
   onNavigate: (itemId: string) => void;
 }
 
+// Helper function to recursively collect all linked items
+function collectAllLinkedItems(
+  item: OrbitItem, 
+  allItems: OrbitItem[], 
+  visited: Set<string> = new Set()
+): OrbitItem[] {
+  if (visited.has(item.id)) return [];
+  visited.add(item.id);
+  
+  const linked: OrbitItem[] = [];
+  
+  // Get direct linked items
+  const directLinked = (item.linkedIds || [])
+    .map(id => allItems.find(i => i.id === id))
+    .filter((i): i is OrbitItem => i !== undefined);
+  
+  // Get reverse links
+  const reverseLinked = allItems.filter(i => 
+    i.linkedIds?.includes(item.id) && !item.linkedIds?.includes(i.id)
+  );
+  
+  // Combine direct and reverse
+  const allDirectLinks = [...directLinked, ...reverseLinked];
+  
+  // Add them to results
+  allDirectLinks.forEach(linkedItem => {
+    if (!visited.has(linkedItem.id)) {
+      linked.push(linkedItem);
+      // Recursively get their links
+      const nestedLinks = collectAllLinkedItems(linkedItem, allItems, visited);
+      linked.push(...nestedLinks);
+    }
+  });
+  
+  return linked;
+}
+
+// Helper to collect all descendants (children, grandchildren, etc.)
+function collectAllDescendants(
+  item: OrbitItem,
+  allItems: OrbitItem[],
+  visited: Set<string> = new Set()
+): OrbitItem[] {
+  if (visited.has(item.id)) return [];
+  visited.add(item.id);
+  
+  const children = allItems.filter(i => i.parentId === item.id);
+  const allDescendants: OrbitItem[] = [...children];
+  
+  children.forEach(child => {
+    const grandchildren = collectAllDescendants(child, allItems, visited);
+    allDescendants.push(...grandchildren);
+  });
+  
+  return allDescendants;
+}
+
+// Helper to collect all ancestors (parent, grandparent, etc.)
+function collectAllAncestors(
+  item: OrbitItem,
+  allItems: OrbitItem[],
+  visited: Set<string> = new Set()
+): OrbitItem[] {
+  if (visited.has(item.id)) return [];
+  visited.add(item.id);
+  
+  if (!item.parentId) return [];
+  
+  const parent = allItems.find(i => i.id === item.parentId);
+  if (!parent) return [];
+  
+  const ancestors: OrbitItem[] = [parent];
+  const upperAncestors = collectAllAncestors(parent, allItems, visited);
+  ancestors.push(...upperAncestors);
+  
+  return ancestors;
+}
+
 export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: LinkGraphProps) {
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchCurrent, setTouchCurrent] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Find parent
-  const parent = currentItem.parentId 
-    ? allItems.find(i => i.id === currentItem.parentId) 
-    : undefined;
+  // Collect ALL ancestors (parent, grandparent, great-grandparent, etc.)
+  const allAncestors = collectAllAncestors(currentItem, allItems);
+  const topAncestor = allAncestors[allAncestors.length - 1]; // Furthest ancestor
+  const immediateParent = allAncestors[0]; // Direct parent
 
-  // Find children
-  const children = allItems.filter(i => i.parentId === currentItem.id);
+  // Collect ALL descendants (children, grandchildren, etc.)
+  const allDescendants = collectAllDescendants(currentItem, allItems);
+  const immediateChildren = allItems.filter(i => i.parentId === currentItem.id);
 
-  // Find linked items (peers)
-  const linkedItems = (currentItem.linkedIds || [])
-    .map(id => allItems.find(i => i.id === id))
-    .filter((i): i is OrbitItem => i !== undefined);
-
-  // Find reverse links (items that link to this one)
-  const reverseLinks = allItems.filter(i => 
-    i.linkedIds?.includes(currentItem.id) && 
-    !currentItem.linkedIds?.includes(i.id)
+  // Collect ALL linked items recursively (peer links and their links, etc.)
+  const allLinkedItems = collectAllLinkedItems(currentItem, allItems);
+  
+  // Separate into direct links and nested links
+  const directLinkedIds = new Set(currentItem.linkedIds || []);
+  const directReverseIds = new Set(
+    allItems.filter(i => i.linkedIds?.includes(currentItem.id)).map(i => i.id)
+  );
+  
+  const directLinks = allLinkedItems.filter(i => 
+    directLinkedIds.has(i.id) || directReverseIds.has(i.id)
+  );
+  
+  const nestedLinks = allLinkedItems.filter(i => 
+    !directLinkedIds.has(i.id) && !directReverseIds.has(i.id)
   );
 
-  // Swipe-to-close handlers
+  const hasRelationships = allAncestors.length > 0 || allDescendants.length > 0 || allLinkedItems.length > 0;
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
     setTouchStart(touch.clientY);
@@ -161,8 +246,6 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
     );
   };
 
-  const hasRelationships = parent || children.length > 0 || linkedItems.length > 0 || reverseLinks.length > 0;
-
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent
@@ -224,32 +307,20 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
             <div className="pt-4 max-w-md mx-auto">
               {/* Flowchart - Top to Bottom */}
               
-              {/* Grandparent (if parent has parent) */}
-              {parent?.parentId && (() => {
-                const grandparent = allItems.find(i => i.id === parent.parentId);
-                return grandparent ? (
-                  <>
-                    <div className="mb-2">
-                      <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                        ↑ Parent's Parent
-                      </div>
-                      {renderItem(grandparent, false)}
-                    </div>
-                    {renderConnector('down')}
-                  </>
-                ) : null;
-              })()}
-
-              {/* Parent */}
-              {parent && (
+              {/* All Ancestors (top to bottom) */}
+              {allAncestors.length > 0 && (
                 <>
-                  <div className="mb-2">
-                    <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                      ↑ Part of
+                  {allAncestors.slice().reverse().map((ancestor, idx) => (
+                    <div key={ancestor.id}>
+                      <div className="mb-2">
+                        <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
+                          ↑ {idx === allAncestors.length - 1 ? 'Parent' : `Ancestor ${allAncestors.length - idx - 1} level${allAncestors.length - idx - 1 > 1 ? 's' : ''} up`}
+                        </div>
+                        {renderItem(ancestor, false)}
+                      </div>
+                      {renderConnector('down')}
                     </div>
-                    {renderItem(parent, false)}
-                  </div>
-                  {renderConnector('down')}
+                  ))}
                 </>
               )}
 
@@ -263,52 +334,56 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                 {renderItem(currentItem, true)}
               </div>
 
-              {/* Linked Items (Peers) - Shown horizontally */}
-              {linkedItems.length > 0 && (
+              {/* Direct Linked Items (immediate peers) */}
+              {directLinks.length > 0 && (
                 <>
                   {renderConnector('horizontal')}
                   <div className="mb-2">
                     <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                      ↔ Linked ({linkedItems.length})
+                      ↔ Direct Links ({directLinks.length})
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      {linkedItems.map(linked => renderItem(linked, false))}
+                      {directLinks.map(linked => renderItem(linked, false))}
                     </div>
                   </div>
                   {renderConnector('horizontal')}
                 </>
               )}
 
-              {/* Reverse Links */}
-              {reverseLinks.length > 0 && (
+              {/* Nested Linked Items (links of links) */}
+              {nestedLinks.length > 0 && (
                 <>
-                  {!linkedItems.length && renderConnector('horizontal')}
-                  <div className="mb-2">
-                    <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                      ← Linked From ({reverseLinks.length})
+                  <div className="mb-2 opacity-75">
+                    <div className="text-[10px] font-semibold text-muted-foreground/40 uppercase tracking-wider text-center mb-2">
+                      ⇄ Nested Links ({nestedLinks.length})
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      {reverseLinks.map(reverse => renderItem(reverse, false))}
+                      {nestedLinks.slice(0, 5).map(linked => renderItem(linked, false))}
+                      {nestedLinks.length > 5 && (
+                        <div className="text-center text-[11px] text-muted-foreground/40 py-2">
+                          +{nestedLinks.length - 5} more nested connections
+                        </div>
+                      )}
                     </div>
                   </div>
                   {renderConnector('horizontal')}
                 </>
               )}
 
-              {/* Children - Below current item */}
-              {children.length > 0 && (
+              {/* Immediate Children */}
+              {immediateChildren.length > 0 && (
                 <>
                   {renderConnector('down')}
                   <div className="mb-2">
                     <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
-                      ↓ Contains ({children.length})
+                      ↓ Direct Children ({immediateChildren.length})
                     </div>
-                    {children.length > 2 && renderConnector('branch')}
+                    {immediateChildren.length > 2 && renderConnector('branch')}
                     <div className="grid grid-cols-1 gap-2">
-                      {children.map((child, idx) => (
+                      {immediateChildren.map((child, idx) => (
                         <div key={child.id}>
                           {renderItem(child, false)}
-                          {idx < children.length - 1 && (
+                          {idx < immediateChildren.length - 1 && (
                             <div className="flex justify-center py-1">
                               <div className="w-px h-4 bg-border/30" />
                             </div>
@@ -320,30 +395,38 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                 </>
               )}
 
-              {/* Grandchildren preview (first level only) */}
-              {children.length > 0 && (() => {
-                const grandchildren = allItems.filter(i => 
-                  children.some(child => child.id === i.parentId)
-                );
-                return grandchildren.length > 0 ? (
-                  <>
-                    {renderConnector('down')}
-                    <div className="opacity-60">
-                      <div className="text-[10px] font-semibold text-muted-foreground/40 uppercase tracking-wider text-center mb-2">
-                        ↓ Children's Children ({grandchildren.length})
-                      </div>
-                      <div className="grid grid-cols-1 gap-2">
-                        {grandchildren.slice(0, 3).map(gc => renderItem(gc, false))}
-                        {grandchildren.length > 3 && (
-                          <div className="text-center text-[11px] text-muted-foreground/40 py-2">
-                            +{grandchildren.length - 3} more
-                          </div>
-                        )}
-                      </div>
+              {/* All Descendants (grandchildren and beyond) */}
+              {allDescendants.length > immediateChildren.length && (
+                <>
+                  {renderConnector('down')}
+                  <div className="opacity-70">
+                    <div className="text-[10px] font-semibold text-muted-foreground/40 uppercase tracking-wider text-center mb-2">
+                      ↓ All Descendants ({allDescendants.length - immediateChildren.length} more)
                     </div>
-                  </>
-                ) : null;
-              })()}
+                    <div className="grid grid-cols-1 gap-2">
+                      {allDescendants.filter(d => !immediateChildren.some(c => c.id === d.id)).slice(0, 5).map(desc => 
+                        renderItem(desc, false)
+                      )}
+                      {(allDescendants.length - immediateChildren.length) > 5 && (
+                        <div className="text-center text-[11px] text-muted-foreground/40 py-2">
+                          +{(allDescendants.length - immediateChildren.length) - 5} more descendants
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Summary at bottom */}
+              {hasRelationships && (
+                <div className="mt-6 pt-4 border-t border-border/30 text-center">
+                  <p className="text-[11px] text-muted-foreground/50">
+                    Total: {allAncestors.length} ancestor{allAncestors.length !== 1 ? 's' : ''} · {' '}
+                    {allLinkedItems.length} linked · {' '}
+                    {allDescendants.length} descendant{allDescendants.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
