@@ -24,11 +24,12 @@ interface LinkGraphProps {
   onNavigate: (itemId: string) => void;
 }
 
-// Helper function to recursively collect all linked items
+// Helper function to recursively collect all linked items AND their hierarchies
 function collectAllLinkedItems(
   item: OrbitItem, 
   allItems: OrbitItem[], 
-  visited: Set<string> = new Set()
+  visited: Set<string> = new Set(),
+  includeHierarchies: boolean = true
 ): OrbitItem[] {
   if (visited.has(item.id)) return [];
   visited.add(item.id);
@@ -52,8 +53,30 @@ function collectAllLinkedItems(
   allDirectLinks.forEach(linkedItem => {
     if (!visited.has(linkedItem.id)) {
       linked.push(linkedItem);
+      
+      // If includeHierarchies, also add parent and all children of this linked item
+      if (includeHierarchies) {
+        // Add parent
+        if (linkedItem.parentId) {
+          const parent = allItems.find(i => i.id === linkedItem.parentId);
+          if (parent && !visited.has(parent.id)) {
+            linked.push(parent);
+            visited.add(parent.id);
+          }
+        }
+        
+        // Add all children
+        const children = allItems.filter(i => i.parentId === linkedItem.id);
+        children.forEach(child => {
+          if (!visited.has(child.id)) {
+            linked.push(child);
+            visited.add(child.id);
+          }
+        });
+      }
+      
       // Recursively get their links
-      const nestedLinks = collectAllLinkedItems(linkedItem, allItems, visited);
+      const nestedLinks = collectAllLinkedItems(linkedItem, allItems, visited, includeHierarchies);
       linked.push(...nestedLinks);
     }
   });
@@ -116,21 +139,31 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
   const allDescendants = collectAllDescendants(currentItem, allItems);
   const immediateChildren = allItems.filter(i => i.parentId === currentItem.id);
 
-  // Collect ALL linked items recursively (peer links and their links, etc.)
-  const allLinkedItems = collectAllLinkedItems(currentItem, allItems);
+  // Collect ALL linked items recursively (peer links and their links, etc.) INCLUDING their hierarchies
+  const allLinkedItems = collectAllLinkedItems(currentItem, allItems, new Set(), true);
   
-  // Separate into direct links and nested links
+  // Now we need to separate into categories more intelligently
+  // Direct links are items that are explicitly linked to/from current item
   const directLinkedIds = new Set(currentItem.linkedIds || []);
   const directReverseIds = new Set(
     allItems.filter(i => i.linkedIds?.includes(currentItem.id)).map(i => i.id)
   );
   
+  // Items that are directly linked (not their parents/children)
   const directLinks = allLinkedItems.filter(i => 
     directLinkedIds.has(i.id) || directReverseIds.has(i.id)
   );
   
-  const nestedLinks = allLinkedItems.filter(i => 
-    !directLinkedIds.has(i.id) && !directReverseIds.has(i.id)
+  // Everything else that came through the link chain
+  // Exclude items that are already in ancestors or descendants of the CURRENT item
+  const ancestorIds = new Set(allAncestors.map(a => a.id));
+  const descendantIds = new Set(allDescendants.map(d => d.id));
+  
+  const indirectlyRelated = allLinkedItems.filter(i => 
+    !directLinkedIds.has(i.id) && 
+    !directReverseIds.has(i.id) &&
+    !ancestorIds.has(i.id) &&
+    !descendantIds.has(i.id)
   );
 
   const hasRelationships = allAncestors.length > 0 || allDescendants.length > 0 || allLinkedItems.length > 0;
@@ -351,19 +384,14 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               )}
 
               {/* Nested Linked Items (links of links) */}
-              {nestedLinks.length > 0 && (
+              {indirectlyRelated.length > 0 && (
                 <>
-                  <div className="mb-2 opacity-75">
-                    <div className="text-[10px] font-semibold text-muted-foreground/40 uppercase tracking-wider text-center mb-2">
-                      ⇄ Nested Links ({nestedLinks.length})
+                  <div className="mb-2">
+                    <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
+                      ⇄ Related via Links ({indirectlyRelated.length})
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      {nestedLinks.slice(0, 5).map(linked => renderItem(linked, false))}
-                      {nestedLinks.length > 5 && (
-                        <div className="text-center text-[11px] text-muted-foreground/40 py-2">
-                          +{nestedLinks.length - 5} more nested connections
-                        </div>
-                      )}
+                      {indirectlyRelated.map(linked => renderItem(linked, false))}
                     </div>
                   </div>
                   {renderConnector('horizontal')}
@@ -399,18 +427,13 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               {allDescendants.length > immediateChildren.length && (
                 <>
                   {renderConnector('down')}
-                  <div className="opacity-70">
-                    <div className="text-[10px] font-semibold text-muted-foreground/40 uppercase tracking-wider text-center mb-2">
+                  <div>
+                    <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
                       ↓ All Descendants ({allDescendants.length - immediateChildren.length} more)
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      {allDescendants.filter(d => !immediateChildren.some(c => c.id === d.id)).slice(0, 5).map(desc => 
+                      {allDescendants.filter(d => !immediateChildren.some(c => c.id === d.id)).map(desc => 
                         renderItem(desc, false)
-                      )}
-                      {(allDescendants.length - immediateChildren.length) > 5 && (
-                        <div className="text-center text-[11px] text-muted-foreground/40 py-2">
-                          +{(allDescendants.length - immediateChildren.length) - 5} more descendants
-                        </div>
                       )}
                     </div>
                   </div>
