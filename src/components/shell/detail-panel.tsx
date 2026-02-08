@@ -18,6 +18,7 @@ import {
   CalendarClock,
   Sparkles,
   Inbox as InboxIcon,
+  FileText,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
@@ -221,6 +222,7 @@ export function DetailPanel() {
   if (item.type === 'project') {
     const projectTasks = items.filter((i) => i.parentId === item.id && i.type === 'task');
     const projectMilestones = items.filter((i) => i.parentId === item.id && i.type === 'goal');
+    const projectNotes = items.filter((i) => i.parentId === item.id && i.type === 'note');
     
     const stats = {
       total: projectTasks.length,
@@ -480,6 +482,41 @@ export function DetailPanel() {
               )}
             </div>
           </div>
+
+          {/* Notes */}
+          {projectNotes.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground/50" />
+                <FieldLabel>Notes · {projectNotes.length}</FieldLabel>
+              </div>
+              <div className="space-y-1.5">
+                {projectNotes.map((note) => (
+                  <button
+                    key={note.id}
+                    onClick={() => setSelectedItemId(note.id)}
+                    className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground flex-1">
+                        {note.title}
+                      </p>
+                      {note.noteSubtype && note.noteSubtype !== 'general' && (
+                        <span className="text-[10px] text-muted-foreground/40 capitalize shrink-0">
+                          {note.noteSubtype}
+                        </span>
+                      )}
+                    </div>
+                    {note.content && (
+                      <p className="text-[11px] text-muted-foreground/40 mt-0.5 line-clamp-2">
+                        {note.content.replace(/<[^>]*>/g, '')}
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Settings */}
           <div className="h-px bg-border/40" />

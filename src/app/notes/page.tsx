@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { FileText, Plus } from 'lucide-react';
+import { useMemo, useState, useRef } from 'react';
+import { FileText, Plus, Check } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
@@ -21,6 +21,10 @@ export default function NotesPage() {
 	const { items, setSelectedItemId } = useOrbitStore();
 	const { user } = useAuth();
 	const [filter, setFilter] = useState<NoteSubtype | 'all'>('all');
+	const [isCreating, setIsCreating] = useState(false);
+	const [newNoteTitle, setNewNoteTitle] = useState('');
+	const [newNoteContent, setNewNoteContent] = useState('');
+	const titleInputRef = useRef<HTMLInputElement>(null);
 
 	const notes = useMemo(() => {
 		const all = items.filter((i) => i.type === 'note' && i.status !== 'archived');
@@ -28,23 +32,38 @@ export default function NotesPage() {
 		return all.filter((i) => i.noteSubtype === filter || i.tags?.includes(filter));
 	}, [items, filter]);
 
-	const handleNewNote = async () => {
-		if (!user) return;
-		const id = await createItem({
+	const handleCreateNote = async () => {
+		if (!user || (!newNoteTitle.trim() && !newNoteContent.trim())) {
+			setIsCreating(false);
+			setNewNoteTitle('');
+			setNewNoteContent('');
+			return;
+		}
+
+		await createItem({
 			type: 'note',
 			status: 'active',
-			title: 'New Note',
+			title: newNoteTitle.trim() || 'Untitled',
+			content: newNoteContent.trim(),
 			noteSubtype: filter === 'all' ? 'general' : filter,
 			tags: filter !== 'all' ? [filter] : [],
 			userId: user.uid,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 		});
-		setSelectedItemId(id);
+
+		setIsCreating(false);
+		setNewNoteTitle('');
+		setNewNoteContent('');
+	};
+
+	const handleStartCreating = () => {
+		setIsCreating(true);
+		setTimeout(() => titleInputRef.current?.focus(), 0);
 	};
 
 	return (
-		<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto">
+		<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto">
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-xl font-semibold tracking-tight">Notes</h1>
@@ -52,13 +71,6 @@ export default function NotesPage() {
 						{notes.length} {notes.length === 1 ? 'note' : 'notes'}
 					</p>
 				</div>
-				<button
-					onClick={handleNewNote}
-					className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform"
-				>
-					<Plus className="h-3.5 w-3.5" />
-					New
-				</button>
 			</div>
 
 			{/* Filter tabs — scrollable on mobile */}
@@ -81,6 +93,65 @@ export default function NotesPage() {
 
 			{/* Notes grid */}
 			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+				{/* Quick create card - Google Keep style */}
+				{isCreating ? (
+					<div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm">
+						<input
+							ref={titleInputRef}
+							value={newNoteTitle}
+							onChange={(e) => setNewNoteTitle(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Escape') {
+									setIsCreating(false);
+									setNewNoteTitle('');
+									setNewNoteContent('');
+								}
+							}}
+							placeholder="Title"
+							className="bg-transparent text-[13px] font-semibold outline-none placeholder:text-muted-foreground/40"
+						/>
+						<textarea
+							value={newNoteContent}
+							onChange={(e) => setNewNoteContent(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Escape') {
+									setIsCreating(false);
+									setNewNoteTitle('');
+									setNewNoteContent('');
+								}
+							}}
+							placeholder="Take a note..."
+							className="bg-transparent text-[11px] text-muted-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[60px]"
+						/>
+						<div className="flex items-center justify-end gap-2 pt-1">
+							<button
+								onClick={() => {
+									setIsCreating(false);
+									setNewNoteTitle('');
+									setNewNoteContent('');
+								}}
+								className="rounded-lg px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] transition-colors"
+							>
+								Cancel
+							</button>
+							<button
+								onClick={handleCreateNote}
+								className="flex items-center gap-1 rounded-lg bg-foreground px-3 py-1 text-[11px] font-medium text-background hover:opacity-90 transition-opacity"
+							>
+								<Check className="h-3 w-3" />
+								Done
+							</button>
+						</div>
+					</div>
+				) : (
+					<button
+						onClick={handleStartCreating}
+						className="flex items-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/50 p-4 text-left transition-all hover:bg-card hover:border-border"
+					>
+						<Plus className="h-4 w-4 text-muted-foreground/40" />
+						<span className="text-[12px] text-muted-foreground/60">Take a note...</span>
+					</button>
+				)}
 				{notes.map((note) => (
 					<button
 						key={note.id}
