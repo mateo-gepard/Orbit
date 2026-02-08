@@ -44,7 +44,6 @@ const NAV_SECTIONS = [
     items: [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/today', label: 'Today', icon: Sun },
-      { href: '/inbox', label: 'Inbox', icon: Inbox, badge: true },
       { href: '/tasks', label: 'Tasks', icon: CheckSquare },
     ],
   },
@@ -69,11 +68,9 @@ const NAV_SECTIONS = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut, isDemo } = useAuth();
-  const { sidebarOpen, setSidebarOpen, activeTag, setActiveTag, items, setCommandBarOpen } =
+  const { sidebarOpen, setSidebarOpen, activeTag, setActiveTag, setCommandBarOpen } =
     useOrbitStore();
   const { setTheme } = useTheme();
-
-  const inboxCount = items.filter((i) => i.status === 'inbox').length;
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -161,11 +158,6 @@ export function Sidebar() {
                         strokeWidth={isActive ? 2 : 1.5}
                       />
                       <span className="flex-1">{item.label}</span>
-                      {'badge' in item && item.badge && inboxCount > 0 && (
-                        <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-foreground/10 px-1 text-[10px] font-semibold tabular-nums">
-                          {inboxCount}
-                        </span>
-                      )}
                     </Link>
                   );
                 })}

@@ -16,15 +16,13 @@ import { useOrbitStore } from '@/lib/store';
 const TABS = [
   { href: '/', icon: LayoutDashboard, label: 'Home' },
   { href: '/today', icon: Sun, label: 'Today' },
-  { href: '/inbox', icon: Inbox, label: 'Inbox', badge: true },
   { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { href: '/habits', icon: Repeat, label: 'Habits' },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
-  const { items, setCommandBarOpen } = useOrbitStore();
-  const inboxCount = items.filter((i) => i.status === 'inbox').length;
+  const { setCommandBarOpen } = useOrbitStore();
 
   return (
     <>
@@ -95,12 +93,6 @@ export function MobileNav() {
                     )}
                     strokeWidth={isActive ? 2.2 : 1.5}
                   />
-                  {/* Badge */}
-                  {tab.badge && inboxCount > 0 && (
-                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground text-background text-[9px] font-bold px-1 animate-scale-in">
-                      {inboxCount > 99 ? '99+' : inboxCount}
-                    </span>
-                  )}
                 </div>
                 <span
                   className={cn(

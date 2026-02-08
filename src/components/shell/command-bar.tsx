@@ -197,7 +197,7 @@ export function CommandBar() {
 
     const newItem: Omit<OrbitItem, 'id'> = {
       type: parsed.type,
-      status: 'inbox',
+      status: 'active',
       title: parsed.title || 'Untitled',
       tags: parsed.tags,
       userId: user.uid,

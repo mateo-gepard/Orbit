@@ -30,13 +30,15 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
   }
 
   try {
-    // Fetch events for next 3 months
+    // Fetch ALL events (past and future) for comprehensive sync
     const now = new Date();
-    const threeMonthsLater = new Date();
-    threeMonthsLater.setMonth(now.getMonth() + 3);
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(now.getFullYear() - 1);
+    const twoYearsLater = new Date();
+    twoYearsLater.setFullYear(now.getFullYear() + 2);
 
-    const timeMin = now.toISOString();
-    const timeMax = threeMonthsLater.toISOString();
+    const timeMin = oneYearAgo.toISOString();
+    const timeMax = twoYearsLater.toISOString();
 
     const googleEvents = await fetchGoogleEvents(timeMin, timeMax);
     const orbitItems = useOrbitStore.getState().items;

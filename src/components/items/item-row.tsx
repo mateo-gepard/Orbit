@@ -57,10 +57,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     if (isDueToday) {
       await updateItem(item.id, { dueDate: undefined });
     } else {
-      await updateItem(item.id, { 
-        dueDate: today,
-        status: item.status === 'inbox' ? 'active' : item.status 
-      });
+      await updateItem(item.id, { dueDate: today });
     }
   };
 
@@ -136,13 +133,8 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           )}
         </div>
         {/* Meta row - always show on mobile for better scannability */}
-        {(showType || showProject || item.status === 'inbox' || item.status === 'waiting' || (item.tags && item.tags.length > 0) || item.startTime) && (
+        {(showType || showProject || item.status === 'waiting' || (item.tags && item.tags.length > 0) || item.startTime) && (
           <div className="flex items-center gap-1.5 mt-0.5">
-            {item.status === 'inbox' && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                Inbox
-              </span>
-            )}
             {item.status === 'waiting' && (
               <span className="inline-flex items-center gap-1 rounded-md bg-gray-500/10 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
                 Waiting

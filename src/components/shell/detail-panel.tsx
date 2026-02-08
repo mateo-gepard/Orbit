@@ -17,7 +17,6 @@ import {
   LayoutList,
   CalendarClock,
   Sparkles,
-  Inbox as InboxIcon,
   FileText,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
@@ -35,9 +34,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
-const STATUS_OPTIONS: ItemStatus[] = ['inbox', 'active', 'waiting', 'done', 'archived'];
+const STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
 const STATUS_DESCRIPTIONS: Record<ItemStatus, string> = {
-  inbox: 'Captured, not yet organized',
   active: 'Currently working on this',
   waiting: 'Blocked or waiting for someone',
   done: 'Completed',
@@ -150,10 +148,7 @@ export function DetailPanel() {
     if (isDueToday) {
       handleUpdate({ dueDate: undefined });
     } else {
-      handleUpdate({ 
-        dueDate: today,
-        status: item?.status === 'inbox' ? 'active' : item?.status 
-      });
+      handleUpdate({ dueDate: today });
     }
   };
 
@@ -210,7 +205,7 @@ export function DetailPanel() {
   // Filter item tags to only show valid tags (remove deleted custom tags)
   const validItemTags = (item?.tags || []).filter(tag => allTags.includes(tag));
 
-  const handleNewTask = async (projectId: string, status: ItemStatus = 'inbox') => {
+  const handleNewTask = async (projectId: string, status: ItemStatus = 'active') => {
     if (!user) return;
     const id = await createItem({
       type: 'task',
@@ -253,13 +248,11 @@ export function DetailPanel() {
       done: projectTasks.filter((t) => t.status === 'done').length,
       active: projectTasks.filter((t) => t.status === 'active').length,
       waiting: projectTasks.filter((t) => t.status === 'waiting').length,
-      inbox: projectTasks.filter((t) => t.status === 'inbox').length,
       progress: 0,
     };
     stats.progress = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
 
     const tasksByStatus = {
-      inbox: projectTasks.filter((t) => t.status === 'inbox'),
       active: projectTasks.filter((t) => t.status === 'active'),
       waiting: projectTasks.filter((t) => t.status === 'waiting'),
       done: projectTasks.filter((t) => t.status === 'done'),
@@ -329,7 +322,7 @@ export function DetailPanel() {
           {/* Quick Actions */}
           <div className="flex gap-2">
             <button
-              onClick={() => handleNewTask(item.id, 'inbox')}
+              onClick={() => handleNewTask(item.id, 'active')}
               className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2 text-[12px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -381,43 +374,8 @@ export function DetailPanel() {
               <FieldLabel>Tasks · {stats.total}</FieldLabel>
             </div>
             <div className="space-y-3">
-              {/* Inbox */}
-              {(tasksByStatus.inbox.length > 0 || stats.total === 0) && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <h4 className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">Inbox</h4>
-                    <span className="text-[10px] text-muted-foreground/40 tabular-nums">{tasksByStatus.inbox.length}</span>
-                  </div>
-                  <div className="space-y-1">
-                    {tasksByStatus.inbox.map((task) => (
-                      <button
-                        key={task.id}
-                        onClick={() => setSelectedItemId(task.id)}
-                        className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
-                      >
-                        <p className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground">
-                          {task.title}
-                        </p>
-                        {task.dueDate && (
-                          <p className="text-[11px] text-muted-foreground/40 mt-0.5">Due {task.dueDate}</p>
-                        )}
-                      </button>
-                    ))}
-                    {tasksByStatus.inbox.length === 0 && (
-                      <button
-                        onClick={() => handleNewTask(item.id, 'inbox')}
-                        className="w-full px-3 py-2 rounded-lg border border-dashed border-border/40 hover:border-border hover:bg-foreground/[0.02] transition-colors text-[12px] text-muted-foreground/40 hover:text-muted-foreground flex items-center gap-1.5"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Add task
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
               {/* Active */}
-              {tasksByStatus.active.length > 0 && (
+              {(tasksByStatus.active.length > 0 || stats.total === 0) && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <h4 className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">In Progress</h4>
@@ -441,6 +399,15 @@ export function DetailPanel() {
                         )}
                       </button>
                     ))}
+                    {tasksByStatus.active.length === 0 && (
+                      <button
+                        onClick={() => handleNewTask(item.id, 'active')}
+                        className="w-full px-3 py-2 rounded-lg border border-dashed border-border/40 hover:border-border hover:bg-foreground/[0.02] transition-colors text-[12px] text-muted-foreground/40 hover:text-muted-foreground flex items-center gap-1.5"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add task
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -732,28 +699,7 @@ export function DetailPanel() {
 
         {/* Add to Today - Quick Action */}
         {item.type === 'task' && item.status !== 'done' && (
-          <div className="space-y-2">
-            {/* Inbox activation prompt */}
-            {item.status === 'inbox' && (
-              <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2.5">
-                <InboxIcon className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">
-                    In Inbox
-                  </p>
-                  <p className="text-[11px] text-amber-600/70 dark:text-amber-400/70 mt-0.5">
-                    Activate this task to work on it
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleUpdate({ status: 'active' })}
-                  className="rounded-md bg-amber-600 dark:bg-amber-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-700 dark:hover:bg-amber-600 transition-colors active:scale-95 shrink-0"
-                >
-                  Activate
-                </button>
-              </div>
-            )}
-            
+          <div>
             {/* Add to Today button */}
             {item.dueDate === new Date().toISOString().split('T')[0] ? (
               <button
