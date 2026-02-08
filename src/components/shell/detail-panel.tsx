@@ -21,12 +21,14 @@ import {
   FileText,
   MoreVertical,
   Files,
+  Network,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
 import { useAuth } from '@/components/providers/auth-provider';
 import { syncEventToGoogle, requestCalendarPermission, hasCalendarPermission } from '@/lib/google-calendar';
 import { LinkManager } from '@/components/items/link-manager';
+import { LinkGraph } from '@/components/items/link-graph';
 import type { OrbitItem, ItemType, ItemStatus, Priority, ChecklistItem, GoalTimeframe, HabitFrequency, NoteSubtype } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -86,6 +88,9 @@ export function DetailPanel() {
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchCurrent, setTouchCurrent] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  
+  // Link graph state
+  const [showLinkGraph, setShowLinkGraph] = useState(false);
 
   const allTags = getAllTags();
 
@@ -316,6 +321,15 @@ export function DetailPanel() {
             <span className="text-[13px] font-semibold">{title || 'Project'}</span>
           </div>
           <div className="flex items-center gap-1.5">
+            {/* Link Graph Button */}
+            <button 
+              onClick={() => setShowLinkGraph(true)}
+              className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+              title="View link graph"
+            >
+              <Network className="h-4 w-4" />
+            </button>
+            
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
@@ -749,6 +763,15 @@ export function DetailPanel() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          {/* Link Graph Button */}
+          <button 
+            onClick={() => setShowLinkGraph(true)}
+            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+            title="View link graph"
+          >
+            <Network className="h-4 w-4" />
+          </button>
+          
           {/* Three-dot menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1264,6 +1287,20 @@ export function DetailPanel() {
         </SheetContent>
       </Sheet>
       </div>
+      
+      {/* Link Graph */}
+      {item && (
+        <LinkGraph
+          open={showLinkGraph}
+          onClose={() => setShowLinkGraph(false)}
+          currentItem={item}
+          allItems={items}
+          onNavigate={(itemId) => {
+            setSelectedItemId(itemId);
+            setShowLinkGraph(false);
+          }}
+        />
+      )}
     </>
   );
 }
