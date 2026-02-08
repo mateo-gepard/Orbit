@@ -40,7 +40,7 @@ export function MobileNav() {
           position: 'fixed',
           right: '16px',
           zIndex: 50,
-          bottom: 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)',
+          bottom: 'calc(48px + env(safe-area-inset-bottom, 0px) + 12px)',
         }}
       >
         <Plus className="h-6 w-6" strokeWidth={2.5} />
