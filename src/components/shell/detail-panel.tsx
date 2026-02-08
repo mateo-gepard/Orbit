@@ -649,7 +649,11 @@ export function DetailPanel() {
             <SheetHeader className="sr-only">
               <SheetTitle>Project Dashboard</SheetTitle>
             </SheetHeader>
-            <div className="h-[calc(92dvh-24px)] overflow-hidden">
+            {/* Swipe Handle */}
+            <div className="absolute top-0 left-0 right-0 flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing">
+              <div className="w-10 h-1 rounded-full bg-muted-foreground/20" />
+            </div>
+            <div className="h-[calc(92dvh-24px)] overflow-hidden pt-6">
               {content}
             </div>
           </SheetContent>
@@ -1191,7 +1195,11 @@ export function DetailPanel() {
           <SheetHeader className="sr-only">
             <SheetTitle>Item Details</SheetTitle>
           </SheetHeader>
-          <div className="h-[calc(92dvh-24px)] overflow-hidden">
+          {/* Swipe Handle */}
+          <div className="absolute top-0 left-0 right-0 flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing">
+            <div className="w-10 h-1 rounded-full bg-muted-foreground/20" />
+          </div>
+          <div className="h-[calc(92dvh-24px)] overflow-hidden pt-6">
             {content}
           </div>
         </SheetContent>
