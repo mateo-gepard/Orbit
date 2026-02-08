@@ -118,6 +118,7 @@ function sanitizeItem(item: OrbitItem): OrbitItem {
   // Project-specific fields
   if (item.emoji) sanitized.emoji = item.emoji;
   if (item.color) sanitized.color = item.color;
+  if (Array.isArray(item.files)) sanitized.files = item.files;
   
   // Habit-specific fields
   if (item.frequency) sanitized.frequency = item.frequency;

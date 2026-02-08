@@ -38,6 +38,7 @@ service cloud.firestore {
           && data.status in ['inbox', 'active', 'waiting', 'done', 'archived']
           && data.createdAt is int
           && data.updatedAt is int;
+      // Note: files field is optional and not validated here
     }
     
     // ─────────────────────────────────────────────────────────
