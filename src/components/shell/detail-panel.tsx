@@ -81,6 +81,11 @@ export function DetailPanel() {
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Swipe-to-close state
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchCurrent, setTouchCurrent] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const allTags = getAllTags();
 
@@ -148,6 +153,44 @@ export function DetailPanel() {
 
   const handleArchive = () => handleUpdate({ status: 'archived' });
   const handleRestore = () => handleUpdate({ status: 'active' });
+
+  // Swipe-to-close handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    setTouchStart(touch.clientY);
+    setTouchCurrent(touch.clientY);
+    setIsDragging(false);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null) return;
+    
+    const touch = e.touches[0];
+    const currentY = touch.clientY;
+    const diff = currentY - touchStart;
+    
+    // Only track downward swipes (diff > 0)
+    if (diff > 0) {
+      setTouchCurrent(currentY);
+      setIsDragging(true);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStart === null || touchCurrent === null) return;
+    
+    const diff = touchCurrent - touchStart;
+    const threshold = 100; // pixels to swipe down to close
+    
+    if (diff > threshold) {
+      setDetailPanelOpen(false);
+    }
+    
+    // Reset state
+    setTouchStart(null);
+    setTouchCurrent(null);
+    setIsDragging(false);
+  };
 
   const handleComplete = () => {
     const newStatus = item?.status === 'done' ? 'active' : 'done';
@@ -650,8 +693,16 @@ export function DetailPanel() {
               <SheetTitle>Project Dashboard</SheetTitle>
             </SheetHeader>
             {/* Swipe Handle */}
-            <div className="absolute top-0 left-0 right-0 flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing">
-              <div className="w-10 h-1 rounded-full bg-muted-foreground/20" />
+            <div 
+              className="absolute top-0 left-0 right-0 flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing z-10"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              <div className={cn(
+                "w-10 h-1 rounded-full bg-muted-foreground/20 transition-all",
+                isDragging && "bg-muted-foreground/40 w-12"
+              )} />
             </div>
             <div className="h-[calc(92dvh-24px)] overflow-hidden pt-6">
               {content}
@@ -1196,8 +1247,16 @@ export function DetailPanel() {
             <SheetTitle>Item Details</SheetTitle>
           </SheetHeader>
           {/* Swipe Handle */}
-          <div className="absolute top-0 left-0 right-0 flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing">
-            <div className="w-10 h-1 rounded-full bg-muted-foreground/20" />
+          <div 
+            className="absolute top-0 left-0 right-0 flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing z-10"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            <div className={cn(
+              "w-10 h-1 rounded-full bg-muted-foreground/20 transition-all",
+              isDragging && "bg-muted-foreground/40 w-12"
+            )} />
           </div>
           <div className="h-[calc(92dvh-24px)] overflow-hidden pt-6">
             {content}
