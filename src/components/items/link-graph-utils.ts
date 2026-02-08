@@ -241,13 +241,48 @@ export function buildGraphData(
   return layoutGraph(nodes, edges, currentItem, visited);
 }
 
+// ─── Occupied-rect collision tracker ───────────────────────
+interface Rect { x: number; y: number; w: number; h: number }
+
+class OccupiedGrid {
+  private rects: Rect[] = [];
+  private readonly pad = 20; // extra margin around each node
+
+  /** Register a placed node */
+  place(x: number, y: number) {
+    this.rects.push({
+      x: x - this.pad,
+      y: y - this.pad,
+      w: NODE_WIDTH + this.pad * 2,
+      h: NODE_HEIGHT + this.pad * 2,
+    });
+  }
+
+  /** Check if a rect at (x,y) would overlap any existing node */
+  overlaps(x: number, y: number): boolean {
+    const r: Rect = { x, y, w: NODE_WIDTH, h: NODE_HEIGHT };
+    return this.rects.some(
+      (o) =>
+        r.x < o.x + o.w &&
+        r.x + r.w > o.x &&
+        r.y < o.y + o.h &&
+        r.y + r.h > o.y
+    );
+  }
+
+  /** Find the nearest non-overlapping x at a given y, starting from idealX */
+  findFreeX(idealX: number, y: number): number {
+    if (!this.overlaps(idealX, y)) return idealX;
+    // Search outward in both directions
+    for (let offset = NODE_WIDTH + NODE_SEP; offset < 5000; offset += NODE_WIDTH + NODE_SEP) {
+      if (!this.overlaps(idealX + offset, y)) return idealX + offset;
+      if (!this.overlaps(idealX - offset, y)) return idealX - offset;
+    }
+    return idealX; // fallback (shouldn't happen)
+  }
+}
+
 // ─── Layout algorithm ──────────────────────────────────────
-/**
- * Multi-ring radial-ish layout:
- * - Center: current item
- * - Ring 1: ancestors above, children below, peers left/right
- * - Ring 2+: deeper connections further out
- */
 function layoutGraph(
   nodes: Node[],
   edges: Edge[],
@@ -255,27 +290,32 @@ function layoutGraph(
   visited: Map<string, GraphItem>,
 ): { nodes: Node[]; edges: Edge[] } {
   const positionMap = new Map<string, { x: number; y: number }>();
+  const grid = new OccupiedGrid();
 
-  // Categorize nodes by their relationship role
-  const ancestors: GraphItem[] = [];
+  const placeNode = (id: string, x: number, y: number) => {
+    const freeX = grid.findFreeX(x, y);
+    positionMap.set(id, { x: freeX, y });
+    grid.place(freeX, y);
+  };
+
+  // Categorize nodes
   const children: GraphItem[] = [];
-  const peers: GraphItem[] = []; // linked + reverseLinked at depth 1
+  const peers: GraphItem[] = [];
   const siblings: GraphItem[] = [];
-  const deepItems: GraphItem[] = []; // depth >= 2
-  const grandchildren = new Map<string, GraphItem[]>(); // parent -> items
+  const deepItems: GraphItem[] = [];
+  const grandchildrenByParent = new Map<string, GraphItem[]>();
 
   for (const [id, gi] of visited) {
     if (id === currentItem.id) continue;
 
     if (gi.edgeType === 'parent') {
-      ancestors.push(gi);
+      // handled via ancestor chain walk
     } else if (gi.edgeType === 'child' && gi.depth === 1) {
       children.push(gi);
     } else if (gi.edgeType === 'child' && gi.depth > 1) {
-      // Grandchild — group under their parent
-      const parentId = gi.item.parentId || '';
-      if (!grandchildren.has(parentId)) grandchildren.set(parentId, []);
-      grandchildren.get(parentId)!.push(gi);
+      const pid = gi.item.parentId || '';
+      if (!grandchildrenByParent.has(pid)) grandchildrenByParent.set(pid, []);
+      grandchildrenByParent.get(pid)!.push(gi);
     } else if (
       (gi.edgeType === 'linked' || gi.edgeType === 'reverseLinked') &&
       gi.depth === 1
@@ -286,73 +326,72 @@ function layoutGraph(
     } else if (gi.depth >= 2) {
       deepItems.push(gi);
     } else {
-      // Fallback for unexpected — treat as peer
       peers.push(gi);
     }
   }
 
-  // Also collect ancestor chain upward (walk parentId)
+  // Build ancestor chain (root first)
   const ancestorChain: GraphItem[] = [];
   let walkId = currentItem.parentId;
   const usedAncestors = new Set<string>();
   while (walkId && visited.has(walkId) && !usedAncestors.has(walkId)) {
-    const gi = visited.get(walkId)!;
-    ancestorChain.push(gi);
+    ancestorChain.push(visited.get(walkId)!);
     usedAncestors.add(walkId);
-    walkId = gi.item.parentId;
+    walkId = visited.get(walkId)!.item.parentId;
   }
-  ancestorChain.reverse(); // root first
+  ancestorChain.reverse();
 
   let currentY = 0;
 
-  // 1. Place ancestor chain above (root first, top to bottom)
+  // 1. Ancestors (vertical chain, centered)
   for (const gi of ancestorChain) {
-    positionMap.set(gi.item.id, { x: 0, y: currentY });
+    placeNode(gi.item.id, 0, currentY);
     currentY += NODE_HEIGHT + RANK_SEP;
   }
 
-  // 2. Place current item
+  // 2. Current item
   const currentRow = currentY;
-  positionMap.set(currentItem.id, { x: 0, y: currentRow });
+  placeNode(currentItem.id, 0, currentRow);
   currentY += NODE_HEIGHT + RANK_SEP;
 
-  // 3. Place direct children fanned out below
+  // 3. Direct children — fan out below, centered
   if (children.length > 0) {
     const totalWidth = children.length * (NODE_WIDTH + NODE_SEP) - NODE_SEP;
     let startX = -totalWidth / 2;
     for (const gi of children) {
-      positionMap.set(gi.item.id, { x: startX, y: currentY });
+      placeNode(gi.item.id, startX, currentY);
       startX += NODE_WIDTH + NODE_SEP;
     }
     currentY += NODE_HEIGHT + RANK_SEP;
   }
 
-  // 4. Place grandchildren below their parent
-  for (const [parentId, gcs] of grandchildren) {
+  // 4. Grandchildren — below their parent, collision-checked
+  let hadGrandchildren = false;
+  for (const [parentId, gcs] of grandchildrenByParent) {
     const parentPos = positionMap.get(parentId);
     if (!parentPos) continue;
+    hadGrandchildren = true;
     const totalWidth = gcs.length * (NODE_WIDTH + NODE_SEP) - NODE_SEP;
     let startX = parentPos.x - totalWidth / 2 + NODE_WIDTH / 2;
     for (const gc of gcs) {
       if (!positionMap.has(gc.item.id)) {
-        positionMap.set(gc.item.id, { x: startX, y: currentY });
+        placeNode(gc.item.id, startX, currentY);
         startX += NODE_WIDTH + NODE_SEP;
       }
     }
   }
-  if (grandchildren.size > 0) {
+  if (hadGrandchildren) {
     currentY += NODE_HEIGHT + RANK_SEP;
   }
 
-  // 5. Place siblings alongside children (or in their own row below)
+  // 5. Siblings — row below children (or next to current row)
   if (siblings.length > 0) {
-    // Put siblings in a row just below children, slightly offset
     const sibY = children.length > 0 ? currentY : currentRow + NODE_HEIGHT + RANK_SEP;
     const totalWidth = siblings.length * (NODE_WIDTH + NODE_SEP) - NODE_SEP;
     let startX = -totalWidth / 2;
     for (const gi of siblings) {
       if (!positionMap.has(gi.item.id)) {
-        positionMap.set(gi.item.id, { x: startX, y: sibY });
+        placeNode(gi.item.id, startX, sibY);
         startX += NODE_WIDTH + NODE_SEP;
       }
     }
@@ -361,52 +400,41 @@ function layoutGraph(
     }
   }
 
-  // 6. Place peers (linked + reverseLinked) to the sides of current
+  // 6. Peers — to the left and right of current item
   if (peers.length > 0) {
     const halfPeers = Math.ceil(peers.length / 2);
     for (let i = 0; i < peers.length; i++) {
       const gi = peers[i];
       if (positionMap.has(gi.item.id)) continue;
       if (i < halfPeers) {
-        // Left side
-        const x =
-          -(NODE_WIDTH + NODE_SEP * 2) - i * (NODE_WIDTH + NODE_SEP);
-        positionMap.set(gi.item.id, { x, y: currentRow });
+        const idealX = -(NODE_WIDTH + NODE_SEP * 2) - i * (NODE_WIDTH + NODE_SEP);
+        placeNode(gi.item.id, idealX, currentRow);
       } else {
-        // Right side
         const j = i - halfPeers;
-        const x =
-          NODE_WIDTH + NODE_SEP * 2 + j * (NODE_WIDTH + NODE_SEP);
-        positionMap.set(gi.item.id, { x, y: currentRow });
+        const idealX = (NODE_WIDTH + NODE_SEP * 2) + j * (NODE_WIDTH + NODE_SEP);
+        placeNode(gi.item.id, idealX, currentRow);
       }
     }
   }
 
-  // 7. Place deep items (2nd/3rd degree) around their discoverer
+  // 7. Deep items — below their discoverer, collision-checked
   for (const gi of deepItems) {
     if (positionMap.has(gi.item.id)) continue;
 
     const fromPos = gi.discoveredFrom
       ? positionMap.get(gi.discoveredFrom)
       : undefined;
+
     if (fromPos) {
-      // Place slightly below and offset from discoverer
-      const existingAtLevel = [...positionMap.values()].filter(
-        (p) => Math.abs(p.y - (fromPos.y + NODE_HEIGHT + RANK_SEP)) < 20
-      ).length;
-      const offsetX = (existingAtLevel - 1) * (NODE_WIDTH + NODE_SEP);
-      positionMap.set(gi.item.id, {
-        x: fromPos.x + offsetX,
-        y: fromPos.y + NODE_HEIGHT + RANK_SEP,
-      });
+      const targetY = fromPos.y + NODE_HEIGHT + RANK_SEP;
+      placeNode(gi.item.id, fromPos.x, targetY);
     } else {
-      // Fallback: place at bottom
-      positionMap.set(gi.item.id, { x: 0, y: currentY });
+      placeNode(gi.item.id, 0, currentY);
       currentY += NODE_HEIGHT + RANK_SEP;
     }
   }
 
-  // Apply positions, center all nodes
+  // Apply positions (shift by half node width so center aligns)
   const layoutedNodes = nodes.map((node) => {
     const pos = positionMap.get(node.id) || { x: 0, y: 0 };
     return {
