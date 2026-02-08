@@ -185,9 +185,9 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className="p-4 lg:p-8 space-y-4 lg:space-y-5 max-w-7xl mx-auto">
+    <div className="h-full flex flex-col p-4 lg:p-6">
       {/* Header */}
-      <div className="space-y-3 lg:space-y-0 lg:flex lg:items-center lg:justify-between mb-6">
+      <div className="space-y-3 lg:space-y-0 lg:flex lg:items-center lg:justify-between mb-4 lg:mb-6 flex-shrink-0">
         <div className="flex items-center gap-3">
           {viewMode === 'day' && (
             <button
@@ -259,10 +259,10 @@ export default function CalendarPage() {
 
       {/* Month View */}
       {viewMode === 'month' && (
-        <>
-          <div className="rounded-xl lg:rounded-2xl border border-border/60 overflow-hidden bg-card shadow-sm">
+        <div className="flex-1 min-h-0">
+          <div className="h-full rounded-xl lg:rounded-2xl border border-border/60 overflow-hidden bg-card shadow-sm flex flex-col">
             {/* Day headers */}
-            <div className="grid grid-cols-7 border-b border-border/50 bg-muted/40">
+            <div className="grid grid-cols-7 border-b border-border/50 bg-muted/40 flex-shrink-0">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
                 <div key={d} className="px-1 lg:px-2 py-3 text-center text-[9px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
                   <span className="lg:hidden">{d.charAt(0)}</span>
@@ -272,8 +272,7 @@ export default function CalendarPage() {
             </div>
 
             {/* Calendar grid */}
-            <div className="grid grid-cols-7">
-              {calendarDays.map((day) => {
+            <div className="grid grid-cols-7 flex-1">{calendarDays.map((day) => {
                 const dayItems = getItemsForDate(day);
                 const isCurrentMonth = isSameMonth(day, currentMonth);
                 const isTodayDate = isToday(day);
@@ -288,10 +287,10 @@ export default function CalendarPage() {
                     key={day.toISOString()}
                     onClick={() => handleDayClick(day)}
                     className={cn(
-                      'relative min-h-[60px] lg:min-h-[120px] border-b border-r border-border/30 p-1.5 lg:p-2 transition-all text-left group',
+                      'relative min-h-[70px] lg:min-h-[100px] xl:min-h-[120px] border-b border-r border-border/30 p-2 lg:p-2.5 transition-all text-left group',
                       'hover:bg-foreground/[0.02] active:bg-foreground/[0.04]',
                       !isCurrentMonth && 'opacity-40',
-                      isTodayDate && 'bg-blue-500/[0.03] hover:bg-blue-500/[0.05]'
+                      isTodayDate && 'bg-blue-500/[0.04] hover:bg-blue-500/[0.06]'
                     )}
                   >
                     <div
@@ -496,24 +495,24 @@ export default function CalendarPage() {
               })()}
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* Day View */}
       {viewMode === 'day' && selectedDay && (
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-4">
           {/* Day summary */}
-          <div className="rounded-xl border border-border/60 bg-card p-4">
+          <div className="rounded-xl lg:rounded-2xl border border-border/60 bg-card p-4 lg:p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-sm font-medium text-muted-foreground/60">
+                <h3 className="text-[12px] font-medium text-muted-foreground/60 uppercase tracking-wider">
                   {isToday(selectedDay) ? 'Today' : format(selectedDay, 'EEEE')}
                 </h3>
-                <p className="text-2xl font-bold">{format(selectedDay, 'MMMM d, yyyy')}</p>
+                <p className="text-[20px] lg:text-2xl font-bold mt-1">{format(selectedDay, 'MMMM d, yyyy')}</p>
               </div>
               <div className="text-right">
-                <p className="text-sm text-muted-foreground/60">
-                  {getItemsForDate(selectedDay).length} items
+                <p className="text-[12px] text-muted-foreground/60">
+                  {getItemsForDate(selectedDay).length} item{getItemsForDate(selectedDay).length !== 1 ? 's' : ''}
                 </p>
               </div>
             </div>
