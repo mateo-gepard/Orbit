@@ -303,7 +303,9 @@ export function CommandBar() {
   };
 
   const handleSelectLink = (item: OrbitItem) => {
-    const beforeAt = input.slice(0, lastAtIndex);
+    const atIndex = input.lastIndexOf('@');
+    if (atIndex === -1) return;
+    const beforeAt = input.slice(0, atIndex);
     setInput(`${beforeAt}@${item.title} `);
     setSelectedIndex(0);
     setTimeout(() => inputRef.current?.focus(), 0);

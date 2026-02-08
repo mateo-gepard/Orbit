@@ -9,6 +9,7 @@ import {
   CheckSquare,
   Repeat,
   Plus,
+  FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
@@ -18,6 +19,7 @@ const TABS = [
   { href: '/today', icon: Sun, label: 'Today' },
   { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { href: '/habits', icon: Repeat, label: 'Habits' },
+  { href: '/notes', icon: FileText, label: 'Notes' },
 ];
 
 export function MobileNav() {
@@ -40,7 +42,7 @@ export function MobileNav() {
           position: 'fixed',
           right: '16px',
           zIndex: 50,
-          bottom: 'calc(48px + env(safe-area-inset-bottom, 0px) + 12px)',
+          bottom: 'calc(44px + env(safe-area-inset-bottom, 0px) + 12px)',
         }}
       >
         <Plus className="h-6 w-6" strokeWidth={2.5} />
@@ -88,10 +90,10 @@ export function MobileNav() {
                 <div className="relative">
                   <Icon
                     className={cn(
-                      'h-[22px] w-[22px] transition-all duration-200',
+                      'h-5 w-5 transition-all duration-200',
                       isActive && 'scale-110'
                     )}
-                    strokeWidth={isActive ? 2.2 : 1.5}
+                    strokeWidth={isActive ? 2.2 : 1.8}
                   />
                 </div>
                 <span

@@ -23,13 +23,16 @@ interface NoteEditorProps {
 const NOTE_SUBTYPE_OPTIONS: NoteSubtype[] = ['general', 'idea', 'principle', 'plan', 'journal'];
 
 export function NoteEditor({ note, onClose }: NoteEditorProps) {
-  const { getAllTags, getItemById } = useOrbitStore();
+  const { getAllTags, items } = useOrbitStore();
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content || '');
   const [showSettings, setShowSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const allTags = getAllTags();
+  const linkableItems = items.filter(i => 
+    (i.type === 'project' || i.type === 'goal') && i.status !== 'archived'
+  );
 
   // Auto-save on content/title change (debounced)
   useEffect(() => {
@@ -73,6 +76,14 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       ? tags.filter((t) => t !== tag)
       : [...tags, tag];
     await updateItem(note.id, { tags: updated });
+  };
+
+  const toggleLinkedItem = async (itemId: string) => {
+    const linkedIds = note.linkedIds || [];
+    const updated = linkedIds.includes(itemId)
+      ? linkedIds.filter((id) => id !== itemId)
+      : [...linkedIds, itemId];
+    await updateItem(note.id, { linkedIds: updated });
   };
 
   const handleContentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -191,6 +202,39 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
                       {tag}
                     </button>
                   ))}
+                </div>
+              </div>
+              
+              <DropdownMenuSeparator />
+              
+              <div className="px-2 py-1.5">
+                <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2">
+                  Link to Projects
+                </p>
+                <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto">
+                  {linkableItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => toggleLinkedItem(item.id)}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition-all text-left',
+                        (note.linkedIds || []).includes(item.id)
+                          ? 'bg-foreground/10 text-foreground font-medium'
+                          : 'text-muted-foreground/60 hover:bg-foreground/[0.04]'
+                      )}
+                    >
+                      <span className="text-[10px]">{item.emoji || (item.type === 'project' ? '📁' : '🎯')}</span>
+                      <span className="flex-1 truncate">{item.title}</span>
+                      {(note.linkedIds || []).includes(item.id) && (
+                        <span className="text-[10px]">✓</span>
+                      )}
+                    </button>
+                  ))}
+                  {linkableItems.length === 0 && (
+                    <p className="text-[10px] text-muted-foreground/40 py-2 text-center">
+                      No projects or goals
+                    </p>
+                  )}
                 </div>
               </div>
               
