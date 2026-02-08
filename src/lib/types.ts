@@ -93,6 +93,7 @@ export interface ParsedCommand {
   type: ItemType;
   title: string;
   tags: string[];
+  linkedItemTitles?: string[];
   priority?: Priority;
   dueDate?: string;
   startDate?: string;

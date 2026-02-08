@@ -50,13 +50,42 @@ export function CommandBar() {
 
   const allTags = getAllTags();
 
-  // Tag autocomplete state
+  // Autocomplete state
+  // Tags (#)
   const lastHashIndex = input.lastIndexOf('#');
-  const isTypingTag = lastHashIndex !== -1 && lastHashIndex === input.length - input.split('').reverse().join('').indexOf('#') - 1;
+  const isTypingTag = lastHashIndex !== -1 && 
+    (lastHashIndex === input.length - 1 || /^[a-zA-Z0-9]*$/.test(input.slice(lastHashIndex + 1)));
   const tagQuery = isTypingTag ? input.slice(lastHashIndex + 1).toLowerCase() : '';
-  const suggestedTags = isTypingTag && tagQuery
+  const suggestedTags = isTypingTag && (tagQuery || lastHashIndex === input.length - 1)
     ? allTags.filter(tag => tag.toLowerCase().startsWith(tagQuery)).slice(0, 5)
     : [];
+
+  // Priorities (!)
+  const lastExclamationIndex = input.lastIndexOf('!');
+  const isTypingPriority = lastExclamationIndex !== -1 && 
+    (lastExclamationIndex === input.length - 1 || /^[a-zA-Z]*$/.test(input.slice(lastExclamationIndex + 1)));
+  const priorityQuery = isTypingPriority ? input.slice(lastExclamationIndex + 1).toLowerCase() : '';
+  const priorities = ['high', 'medium', 'low'];
+  const suggestedPriorities = isTypingPriority && (priorityQuery || lastExclamationIndex === input.length - 1)
+    ? priorities.filter(p => p.toLowerCase().startsWith(priorityQuery))
+    : [];
+
+  // Linking (@)
+  const lastAtIndex = input.lastIndexOf('@');
+  const isTypingLink = lastAtIndex !== -1 && 
+    (lastAtIndex === input.length - 1 || /^[a-zA-Z0-9 ]*$/.test(input.slice(lastAtIndex + 1)));
+  const linkQuery = isTypingLink ? input.slice(lastAtIndex + 1).toLowerCase() : '';
+  const linkableItems = items.filter(i => 
+    i.type === 'project' || i.type === 'goal' || i.type === 'note'
+  );
+  const suggestedLinks = isTypingLink && (linkQuery || lastAtIndex === input.length - 1)
+    ? linkableItems.filter(item => 
+        item.title.toLowerCase().includes(linkQuery)
+      ).slice(0, 5)
+    : [];
+
+  // Determine which autocomplete to show
+  const showingAutocomplete = suggestedTags.length > 0 || suggestedPriorities.length > 0 || suggestedLinks.length > 0;
 
   // Prevent background scroll when command bar is open
   useEffect(() => {
@@ -138,6 +167,19 @@ export function CommandBar() {
       }
     });
 
+    // Find linked items by title
+    const linkedIds: string[] = [];
+    if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
+      parsed.linkedItemTitles.forEach(title => {
+        const matchedItem = items.find(item => 
+          item.title.toLowerCase() === title.toLowerCase()
+        );
+        if (matchedItem) {
+          linkedIds.push(matchedItem.id);
+        }
+      });
+    }
+
     let noteSubtype: NoteSubtype | undefined;
     if (parsed.type === 'note') {
       if (parsed.tags.includes('idea')) noteSubtype = 'idea';
@@ -159,6 +201,7 @@ export function CommandBar() {
       ...(parsed.dueDate && { dueDate: parsed.dueDate }),
       ...(parsed.startDate && { startDate: parsed.startDate }),
       ...(noteSubtype && { noteSubtype }),
+      ...(linkedIds.length > 0 && { linkedIds }),
     };
 
     // Auto-add defaults for events
@@ -218,6 +261,20 @@ export function CommandBar() {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  const handleSelectPriority = (priority: string) => {
+    const beforeExclamation = input.slice(0, lastExclamationIndex);
+    setInput(`${beforeExclamation}!${priority} `);
+    setSelectedIndex(0);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleSelectLink = (item: OrbitItem) => {
+    const beforeAt = input.slice(0, lastAtIndex);
+    setInput(`${beforeAt}@${item.title} `);
+    setSelectedIndex(0);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
   if (!commandBarOpen) return null;
 
   const TypeIcon = TYPE_ICONS[parsed.type] || CheckSquare;
@@ -262,6 +319,10 @@ export function CommandBar() {
                   e.preventDefault();
                   if (suggestedTags.length > 0) {
                     handleSelectTag(suggestedTags[Math.min(selectedIndex, suggestedTags.length - 1)]);
+                  } else if (suggestedPriorities.length > 0) {
+                    handleSelectPriority(suggestedPriorities[Math.min(selectedIndex, suggestedPriorities.length - 1)]);
+                  } else if (suggestedLinks.length > 0) {
+                    handleSelectLink(suggestedLinks[Math.min(selectedIndex, suggestedLinks.length - 1)]);
                   } else if (filteredItems.length > 0 && !input.startsWith('/')) {
                     handleSelectItem(filteredItems[selectedIndex]?.id || filteredItems[0].id);
                   } else {
@@ -272,6 +333,10 @@ export function CommandBar() {
                   e.preventDefault();
                   const maxIndex = suggestedTags.length > 0 
                     ? suggestedTags.length - 1 
+                    : suggestedPriorities.length > 0
+                    ? suggestedPriorities.length - 1
+                    : suggestedLinks.length > 0
+                    ? suggestedLinks.length - 1
                     : filteredItems.length - 1;
                   setSelectedIndex((i) => Math.min(i + 1, maxIndex));
                 }
@@ -330,8 +395,62 @@ export function CommandBar() {
               </div>
             )}
 
+            {/* Priority suggestions */}
+            {suggestedPriorities.length > 0 && !suggestedTags.length && (
+              <div>
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                  Priority
+                </div>
+                {suggestedPriorities.map((priority, idx) => (
+                  <button
+                    key={priority}
+                    onClick={() => handleSelectPriority(priority)}
+                    className={cn(
+                      'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
+                      idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
+                    )}
+                  >
+                    <span className="text-muted-foreground/50">!</span>
+                    <span className="flex-1 capitalize">{priority}</span>
+                    <span className={cn(
+                      'h-2 w-2 rounded-full',
+                      priority === 'high' ? 'bg-red-500' : priority === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
+                    )} />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Link suggestions */}
+            {suggestedLinks.length > 0 && !suggestedTags.length && !suggestedPriorities.length && (
+              <div>
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                  Link to
+                </div>
+                {suggestedLinks.map((item, idx) => {
+                  const Icon = TYPE_ICONS[item.type];
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelectLink(item)}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
+                        idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
+                      )}
+                    >
+                      <Icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
+                      <span className="flex-1 truncate">{item.title}</span>
+                      <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wider">
+                        {item.type}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Search results */}
-            {filteredItems.length > 0 && !input.startsWith('/') && !suggestedTags.length && (
+            {filteredItems.length > 0 && !input.startsWith('/') && !showingAutocomplete && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
                   Results
@@ -422,6 +541,7 @@ export function CommandBar() {
                     <span className="font-semibold text-muted-foreground/60">Tip: </span>
                     Use <kbd className="font-mono text-[10px]">#tag</kbd>{' '}
                     <kbd className="font-mono text-[10px]">!high</kbd>{' '}
+                    <kbd className="font-mono text-[10px]">@project</kbd>{' '}
                     and dates like <kbd className="font-mono text-[10px]">morgen</kbd> or{' '}
                     <kbd className="font-mono text-[10px]">15.03</kbd>
                   </p>

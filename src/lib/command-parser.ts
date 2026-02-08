@@ -45,6 +45,7 @@ export function parseCommand(input: string): ParsedCommand {
   let text = input.trim();
   let type: ItemType = 'task';
   const tags: string[] = [];
+  const linkedItemTitles: string[] = [];
   let priority: Priority | undefined;
   let dueDate: string | undefined;
   let startDate: string | undefined;
@@ -69,6 +70,17 @@ export function parseCommand(input: string): ParsedCommand {
     tags.push(tagMatch[1].toLowerCase());
   }
   text = text.replace(tagRegex, '').trim();
+
+  // Extract links (@item title)
+  const linkRegex = /@([a-zA-Z0-9 ]+?)(?=\s@|\s!|\s#|$)/g;
+  let linkMatch;
+  while ((linkMatch = linkRegex.exec(text)) !== null) {
+    const linkedTitle = linkMatch[1].trim();
+    if (linkedTitle) {
+      linkedItemTitles.push(linkedTitle);
+    }
+  }
+  text = text.replace(linkRegex, '').trim();
 
   // Extract priority (!priority)
   const priorityRegex = /!(low|medium|high)/i;
@@ -125,6 +137,7 @@ export function parseCommand(input: string): ParsedCommand {
     type,
     title,
     tags,
+    linkedItemTitles,
     priority,
     dueDate,
     startDate,
