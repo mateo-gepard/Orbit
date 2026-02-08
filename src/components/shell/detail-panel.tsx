@@ -58,13 +58,16 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 export function DetailPanel() {
-  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getItemById } = useOrbitStore();
+  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getItemById, getAllTags, addCustomTag, removeCustomTag } = useOrbitStore();
   const { user } = useAuth();
   const item = selectedItemId ? getItemById(selectedItemId) : undefined;
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
+  const [newTagText, setNewTagText] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const allTags = getAllTags();
 
   useEffect(() => {
     if (item) {
@@ -179,6 +182,9 @@ export function DetailPanel() {
       : [...tags, tag];
     handleUpdate({ tags: updated });
   };
+
+  // Filter item tags to only show valid tags (remove deleted custom tags)
+  const validItemTags = (item?.tags || []).filter(tag => allTags.includes(tag));
 
   const handleNewTask = async (projectId: string, status: ItemStatus = 'inbox') => {
     if (!user) return;
@@ -522,20 +528,58 @@ export function DetailPanel() {
           <div>
             <FieldLabel>Tags</FieldLabel>
             <div className="mt-2 flex flex-wrap gap-1">
-              {LIFE_AREA_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => toggleTag(tag)}
-                  className={cn(
-                    'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
-                    (item.tags || []).includes(tag)
-                      ? 'bg-foreground text-background'
-                      : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08] hover:text-muted-foreground'
+              {allTags.map((tag) => (
+                <div key={tag} className="relative group">
+                  <button
+                    onClick={() => toggleTag(tag)}
+                    className={cn(
+                      'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
+                      validItemTags.includes(tag)
+                        ? 'bg-foreground text-background'
+                        : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08] hover:text-muted-foreground'
+                    )}
+                  >
+                    {tag}
+                  </button>
+                  {!LIFE_AREA_TAGS.includes(tag as any) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeCustomTag(tag);
+                      }}
+                      className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center h-3.5 w-3.5 rounded-full bg-red-500 text-white text-[8px] hover:bg-red-600"
+                      title="Delete tag"
+                    >
+                      ×
+                    </button>
                   )}
-                >
-                  {tag}
-                </button>
+                </div>
               ))}
+              <div className="flex items-center gap-1">
+                <input
+                  value={newTagText}
+                  onChange={(e) => setNewTagText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newTagText.trim()) {
+                      addCustomTag(newTagText);
+                      setNewTagText('');
+                    }
+                  }}
+                  placeholder="new tag"
+                  className="w-20 bg-transparent border-b border-dashed border-border/40 px-1 py-0.5 text-[11px] outline-none placeholder:text-muted-foreground/30"
+                />
+                {newTagText.trim() && (
+                  <button
+                    onClick={() => {
+                      addCustomTag(newTagText);
+                      setNewTagText('');
+                    }}
+                    className="rounded-md p-0.5 text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -922,20 +966,58 @@ export function DetailPanel() {
         <div>
           <FieldLabel>Tags</FieldLabel>
           <div className="mt-2 flex flex-wrap gap-1">
-            {LIFE_AREA_TAGS.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => toggleTag(tag)}
-                className={cn(
-                  'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
-                  (item.tags || []).includes(tag)
-                    ? 'bg-foreground text-background'
-                    : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08] hover:text-muted-foreground'
+            {allTags.map((tag) => (
+              <div key={tag} className="relative group">
+                <button
+                  onClick={() => toggleTag(tag)}
+                  className={cn(
+                    'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
+                    validItemTags.includes(tag)
+                      ? 'bg-foreground text-background'
+                      : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08] hover:text-muted-foreground'
+                  )}
+                >
+                  {tag}
+                </button>
+                {!LIFE_AREA_TAGS.includes(tag as any) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeCustomTag(tag);
+                    }}
+                    className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center h-3.5 w-3.5 rounded-full bg-red-500 text-white text-[8px] hover:bg-red-600"
+                    title="Delete tag"
+                  >
+                    ×
+                  </button>
                 )}
-              >
-                {tag}
-              </button>
+              </div>
             ))}
+            <div className="flex items-center gap-1">
+              <input
+                value={newTagText}
+                onChange={(e) => setNewTagText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newTagText.trim()) {
+                    addCustomTag(newTagText);
+                    setNewTagText('');
+                  }
+                }}
+                placeholder="new tag"
+                className="w-20 bg-transparent border-b border-dashed border-border/40 px-1 py-0.5 text-[11px] outline-none placeholder:text-muted-foreground/30"
+              />
+              {newTagText.trim() && (
+                <button
+                  onClick={() => {
+                    addCustomTag(newTagText);
+                    setNewTagText('');
+                  }}
+                  className="rounded-md p-0.5 text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

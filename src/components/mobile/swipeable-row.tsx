@@ -141,7 +141,7 @@ export function SwipeableRow({
           className={cn(
             'absolute inset-y-0 right-0 flex items-center justify-end pr-4 transition-colors duration-150',
             passedThreshold && isSwipingLeft
-              ? 'bg-orange-500/15 dark:bg-orange-500/20'
+              ? 'bg-blue-500/15 dark:bg-blue-500/20'
               : 'bg-foreground/[0.03]'
           )}
           style={{ width: Math.max(0, -offset) }}
@@ -153,14 +153,14 @@ export function SwipeableRow({
             {Math.abs(offset) > 50 && (
               <span className={cn(
                 'text-[11px] font-medium whitespace-nowrap',
-                passedThreshold && isSwipingLeft ? 'text-orange-600 dark:text-orange-400' : 'text-muted-foreground/60'
+                passedThreshold && isSwipingLeft ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground/60'
               )}>
                 {leftLabel}
               </span>
             )}
             <LeftIcon className={cn(
               'h-4 w-4',
-              passedThreshold && isSwipingLeft ? 'text-orange-600 dark:text-orange-400' : 'text-muted-foreground/60'
+              passedThreshold && isSwipingLeft ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground/60'
             )} />
           </div>
         </div>

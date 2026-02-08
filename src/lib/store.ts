@@ -1,10 +1,18 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { OrbitItem, ItemType, ItemStatus } from '@/lib/types';
+import { LIFE_AREA_TAGS } from '@/lib/types';
 
 interface OrbitStore {
   // Items
   items: OrbitItem[];
   setItems: (items: OrbitItem[]) => void;
+
+  // Custom Tags
+  customTags: string[];
+  addCustomTag: (tag: string) => void;
+  removeCustomTag: (tag: string) => void;
+  getAllTags: () => string[];
 
   // UI State
   selectedItemId: string | null;
@@ -31,19 +39,36 @@ interface OrbitStore {
   getLinkedItems: (itemId: string) => OrbitItem[];
 }
 
-export const useOrbitStore = create<OrbitStore>((set, get) => ({
-  items: [],
-  setItems: (items) => {
-    // Guard: only accept valid arrays
-    if (!Array.isArray(items)) {
-      console.error('[ORBIT Store] setItems received non-array:', typeof items);
-      return;
-    }
-    set({ items });
-  },
+export const useOrbitStore = create<OrbitStore>()(
+  persist(
+    (set, get) => ({
+      items: [],
+      setItems: (items) => {
+        // Guard: only accept valid arrays
+        if (!Array.isArray(items)) {
+          console.error('[ORBIT Store] setItems received non-array:', typeof items);
+          return;
+        }
+        set({ items });
+      },
 
-  selectedItemId: null,
-  setSelectedItemId: (id) => {
+      customTags: [],
+      addCustomTag: (tag) => {
+        const trimmed = tag.trim().toLowerCase();
+        if (!trimmed || get().customTags.includes(trimmed)) return;
+        set({ customTags: [...get().customTags, trimmed] });
+      },
+      removeCustomTag: (tag) => {
+        set({ customTags: get().customTags.filter((t) => t !== tag) });
+        // Note: Tag removal from items is handled by Firestore cleanup
+        // Items will automatically filter out deleted tags when displayed
+      },
+      getAllTags: () => {
+        return [...LIFE_AREA_TAGS, ...get().customTags];
+      },
+
+      selectedItemId: null,
+      setSelectedItemId: (id) => {
     // If the item doesn't exist, don't open the panel
     if (id !== null) {
       const exists = get().items.some((i) => i.id === id);
@@ -110,4 +135,10 @@ export const useOrbitStore = create<OrbitStore>((set, get) => ({
       return [];
     }
   },
-}));
+}),
+    {
+      name: 'orbit-settings',
+      partialize: (state) => ({ customTags: state.customTags }),
+    }
+  )
+);

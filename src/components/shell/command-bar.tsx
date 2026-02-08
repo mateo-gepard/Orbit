@@ -41,19 +41,21 @@ const TYPE_LABELS: Record<ItemType, string> = {
 
 export function CommandBar() {
   const { user } = useAuth();
-  const { commandBarOpen, setCommandBarOpen, items } = useOrbitStore();
+  const { commandBarOpen, setCommandBarOpen, items, getAllTags } = useOrbitStore();
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
+  const allTags = getAllTags();
+
   // Tag autocomplete state
   const lastHashIndex = input.lastIndexOf('#');
   const isTypingTag = lastHashIndex !== -1 && lastHashIndex === input.length - input.split('').reverse().join('').indexOf('#') - 1;
   const tagQuery = isTypingTag ? input.slice(lastHashIndex + 1).toLowerCase() : '';
   const suggestedTags = isTypingTag && tagQuery
-    ? LIFE_AREA_TAGS.filter(tag => tag.toLowerCase().startsWith(tagQuery)).slice(0, 5)
+    ? allTags.filter(tag => tag.toLowerCase().startsWith(tagQuery)).slice(0, 5)
     : [];
 
   // Prevent background scroll when command bar is open
