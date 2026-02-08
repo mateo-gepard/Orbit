@@ -146,9 +146,11 @@ export function CommandBar() {
     if (!input.trim() || !user) return;
 
     const parsed = parseCommand(input);
+    console.log('[CommandBar] Parsed:', { input, parsed });
 
     // If only tags were typed (no actual title), don't create an item
     if (!parsed.title.trim() && parsed.tags.length > 0) {
+      console.log('[CommandBar] Only tags, creating tags without item');
       // Just auto-create the tags and close
       parsed.tags.forEach(tag => {
         if (!allTags.includes(tag)) {
@@ -162,10 +164,13 @@ export function CommandBar() {
 
     // If there's no title at all, don't create anything
     if (!parsed.title.trim()) {
+      console.log('[CommandBar] No title, aborting');
       setInput('');
       setCommandBarOpen(false);
       return;
     }
+
+    console.log('[CommandBar] Creating item with title:', parsed.title);
 
     // Auto-create custom tags that don't exist yet
     parsed.tags.forEach(tag => {
@@ -198,7 +203,7 @@ export function CommandBar() {
     const newItem: Omit<OrbitItem, 'id'> = {
       type: parsed.type,
       status: 'active',
-      title: parsed.title || 'Untitled',
+      title: parsed.title, // Early returns ensure this is never empty
       tags: parsed.tags,
       userId: user.uid,
       createdAt: Date.now(),
@@ -485,7 +490,7 @@ export function CommandBar() {
             )}
 
             {/* Create preview */}
-            {input.trim() && isCreateMode && !suggestedTags.length && (
+            {input.trim() && isCreateMode && !suggestedTags.length && parsed.title.trim() && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
                   Create new {TYPE_LABELS[parsed.type].toLowerCase()}
@@ -496,7 +501,7 @@ export function CommandBar() {
                 >
                   <TypeIcon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[14px] lg:text-[13px] font-medium truncate">{parsed.title || 'Untitled'}</div>
+                    <div className="text-[14px] lg:text-[13px] font-medium truncate">{parsed.title}</div>
                     {(parsed.tags.length > 0 || parsed.priority || parsed.dueDate) && (
                       <div className="flex items-center gap-2 mt-0.5">
                         {parsed.tags.map((tag) => (

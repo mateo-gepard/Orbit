@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useRef } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { FileText, Plus, Check } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -32,6 +32,20 @@ export default function NotesPage() {
 		if (filter === 'all') return all;
 		return all.filter((i) => i.noteSubtype === filter || i.tags?.includes(filter));
 	}, [items, filter]);
+
+	// Lock body scroll on mobile when creating to prevent keyboard shift
+	useEffect(() => {
+		if (isCreating && window.innerWidth < 1024) { // lg breakpoint
+			document.body.style.overflow = 'hidden';
+			document.body.style.position = 'fixed';
+			document.body.style.width = '100%';
+			return () => {
+				document.body.style.overflow = '';
+				document.body.style.position = '';
+				document.body.style.width = '';
+			};
+		}
+	}, [isCreating]);
 
 	const handleCreateNote = async () => {
 		if (!user || (!newNoteTitle.trim() && !newNoteContent.trim())) {
@@ -95,69 +109,80 @@ export default function NotesPage() {
 			{/* Notes grid */}
 			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3" style={{ paddingBottom: isCreating ? '360px' : '16px' }}>
 				{/* Quick create card - Google Keep style */}
-				{isCreating ? (
-					<div 
-						className="lg:relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-lg lg:shadow-sm"
-						style={{ 
-							position: 'fixed',
-							bottom: 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)',
-							left: '16px',
-							right: '16px',
-							zIndex: 50,
-						}}
-					>
-						<input
-							ref={titleInputRef}
-							value={newNoteTitle}
-							onChange={(e) => setNewNoteTitle(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === 'Escape') {
-									setIsCreating(false);
-									setNewNoteTitle('');
-									setNewNoteContent('');
-								}
+				{isCreating && (
+					<>
+						{/* Fixed backdrop on mobile to prevent scroll */}
+						<div 
+							className="fixed inset-0 z-40 lg:hidden"
+							onClick={() => {
+								setIsCreating(false);
+								setNewNoteTitle('');
+								setNewNoteContent('');
 							}}
-							placeholder="Title"
-							className="bg-transparent text-[13px] font-semibold outline-none placeholder:text-muted-foreground/40"
-							style={{ WebkitUserSelect: 'text' }}
 						/>
-						<textarea
-							ref={contentInputRef}
-							value={newNoteContent}
-							onChange={(e) => setNewNoteContent(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === 'Escape') {
-									setIsCreating(false);
-									setNewNoteTitle('');
-									setNewNoteContent('');
-								}
+						<div 
+							className="lg:relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-lg lg:shadow-sm"
+							style={{ 
+								position: isCreating ? 'fixed' : 'relative',
+								bottom: isCreating ? 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)' : 'auto',
+								left: isCreating ? '16px' : 'auto',
+								right: isCreating ? '16px' : 'auto',
+								zIndex: 50,
 							}}
-							placeholder="Take a note..."
-							className="bg-transparent text-[11px] text-muted-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[60px] max-h-[200px]"
-							style={{ WebkitUserSelect: 'text' }}
-							rows={3}
-						/>
-						<div className="flex items-center justify-end gap-2 pt-1">
-							<button
-								onClick={() => {
-									setIsCreating(false);
-									setNewNoteTitle('');
-									setNewNoteContent('');
+						>
+							<input
+								ref={titleInputRef}
+								value={newNoteTitle}
+								onChange={(e) => setNewNoteTitle(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === 'Escape') {
+										setIsCreating(false);
+										setNewNoteTitle('');
+										setNewNoteContent('');
+									}
 								}}
-								className="rounded-lg px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] transition-colors"
-							>
-								Cancel
-							</button>
-							<button
-								onClick={handleCreateNote}
-								className="flex items-center gap-1 rounded-lg bg-foreground px-3 py-1 text-[11px] font-medium text-background hover:opacity-90 transition-opacity"
-							>
-								<Check className="h-3 w-3" />
-								Done
-							</button>
+								placeholder="Title"
+								className="bg-transparent text-[13px] font-semibold outline-none placeholder:text-muted-foreground/40"
+								style={{ WebkitUserSelect: 'text' }}
+							/>
+							<textarea
+								ref={contentInputRef}
+								value={newNoteContent}
+								onChange={(e) => setNewNoteContent(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === 'Escape') {
+										setIsCreating(false);
+										setNewNoteTitle('');
+										setNewNoteContent('');
+									}
+								}}
+								placeholder="Take a note..."
+								className="bg-transparent text-[11px] text-muted-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[60px] max-h-[200px]"
+								style={{ WebkitUserSelect: 'text' }}
+								rows={3}
+							/>
+							<div className="flex items-center justify-end gap-2 pt-1">
+								<button
+									onClick={() => {
+										setIsCreating(false);
+										setNewNoteTitle('');
+										setNewNoteContent('');
+									}}
+									className="rounded-lg px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] transition-colors"
+								>
+									Cancel
+								</button>
+								<button
+									onClick={handleCreateNote}
+									className="rounded-lg px-3 py-1 text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
+								>
+									Create
+								</button>
+							</div>
 						</div>
-					</div>
-				) : (
+					</>
+				)}
+				{!isCreating && (
 					<button
 						onClick={handleStartCreating}
 						className="flex items-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/50 p-4 text-left transition-all hover:bg-card hover:border-border"

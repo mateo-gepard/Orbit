@@ -181,9 +181,7 @@ export function DetailPanel() {
   };
 
   const handleTagLongPressStart = (tag: string) => {
-    if (LIFE_AREA_TAGS.includes(tag as any)) {
-      return; // Don't show delete for default tags
-    }
+    // Allow deletion of ALL tags (including life area tags)
     const timer = setTimeout(() => {
       setTagToDelete(tag);
     }, 500); // 500ms long press
@@ -964,9 +962,8 @@ export function DetailPanel() {
                     handleTagLongPressEnd();
                   }}
                   onMouseEnter={() => {
-                    if (!LIFE_AREA_TAGS.includes(tag as any)) {
-                      setTagToDelete(tag);
-                    }
+                    // Allow deletion of ALL tags
+                    setTagToDelete(tag);
                   }}
                   onMouseLeave={() => {
                     setTagToDelete(null);
@@ -980,7 +977,7 @@ export function DetailPanel() {
                 >
                   {tag}
                 </button>
-                {tagToDelete === tag && !LIFE_AREA_TAGS.includes(tag as any) && (
+                {tagToDelete === tag && (
                   <div 
                     className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border/60 rounded-lg shadow-lg p-2 min-w-[180px]"
                     onMouseEnter={() => setTagToDelete(tag)}
