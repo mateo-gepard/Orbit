@@ -18,7 +18,6 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import type { OrbitItem } from '@/lib/types';
-import { getItemRelationships } from '@/lib/links';
 import { OrbitNode } from './link-graph-node';
 import { buildGraphData } from './link-graph-utils';
 
@@ -35,14 +34,9 @@ interface LinkGraphProps {
 export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: LinkGraphProps) {
   const { isDragging, swipeStyles, handlers: swipeHandlers } = useSwipeToClose({ onClose });
 
-  const relationships = useMemo(
-    () => getItemRelationships(currentItem, allItems),
-    [currentItem, allItems]
-  );
-
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildGraphData(currentItem, relationships),
-    [currentItem, relationships]
+    () => buildGraphData(currentItem, allItems),
+    [currentItem, allItems]
   );
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
@@ -176,6 +170,10 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #a855f7 0, #a855f7 2px, transparent 2px, transparent 5px)' }} />
                     <span className="text-[10px] text-muted-foreground">Refers To</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #f59e0b 0, #f59e0b 2px, transparent 2px, transparent 6px)' }} />
+                    <span className="text-[10px] text-muted-foreground">Deep Link (2nd+)</span>
                   </div>
                 </div>
               </div>

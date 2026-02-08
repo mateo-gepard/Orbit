@@ -11,14 +11,16 @@ import type { OrbitItem } from '@/lib/types';
 interface OrbitNodeData {
   item: OrbitItem;
   isCurrent: boolean;
+  depth?: number;
   [key: string]: unknown;
 }
 
 function OrbitNodeComponent({ data }: { data: OrbitNodeData }) {
-  const { item, isCurrent } = data;
+  const { item, isCurrent, depth = 0 } = data;
   const config = ITEM_TYPE_CONFIG[item.type];
   const Icon = config.icon;
   const isDone = item.status === 'done';
+  const isDeep = depth >= 2;
 
   return (
     <div
@@ -28,7 +30,8 @@ function OrbitNodeComponent({ data }: { data: OrbitNodeData }) {
         isCurrent
           ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-lg'
           : cn(config.bgColor, config.borderColor),
-        isDone && !isCurrent && 'opacity-60'
+        isDone && !isCurrent && 'opacity-60',
+        isDeep && !isCurrent && 'opacity-70 scale-[0.95]'
       )}
     >
       <Handle
