@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Network, CheckCircle2, Circle, Target, Calendar, FileText, ListTodo, Zap } from 'lucide-react';
+import { X, Network, CheckCircle2, Circle, Target, Calendar, FileText, ListTodo, Zap, ArrowDown, ArrowRight, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -96,38 +96,66 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
           onClose();
         }}
         className={cn(
-          "flex items-center gap-3 px-4 py-3 rounded-lg border transition-all cursor-pointer",
+          "relative flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-all cursor-pointer",
           isHighlighted 
-            ? "bg-primary/10 border-primary shadow-sm ring-2 ring-primary/20" 
-            : "bg-background border-border/30 hover:bg-foreground/[0.02] hover:border-border",
+            ? "bg-primary/10 border-primary shadow-md ring-2 ring-primary/30" 
+            : "bg-background border-border/40 hover:bg-foreground/[0.02] hover:border-border hover:shadow-sm",
           isDone && !isHighlighted && "opacity-50"
         )}
       >
         <div className={cn(
-          "flex items-center justify-center h-8 w-8 rounded-lg shrink-0",
-          isHighlighted ? "bg-primary/20" : "bg-muted/50"
+          "flex items-center justify-center h-9 w-9 rounded-lg shrink-0 shadow-sm",
+          isHighlighted ? "bg-primary/20 ring-1 ring-primary/30" : "bg-muted/60"
         )}>
-          <Icon className={cn("h-4 w-4", isHighlighted ? "text-primary" : color)} />
+          <Icon className={cn("h-4.5 w-4.5", isHighlighted ? "text-primary" : color)} />
         </div>
         
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            {relationship && (
-              <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider">
-                {relationship}
-              </span>
-            )}
-          </div>
           <p className={cn(
-            "text-sm font-medium truncate",
+            "text-[13px] font-medium truncate leading-tight",
             isDone && "line-through text-muted-foreground"
           )}>
             {item.emoji && `${item.emoji} `}{item.title}
           </p>
-          <p className="text-xs text-muted-foreground/60 capitalize">
+          <p className="text-[11px] text-muted-foreground/60 capitalize mt-0.5">
             {item.type}
             {isDone && " · Done"}
           </p>
+        </div>
+        
+        {isHighlighted && (
+          <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-primary shadow-sm" />
+        )}
+      </div>
+    );
+  };
+
+  const renderConnector = (type: 'down' | 'horizontal' | 'branch') => {
+    if (type === 'down') {
+      return (
+        <div className="flex items-center justify-center py-1">
+          <ArrowDown className="h-4 w-4 text-muted-foreground/30" />
+        </div>
+      );
+    }
+    if (type === 'horizontal') {
+      return (
+        <div className="flex items-center gap-1 py-1">
+          <div className="flex-1 h-px bg-border/40" />
+          <Minus className="h-3 w-3 text-muted-foreground/30" />
+          <div className="flex-1 h-px bg-border/40" />
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-center py-1">
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="h-3 w-px bg-border/40" />
+          <div className="flex gap-2">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-px w-4 bg-border/40" />
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -193,90 +221,129 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               </p>
             </div>
           ) : (
-            <div className="space-y-6 pt-4">
-              {/* Current Item - Highlighted */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Circle className="h-3 w-3 fill-primary text-primary" />
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Current Item
-                  </h3>
+            <div className="pt-4 max-w-md mx-auto">
+              {/* Flowchart - Top to Bottom */}
+              
+              {/* Grandparent (if parent has parent) */}
+              {parent?.parentId && (() => {
+                const grandparent = allItems.find(i => i.id === parent.parentId);
+                return grandparent ? (
+                  <>
+                    <div className="mb-2">
+                      <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
+                        ↑ Parent's Parent
+                      </div>
+                      {renderItem(grandparent, false)}
+                    </div>
+                    {renderConnector('down')}
+                  </>
+                ) : null;
+              })()}
+
+              {/* Parent */}
+              {parent && (
+                <>
+                  <div className="mb-2">
+                    <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
+                      ↑ Part of
+                    </div>
+                    {renderItem(parent, false)}
+                  </div>
+                  {renderConnector('down')}
+                </>
+              )}
+
+              {/* Current Item - Always in the middle */}
+              <div className="mb-2">
+                <div className="text-[10px] font-semibold text-primary/70 uppercase tracking-wider text-center mb-2 flex items-center justify-center gap-1">
+                  <Circle className="h-2 w-2 fill-primary text-primary" />
+                  Current Item
+                  <Circle className="h-2 w-2 fill-primary text-primary" />
                 </div>
                 {renderItem(currentItem, true)}
               </div>
 
-              {/* Parent */}
-              {parent && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="h-px bg-border/40 flex-1" />
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Part of
-                    </h3>
-                    <div className="h-px bg-border/40 flex-1" />
-                  </div>
-                  {renderItem(parent, false, 'parent')}
-                  
-                  {/* Connection line */}
-                  <div className="flex items-center justify-center my-2">
-                    <div className="w-px h-6 bg-border/40" />
-                  </div>
-                </div>
-              )}
-
-              {/* Children */}
-              {children.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="h-px bg-border/40 flex-1" />
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Contains ({children.length})
-                    </h3>
-                    <div className="h-px bg-border/40 flex-1" />
-                  </div>
-                  
-                  {/* Connection line from current */}
-                  <div className="flex items-center justify-center mb-2">
-                    <div className="w-px h-6 bg-border/40" />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {children.map(child => renderItem(child, false, 'child'))}
-                  </div>
-                </div>
-              )}
-
-              {/* Linked Items */}
+              {/* Linked Items (Peers) - Shown horizontally */}
               {linkedItems.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="h-px bg-border/40 flex-1" />
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Linked ({linkedItems.length})
-                    </h3>
-                    <div className="h-px bg-border/40 flex-1" />
+                <>
+                  {renderConnector('horizontal')}
+                  <div className="mb-2">
+                    <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
+                      ↔ Linked ({linkedItems.length})
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {linkedItems.map(linked => renderItem(linked, false))}
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    {linkedItems.map(linked => renderItem(linked, false, 'linked'))}
-                  </div>
-                </div>
+                  {renderConnector('horizontal')}
+                </>
               )}
 
               {/* Reverse Links */}
               {reverseLinks.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="h-px bg-border/40 flex-1" />
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Linked From ({reverseLinks.length})
-                    </h3>
-                    <div className="h-px bg-border/40 flex-1" />
+                <>
+                  {!linkedItems.length && renderConnector('horizontal')}
+                  <div className="mb-2">
+                    <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
+                      ← Linked From ({reverseLinks.length})
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {reverseLinks.map(reverse => renderItem(reverse, false))}
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    {reverseLinks.map(reverse => renderItem(reverse, false, 'linked from'))}
-                  </div>
-                </div>
+                  {renderConnector('horizontal')}
+                </>
               )}
+
+              {/* Children - Below current item */}
+              {children.length > 0 && (
+                <>
+                  {renderConnector('down')}
+                  <div className="mb-2">
+                    <div className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider text-center mb-2">
+                      ↓ Contains ({children.length})
+                    </div>
+                    {children.length > 2 && renderConnector('branch')}
+                    <div className="grid grid-cols-1 gap-2">
+                      {children.map((child, idx) => (
+                        <div key={child.id}>
+                          {renderItem(child, false)}
+                          {idx < children.length - 1 && (
+                            <div className="flex justify-center py-1">
+                              <div className="w-px h-4 bg-border/30" />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Grandchildren preview (first level only) */}
+              {children.length > 0 && (() => {
+                const grandchildren = allItems.filter(i => 
+                  children.some(child => child.id === i.parentId)
+                );
+                return grandchildren.length > 0 ? (
+                  <>
+                    {renderConnector('down')}
+                    <div className="opacity-60">
+                      <div className="text-[10px] font-semibold text-muted-foreground/40 uppercase tracking-wider text-center mb-2">
+                        ↓ Children's Children ({grandchildren.length})
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                        {grandchildren.slice(0, 3).map(gc => renderItem(gc, false))}
+                        {grandchildren.length > 3 && (
+                          <div className="text-center text-[11px] text-muted-foreground/40 py-2">
+                            +{grandchildren.length - 3} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : null;
+              })()}
             </div>
           )}
         </div>

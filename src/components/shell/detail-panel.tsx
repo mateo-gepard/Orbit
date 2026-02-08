@@ -323,11 +323,15 @@ export function DetailPanel() {
           <div className="flex items-center gap-1.5">
             {/* Link Graph Button */}
             <button 
-              onClick={() => setShowLinkGraph(true)}
-              className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowLinkGraph(true);
+              }}
+              className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors touch-none"
               title="View link graph"
+              type="button"
             >
-              <Network className="h-4 w-4" />
+              <Network className="h-4 w-4 pointer-events-none" />
             </button>
             
             <DropdownMenu>
@@ -765,11 +769,15 @@ export function DetailPanel() {
         <div className="flex items-center gap-1.5">
           {/* Link Graph Button */}
           <button 
-            onClick={() => setShowLinkGraph(true)}
-            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowLinkGraph(true);
+            }}
+            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors touch-none"
             title="View link graph"
+            type="button"
           >
-            <Network className="h-4 w-4" />
+            <Network className="h-4 w-4 pointer-events-none" />
           </button>
           
           {/* Three-dot menu */}
