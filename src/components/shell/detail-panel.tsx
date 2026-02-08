@@ -664,19 +664,7 @@ export function DetailPanel() {
 
   // Regular detail panel for non-project items
   const parentItem = item.parentId ? getItemById(item.parentId) : undefined;
-  const linkedItems = (item.linkedIds || [])
-    .map((id) => getItemById(id))
-    .filter(Boolean) as OrbitItem[];
   const childItems = items.filter((i) => i.parentId === item.id);
-  const projects = items.filter((i) => i.type === 'project' && i.status !== 'archived');
-  
-  console.log('🔗 [DetailPanel] Item linkedIds:', {
-    itemTitle: item.title,
-    itemType: item.type,
-    linkedIds: item.linkedIds || [],
-    linkedItemsFound: linkedItems.length,
-    linkedItemTitles: linkedItems.map(i => i.title)
-  });
 
   const content = (
     <div className="flex h-full flex-col">
@@ -966,18 +954,24 @@ export function DetailPanel() {
             </div>
           )}
 
-          {/* Parent project */}
+          {/* Parent item (link) */}
           <div>
-            <FieldLabel>Project</FieldLabel>
+            <FieldLabel>Linked to</FieldLabel>
             <Select value={item.parentId || 'none'} onValueChange={(v) => handleUpdate({ parentId: v === 'none' ? undefined : v })}>
               <SelectTrigger className="mt-1 h-8 text-[12px] border-border/50"><SelectValue placeholder="None" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none" className="text-[12px]">None</SelectItem>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id} className="text-[12px]">
-                    {p.emoji || '📁'} {p.title}
-                  </SelectItem>
-                ))}
+                {items.filter(i => i.id !== item.id && i.status !== 'archived').map((linkableItem) => {
+                  const Icon = TYPE_ICONS[linkableItem.type];
+                  return (
+                    <SelectItem key={linkableItem.id} value={linkableItem.id} className="text-[12px] flex items-center gap-2">
+                      <span className="flex items-center gap-2">
+                        {linkableItem.emoji || ''} {linkableItem.title}
+                        <span className="text-[9px] text-muted-foreground/40 uppercase ml-1">({linkableItem.type})</span>
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -1124,49 +1118,6 @@ export function DetailPanel() {
                   </span>
                 </button>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Linked items ── */}
-        {linkedItems.length > 0 && (
-          <div>
-            <FieldLabel>
-              <span className="flex items-center gap-1">
-                <Link2 className="h-3 w-3" /> Linked · {linkedItems.length}
-              </span>
-            </FieldLabel>
-            <div className="mt-1.5 space-y-0.5">
-              {linkedItems.map((linked) => {
-                const Icon = TYPE_ICONS[linked.type];
-                const isDone = linked.status === 'done';
-                const isArchived = linked.status === 'archived';
-                
-                return (
-                  <button
-                    key={linked.id}
-                    onClick={() => setSelectedItemId(linked.id)}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/[0.03] transition-colors text-left',
-                      isArchived && 'opacity-40'
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
-                    <span className={cn(
-                      'flex-1 truncate',
-                      isDone && 'line-through text-muted-foreground/60'
-                    )}>
-                      {linked.title}
-                    </span>
-                    {isArchived && (
-                      <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">archived</span>
-                    )}
-                    {isDone && !isArchived && (
-                      <Check className="h-3 w-3 text-muted-foreground/40" />
-                    )}
-                  </button>
-                );
-              })}
             </div>
           </div>
         )}

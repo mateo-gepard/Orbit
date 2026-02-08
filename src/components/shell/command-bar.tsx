@@ -90,14 +90,15 @@ export function CommandBar() {
   const linkableItems = items.filter(i => i.status !== 'archived');
   
   console.log('🔍 [CommandBar] Linkable items:', linkableItems.length, `(${linkableItems.filter(i => i.type === 'project').length} projects, ${linkableItems.filter(i => i.type === 'task').length} tasks, ${linkableItems.filter(i => i.type === 'note').length} notes)`);
+  console.log('🔍 [CommandBar] All linkable items:', linkableItems.map(i => ({ title: i.title, type: i.type })));
   
   const suggestedLinks = isTypingLink && (linkQuery || lastAtIndex === input.length - 1)
     ? linkableItems.filter(item => 
         item.title.toLowerCase().includes(linkQuery)
-      ).slice(0, 5)
+      ).slice(0, 10) // Increased from 5 to 10 to show more options
     : [];
   
-  console.log('🔍 [CommandBar] Suggested links:', suggestedLinks.length, suggestedLinks.map(i => i.title));
+  console.log('🔍 [CommandBar] Suggested links:', suggestedLinks.length, suggestedLinks.map(i => ({ title: i.title, type: i.type })));
 
   // Determine which autocomplete to show
   const showingAutocomplete = suggestedTags.length > 0 || suggestedPriorities.length > 0 || suggestedLinks.length > 0;
@@ -203,38 +204,39 @@ export function CommandBar() {
     });
 
     // Find linked items by title (fuzzy matching)
-    const linkedIds: string[] = [];
-    let parentProjectId: string | undefined;
+    // Use parentId for ALL @ links (unified linking - no distinction between types)
+    let parentItemId: string | undefined;
     
     if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
       console.log('[CommandBar] Looking for linked items:', parsed.linkedItemTitles);
-      parsed.linkedItemTitles.forEach(linkTitle => {
-        const linkTitleLower = linkTitle.toLowerCase();
-        // First try exact match
-        let matchedItem = items.find(item => 
-          item.title.toLowerCase() === linkTitleLower
+      
+      // Only use the FIRST @ link as the parent
+      const firstLinkTitle = parsed.linkedItemTitles[0];
+      const linkTitleLower = firstLinkTitle.toLowerCase();
+      
+      // First try exact match
+      let matchedItem = items.find(item => 
+        item.title.toLowerCase() === linkTitleLower
+      );
+      // If no exact match, try fuzzy match (contains)
+      if (!matchedItem) {
+        matchedItem = items.find(item => 
+          item.title.toLowerCase().includes(linkTitleLower) ||
+          linkTitleLower.includes(item.title.toLowerCase())
         );
-        // If no exact match, try fuzzy match (contains)
-        if (!matchedItem) {
-          matchedItem = items.find(item => 
-            item.title.toLowerCase().includes(linkTitleLower) ||
-            linkTitleLower.includes(item.title.toLowerCase())
-          );
-        }
-        if (matchedItem) {
-          console.log(`[CommandBar] Linked "${linkTitle}" -> "${matchedItem.title}" (${matchedItem.type})`);
-          
-          // If it's a project, set as parent instead of adding to linkedIds
-          if (matchedItem.type === 'project' && !parentProjectId) {
-            parentProjectId = matchedItem.id;
-            console.log(`[CommandBar] ✅ Set as parent project: "${matchedItem.title}"`);
-          } else {
-            linkedIds.push(matchedItem.id);
-          }
-        } else {
-          console.log(`[CommandBar] No match found for "${linkTitle}"`);
-        }
-      });
+      }
+      
+      if (matchedItem) {
+        parentItemId = matchedItem.id;
+        console.log(`[CommandBar] ✅ Set as parent: "${matchedItem.title}" (${matchedItem.type})`);
+      } else {
+        console.log(`[CommandBar] No match found for "${firstLinkTitle}"`);
+      }
+      
+      // Log warning if multiple @ links were provided (we only use the first)
+      if (parsed.linkedItemTitles.length > 1) {
+        console.warn('[CommandBar] Multiple @ links provided, only first one is used:', parsed.linkedItemTitles);
+      }
     }
 
     let noteSubtype: NoteSubtype | undefined;
@@ -258,17 +260,14 @@ export function CommandBar() {
       ...(parsed.dueDate && { dueDate: parsed.dueDate }),
       ...(parsed.startDate && { startDate: parsed.startDate }),
       ...(noteSubtype && { noteSubtype }),
-      ...(parentProjectId && { parentId: parentProjectId }),
-      ...(linkedIds.length > 0 && { linkedIds }),
+      ...(parentItemId && { parentId: parentItemId }),
     };
     
     console.log('📦 [CommandBar] New item being created:', {
       title: newItem.title,
       type: newItem.type,
       parentId: newItem.parentId || 'NONE',
-      linkedIds: newItem.linkedIds || 'NONE',
-      hasParentProject: !!parentProjectId,
-      linkedIdsArray: linkedIds
+      hasParent: !!parentItemId,
     });
 
     // Auto-add defaults for events
