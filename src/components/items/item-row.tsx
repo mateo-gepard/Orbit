@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, CalendarDays, Flag, Circle, Clock, CalendarClock } from 'lucide-react';
+import { Check, CalendarDays, Flag, Circle, Clock, CalendarClock, CalendarPlus, CalendarX } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import type { OrbitItem, Priority } from '@/lib/types';
@@ -45,26 +45,30 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     });
   };
 
-  const handleSwipeArchive = async () => {
-    haptic('medium');
-    await updateItem(item.id, { status: 'archived' });
+  const isOverdue =
+    item.dueDate && isPast(parseISO(item.dueDate)) && !isToday(parseISO(item.dueDate)) && item.status !== 'done';
+  
+  const isDueToday = item.dueDate && isToday(parseISO(item.dueDate));
+
+  const handleSwipeToday = async () => {
+    haptic(isDueToday ? 'light' : 'success');
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (isDueToday) {
+      await updateItem(item.id, { dueDate: undefined });
+    } else {
+      await updateItem(item.id, { 
+        dueDate: today,
+        status: item.status === 'inbox' ? 'active' : item.status 
+      });
+    }
   };
 
   const handleAddToToday = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    haptic('success');
-    const today = new Date().toISOString().split('T')[0];
-    await updateItem(item.id, { 
-      dueDate: today,
-      status: item.status === 'inbox' ? 'active' : item.status 
-    });
+    await handleSwipeToday();
   };
-
-  const isOverdue =
-    item.dueDate && isPast(parseISO(item.dueDate)) && !isToday(parseISO(item.dueDate)) && item.status !== 'done';
-  
-  const isDueToday = item.dueDate && isToday(parseISO(item.dueDate));
 
   const row = (
     <div
@@ -169,19 +173,20 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         )}
       </div>
 
-      {/* Add to Today button - shows on hover for tasks without due date or not due today */}
-      {item.type === 'task' && item.status !== 'done' && !isDueToday && (
+      {/* Add/Remove Today button - desktop hover only */}
+      {item.type === 'task' && item.status !== 'done' && (
         <button
           onClick={handleAddToToday}
           className={cn(
-            'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all shrink-0',
-            'opacity-0 group-hover:opacity-100 lg:opacity-0 lg:group-hover:opacity-100',
-            'bg-foreground/[0.04] hover:bg-foreground/[0.08] text-muted-foreground/60 hover:text-foreground',
-            'before:absolute before:inset-[-10px] lg:before:inset-[-6px] before:content-[""]'
+            'hidden lg:flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all shrink-0',
+            'opacity-0 group-hover:opacity-100',
+            isDueToday 
+              ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400'
+              : 'bg-foreground/[0.04] hover:bg-foreground/[0.08] text-muted-foreground/60 hover:text-foreground',
           )}
         >
           <CalendarClock className="h-3 w-3" />
-          <span className="hidden lg:inline">Today</span>
+          <span>{isDueToday ? 'Remove' : 'Today'}</span>
         </button>
       )}
 
@@ -202,12 +207,16 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     </div>
   );
 
-  // Wrap in swipeable on mobile (swipe right = done, swipe left = archive)
+  // Wrap in swipeable on mobile (swipe right = done, swipe left = add/remove from today)
   if (enableSwipe && item.status !== 'done' && item.status !== 'archived') {
     return (
       <SwipeableRow
         onSwipeRight={item.type === 'task' || item.type === 'habit' ? handleSwipeComplete : undefined}
-        onSwipeLeft={handleSwipeArchive}
+        onSwipeLeft={item.type === 'task' ? handleSwipeToday : undefined}
+        rightLabel="Done"
+        leftLabel={isDueToday ? "Remove" : "Today"}
+        rightIcon={Check}
+        leftIcon={isDueToday ? CalendarX : CalendarPlus}
       >
         {row}
       </SwipeableRow>

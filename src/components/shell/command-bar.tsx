@@ -18,6 +18,7 @@ import { parseCommand } from '@/lib/command-parser';
 import { createItem } from '@/lib/firestore';
 import { syncEventToGoogle, hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
 import type { ItemType, NoteSubtype, OrbitItem } from '@/lib/types';
+import { LIFE_AREA_TAGS } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const TYPE_ICONS: Record<ItemType, typeof CheckSquare> = {
@@ -46,6 +47,14 @@ export function CommandBar() {
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  // Tag autocomplete state
+  const lastHashIndex = input.lastIndexOf('#');
+  const isTypingTag = lastHashIndex !== -1 && lastHashIndex === input.length - input.split('').reverse().join('').indexOf('#') - 1;
+  const tagQuery = isTypingTag ? input.slice(lastHashIndex + 1).toLowerCase() : '';
+  const suggestedTags = isTypingTag && tagQuery
+    ? LIFE_AREA_TAGS.filter(tag => tag.toLowerCase().startsWith(tagQuery)).slice(0, 5)
+    : [];
 
   // Prevent background scroll when command bar is open
   useEffect(() => {
@@ -180,6 +189,13 @@ export function CommandBar() {
     setCommandBarOpen(false);
   };
 
+  const handleSelectTag = (tag: string) => {
+    const beforeHash = input.slice(0, lastHashIndex);
+    setInput(`${beforeHash}#${tag} `);
+    setSelectedIndex(0);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
   if (!commandBarOpen) return null;
 
   const TypeIcon = TYPE_ICONS[parsed.type] || CheckSquare;
@@ -222,7 +238,9 @@ export function CommandBar() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  if (filteredItems.length > 0 && !input.startsWith('/')) {
+                  if (suggestedTags.length > 0) {
+                    handleSelectTag(suggestedTags[Math.min(selectedIndex, suggestedTags.length - 1)]);
+                  } else if (filteredItems.length > 0 && !input.startsWith('/')) {
                     handleSelectItem(filteredItems[selectedIndex]?.id || filteredItems[0].id);
                   } else {
                     handleSubmit();
@@ -230,7 +248,10 @@ export function CommandBar() {
                 }
                 if (e.key === 'ArrowDown') {
                   e.preventDefault();
-                  setSelectedIndex((i) => Math.min(i + 1, filteredItems.length - 1));
+                  const maxIndex = suggestedTags.length > 0 
+                    ? suggestedTags.length - 1 
+                    : filteredItems.length - 1;
+                  setSelectedIndex((i) => Math.min(i + 1, maxIndex));
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
@@ -265,8 +286,30 @@ export function CommandBar() {
             data-command-scroll
             className="overflow-y-auto overscroll-contain py-1.5 max-h-[40vh] lg:max-h-[300px]"
           >
+            {/* Tag suggestions */}
+            {suggestedTags.length > 0 && (
+              <div>
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                  Tags
+                </div>
+                {suggestedTags.map((tag, idx) => (
+                  <button
+                    key={tag}
+                    onClick={() => handleSelectTag(tag)}
+                    className={cn(
+                      'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
+                      idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
+                    )}
+                  >
+                    <span className="text-muted-foreground/50">#</span>
+                    <span className="flex-1">{tag}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Search results */}
-            {filteredItems.length > 0 && !input.startsWith('/') && (
+            {filteredItems.length > 0 && !input.startsWith('/') && !suggestedTags.length && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
                   Results
@@ -294,7 +337,7 @@ export function CommandBar() {
             )}
 
             {/* Create preview */}
-            {input.trim() && isCreateMode && (
+            {input.trim() && isCreateMode && !suggestedTags.length && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
                   Create new {TYPE_LABELS[parsed.type].toLowerCase()}
