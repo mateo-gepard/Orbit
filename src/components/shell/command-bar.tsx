@@ -11,6 +11,7 @@ import {
   FileText,
   Search,
   CornerDownLeft,
+  Hash,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -489,7 +490,7 @@ export function CommandBar() {
               </div>
             )}
 
-            {/* Create preview */}
+            {/* Create preview for items with titles */}
             {input.trim() && isCreateMode && !suggestedTags.length && parsed.title.trim() && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
@@ -515,6 +516,29 @@ export function CommandBar() {
                         )}
                       </div>
                     )}
+                  </div>
+                  <CornerDownLeft className="h-3 w-3 text-muted-foreground/30" />
+                </button>
+              </div>
+            )}
+
+            {/* Tag creation preview (when only tags, no title) */}
+            {input.trim() && isCreateMode && !suggestedTags.length && !parsed.title.trim() && parsed.tags.length > 0 && (
+              <div>
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                  Create {parsed.tags.length === 1 ? 'tag' : 'tags'}
+                </div>
+                <button
+                  onClick={handleSubmit}
+                  className="flex w-full items-center gap-3 px-3 py-3.5 lg:py-2.5 text-left transition-colors hover:bg-foreground/[0.03] active:bg-foreground/[0.06]"
+                >
+                  <Hash className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      {parsed.tags.map((tag) => (
+                        <span key={tag} className="text-[13px] font-medium">#{tag}</span>
+                      ))}
+                    </div>
                   </div>
                   <CornerDownLeft className="h-3 w-3 text-muted-foreground/30" />
                 </button>

@@ -157,7 +157,6 @@ export default function DashboardPage() {
     activeProjects,
     goals,
     principles,
-    inboxCount,
     totalActive,
   } = useMemo(() => {
     const todayTasks = items.filter(
@@ -175,9 +174,8 @@ export default function DashboardPage() {
     const principles = items.filter(
       (i) => i.type === 'note' && (i.noteSubtype === 'principle' || i.tags?.includes('principle')) && i.status !== 'archived'
     );
-    const inboxCount = items.filter((i) => i.status === 'inbox').length;
     const totalActive = items.filter((i) => i.status !== 'archived').length;
-    return { todayTasks, overdueItems, todayEvents, habits, activeProjects, goals, principles, inboxCount, totalActive };
+    return { todayTasks, overdueItems, todayEvents, habits, activeProjects, goals, principles, totalActive };
   }, [items, todayStr]);
 
   if (loading) {
@@ -255,13 +253,6 @@ export default function DashboardPage() {
 
       {/* ── Stats strip — scrollable on mobile ── */}
       <div className="flex items-center gap-4 lg:gap-6 text-[13px] overflow-x-auto -mx-4 px-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
-        {inboxCount > 0 && (
-          <Link href="/inbox" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors shrink-0">
-            <Inbox className="h-3.5 w-3.5" strokeWidth={1.5} />
-            <span className="tabular-nums font-medium">{inboxCount}</span>
-            <span className="text-muted-foreground/60">inbox</span>
-          </Link>
-        )}
         <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
           <span className="tabular-nums font-medium">{todayTasks.length + overdueItems.length}</span>
