@@ -48,7 +48,7 @@ export function ProjectDashboard() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showLinkGraph, setShowLinkGraph] = useState(false);
 
-  const { isDragging, handlers: swipeHandlers } = useSwipeToClose({
+  const { isDragging, swipeStyles, handlers: swipeHandlers } = useSwipeToClose({
     onClose: () => setDetailPanelOpen(false),
   });
 
@@ -538,17 +538,19 @@ export function ProjectDashboard() {
             <SheetHeader className="sr-only">
               <SheetTitle>Project Dashboard</SheetTitle>
             </SheetHeader>
-            <div
-              className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-10"
-              {...swipeHandlers}
-            >
-              <div className={cn(
-                "w-10 h-1 rounded-full bg-muted-foreground/20 transition-all",
-                isDragging && "bg-muted-foreground/40 w-12"
-              )} />
-            </div>
-            <div className="h-[calc(92dvh-24px)] overflow-hidden pt-14">
-              {content}
+            <div className="h-full" style={swipeStyles}>
+              <div
+                className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-10"
+                {...swipeHandlers}
+              >
+                <div className={cn(
+                  "w-10 h-1 rounded-full bg-muted-foreground/20 transition-all",
+                  isDragging && "bg-muted-foreground/40 w-12"
+                )} />
+              </div>
+              <div className="h-[calc(92dvh-24px)] overflow-hidden pt-14">
+                {content}
+              </div>
             </div>
           </SheetContent>
         </Sheet>
