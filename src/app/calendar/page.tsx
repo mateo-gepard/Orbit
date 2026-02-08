@@ -414,7 +414,7 @@ export default function CalendarPage() {
                               e.stopPropagation();
                               setSelectedItemId(item.id);
                             }}
-                            className="pointer-events-auto cursor-pointer pt-8 px-0.5"
+                            className="pointer-events-auto cursor-pointer flex items-end pb-1 px-0.5"
                             style={{
                               gridRow: seg.row + 1,
                               gridColumn: `${seg.col + 1} / span ${seg.span}`,

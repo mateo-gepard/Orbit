@@ -8,24 +8,14 @@ const NODE_HEIGHT = 56;
 const NODE_SEP = 60;
 const RANK_SEP = 80;
 
-// Lazy-load dagre to avoid SSR issues with dynamic require()
-let dagreInstance: typeof import('@dagrejs/dagre') | null = null;
-async function getDagre() {
-  if (!dagreInstance) {
-    dagreInstance = await import('@dagrejs/dagre');
-  }
-  return dagreInstance;
-}
-
-export async function buildGraphData(
+export function buildGraphData(
   currentItem: OrbitItem,
   relationships: ItemRelationships,
-): Promise<{ nodes: Node[]; edges: Edge[] }> {
+): { nodes: Node[]; edges: Edge[] } {
   const nodeMap = new Map<string, OrbitItem>();
   const edges: Edge[] = [];
   const addedEdges = new Set<string>();
 
-  // Helper to avoid duplicate edges
   const addEdge = (edge: Edge) => {
     const key = `${edge.source}->${edge.target}`;
     if (!addedEdges.has(key)) {
@@ -43,7 +33,6 @@ export async function buildGraphData(
     for (const ancestor of chain) {
       nodeMap.set(ancestor.id, ancestor);
     }
-    // Build chain: root -> ... -> parent -> current
     for (let i = 0; i < chain.length - 1; i++) {
       addEdge({
         id: `e-ancestor-${chain[i].id}-${chain[i + 1].id}`,
@@ -52,12 +41,8 @@ export async function buildGraphData(
         type: 'default',
         markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
         style: { strokeWidth: 2, stroke: 'var(--color-muted-foreground)' },
-        label: 'parent',
-        labelStyle: { fontSize: 9, fill: 'var(--color-muted-foreground)' },
-        labelBgStyle: { fill: 'var(--color-background)', fillOpacity: 0.8 },
       });
     }
-    // Last ancestor -> current
     const directParent = chain[chain.length - 1];
     addEdge({
       id: `e-parent-${directParent.id}-${currentItem.id}`,
@@ -66,13 +51,10 @@ export async function buildGraphData(
       type: 'default',
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
       style: { strokeWidth: 2, stroke: 'var(--color-muted-foreground)' },
-      label: 'parent',
-      labelStyle: { fontSize: 9, fill: 'var(--color-muted-foreground)' },
-      labelBgStyle: { fill: 'var(--color-background)', fillOpacity: 0.8 },
     });
   }
 
-  // Add children + edges from current to each child
+  // Add children
   for (const child of relationships.children) {
     nodeMap.set(child.id, child);
     addEdge({
@@ -82,17 +64,13 @@ export async function buildGraphData(
       type: 'default',
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
       style: { strokeWidth: 2, stroke: 'var(--color-muted-foreground)' },
-      label: 'child',
-      labelStyle: { fontSize: 9, fill: 'var(--color-muted-foreground)' },
-      labelBgStyle: { fill: 'var(--color-background)', fillOpacity: 0.8 },
     });
   }
 
-  // Add grandchildren (descendants not in direct children)
+  // Add grandchildren (descendants not direct children)
   for (const desc of relationships.descendants) {
     if (!nodeMap.has(desc.id)) {
       nodeMap.set(desc.id, desc);
-      // Find its parent among existing nodes
       const parentId = desc.parentId;
       if (parentId && nodeMap.has(parentId)) {
         addEdge({
@@ -107,7 +85,7 @@ export async function buildGraphData(
     }
   }
 
-  // Add peer links (dashed, bidirectional)
+  // Add peer links (dashed blue, bidirectional)
   for (const linked of relationships.linked) {
     nodeMap.set(linked.id, linked);
     addEdge({
@@ -118,18 +96,13 @@ export async function buildGraphData(
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
       markerStart: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
       style: { strokeWidth: 1.5, strokeDasharray: '6,4', stroke: '#3b82f6' },
-      label: 'linked',
-      labelStyle: { fontSize: 9, fill: '#3b82f6' },
-      labelBgStyle: { fill: 'var(--color-background)', fillOpacity: 0.8 },
     });
   }
 
-  // Add reverse links (dotted)
+  // Add reverse links (dotted purple)
   for (const rev of relationships.reverseLinked) {
-    // Skip if already added as a regular link
     const alreadyLinked = (currentItem.linkedIds || []).includes(rev.id);
     if (alreadyLinked) continue;
-
     nodeMap.set(rev.id, rev);
     addEdge({
       id: `e-rev-${rev.id}-${currentItem.id}`,
@@ -138,13 +111,10 @@ export async function buildGraphData(
       type: 'default',
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
       style: { strokeWidth: 1.5, strokeDasharray: '3,3', stroke: '#a855f7' },
-      label: 'refers to',
-      labelStyle: { fontSize: 9, fill: '#a855f7' },
-      labelBgStyle: { fill: 'var(--color-background)', fillOpacity: 0.8 },
     });
   }
 
-  // Create nodes array
+  // Create nodes
   const nodes: Node[] = Array.from(nodeMap.values()).map((item) => ({
     id: item.id,
     type: 'orbitNode',
@@ -152,40 +122,126 @@ export async function buildGraphData(
     position: { x: 0, y: 0 },
   }));
 
-  return layoutWithDagre(nodes, edges);
+  return layoutHierarchical(nodes, edges, currentItem, relationships);
 }
 
-async function layoutWithDagre(
+/**
+ * Custom hierarchical layout — no dagre dependency.
+ *
+ * Layout strategy:
+ * - Ancestors: vertical chain above current item (centered)
+ * - Current item: center
+ * - Children/descendants: fanned out below
+ * - Peer links + reverse links: placed to the sides
+ */
+function layoutHierarchical(
   nodes: Node[],
   edges: Edge[],
-): Promise<{ nodes: Node[]; edges: Edge[] }> {
-  const dagreLib = await getDagre();
-  const g = new dagreLib.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({
-    rankdir: 'TB',
-    nodesep: NODE_SEP,
-    ranksep: RANK_SEP,
-    marginx: 20,
-    marginy: 20,
-  });
+  currentItem: OrbitItem,
+  relationships: ItemRelationships,
+): { nodes: Node[]; edges: Edge[] } {
+  const positionMap = new Map<string, { x: number; y: number }>();
 
-  for (const node of nodes) {
-    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  // Ancestor chain (root first)
+  const ancestorChain = [...relationships.ancestors].reverse();
+
+  // Children that need layout below current
+  const childIds = new Set(relationships.children.map(c => c.id));
+  const descendantIds = new Set(relationships.descendants.map(d => d.id));
+
+  // Peer links (not ancestors, not descendants)
+  const peerIds = new Set([
+    ...relationships.linked.map(l => l.id),
+    ...relationships.reverseLinked
+      .filter(r => !(currentItem.linkedIds || []).includes(r.id))
+      .map(r => r.id),
+  ]);
+  // Remove any that are also in ancestor/descendant
+  for (const id of ancestorChain.map(a => a.id)) peerIds.delete(id);
+  for (const id of descendantIds) peerIds.delete(id);
+  peerIds.delete(currentItem.id);
+
+  let currentY = 0;
+
+  // 1. Place ancestors vertically, centered
+  for (const ancestor of ancestorChain) {
+    positionMap.set(ancestor.id, { x: 0, y: currentY });
+    currentY += NODE_HEIGHT + RANK_SEP;
   }
-  for (const edge of edges) {
-    g.setEdge(edge.source, edge.target);
+
+  // 2. Place current item
+  positionMap.set(currentItem.id, { x: 0, y: currentY });
+  const currentRow = currentY;
+  currentY += NODE_HEIGHT + RANK_SEP;
+
+  // 3. Place direct children fanned out below
+  const directChildren = relationships.children;
+  if (directChildren.length > 0) {
+    const totalWidth = directChildren.length * (NODE_WIDTH + NODE_SEP) - NODE_SEP;
+    let startX = -totalWidth / 2;
+    for (const child of directChildren) {
+      positionMap.set(child.id, { x: startX, y: currentY });
+      startX += NODE_WIDTH + NODE_SEP;
+    }
+    currentY += NODE_HEIGHT + RANK_SEP;
   }
 
-  dagreLib.layout(g);
+  // 4. Place grandchildren below their parents
+  const grandchildren = relationships.descendants.filter(d => !childIds.has(d.id));
+  // Group by parent
+  const grandchildrenByParent = new Map<string, OrbitItem[]>();
+  for (const gc of grandchildren) {
+    if (gc.parentId) {
+      const group = grandchildrenByParent.get(gc.parentId) || [];
+      group.push(gc);
+      grandchildrenByParent.set(gc.parentId, group);
+    }
+  }
 
+  for (const [parentId, children] of grandchildrenByParent) {
+    const parentPos = positionMap.get(parentId);
+    if (!parentPos) continue;
+    const totalWidth = children.length * (NODE_WIDTH + NODE_SEP) - NODE_SEP;
+    let startX = parentPos.x - totalWidth / 2 + NODE_WIDTH / 2;
+    for (const child of children) {
+      if (!positionMap.has(child.id)) {
+        positionMap.set(child.id, { x: startX, y: currentY });
+        startX += NODE_WIDTH + NODE_SEP;
+      }
+    }
+  }
+  if (grandchildrenByParent.size > 0) {
+    currentY += NODE_HEIGHT + RANK_SEP;
+  }
+
+  // 5. Place peer links to the sides of the current item
+  const peerItems = nodes.filter(n => peerIds.has(n.id));
+  if (peerItems.length > 0) {
+    // Split peers: left side and right side
+    const halfPeers = Math.ceil(peerItems.length / 2);
+    for (let i = 0; i < peerItems.length; i++) {
+      const peer = peerItems[i];
+      if (i < halfPeers) {
+        // Left side
+        const x = -(NODE_WIDTH + NODE_SEP * 2) - (i * (NODE_WIDTH + NODE_SEP));
+        positionMap.set(peer.id, { x, y: currentRow });
+      } else {
+        // Right side
+        const j = i - halfPeers;
+        const x = (NODE_WIDTH + NODE_SEP * 2) + (j * (NODE_WIDTH + NODE_SEP));
+        positionMap.set(peer.id, { x, y: currentRow });
+      }
+    }
+  }
+
+  // Apply positions to nodes, center everything
   const layoutedNodes = nodes.map((node) => {
-    const pos = g.node(node.id);
+    const pos = positionMap.get(node.id) || { x: 0, y: 0 };
     return {
       ...node,
       position: {
         x: pos.x - NODE_WIDTH / 2,
-        y: pos.y - NODE_HEIGHT / 2,
+        y: pos.y,
       },
     };
   });
