@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { OrbitItem, ItemType, ItemStatus } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
-import { saveUserSettings } from '@/lib/firestore';
 
 interface OrbitStore {
   // Items
@@ -52,17 +51,22 @@ interface OrbitStore {
   getLinkedItems: (itemId: string) => OrbitItem[];
 }
 
-/** Debounced cloud sync for tag changes */
+/** Debounced cloud sync for tag changes (lazy import to avoid circular dep) */
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 function debouncedSyncTags(get: () => OrbitStore) {
   if (syncTimeout) clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(() => {
+  syncTimeout = setTimeout(async () => {
     const userId = get()._syncUserId;
     if (!userId) return;
-    saveUserSettings(userId, {
-      customTags: get().customTags,
-      removedDefaultTags: get().removedDefaultTags,
-    }).catch((err) => console.error('[ORBIT] Failed to sync tags:', err));
+    try {
+      const { saveUserSettings } = await import('@/lib/firestore');
+      await saveUserSettings(userId, {
+        customTags: get().customTags,
+        removedDefaultTags: get().removedDefaultTags,
+      });
+    } catch (err) {
+      console.error('[ORBIT] Failed to sync tags:', err);
+    }
   }, 300);
 }
 

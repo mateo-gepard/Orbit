@@ -88,6 +88,17 @@ service cloud.firestore {
     }
     
     // ─────────────────────────────────────────────────────────
+    // User Settings Collection (tags, areas — per user)
+    // Doc ID = userId, so only the owner can read/write
+    // ─────────────────────────────────────────────────────────
+
+    match /userSettings/{userId} {
+      allow read: if isSignedIn() && isOwner(userId);
+      allow create, update: if isSignedIn() && isOwner(userId);
+      allow delete: if isSignedIn() && isOwner(userId);
+    }
+
+    // ─────────────────────────────────────────────────────────
     // Deny all other paths
     // ─────────────────────────────────────────────────────────
     
