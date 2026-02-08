@@ -74,12 +74,15 @@ export function parseCommand(input: string): ParsedCommand {
   // Extract links (@item title)
   const linkRegex = /@([a-zA-Z0-9 ]+?)(?=\s@|\s!|\s#|$)/g;
   let linkMatch;
+  console.log('🔍 [Command Parser] Extracting @ links from:', text);
   while ((linkMatch = linkRegex.exec(text)) !== null) {
     const linkedTitle = linkMatch[1].trim();
+    console.log('🔗 [Command Parser] Found @ link match:', { raw: linkMatch[0], title: linkedTitle });
     if (linkedTitle) {
       linkedItemTitles.push(linkedTitle);
     }
   }
+  console.log('🔗 [Command Parser] Final linked titles:', linkedItemTitles);
   text = text.replace(linkRegex, '').trim();
 
   // Extract priority (!priority)
@@ -133,7 +136,7 @@ export function parseCommand(input: string): ParsedCommand {
 
   const title = remainingWords.join(' ').replace(/\s+/g, ' ').trim();
 
-  return {
+  const parsed = {
     type,
     title,
     tags,
@@ -142,4 +145,9 @@ export function parseCommand(input: string): ParsedCommand {
     dueDate,
     startDate,
   };
+  
+  console.log('✅ [Command Parser] Final parsed command:', parsed);
+
+  return parsed;
 }
+

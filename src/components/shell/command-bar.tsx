@@ -76,14 +76,28 @@ export function CommandBar() {
   const isTypingLink = lastAtIndex !== -1 && 
     (lastAtIndex === input.length - 1 || /^[a-zA-Z0-9 ]*$/.test(input.slice(lastAtIndex + 1)));
   const linkQuery = isTypingLink ? input.slice(lastAtIndex + 1).toLowerCase() : '';
+  
+  console.log('🔍 [CommandBar] @ Detection:', {
+    input,
+    lastAtIndex,
+    isTypingLink,
+    linkQuery,
+    textAfterAt: lastAtIndex !== -1 ? input.slice(lastAtIndex + 1) : 'N/A'
+  });
+  
   const linkableItems = items.filter(i => 
     i.type === 'project' || i.type === 'goal' || i.type === 'note'
   );
+  
+  console.log('🔍 [CommandBar] Linkable items:', linkableItems.length, linkableItems.map(i => ({ id: i.id, title: i.title, type: i.type })));
+  
   const suggestedLinks = isTypingLink && (linkQuery || lastAtIndex === input.length - 1)
     ? linkableItems.filter(item => 
         item.title.toLowerCase().includes(linkQuery)
       ).slice(0, 5)
     : [];
+  
+  console.log('🔍 [CommandBar] Suggested links:', suggestedLinks.length, suggestedLinks.map(i => i.title));
 
   // Determine which autocomplete to show
   const showingAutocomplete = suggestedTags.length > 0 || suggestedPriorities.length > 0 || suggestedLinks.length > 0;
@@ -303,10 +317,21 @@ export function CommandBar() {
   };
 
   const handleSelectLink = (item: OrbitItem) => {
+    console.log('🎯 [CommandBar] handleSelectLink called with:', { 
+      itemId: item.id, 
+      itemTitle: item.title, 
+      currentInput: input 
+    });
     const atIndex = input.lastIndexOf('@');
-    if (atIndex === -1) return;
+    console.log('🎯 [CommandBar] @ symbol found at index:', atIndex);
+    if (atIndex === -1) {
+      console.warn('⚠️ [CommandBar] No @ symbol found in input, aborting');
+      return;
+    }
     const beforeAt = input.slice(0, atIndex);
-    setInput(`${beforeAt}@${item.title} `);
+    const newInput = `${beforeAt}@${item.title} `;
+    console.log('🎯 [CommandBar] Setting new input:', { beforeAt, newInput });
+    setInput(newInput);
     setSelectedIndex(0);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
@@ -468,7 +493,14 @@ export function CommandBar() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => handleSelectLink(item)}
+                      onClick={() => {
+                        console.log('🖱️ [CommandBar] Link suggestion clicked:', { 
+                          itemId: item.id, 
+                          itemTitle: item.title,
+                          itemType: item.type
+                        });
+                        handleSelectLink(item);
+                      }}
                       className={cn(
                         'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
                         idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'

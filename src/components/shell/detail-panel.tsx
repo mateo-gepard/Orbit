@@ -18,6 +18,7 @@ import {
   CalendarClock,
   Sparkles,
   FileText,
+  MoreVertical,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
@@ -31,6 +32,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { calculateStreak } from '@/lib/habits';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -66,6 +68,7 @@ export function DetailPanel() {
   const [syncingCalendar, setSyncingCalendar] = useState(false);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [tagLongPressTimer, setTagLongPressTimer] = useState<NodeJS.Timeout | null>(null);
+  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const allTags = getAllTags();
@@ -276,100 +279,186 @@ export function DetailPanel() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
           <div className="flex items-center gap-2">
             <span className="text-xl">{item.emoji || '📁'}</span>
-            <span className="text-[11px] text-muted-foreground/50">Project Dashboard</span>
+            <span className="text-[13px] font-semibold">{title || 'Project'}</span>
           </div>
           <div className="flex items-center gap-0.5">
-            {item.status === 'archived' ? (
-              <button onClick={handleRestore} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors" title="Restore">
-                <RotateCcw className="h-3.5 w-3.5" />
-              </button>
-            ) : (
-              <button onClick={handleArchive} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors" title="Archive">
-                <Archive className="h-3.5 w-3.5" />
-              </button>
-            )}
-            <button onClick={handleDelete} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-red-500 hover:bg-red-500/[0.05] transition-colors" title="Delete">
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={() => setDetailPanelOpen(false)} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors ml-1">
-              <X className="h-3.5 w-3.5" />
+            <DropdownMenu open={showProjectSettings} onOpenChange={setShowProjectSettings}>
+              <DropdownMenuTrigger asChild>
+                <button className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[220px]">
+                <div className="px-2 py-2">
+                  <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2">
+                    Project Settings
+                  </p>
+                  
+                  {/* Emoji & Color */}
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground/50 block mb-1">Emoji</label>
+                      <Input 
+                        value={item.emoji || ''} 
+                        onChange={(e) => handleUpdate({ emoji: e.target.value })} 
+                        className="h-7 text-[12px]" 
+                        placeholder="📁" 
+                        maxLength={2} 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground/50 block mb-1">Color</label>
+                      <Input 
+                        type="color" 
+                        value={item.color || '#6366f1'} 
+                        onChange={(e) => handleUpdate({ color: e.target.value })} 
+                        className="h-7" 
+                      />
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  <div className="mb-3">
+                    <label className="text-[10px] text-muted-foreground/50 block mb-1">Status</label>
+                    <Select value={item.status} onValueChange={(v) => handleUpdate({ status: v as ItemStatus })}>
+                      <SelectTrigger className="h-7 text-[11px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STATUS_OPTIONS.map((s) => (
+                          <SelectItem key={s} value={s} className="capitalize text-[11px]">{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Tags */}
+                  <div>
+                    <label className="text-[10px] text-muted-foreground/50 block mb-1">Tags</label>
+                    <div className="flex flex-wrap gap-1 max-h-[100px] overflow-y-auto">
+                      {allTags.map((tag) => (
+                        <button
+                          key={tag}
+                          onClick={() => toggleTag(tag)}
+                          className={cn(
+                            'rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-all',
+                            validItemTags.includes(tag)
+                              ? 'bg-foreground text-background'
+                              : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
+                          )}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <DropdownMenuSeparator />
+                
+                {item.status === 'archived' ? (
+                  <DropdownMenuItem onClick={handleRestore}>
+                    <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                    Restore
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={handleArchive}>
+                    <Archive className="h-3.5 w-3.5 mr-2" />
+                    Archive
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={handleDelete} className="text-red-600 dark:text-red-400">
+                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <button onClick={() => setDetailPanelOpen(false)} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
         {/* Body */}
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-5">
-          {/* Title */}
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => handleUpdate({ title })}
-            onKeyDown={(e) => e.key === 'Enter' && handleUpdate({ title })}
-            className="w-full bg-transparent text-[18px] font-bold leading-snug outline-none placeholder:text-muted-foreground/30"
-            placeholder="Project name…"
-          />
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain">
+          {/* Project Name - Editable */}
+          <div className="px-4 pt-4 pb-3">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={() => handleUpdate({ title })}
+              onKeyDown={(e) => e.key === 'Enter' && handleUpdate({ title })}
+              className="w-full bg-transparent text-[20px] font-bold leading-tight outline-none placeholder:text-muted-foreground/30"
+              placeholder="Project name…"
+            />
+          </div>
 
-          {/* Description */}
-          <Textarea
-            value={item.content || ''}
-            onChange={(e) => handleUpdate({ content: e.target.value })}
-            className="text-[13px] min-h-16 border-border/50 leading-relaxed resize-none"
-            placeholder="Project description…"
-          />
-
-          {/* Stats Overview */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-lg border border-border/60 bg-card p-3">
-              <div className="text-[11px] text-muted-foreground/50 uppercase tracking-wider mb-1">Progress</div>
-              <div className="text-2xl font-bold tabular-nums">{stats.progress}%</div>
-              <div className="text-[11px] text-muted-foreground/40 mt-0.5">{stats.done}/{stats.total} tasks</div>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-card p-3">
-              <div className="text-[11px] text-muted-foreground/50 uppercase tracking-wider mb-1">Status</div>
-              <div className="text-[13px] font-semibold capitalize">{item.status}</div>
-              <div className="text-[11px] text-muted-foreground/40 mt-0.5">{stats.active} active</div>
+          {/* Stats Cards */}
+          <div className="px-4 pb-4">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg border border-border/40 bg-gradient-to-br from-blue-500/5 to-blue-500/10 p-3">
+                <div className="text-[10px] font-medium text-blue-600/70 dark:text-blue-400/70 uppercase tracking-wider mb-0.5">Progress</div>
+                <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{stats.progress}%</div>
+              </div>
+              <div className="rounded-lg border border-border/40 bg-gradient-to-br from-green-500/5 to-green-500/10 p-3">
+                <div className="text-[10px] font-medium text-green-600/70 dark:text-green-400/70 uppercase tracking-wider mb-0.5">Done</div>
+                <div className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">{stats.done}</div>
+              </div>
+              <div className="rounded-lg border border-border/40 bg-gradient-to-br from-orange-500/5 to-orange-500/10 p-3">
+                <div className="text-[10px] font-medium text-orange-600/70 dark:text-orange-400/70 uppercase tracking-wider mb-0.5">Active</div>
+                <div className="text-2xl font-bold tabular-nums text-orange-600 dark:text-orange-400">{stats.active}</div>
+              </div>
             </div>
           </div>
 
+          {/* Description */}
+          {item.content && (
+            <div className="px-4 pb-4">
+              <p className="text-[13px] text-muted-foreground/70 leading-relaxed">{item.content}</p>
+            </div>
+          )}
+
           {/* Quick Actions */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleNewTask(item.id, 'active')}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2 text-[12px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Task
-            </button>
-            <button
-              onClick={() => handleNewMilestone(item.id)}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2 text-[12px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
-            >
-              <Target className="h-3.5 w-3.5" />
-              Add Milestone
-            </button>
+          <div className="px-4 pb-4">
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleNewTask(item.id, 'active')}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2.5 text-[12px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Add Task
+              </button>
+              <button
+                onClick={() => handleNewMilestone(item.id)}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2.5 text-[12px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
+              >
+                <Target className="h-4 w-4" />
+                Milestone
+              </button>
+            </div>
           </div>
 
           {/* Milestones */}
           {projectMilestones.length > 0 && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-2">
+            <div className="px-4 pb-4">
+              <div className="flex items-center gap-1.5 mb-2.5">
                 <Target className="h-3.5 w-3.5 text-muted-foreground/50" />
                 <FieldLabel>Milestones · {projectMilestones.length}</FieldLabel>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {projectMilestones.map((milestone) => (
                   <button
                     key={milestone.id}
                     onClick={() => setSelectedItemId(milestone.id)}
-                    className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                    className="w-full flex items-center gap-2.5 text-left px-3 py-2.5 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
                   >
                     <CheckCircle2 className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      milestone.status === 'done' ? 'text-foreground/30' : 'text-muted-foreground/30'
+                      "h-4 w-4 shrink-0",
+                      milestone.status === 'done' ? 'text-green-500' : 'text-muted-foreground/30'
                     )} />
                     <span className={cn(
                       "text-[13px] font-medium flex-1",
-                      milestone.status === 'done' ? 'text-muted-foreground/40 line-through' : 'text-foreground/80 group-hover:text-foreground'
+                      milestone.status === 'done' ? 'text-muted-foreground/60 line-through' : 'text-foreground/90 group-hover:text-foreground'
                     )}>
                       {milestone.title}
                     </span>
@@ -380,12 +469,12 @@ export function DetailPanel() {
           )}
 
           {/* Kanban Board */}
-          <div>
+          <div className="px-4">
             <div className="flex items-center gap-1.5 mb-3">
               <LayoutList className="h-3.5 w-3.5 text-muted-foreground/50" />
               <FieldLabel>Tasks · {stats.total}</FieldLabel>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {/* Active */}
               {(tasksByStatus.active.length > 0 || stats.total === 0) && (
                 <div>
@@ -488,8 +577,8 @@ export function DetailPanel() {
 
           {/* Notes */}
           {projectNotes.length > 0 && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-2">
+            <div className="px-4 pb-4">
+              <div className="flex items-center gap-1.5 mb-2.5">
                 <FileText className="h-3.5 w-3.5 text-muted-foreground/50" />
                 <FieldLabel>Notes · {projectNotes.length}</FieldLabel>
               </div>
@@ -498,10 +587,10 @@ export function DetailPanel() {
                   <button
                     key={note.id}
                     onClick={() => setSelectedItemId(note.id)}
-                    className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                    className="w-full text-left px-3 py-2.5 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground flex-1">
+                      <p className="text-[13px] font-medium text-foreground/90 group-hover:text-foreground flex-1">
                         {note.title}
                       </p>
                       {note.noteSubtype && note.noteSubtype !== 'general' && (
@@ -511,7 +600,7 @@ export function DetailPanel() {
                       )}
                     </div>
                     {note.content && (
-                      <p className="text-[11px] text-muted-foreground/40 mt-0.5 line-clamp-2">
+                      <p className="text-[11px] text-muted-foreground/50 mt-1 line-clamp-2">
                         {note.content.replace(/<[^>]*>/g, '')}
                       </p>
                     )}
@@ -521,88 +610,9 @@ export function DetailPanel() {
             </div>
           )}
 
-          {/* Settings */}
-          <div className="h-px bg-border/40" />
-          <div>
-            <FieldLabel>Project Settings</FieldLabel>
-            <div className="mt-2 space-y-2.5">
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="text-[11px] text-muted-foreground/50 block mb-1">Emoji</label>
-                  <Input 
-                    value={item.emoji || ''} 
-                    onChange={(e) => handleUpdate({ emoji: e.target.value })} 
-                    className="h-8 text-[12px] border-border/50" 
-                    placeholder="🚀" 
-                    maxLength={2} 
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] text-muted-foreground/50 block mb-1">Color</label>
-                  <Input 
-                    type="color" 
-                    value={item.color || '#6366f1'} 
-                    onChange={(e) => handleUpdate({ color: e.target.value })} 
-                    className="h-8 border-border/50" 
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] text-muted-foreground/50 block mb-1">Status</label>
-                <Select value={item.status} onValueChange={(v) => handleUpdate({ status: v as ItemStatus })}>
-                  <SelectTrigger className="h-8 text-[12px] border-border/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUS_OPTIONS.map((s) => (
-                      <SelectItem key={s} value={s} className="capitalize text-[12px]">{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Tags */}
-          <div>
-            <FieldLabel>Tags</FieldLabel>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {allTags.map((tag) => (
-                <div key={tag} className="relative group">
-                  <button
-                    onClick={() => toggleTag(tag)}
-                    className={cn(
-                      'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
-                      validItemTags.includes(tag)
-                        ? 'bg-foreground text-background'
-                        : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08] hover:text-muted-foreground'
-                    )}
-                  >
-                    {tag}
-                  </button>
-                  {!LIFE_AREA_TAGS.includes(tag as any) && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeCustomTag(tag);
-                      }}
-                      className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center h-3.5 w-3.5 rounded-full bg-red-500 text-white text-[8px] hover:bg-red-600"
-                      title="Delete tag"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p className="mt-1.5 text-[10px] text-muted-foreground/40">
-              Tip: Use <kbd className="font-mono text-[10px]">#tagname</kbd> in the command bar to add new tags
-            </p>
-          </div>
-
           {/* Meta */}
-          <div className="h-px bg-border/40" />
-          <div className="space-y-0.5 text-[11px] text-muted-foreground/40 pb-4">
+          <div className="h-px bg-border/40 mx-4 mt-2" />
+          <div className="px-4 py-4 space-y-0.5 text-[11px] text-muted-foreground/40">
             <p>Created {format(new Date(item.createdAt), 'dd MMM yyyy · HH:mm')}</p>
             <p>Updated {format(new Date(item.updatedAt), 'dd MMM yyyy · HH:mm')}</p>
           </div>

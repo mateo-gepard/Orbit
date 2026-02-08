@@ -14,20 +14,26 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
   const [stage, setStage] = useState<'enter' | 'celebrate' | 'exit'>('enter');
 
   useEffect(() => {
+    // Only show animation for habits, not tasks
+    if (type === 'task') {
+      onComplete?.();
+      return;
+    }
+
     // Enter animation
     const enterTimer = setTimeout(() => {
       setStage('celebrate');
     }, 50);
 
-    // Exit animation - faster timings
+    // Exit animation
     const exitTimer = setTimeout(() => {
       setStage('exit');
-    }, type === 'habit' && streak ? 1200 : 600);
+    }, 1200);
 
     // Cleanup
     const completeTimer = setTimeout(() => {
       onComplete?.();
-    }, type === 'habit' && streak ? 1400 : 800);
+    }, 1400);
 
     return () => {
       clearTimeout(enterTimer);
@@ -36,29 +42,9 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
     };
   }, [type, streak, onComplete]);
 
+  // Don't render anything for tasks
   if (type === 'task') {
-    return (
-      <div
-        className={cn(
-          'fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none transition-opacity duration-200',
-          stage === 'enter' ? 'opacity-0' : stage === 'celebrate' ? 'opacity-100' : 'opacity-0'
-        )}
-      >
-        <div
-          className={cn(
-            'flex items-center justify-center transition-all duration-300',
-            stage === 'celebrate' ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
-          )}
-        >
-          {/* Minimal check circle - no backdrop, no blur */}
-          <div className="relative">
-            <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
-              <Check className="h-6 w-6 text-green-600 dark:text-green-400" strokeWidth={2.5} />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   // Habit completion with streak
