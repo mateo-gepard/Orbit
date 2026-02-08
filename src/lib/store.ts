@@ -51,14 +51,22 @@ interface OrbitStore {
   getLinkedItems: (itemId: string) => OrbitItem[];
 }
 
-/** Debounced cloud sync for tag changes (lazy import to avoid circular dep) */
+/**
+ * Debounced cloud sync for tag changes (lazy import to avoid circular dep).
+ * Uses a "just wrote" flag to prevent the onSnapshot listener from
+ * overwriting local state with what we just sent.
+ */
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
+let _ignoreCloudUntil = 0; // timestamp — ignore incoming cloud updates until this time
+
 function debouncedSyncTags(get: () => OrbitStore) {
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
     const userId = get()._syncUserId;
     if (!userId) return;
     try {
+      // Mark that we're writing — ignore the echo from onSnapshot for 2s
+      _ignoreCloudUntil = Date.now() + 2000;
       const { saveUserSettings } = await import('@/lib/firestore');
       await saveUserSettings(userId, {
         customTags: get().customTags,
@@ -66,8 +74,14 @@ function debouncedSyncTags(get: () => OrbitStore) {
       });
     } catch (err) {
       console.error('[ORBIT] Failed to sync tags:', err);
+      _ignoreCloudUntil = 0; // allow cloud updates on error
     }
   }, 300);
+}
+
+/** Check if we should ignore an incoming cloud update (echo suppression) */
+export function shouldIgnoreCloudTags(): boolean {
+  return Date.now() < _ignoreCloudUntil;
 }
 
 export const useOrbitStore = create<OrbitStore>()(
@@ -88,6 +102,8 @@ export const useOrbitStore = create<OrbitStore>()(
       _syncUserId: null,
       _setSyncUserId: (userId) => set({ _syncUserId: userId }),
       setTagsFromCloud: (customTags, removedDefaultTags) => {
+        // Don't overwrite local state if we just wrote to cloud (echo suppression)
+        if (shouldIgnoreCloudTags()) return;
         set({ customTags, removedDefaultTags });
       },
       addCustomTag: (tag) => {

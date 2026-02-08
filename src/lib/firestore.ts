@@ -602,6 +602,9 @@ const DEFAULT_SETTINGS: UserSettings = {
 /**
  * Subscribe to user settings (tags/areas) from Firestore.
  * Returns unsubscribe function.
+ *
+ * On first load, if no Firestore doc exists, seeds the cloud with
+ * the user's current local tags (from Zustand/localStorage).
  */
 export function subscribeToUserSettings(
   userId: string,
@@ -614,7 +617,7 @@ export function subscribeToUserSettings(
       try {
         callback(JSON.parse(stored));
       } catch {
-        callback(DEFAULT_SETTINGS);
+        // Don't reset — keep whatever is in the store
       }
     }
     const handler = (e: StorageEvent) => {
@@ -627,6 +630,7 @@ export function subscribeToUserSettings(
   }
 
   const docRef = doc(getDb(), SETTINGS_COLLECTION, userId);
+  let isFirstSnapshot = true;
 
   const unsubscribe = onSnapshot(
     docRef,
@@ -638,18 +642,26 @@ export function subscribeToUserSettings(
           removedDefaultTags: data.removedDefaultTags || [],
           updatedAt: data.updatedAt || 0,
         });
-      } else {
-        // No settings doc yet — use defaults
-        callback(DEFAULT_SETTINGS);
+      } else if (isFirstSnapshot) {
+        // No settings doc yet — seed Firestore with current local state
+        // (don't reset local tags to empty!)
+        const store = useOrbitStore.getState();
+        const localCustom = store.customTags;
+        const localRemoved = store.removedDefaultTags;
+        if (localCustom.length > 0 || localRemoved.length > 0) {
+          // Push local tags to cloud
+          saveUserSettings(userId, {
+            customTags: localCustom,
+            removedDefaultTags: localRemoved,
+          }).catch(() => { /* ignore seed error */ });
+        }
+        // Don't call callback — keep current local state as-is
       }
+      isFirstSnapshot = false;
     },
     (error) => {
       console.error('[ORBIT] User settings subscription error:', error);
-      // Fallback to localStorage
-      const stored = localStorage.getItem(LOCAL_SETTINGS_KEY);
-      if (stored) {
-        try { callback(JSON.parse(stored)); } catch { /* ignore */ }
-      }
+      // Don't reset — just keep whatever is in the store
     }
   );
 
