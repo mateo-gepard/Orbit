@@ -206,7 +206,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
               
               <div className="px-2 py-1.5">
                 <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2">
-                  Linked Items ({links.linkedItems.length})
+                  Linked Items ({links.relationships.linked.length})
                 </p>
                 <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto">
                   {links.linkableItems.map((item: OrbitItem) => (

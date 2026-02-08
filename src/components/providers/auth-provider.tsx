@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut, type User, type IdTokenResult } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { hasCalendarPermission } from '@/lib/google-calendar';
@@ -38,7 +38,7 @@ function createDemoUser(): User {
     tenantId: null,
     delete: async () => {},
     getIdToken: async () => '',
-    getIdTokenResult: async () => ({} as any),
+    getIdTokenResult: async () => ({} as IdTokenResult),
     reload: async () => {},
     toJSON: () => ({}),
   } as unknown as User;
@@ -105,9 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // User closed popup or network error — fall back to demo
-      const code = error?.code || '';
+      const code = (error as { code?: string })?.code || '';
       if (code === 'auth/popup-closed-by-user') {
         console.info('[ORBIT Auth] Popup closed — offering demo mode');
       } else {

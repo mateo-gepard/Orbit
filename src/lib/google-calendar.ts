@@ -6,24 +6,76 @@ import type { OrbitItem } from './types';
 
 const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
 const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
+const TOKEN_STORAGE_KEY = 'orbit-google-token';
+const TOKEN_EXPIRY_KEY = 'orbit-google-token-expiry';
 
 // ═══════════════════════════════════════════════════════════
-// Token Management
+// Google Calendar Types
+// ═══════════════════════════════════════════════════════════
+
+interface GCalDateTime {
+  date?: string;
+  dateTime?: string;
+  timeZone?: string;
+}
+
+export interface GCalEvent {
+  id?: string;
+  summary?: string;
+  description?: string;
+  start?: GCalDateTime;
+  end?: GCalDateTime;
+}
+
+interface GCalEventListResponse {
+  items?: GCalEvent[];
+}
+
+interface GoogleTokenResponse {
+  access_token: string;
+  expires_in?: number;
+  error?: string;
+}
+
+interface GoogleTokenClient {
+  requestAccessToken: () => void;
+}
+
+interface GoogleTokenClientConfig {
+  client_id: string;
+  scope: string;
+  callback: (response: GoogleTokenResponse) => void;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Token Management (with expiration)
 // ═══════════════════════════════════════════════════════════
 
 let accessToken: string | null = null;
 
-export function setGoogleAccessToken(token: string) {
+export function setGoogleAccessToken(token: string, expiresInSeconds?: number) {
   accessToken = token;
   if (typeof window !== 'undefined') {
-    localStorage.setItem('orbit-google-token', token);
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    if (expiresInSeconds) {
+      const expiryTime = Date.now() + expiresInSeconds * 1000;
+      sessionStorage.setItem(TOKEN_EXPIRY_KEY, String(expiryTime));
+    }
   }
 }
 
 export function getGoogleAccessToken(): string | null {
+  if (typeof window !== 'undefined') {
+    // Check expiration
+    const expiry = sessionStorage.getItem(TOKEN_EXPIRY_KEY);
+    if (expiry && Date.now() > Number(expiry)) {
+      clearGoogleAccessToken();
+      return null;
+    }
+  }
   if (accessToken) return accessToken;
   if (typeof window !== 'undefined') {
-    accessToken = localStorage.getItem('orbit-google-token');
+    accessToken = sessionStorage.getItem(TOKEN_STORAGE_KEY);
   }
   return accessToken;
 }
@@ -31,7 +83,8 @@ export function getGoogleAccessToken(): string | null {
 export function clearGoogleAccessToken() {
   accessToken = null;
   if (typeof window !== 'undefined') {
-    localStorage.removeItem('orbit-google-token');
+    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
   }
 }
 
@@ -53,15 +106,15 @@ export function requestCalendarPermission(): Promise<string> {
       return;
     }
 
-    const client = window.google.accounts.oauth2.initTokenClient({
+    const client: GoogleTokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: SCOPES.join(' '),
-      callback: (response: any) => {
+      callback: (response: GoogleTokenResponse) => {
         if (response.error) {
           reject(new Error(response.error));
           return;
         }
-        setGoogleAccessToken(response.access_token);
+        setGoogleAccessToken(response.access_token, response.expires_in);
         resolve(response.access_token);
       },
     });
@@ -74,10 +127,10 @@ export function requestCalendarPermission(): Promise<string> {
 // API Helpers
 // ═══════════════════════════════════════════════════════════
 
-async function calendarFetch(
+async function calendarFetch<T = unknown>(
   endpoint: string,
   options: RequestInit = {}
-): Promise<any> {
+): Promise<T> {
   const token = getGoogleAccessToken();
   if (!token) {
     throw new Error('No Google Calendar access token');
@@ -103,19 +156,19 @@ async function calendarFetch(
     throw new Error(`Google Calendar API error: ${error}`);
   }
 
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
 // ═══════════════════════════════════════════════════════════
 // Convert ORBIT Event ↔ Google Calendar Event
 // ═══════════════════════════════════════════════════════════
 
-function orbitToGoogleEvent(item: OrbitItem): any {
+function orbitToGoogleEvent(item: OrbitItem): GCalEvent {
   if (item.type !== 'event') {
     throw new Error('Only event items can be synced to Google Calendar');
   }
 
-  const event: any = {
+  const event: GCalEvent = {
     summary: item.title,
     description: item.content || '',
   };
@@ -127,7 +180,7 @@ function orbitToGoogleEvent(item: OrbitItem): any {
     if (isAllDay) {
       // All-day event: use 'date' field (YYYY-MM-DD)
       event.start = { date: item.startDate };
-      
+
       // Google Calendar expects end.date to be EXCLUSIVE (next day after event ends)
       if (item.endDate) {
         const endDateObj = new Date(item.endDate);
@@ -174,10 +227,10 @@ function orbitToGoogleEvent(item: OrbitItem): any {
   return event;
 }
 
-export function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<OrbitItem> {
+export function googleToOrbitEvent(gcalEvent: GCalEvent, userId: string): Partial<OrbitItem> {
   // Google Calendar uses different formats for all-day vs timed events
   const isAllDay = !!gcalEvent.start?.date;
-  
+
   let startDate: string | undefined;
   let endDate: string | undefined;
   let startTime: string | undefined;
@@ -185,22 +238,19 @@ export function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<Orbi
 
   if (isAllDay) {
     // All-day event: uses 'date' field (YYYY-MM-DD)
-    startDate = gcalEvent.start.date;
-    
+    startDate = gcalEvent.start!.date;
+
     // Google Calendar's end.date is EXCLUSIVE (next day after event ends)
-    // For multi-day events, we need to subtract 1 day to get the actual end date
     if (gcalEvent.end?.date) {
-      // Parse as UTC to avoid timezone issues with date-only strings
       const [year, month, day] = gcalEvent.end.date.split('-').map(Number);
       const endDateObj = new Date(Date.UTC(year, month - 1, day));
-      endDateObj.setUTCDate(endDateObj.getUTCDate() - 1); // Subtract 1 day
-      
+      endDateObj.setUTCDate(endDateObj.getUTCDate() - 1);
+
       const endYear = endDateObj.getUTCFullYear();
       const endMonth = String(endDateObj.getUTCMonth() + 1).padStart(2, '0');
       const endDay = String(endDateObj.getUTCDate()).padStart(2, '0');
       endDate = `${endYear}-${endMonth}-${endDay}`;
-      
-      // Only set endDate if it's different from startDate (multi-day event)
+
       if (endDate === startDate) {
         endDate = undefined;
       }
@@ -211,8 +261,7 @@ export function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<Orbi
     endDate = gcalEvent.end?.dateTime?.split('T')[0];
     startTime = gcalEvent.start?.dateTime?.split('T')[1]?.substring(0, 5);
     endTime = gcalEvent.end?.dateTime?.split('T')[1]?.substring(0, 5);
-    
-    // If end date is same as start date, don't store it (single-day event)
+
     if (endDate === startDate) {
       endDate = undefined;
     }
@@ -239,21 +288,15 @@ export function googleToOrbitEvent(gcalEvent: any, userId: string): Partial<Orbi
 // CRUD Operations
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Create event in Google Calendar
- */
 export async function createGoogleEvent(item: OrbitItem): Promise<string> {
   const gcalEvent = orbitToGoogleEvent(item);
-  const result = await calendarFetch('/calendars/primary/events', {
+  const result = await calendarFetch<GCalEvent>('/calendars/primary/events', {
     method: 'POST',
     body: JSON.stringify(gcalEvent),
   });
-  return result.id; // Google Calendar event ID
+  return result.id!;
 }
 
-/**
- * Update event in Google Calendar
- */
 export async function updateGoogleEvent(
   googleCalendarId: string,
   item: OrbitItem
@@ -265,22 +308,16 @@ export async function updateGoogleEvent(
   });
 }
 
-/**
- * Delete event from Google Calendar
- */
 export async function deleteGoogleEvent(googleCalendarId: string): Promise<void> {
   await calendarFetch(`/calendars/primary/events/${googleCalendarId}`, {
     method: 'DELETE',
   });
 }
 
-/**
- * Fetch events from Google Calendar (for a date range)
- */
 export async function fetchGoogleEvents(
-  timeMin: string, // ISO datetime
-  timeMax: string  // ISO datetime
-): Promise<Partial<OrbitItem>[]> {
+  timeMin: string,
+  timeMax: string
+): Promise<GCalEvent[]> {
   const params = new URLSearchParams({
     timeMin,
     timeMax,
@@ -288,20 +325,15 @@ export async function fetchGoogleEvents(
     orderBy: 'startTime',
   });
 
-  const result = await calendarFetch(`/calendars/primary/events?${params}`);
-  
-  // Convert to ORBIT items (need userId from context)
+  const result = await calendarFetch<GCalEventListResponse>(`/calendars/primary/events?${params}`);
   return result.items || [];
 }
 
-/**
- * Import Google Calendar event into ORBIT
- */
 export async function importGoogleEvent(
   gcalEventId: string,
   userId: string
 ): Promise<Partial<OrbitItem>> {
-  const gcalEvent = await calendarFetch(`/calendars/primary/events/${gcalEventId}`);
+  const gcalEvent = await calendarFetch<GCalEvent>(`/calendars/primary/events/${gcalEventId}`);
   return googleToOrbitEvent(gcalEvent, userId);
 }
 
@@ -309,27 +341,19 @@ export async function importGoogleEvent(
 // Sync Utilities
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Check if user has granted Calendar permission
- */
 export function hasCalendarPermission(): boolean {
   return getGoogleAccessToken() !== null;
 }
 
-/**
- * Sync ORBIT event to Google Calendar (create or update)
- */
 export async function syncEventToGoogle(item: OrbitItem): Promise<string> {
   if (item.type !== 'event') {
     throw new Error('Only events can be synced');
   }
 
   if (item.googleCalendarId) {
-    // Update existing
     await updateGoogleEvent(item.googleCalendarId, item);
     return item.googleCalendarId;
   } else {
-    // Create new
     return await createGoogleEvent(item);
   }
 }
@@ -343,7 +367,7 @@ declare global {
     google?: {
       accounts: {
         oauth2: {
-          initTokenClient: (config: any) => any;
+          initTokenClient: (config: GoogleTokenClientConfig) => GoogleTokenClient;
         };
       };
     };

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useSwipeToClose } from '@/lib/hooks/use-swipe-to-close';
 import { X, Network, CheckCircle2, Target, Calendar, FileText, Zap, Sparkles, GitBranch, Link2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -8,11 +9,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { OrbitItem, ItemType } from '@/lib/types';
+import type { LucideIcon } from 'lucide-react';
 import { getItemRelationships } from '@/lib/links';
 
-const ITEM_TYPE_CONFIG: Record<ItemType, { 
-  icon: any; 
-  color: string; 
+const ITEM_TYPE_CONFIG: Record<ItemType, {
+  icon: LucideIcon;
+  color: string;
   bgColor: string;
   borderColor: string;
   label: string;
@@ -70,8 +72,7 @@ interface LinkGraphProps {
 }
 
 export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: LinkGraphProps) {
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-  const [touchCurrent, setTouchCurrent] = useState<number | null>(null);
+  const { isDragging, handlers: swipeHandlers } = useSwipeToClose({ onClose });
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['ancestors', 'current', 'links', 'children']));
   
   // Use unified relationship system
@@ -109,7 +110,6 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
     };
   }, [currentItem, relationships]);
   
-  const [isDragging, setIsDragging] = useState(false);
   const hasRelationships = graphData.ancestors.length > 0 || graphData.descendants.length > 0 || graphData.allRelatedItems.length > 0;
   
   const toggleSection = (section: string) => {
@@ -120,40 +120,6 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
       newExpanded.add(section);
     }
     setExpandedSections(newExpanded);
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    setTouchStart(touch.clientY);
-    setTouchCurrent(touch.clientY);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    
-    const touch = e.touches[0];
-    const currentY = touch.clientY;
-    const diff = currentY - touchStart;
-    
-    if (diff > 0) {
-      setTouchCurrent(currentY);
-      setIsDragging(true);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    if (touchStart === null || touchCurrent === null) return;
-    
-    const diff = touchCurrent - touchStart;
-    const threshold = 100;
-    
-    if (diff > threshold) {
-      onClose();
-    }
-    
-    setTouchStart(null);
-    setTouchCurrent(null);
-    setIsDragging(false);
   };
 
   // Modern card-based item renderer
@@ -233,13 +199,13 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
 
   // Section header component
   const SectionHeader = ({ 
-    icon: Icon, 
-    title, 
-    count, 
-    sectionKey, 
-    gradient 
-  }: { 
-    icon: any; 
+    icon: Icon,
+    title,
+    count,
+    sectionKey,
+    gradient
+  }: {
+    icon: LucideIcon;
     title: string; 
     count: number; 
     sectionKey: string;
@@ -291,9 +257,7 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
         {/* Swipe Handle */}
         <div 
           className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-10"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          {...swipeHandlers}
         >
           <div className={cn(
             "w-10 h-1 rounded-full bg-muted-foreground/20 transition-all",

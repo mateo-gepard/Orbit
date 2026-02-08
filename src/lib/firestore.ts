@@ -78,7 +78,7 @@ async function withRetry<T>(
 // ═══════════════════════════════════════════════════════════
 
 const VALID_TYPES = new Set(['task', 'project', 'habit', 'event', 'goal', 'note']);
-const VALID_STATUSES = new Set(['inbox', 'active', 'waiting', 'done', 'archived']);
+const VALID_STATUSES = new Set(['active', 'waiting', 'done', 'archived']);
 
 function validateItem(item: Partial<OrbitItem>): boolean {
   if (!item.title || typeof item.title !== 'string') return false;
@@ -91,11 +91,11 @@ function validateItem(item: Partial<OrbitItem>): boolean {
 
 function sanitizeItem(item: OrbitItem): OrbitItem {
   // Remove all undefined fields (Firestore doesn't accept undefined)
-  const sanitized: any = {
+  const sanitized: Record<string, unknown> = {
     id: item.id || crypto.randomUUID(),
     title: (item.title || '').trim() || 'Untitled',
     type: VALID_TYPES.has(item.type) ? item.type : 'task',
-    status: VALID_STATUSES.has(item.status) ? item.status : 'inbox',
+    status: VALID_STATUSES.has(item.status) ? item.status : 'active',
     createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
     updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : Date.now(),
     userId: item.userId || 'demo-user',
@@ -143,7 +143,7 @@ function sanitizeItem(item: OrbitItem): OrbitItem {
   // Note-specific fields
   if (item.noteSubtype) sanitized.noteSubtype = item.noteSubtype;
 
-  return sanitized as OrbitItem;
+  return sanitized as unknown as OrbitItem;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -370,7 +370,7 @@ export async function updateItem(
       const ref = doc(getDb(), ITEMS_COLLECTION, id);
       
       // Convert undefined values to deleteField() for Firestore
-      const firestoreUpdates: Record<string, any> = { updatedAt: now };
+      const firestoreUpdates: Record<string, unknown> = { updatedAt: now };
       for (const [key, value] of Object.entries(updates)) {
         firestoreUpdates[key] = value === undefined ? deleteField() : value;
       }
