@@ -414,14 +414,14 @@ export default function CalendarPage() {
                               e.stopPropagation();
                               setSelectedItemId(item.id);
                             }}
-                            className="pointer-events-auto cursor-pointer flex items-end pb-1 px-0.5"
+                            className="pointer-events-auto cursor-pointer relative px-0.5"
                             style={{
                               gridRow: seg.row + 1,
                               gridColumn: `${seg.col + 1} / span ${seg.span}`,
                             }}
                           >
                             <div className={cn(
-                              'px-2 py-1 text-[10px] font-medium bg-purple-500/90 text-white hover:bg-purple-600 transition-colors shadow-sm border border-purple-400/20',
+                              'absolute bottom-1 left-0.5 right-0.5 px-2 py-1 text-[10px] font-medium bg-purple-500/90 text-white hover:bg-purple-600 transition-colors shadow-sm border border-purple-400/20',
                               seg.isStart && seg.isEnd && 'rounded-md',
                               seg.isStart && !seg.isEnd && 'rounded-l-md rounded-r-none',
                               !seg.isStart && seg.isEnd && 'rounded-r-md rounded-l-none',
