@@ -24,7 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
-import { LIFE_AREA_TAGS } from '@/lib/types';
+// LIFE_AREA_TAGS now managed via store.getAllTags()
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -67,7 +67,7 @@ export function Sidebar() {
   const { user, signOut, isDemo } = useAuth();
   const {
     sidebarOpen, setSidebarOpen, activeTag, setActiveTag, setCommandBarOpen,
-    customTags, addCustomTag, removeCustomTag, renameCustomTag,
+    addCustomTag, removeTag, renameTag, getAllTags,
   } = useOrbitStore();
 
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -79,8 +79,7 @@ export function Sidebar() {
   const addInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
 
-  const allTags = [...LIFE_AREA_TAGS, ...customTags];
-  const lifeAreaSet = new Set<string>(LIFE_AREA_TAGS as unknown as string[]);
+  const allTags = getAllTags();
 
   useEffect(() => {
     if (isAddingTag) addInputRef.current?.focus();
@@ -102,14 +101,14 @@ export function Sidebar() {
   const handleRenameTag = (oldTag: string) => {
     const trimmed = editValue.trim().toLowerCase();
     if (trimmed && trimmed !== oldTag) {
-      renameCustomTag(oldTag, trimmed);
+      renameTag(oldTag, trimmed);
     }
     setEditingTag(null);
     setEditValue('');
   };
 
   const handleDeleteTag = (tag: string) => {
-    removeCustomTag(tag);
+    removeTag(tag);
     if (activeTag === tag) setActiveTag(null);
     setDeletingTag(null);
   };
@@ -238,7 +237,6 @@ export function Sidebar() {
 
             <div className="flex flex-wrap gap-1 px-1 py-1">
               {allTags.map((tag) => {
-                const isCustom = !lifeAreaSet.has(tag);
                 const isEditing = editingTag === tag;
                 const isDeleting = deletingTag === tag;
 
@@ -294,7 +292,7 @@ export function Sidebar() {
                     >
                       {tag}
                     </button>
-                    {isManaging && isCustom && (
+                    {isManaging && (
                       <div className="flex items-center gap-0.5 ml-0.5">
                         <button
                           onClick={() => { setEditingTag(tag); setEditValue(tag); }}

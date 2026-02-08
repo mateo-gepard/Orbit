@@ -10,7 +10,11 @@ interface OrbitStore {
 
   // Custom Tags
   customTags: string[];
+  removedDefaultTags: string[]; // default tags the user has removed
   addCustomTag: (tag: string) => void;
+  removeTag: (tag: string) => void;
+  renameTag: (oldTag: string, newTag: string) => void;
+  // Legacy aliases
   removeCustomTag: (tag: string) => void;
   renameCustomTag: (oldTag: string, newTag: string) => void;
   getAllTags: () => string[];
@@ -58,14 +62,30 @@ export const useOrbitStore = create<OrbitStore>()(
       },
 
       customTags: [],
+      removedDefaultTags: [],
       addCustomTag: (tag) => {
         const trimmed = tag.trim().toLowerCase();
-        if (!trimmed || get().customTags.includes(trimmed)) return;
+        if (!trimmed) return;
+        const allCurrent = get().getAllTags();
+        if (allCurrent.includes(trimmed)) return;
+        // If it was a removed default tag, restore it
+        const defaultTags = LIFE_AREA_TAGS as readonly string[];
+        if (defaultTags.includes(trimmed)) {
+          set({ removedDefaultTags: get().removedDefaultTags.filter((t) => t !== trimmed) });
+          return;
+        }
         set({ customTags: [...get().customTags, trimmed] });
       },
-      removeCustomTag: (tag) => {
-        set({ customTags: get().customTags.filter((t) => t !== tag) });
-        // Also remove the tag from all items that have it
+      removeTag: (tag) => {
+        const defaultTags = LIFE_AREA_TAGS as readonly string[];
+        const isDefault = defaultTags.includes(tag);
+        if (isDefault) {
+          // Track as removed default
+          set({ removedDefaultTags: [...get().removedDefaultTags, tag] });
+        } else {
+          set({ customTags: get().customTags.filter((t) => t !== tag) });
+        }
+        // Remove tag from all items
         const items = get().items;
         const updated = items.map((item) => {
           if (item.tags?.includes(tag)) {
@@ -73,17 +93,27 @@ export const useOrbitStore = create<OrbitStore>()(
           }
           return item;
         });
-        if (updated !== items) set({ items: updated });
+        set({ items: updated });
       },
-      renameCustomTag: (oldTag, newTag) => {
+      renameTag: (oldTag, newTag) => {
         const trimmed = newTag.trim().toLowerCase();
         if (!trimmed || trimmed === oldTag) return;
-        // Rename in customTags list
-        const tags = get().customTags;
-        if (!tags.includes(oldTag)) return;
-        if (tags.includes(trimmed) || (LIFE_AREA_TAGS as readonly string[]).includes(trimmed)) return;
-        set({ customTags: tags.map((t) => (t === oldTag ? trimmed : t)) });
-        // Rename in all items that have this tag
+        const allCurrent = get().getAllTags();
+        if (allCurrent.includes(trimmed)) return; // Already exists
+
+        const defaultTags = LIFE_AREA_TAGS as readonly string[];
+        const isDefault = defaultTags.includes(oldTag);
+
+        if (isDefault) {
+          // Remove old default, add as custom with new name
+          set({
+            removedDefaultTags: [...get().removedDefaultTags, oldTag],
+            customTags: [...get().customTags, trimmed],
+          });
+        } else {
+          set({ customTags: get().customTags.map((t) => (t === oldTag ? trimmed : t)) });
+        }
+        // Rename in all items
         const items = get().items;
         const updated = items.map((item) => {
           if (item.tags?.includes(oldTag)) {
@@ -93,8 +123,13 @@ export const useOrbitStore = create<OrbitStore>()(
         });
         set({ items: updated });
       },
+      // Legacy aliases
+      removeCustomTag: (tag) => get().removeTag(tag),
+      renameCustomTag: (oldTag, newTag) => get().renameTag(oldTag, newTag),
       getAllTags: () => {
-        return [...LIFE_AREA_TAGS, ...get().customTags];
+        const removed = new Set(get().removedDefaultTags);
+        const defaults = (LIFE_AREA_TAGS as readonly string[]).filter((t) => !removed.has(t));
+        return [...defaults, ...get().customTags];
       },
 
       selectedItemId: null,
@@ -169,7 +204,10 @@ export const useOrbitStore = create<OrbitStore>()(
 }),
     {
       name: 'orbit-settings',
-      partialize: (state) => ({ customTags: state.customTags }),
+      partialize: (state) => ({
+        customTags: state.customTags,
+        removedDefaultTags: state.removedDefaultTags,
+      }),
     }
   )
 );

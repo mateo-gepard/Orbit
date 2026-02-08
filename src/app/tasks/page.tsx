@@ -19,7 +19,7 @@ import { ItemRow } from '@/components/items/item-row';
 import { cn } from '@/lib/utils';
 import { format, isPast, isToday, parseISO } from 'date-fns';
 import type { OrbitItem, Priority } from '@/lib/types';
-import { LIFE_AREA_TAGS } from '@/lib/types';
+// Tags now fully managed via store.getAllTags()/removeTag()
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -200,7 +200,7 @@ const GROUP_OPTIONS: { key: GroupBy; label: string; icon: typeof FolderKanban }[
 ];
 
 export default function TasksPage() {
-  const { items, setSelectedItemId, getAllTags, removeCustomTag } = useOrbitStore();
+  const { items, setSelectedItemId, getAllTags, removeTag } = useOrbitStore();
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('active');
@@ -227,10 +227,7 @@ export default function TasksPage() {
   const allTags = getAllTags();
 
   const handleDeleteTag = (tag: string) => {
-    if (LIFE_AREA_TAGS.includes(tag as any)) {
-      return; // Don't allow deleting default tags
-    }
-    removeCustomTag(tag);
+    removeTag(tag);
     if (tagFilter === tag) {
       setTagFilter(null);
     }
