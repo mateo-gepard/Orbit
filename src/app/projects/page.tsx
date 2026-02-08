@@ -86,58 +86,49 @@ export default function ProjectsPage() {
   };
   return (
     <div className="p-4 lg:p-8 space-y-6 max-w-7xl mx-auto">
-      {" "}
       <div className="flex items-center justify-between">
-        {" "}
         <div>
-          {" "}
-          <h1 className="text-xl font-semibold tracking-tight">
+          <h1 className="text-xl lg:text-[22px] font-semibold tracking-tight">
             Projects
-          </h1>{" "}
-          <p className="text-[13px] text-muted-foreground/60 mt-0.5">
-            {" "}
-            {projects.length} active{" "}
-          </p>{" "}
-        </div>{" "}
-        <div className="flex items-center gap-2">
-          {" "}
-          {/* View mode toggle */}{" "}
-          <div className="hidden lg:flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5">
-            {" "}
+          </h1>
+          <p className="text-[13px] text-muted-foreground/60 mt-1">
+            {projects.length} active project{projects.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* View mode toggle */}
+          <div className="hidden lg:flex items-center rounded-lg border border-border/50 bg-muted/40 p-1">
             <button
               onClick={() => setViewMode("grid")}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all",
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all",
                 viewMode === "grid"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground/60 hover:text-foreground",
               )}
             >
-              {" "}
-              <LayoutGrid className="h-3.5 w-3.5" /> Grid{" "}
-            </button>{" "}
+              <LayoutGrid className="h-3.5 w-3.5" /> Grid
+            </button>
             <button
               onClick={() => setViewMode("kanban")}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all",
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all",
                 viewMode === "kanban"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground/60 hover:text-foreground",
               )}
             >
-              {" "}
-              <LayoutList className="h-3.5 w-3.5" /> Kanban{" "}
-            </button>{" "}
-          </div>{" "}
+              <LayoutList className="h-3.5 w-3.5" /> Kanban
+            </button>
+          </div>
           <button
             onClick={handleNewProject}
-            className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform"
+            className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-2 text-[13px] lg:text-[12px] font-medium text-background transition-all hover:opacity-90 active:scale-[0.98]"
           >
-            {" "}
-            <Plus className="h-3.5 w-3.5" /> New{" "}
-          </button>{" "}
-        </div>{" "}
-      </div>{" "}
+            <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" /> New Project
+          </button>
+        </div>
+      </div>
       {/* Grid View */}{" "}
       {viewMode === "grid" && (
         <div className="grid gap-3 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
@@ -148,7 +139,7 @@ export default function ProjectsPage() {
             return (
               <div
                 key={project.id}
-                className="flex flex-col rounded-xl border border-border/60 bg-card overflow-hidden hover:border-border transition-colors"
+                className="flex flex-col rounded-xl lg:rounded-2xl border border-border/60 bg-card overflow-hidden hover:border-border/80 transition-all hover:shadow-md"
               >
                 {" "}
                 {/* Project Header */}{" "}

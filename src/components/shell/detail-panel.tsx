@@ -659,6 +659,14 @@ export function DetailPanel() {
     .filter(Boolean) as OrbitItem[];
   const childItems = items.filter((i) => i.parentId === item.id);
   const projects = items.filter((i) => i.type === 'project' && i.status !== 'archived');
+  
+  console.log('🔗 [DetailPanel] Item linkedIds:', {
+    itemTitle: item.title,
+    itemType: item.type,
+    linkedIds: item.linkedIds || [],
+    linkedItemsFound: linkedItems.length,
+    linkedItemTitles: linkedItems.map(i => i.title)
+  });
 
   const content = (
     <div className="flex h-full flex-col">

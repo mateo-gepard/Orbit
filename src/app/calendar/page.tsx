@@ -187,65 +187,68 @@ export default function CalendarPage() {
   return (
     <div className="p-4 lg:p-8 space-y-4 lg:space-y-5 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="space-y-3 lg:space-y-0 lg:flex lg:items-center lg:justify-between">
+      <div className="space-y-3 lg:space-y-0 lg:flex lg:items-center lg:justify-between mb-6">
         <div className="flex items-center gap-3">
           {viewMode === 'day' && (
             <button
               onClick={handleBackToMonth}
-              className="rounded-xl lg:rounded-md p-2 lg:p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors active:scale-90"
+              className="rounded-xl lg:rounded-lg p-2 lg:p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
             >
               <ArrowLeft className="h-5 w-5 lg:h-4 lg:w-4" />
             </button>
           )}
-          <h1 className="text-xl font-semibold tracking-tight">
-            {viewMode === 'day' && selectedDay
-              ? format(selectedDay, 'EEEE, MMMM d, yyyy')
-              : 'Calendar'}
-          </h1>
-          {isSyncRunning() && lastSync > 0 && (
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
-              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span>
-                Synced {Math.floor((Date.now() - lastSync) / 1000)}s ago
-              </span>
-            </div>
-          )}
+          <div>
+            <h1 className="text-xl lg:text-[22px] font-semibold tracking-tight">
+              {viewMode === 'day' && selectedDay
+                ? format(selectedDay, 'EEEE, MMMM d, yyyy')
+                : 'Calendar'}
+            </h1>
+            {isSyncRunning() && lastSync > 0 && (
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50 mt-0.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span>
+                  Synced {Math.floor((Date.now() - lastSync) / 1000)}s ago
+                </span>
+              </div>
+            )}
+          </div>
         </div>
         
         {viewMode === 'month' && (
-          <div className="flex items-center justify-between lg:gap-2">
+          <div className="flex items-center justify-between lg:gap-3">
             <button
               onClick={handleImportFromGoogle}
               disabled={importing}
               className={cn(
-                'rounded-xl lg:rounded-md px-3 py-2 lg:py-1.5 text-[12px] font-medium transition-colors flex items-center gap-1.5',
-                'bg-foreground/[0.05] text-foreground hover:bg-foreground/[0.1] active:scale-95 transition-transform',
+                'rounded-xl lg:rounded-lg px-3 py-2 lg:px-3.5 lg:py-2 text-[12px] font-medium transition-all flex items-center gap-2',
+                'bg-foreground/[0.06] hover:bg-foreground/[0.1] text-foreground',
+                'border border-border/40',
                 importing && 'opacity-50 cursor-not-allowed'
               )}
             >
-              <RefreshCw className={cn('h-3 w-3', importing && 'animate-spin')} />
+              <RefreshCw className={cn('h-3 w-3 lg:h-3.5 lg:w-3.5', importing && 'animate-spin')} />
               <span className="hidden sm:inline">{importing ? 'Importing...' : 'Import from Google'}</span>
               <span className="sm:hidden">{importing ? '...' : 'Import'}</span>
             </button>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 lg:gap-2 bg-muted/40 rounded-xl lg:rounded-lg border border-border/40 p-1">
               <button
                 onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-                className="rounded-xl lg:rounded-md p-2 lg:p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors active:scale-90"
+                className="rounded-lg lg:rounded-md p-2 lg:p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-background transition-all"
               >
                 <ChevronLeft className="h-5 w-5 lg:h-4 lg:w-4" />
               </button>
               <button
                 onClick={() => setCurrentMonth(new Date())}
-                className="rounded-xl lg:rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+                className="rounded-lg lg:rounded-md px-2 py-1 lg:px-3 lg:py-1.5 text-[12px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-background transition-all"
               >
                 Today
               </button>
-              <span className="text-[13px] font-semibold min-w-[120px] lg:min-w-[130px] text-center tabular-nums">
-                {format(currentMonth, 'MMM yyyy')}
+              <span className="text-[13px] lg:text-[14px] font-semibold min-w-[120px] lg:min-w-[140px] text-center tabular-nums">
+                {format(currentMonth, 'MMMM yyyy')}
               </span>
               <button
                 onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-                className="rounded-xl lg:rounded-md p-2 lg:p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors active:scale-90"
+                className="rounded-lg lg:rounded-md p-2 lg:p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-background transition-all"
               >
                 <ChevronRight className="h-5 w-5 lg:h-4 lg:w-4" />
               </button>
@@ -257,11 +260,11 @@ export default function CalendarPage() {
       {/* Month View */}
       {viewMode === 'month' && (
         <>
-          <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
+          <div className="rounded-xl lg:rounded-2xl border border-border/60 overflow-hidden bg-card shadow-sm">
             {/* Day headers */}
-            <div className="grid grid-cols-7 border-b border-border/40 bg-muted/30">
+            <div className="grid grid-cols-7 border-b border-border/50 bg-muted/40">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-                <div key={d} className="px-1 lg:px-2 py-2.5 text-center text-[9px] lg:text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                <div key={d} className="px-1 lg:px-2 py-3 text-center text-[9px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
                   <span className="lg:hidden">{d.charAt(0)}</span>
                   <span className="hidden lg:inline">{d}</span>
                 </div>

@@ -251,6 +251,14 @@ export function CommandBar() {
       ...(noteSubtype && { noteSubtype }),
       ...(linkedIds.length > 0 && { linkedIds }),
     };
+    
+    console.log('📦 [CommandBar] New item being created:', {
+      title: newItem.title,
+      type: newItem.type,
+      linkedIds: newItem.linkedIds || 'NONE',
+      hasLinkedIds: 'linkedIds' in newItem,
+      linkedIdsArray: linkedIds
+    });
 
     // Auto-add defaults for events
     if (parsed.type === 'event') {
