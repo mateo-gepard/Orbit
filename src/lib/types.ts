@@ -72,6 +72,9 @@ export interface OrbitItem {
   linkedIds?: string[];
   tags?: string[];
 
+  // File Attachments
+  files?: ProjectFile[];
+
   // Google Calendar sync
   calendarSynced?: boolean;
 
@@ -83,6 +86,17 @@ export interface ChecklistItem {
   id: string;
   text: string;
   done: boolean;
+}
+
+export interface ProjectFile {
+  id: string;
+  name: string;
+  size: number; // bytes
+  type: string; // MIME type
+  url: string; // Firebase Storage download URL
+  storagePath: string; // Firebase Storage path for deletion
+  uploadedAt: number; // timestamp
+  uploadedBy: string; // userId
 }
 
 // ═══════════════════════════════════════════════════════════

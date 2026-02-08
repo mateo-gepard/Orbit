@@ -19,6 +19,7 @@ import {
   Sparkles,
   FileText,
   MoreVertical,
+  Files,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
@@ -33,6 +34,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { FileUpload } from '@/components/files/file-upload';
 import { calculateStreak } from '@/lib/habits';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -619,6 +621,15 @@ export function DetailPanel() {
               </div>
             </div>
           )}
+
+          {/* Files */}
+          <div className="px-4 pb-4">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Files className="h-3.5 w-3.5 text-muted-foreground/50" />
+              <FieldLabel>Files</FieldLabel>
+            </div>
+            <FileUpload project={item} onFilesChange={() => { /* The component updates via Firestore subscription */ }} />
+          </div>
 
           {/* Meta */}
           <div className="h-px bg-border/40 mx-4 mt-2" />

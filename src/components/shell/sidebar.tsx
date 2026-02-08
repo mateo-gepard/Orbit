@@ -15,6 +15,7 @@ import {
   LogOut,
   Plus,
   CheckSquare,
+  Files,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
@@ -51,6 +52,7 @@ const NAV_SECTIONS = [
     items: [
       { href: '/notes', label: 'Notes', icon: FileText },
       { href: '/calendar', label: 'Calendar', icon: Calendar },
+      { href: '/files', label: 'Files', icon: Files },
       { href: '/archive', label: 'Archive', icon: Archive },
     ],
   },
