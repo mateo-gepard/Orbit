@@ -630,12 +630,14 @@ export function DetailPanel() {
         </div>
 
         {/* Mobile */}
-        <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
-          <SheetContent
-            side="bottom"
-            className="h-[92dvh] rounded-t-2xl p-0 border-0"
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
+        <div className="lg:hidden">
+          <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
+            <SheetContent
+              side="bottom"
+              className="h-[92dvh] rounded-t-2xl p-0 border-0"
+              showCloseButton={false}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
             <SheetHeader className="sr-only">
               <SheetTitle>Project Dashboard</SheetTitle>
             </SheetHeader>
@@ -644,6 +646,7 @@ export function DetailPanel() {
             </div>
           </SheetContent>
         </Sheet>
+        </div>
       </>
     );
   }
@@ -1110,13 +1113,15 @@ export function DetailPanel() {
         {content}
       </div>
 
-      {/* Mobile — full-screen sheet with drag handle */}
-      <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
-        <SheetContent
-          side="bottom"
-          className="h-[92dvh] rounded-t-2xl p-0 border-0"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
+      {/* Mobile — full-screen sheet */}
+      <div className="lg:hidden">
+        <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
+          <SheetContent
+            side="bottom"
+            className="h-[92dvh] rounded-t-2xl p-0 border-0"
+            showCloseButton={false}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
           <SheetHeader className="sr-only">
             <SheetTitle>Item Details</SheetTitle>
           </SheetHeader>
@@ -1125,6 +1130,7 @@ export function DetailPanel() {
           </div>
         </SheetContent>
       </Sheet>
+      </div>
     </>
   );
 }
