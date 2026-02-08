@@ -204,6 +204,8 @@ export function CommandBar() {
 
     // Find linked items by title (fuzzy matching)
     const linkedIds: string[] = [];
+    let parentProjectId: string | undefined;
+    
     if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
       console.log('[CommandBar] Looking for linked items:', parsed.linkedItemTitles);
       parsed.linkedItemTitles.forEach(linkTitle => {
@@ -221,7 +223,14 @@ export function CommandBar() {
         }
         if (matchedItem) {
           console.log(`[CommandBar] Linked "${linkTitle}" -> "${matchedItem.title}" (${matchedItem.type})`);
-          linkedIds.push(matchedItem.id);
+          
+          // If it's a project, set as parent instead of adding to linkedIds
+          if (matchedItem.type === 'project' && !parentProjectId) {
+            parentProjectId = matchedItem.id;
+            console.log(`[CommandBar] ✅ Set as parent project: "${matchedItem.title}"`);
+          } else {
+            linkedIds.push(matchedItem.id);
+          }
         } else {
           console.log(`[CommandBar] No match found for "${linkTitle}"`);
         }
@@ -249,14 +258,16 @@ export function CommandBar() {
       ...(parsed.dueDate && { dueDate: parsed.dueDate }),
       ...(parsed.startDate && { startDate: parsed.startDate }),
       ...(noteSubtype && { noteSubtype }),
+      ...(parentProjectId && { parentId: parentProjectId }),
       ...(linkedIds.length > 0 && { linkedIds }),
     };
     
     console.log('📦 [CommandBar] New item being created:', {
       title: newItem.title,
       type: newItem.type,
+      parentId: newItem.parentId || 'NONE',
       linkedIds: newItem.linkedIds || 'NONE',
-      hasLinkedIds: 'linkedIds' in newItem,
+      hasParentProject: !!parentProjectId,
       linkedIdsArray: linkedIds
     });
 
