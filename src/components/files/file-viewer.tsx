@@ -106,7 +106,7 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
       onTouchEnd={handleTouchEnd}
     >
       {/* Header - Simplified for mobile */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/90 to-transparent">
+      <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/90 to-transparent pt-safe">
         <div className="flex items-center justify-between gap-3 p-3 md:p-4">
           <div className="flex-1 min-w-0">
             <h2 className="text-xs md:text-sm font-medium text-white truncate">
@@ -194,7 +194,7 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
       </div>
 
       {/* Content */}
-      <div className="absolute inset-0 flex items-center justify-center pt-16 pb-20 md:pt-20 md:pb-4">
+      <div className="absolute inset-0 flex items-center justify-center pt-[max(4rem,env(safe-area-inset-top)+3.5rem)] pb-[max(5rem,env(safe-area-inset-bottom)+3.5rem)] md:pt-20 md:pb-4">
         {isPreviewable ? (
           <>
             {isImage && (

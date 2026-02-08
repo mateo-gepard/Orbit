@@ -271,7 +271,7 @@ export function DetailPanel() {
             <span className="text-xl">{item.emoji || '📁'}</span>
             <span className="text-[13px] font-semibold">{title || 'Project'}</span>
           </div>
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1.5">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
@@ -679,7 +679,7 @@ export function DetailPanel() {
             </>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {/* Three-dot menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
