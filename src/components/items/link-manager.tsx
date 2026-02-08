@@ -79,7 +79,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
   return (
     <div className="space-y-3">
       {/* Parent Link */}
-      {links.parentItem && (
+      {links.relationships.parent && (
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <FolderOpen className="h-3.5 w-3.5 text-muted-foreground/60" />
@@ -88,22 +88,22 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            {renderItemBadge(links.parentItem, handleRemoveParent)}
+            {renderItemBadge(links.relationships.parent, handleRemoveParent)}
           </div>
         </div>
       )}
 
       {/* Linked Items */}
-      {links.linkedItems.length > 0 && (
+      {links.relationships.linked.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <LinkIcon className="h-3.5 w-3.5 text-muted-foreground/60" />
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider font-medium">
-              Linked Items ({links.linkedItems.length})
+              Linked Items ({links.relationships.linked.length})
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {links.linkedItems.map((linkedItem: OrbitItem) =>
+            {links.relationships.linked.map((linkedItem: OrbitItem) =>
               renderItemBadge(linkedItem, () => links.handleRemoveLink(linkedItem.id))
             )}
           </div>
@@ -111,16 +111,16 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
       )}
 
       {/* Child Items (Read-only display) */}
-      {links.childItems.length > 0 && (
+      {links.relationships.children.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <Target className="h-3.5 w-3.5 text-muted-foreground/60" />
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider font-medium">
-              Contains ({links.childItems.length})
+              Contains ({links.relationships.children.length})
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {links.childItems.map((childItem: OrbitItem) => renderItemBadge(childItem))}
+            {links.relationships.children.map((childItem: OrbitItem) => renderItemBadge(childItem))}
           </div>
         </div>
       )}
@@ -221,7 +221,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
       )}
 
       {/* Set Parent (if no parent) */}
-      {!links.parentItem && (
+      {!links.relationships.parent && (
         <div className="pt-2 border-t border-border/40">
           <div className="text-[10px] text-muted-foreground/60 mb-1.5">Set Parent</div>
           <Select value={item.parentId || 'none'} onValueChange={(value) => links.handleSetParent(value === 'none' ? undefined : value)}>

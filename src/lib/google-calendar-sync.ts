@@ -2,10 +2,11 @@
 // ORBIT — Real-time Google Calendar Sync Service
 // ═══════════════════════════════════════════════════════════
 
-import { 
-  fetchGoogleEvents, 
+import {
+  fetchGoogleEvents,
   hasCalendarPermission,
-  googleToOrbitEvent
+  googleToOrbitEvent,
+  type GCalEvent
 } from './google-calendar';
 import { createItem, updateItem, deleteItem } from './firestore';
 import { useOrbitStore } from './store';
@@ -25,12 +26,10 @@ const SYNC_INTERVAL_MS = 30000; // 30 seconds
 
 export async function syncGoogleCalendar(userId: string): Promise<void> {
   if (!hasCalendarPermission()) {
-    console.log('[ORBIT Sync] No calendar permission, skipping sync');
     return;
   }
 
   try {
-    // Fetch ALL events (past and future) for comprehensive sync
     const now = new Date();
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(now.getFullYear() - 1);
@@ -45,29 +44,25 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
     const syncedItems = orbitItems.filter(i => i.googleCalendarId);
 
     // Map Google Calendar events by ID
-    const googleEventMap = new Map();
+    const googleEventMap = new Map<string, GCalEvent>();
     for (const gcalEvent of googleEvents) {
-      const eventData: any = gcalEvent;
-      if (eventData.id) {
-        googleEventMap.set(eventData.id, eventData);
+      if (gcalEvent.id) {
+        googleEventMap.set(gcalEvent.id, gcalEvent);
       }
     }
 
     // CLEANUP: Remove duplicate events (keep only the most recent one per googleCalendarId)
-    const seenGoogleIds = new Map<string, string>(); // googleCalendarId -> most recent itemId
+    const seenGoogleIds = new Map<string, string>();
     for (const item of syncedItems) {
       if (!item.googleCalendarId) continue;
-      
+
       const existing = seenGoogleIds.get(item.googleCalendarId);
       if (existing) {
-        // Duplicate found - keep the newer one, delete the older one
         const existingItem = orbitItems.find(i => i.id === existing);
         if (existingItem && item.createdAt > existingItem.createdAt) {
-          console.log(`[ORBIT Sync] Removing duplicate: ${existingItem.title}`);
           await deleteItem(existing);
           seenGoogleIds.set(item.googleCalendarId, item.id);
         } else {
-          console.log(`[ORBIT Sync] Removing duplicate: ${item.title}`);
           await deleteItem(item.id);
         }
       } else {
@@ -86,7 +81,6 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
     for (const [gcalId, gcalEvent] of googleEventMap) {
       const alreadyExists = cleanedOrbitItems.some(i => i.googleCalendarId === gcalId);
       if (!alreadyExists && !importedInThisRun.has(gcalId)) {
-        console.log(`[ORBIT Sync] New event from Google: ${gcalEvent.summary}`);
         await importGoogleEvent(gcalEvent, userId);
         importedInThisRun.add(gcalId);
       }
@@ -98,10 +92,7 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
 
       const gcalEvent = googleEventMap.get(orbitItem.googleCalendarId);
       if (gcalEvent) {
-        // Event still exists in Google Calendar — check if updated
-        const hasChanges = eventHasChanges(orbitItem, gcalEvent);
-        if (hasChanges) {
-          console.log(`[ORBIT Sync] Updating event from Google: ${gcalEvent.summary}`);
+        if (eventHasChanges(orbitItem, gcalEvent)) {
           await updateFromGoogleEvent(orbitItem.id, gcalEvent, userId);
         }
       }
@@ -113,13 +104,11 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
 
       const stillExistsInGoogle = googleEventMap.has(orbitItem.googleCalendarId);
       if (!stillExistsInGoogle && orbitItem.calendarSynced) {
-        console.log(`[ORBIT Sync] Event deleted from Google: ${orbitItem.title}`);
         await deleteItem(orbitItem.id);
       }
     }
 
     lastSyncTime = Date.now();
-    console.log('[ORBIT Sync] Sync completed successfully');
   } catch (err) {
     console.error('[ORBIT Sync] Sync failed:', err);
   }
@@ -129,91 +118,54 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
 // Helper Functions
 // ═══════════════════════════════════════════════════════════
 
-async function importGoogleEvent(gcalEvent: any, userId: string): Promise<void> {
-  // Use the proper conversion function that handles multi-day events correctly
+async function importGoogleEvent(gcalEvent: GCalEvent, userId: string): Promise<void> {
   const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
-  
-  const newEvent: any = {
+
+  const newEvent: Omit<OrbitItem, 'id'> = {
     type: 'event',
     title: convertedEvent.title || 'Untitled Event',
     status: 'active',
     googleCalendarId: gcalEvent.id,
     calendarSynced: true,
     userId,
+    tags: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    ...(convertedEvent.content && { content: convertedEvent.content }),
+    ...(convertedEvent.startDate && { startDate: convertedEvent.startDate }),
+    ...(convertedEvent.endDate && { endDate: convertedEvent.endDate }),
+    ...(convertedEvent.startTime && { startTime: convertedEvent.startTime }),
+    ...(convertedEvent.endTime && { endTime: convertedEvent.endTime }),
   };
-
-  // Only add fields if they have values
-  if (convertedEvent.content) newEvent.content = convertedEvent.content;
-  if (convertedEvent.startDate) newEvent.startDate = convertedEvent.startDate;
-  if (convertedEvent.endDate) newEvent.endDate = convertedEvent.endDate;
-  if (convertedEvent.startTime) newEvent.startTime = convertedEvent.startTime;
-  if (convertedEvent.endTime) newEvent.endTime = convertedEvent.endTime;
 
   await createItem(newEvent);
 }
 
-async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: any, userId: string): Promise<void> {
-  // Use the proper conversion function that handles multi-day events correctly
+async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: GCalEvent, userId: string): Promise<void> {
   const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
 
-  const updates: any = {
+  const updates: Partial<OrbitItem> = {
     title: convertedEvent.title || 'Untitled Event',
     updatedAt: Date.now(),
+    ...(convertedEvent.content !== undefined && { content: convertedEvent.content }),
+    ...(convertedEvent.startDate && { startDate: convertedEvent.startDate }),
+    ...(convertedEvent.endDate && { endDate: convertedEvent.endDate }),
+    ...(convertedEvent.startTime && { startTime: convertedEvent.startTime }),
+    ...(convertedEvent.endTime && { endTime: convertedEvent.endTime }),
   };
-
-  if (convertedEvent.content !== undefined) updates.content = convertedEvent.content;
-  if (convertedEvent.startDate) updates.startDate = convertedEvent.startDate;
-  if (convertedEvent.endDate) updates.endDate = convertedEvent.endDate;
-  if (convertedEvent.startTime) updates.startTime = convertedEvent.startTime;
-  if (convertedEvent.endTime) updates.endTime = convertedEvent.endTime;
 
   await updateItem(orbitItemId, updates);
 }
 
-function eventHasChanges(orbitItem: OrbitItem, gcalEvent: any): boolean {
-  // Check title
-  if ((gcalEvent.summary || 'Untitled Event') !== orbitItem.title) return true;
+function eventHasChanges(orbitItem: OrbitItem, gcalEvent: GCalEvent): boolean {
+  // Use the same conversion logic to compare consistently
+  const converted = googleToOrbitEvent(gcalEvent, orbitItem.userId);
 
-  // For proper comparison, we need to convert the Google event using the same logic
-  const isAllDay = !!gcalEvent.start?.date;
-  
-  if (isAllDay) {
-    // All-day event comparison
-    const gcalStartDate = gcalEvent.start?.date;
-    if (gcalStartDate !== orbitItem.startDate) return true;
-    
-    // For end date, we need to account for Google's exclusive end date
-    if (gcalEvent.end?.date) {
-      const [year, month, day] = gcalEvent.end.date.split('-').map(Number);
-      const endDateObj = new Date(Date.UTC(year, month - 1, day));
-      endDateObj.setUTCDate(endDateObj.getUTCDate() - 1);
-      
-      const endYear = endDateObj.getUTCFullYear();
-      const endMonth = String(endDateObj.getUTCMonth() + 1).padStart(2, '0');
-      const endDay = String(endDateObj.getUTCDate()).padStart(2, '0');
-      const gcalEndDate = `${endYear}-${endMonth}-${endDay}`;
-      
-      // Compare to orbit's endDate (undefined if single-day)
-      const orbitEndDate = gcalEndDate === gcalStartDate ? undefined : gcalEndDate;
-      if (orbitEndDate !== orbitItem.endDate) return true;
-    }
-  } else {
-    // Timed event comparison
-    const gcalStartDate = gcalEvent.start?.dateTime?.split('T')[0];
-    const gcalEndDate = gcalEvent.end?.dateTime?.split('T')[0];
-    const gcalStartTime = gcalEvent.start?.dateTime?.split('T')[1]?.substring(0, 5);
-    const gcalEndTime = gcalEvent.end?.dateTime?.split('T')[1]?.substring(0, 5);
-    
-    if (gcalStartDate !== orbitItem.startDate) return true;
-    if (gcalStartTime !== orbitItem.startTime) return true;
-    if (gcalEndTime !== orbitItem.endTime) return true;
-    
-    // For timed events, only set endDate if different from startDate
-    const orbitEndDate = gcalEndDate === gcalStartDate ? undefined : gcalEndDate;
-    if (orbitEndDate !== orbitItem.endDate) return true;
-  }
+  if ((converted.title || 'Untitled Event') !== orbitItem.title) return true;
+  if (converted.startDate !== orbitItem.startDate) return true;
+  if (converted.endDate !== orbitItem.endDate) return true;
+  if (converted.startTime !== orbitItem.startTime) return true;
+  if (converted.endTime !== orbitItem.endTime) return true;
 
   return false;
 }
@@ -224,11 +176,8 @@ function eventHasChanges(orbitItem: OrbitItem, gcalEvent: any): boolean {
 
 export function startGoogleCalendarSync(userId: string): void {
   if (syncInterval) {
-    console.log('[ORBIT Sync] Already running');
     return;
   }
-
-  console.log('[ORBIT Sync] Starting real-time sync service');
 
   // Initial sync
   syncGoogleCalendar(userId);
@@ -241,7 +190,6 @@ export function startGoogleCalendarSync(userId: string): void {
 
 export function stopGoogleCalendarSync(): void {
   if (syncInterval) {
-    console.log('[ORBIT Sync] Stopping sync service');
     clearInterval(syncInterval);
     syncInterval = null;
   }

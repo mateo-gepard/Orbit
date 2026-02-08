@@ -152,7 +152,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
             {item.title}
           </span>
           {item.priority && (
-            <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', PRIORITY_DOTS[item.priority])} />
+            <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', PRIORITY_DOTS[item.priority])} role="img" aria-label={`${item.priority} priority`} title={`${item.priority} priority`} />
           )}
         </div>
         {/* Meta row - always show on mobile for better scannability */}

@@ -170,8 +170,7 @@ export function setParent(item: OrbitItem, parentId: string | undefined, allItem
     // Check if setting this parent would create a cycle
     const ancestors = getAllAncestors(potentialParent, allItems);
     if (ancestors.some(a => a.id === item.id)) {
-      console.warn('Prevented circular parent relationship');
-      return {};
+      return {}; // Prevented circular parent relationship
     }
   }
   

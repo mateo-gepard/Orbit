@@ -77,28 +77,14 @@ export function CommandBar() {
     (lastAtIndex === input.length - 1 || /^[a-zA-Z0-9 ]*$/.test(input.slice(lastAtIndex + 1)));
   const linkQuery = isTypingLink ? input.slice(lastAtIndex + 1).toLowerCase() : '';
   
-  console.log('🔍 [CommandBar] @ Detection:', {
-    input,
-    lastAtIndex,
-    isTypingLink,
-    linkQuery,
-    textAfterAt: lastAtIndex !== -1 ? input.slice(lastAtIndex + 1) : 'N/A'
-  });
-  
-  // Allow linking to ANY item type (projects, tasks, notes, goals, habits, events)
   // Exclude only archived items to keep autocomplete clean
   const linkableItems = items.filter(i => i.status !== 'archived');
-  
-  console.log('🔍 [CommandBar] Linkable items:', linkableItems.length, `(${linkableItems.filter(i => i.type === 'project').length} projects, ${linkableItems.filter(i => i.type === 'task').length} tasks, ${linkableItems.filter(i => i.type === 'note').length} notes)`);
-  console.log('🔍 [CommandBar] All linkable items:', linkableItems.map(i => ({ title: i.title, type: i.type })));
-  
+
   const suggestedLinks = isTypingLink && (linkQuery || lastAtIndex === input.length - 1)
     ? linkableItems.filter(item => 
         item.title.toLowerCase().includes(linkQuery)
-      ).slice(0, 10) // Increased from 5 to 10 to show more options
+      ).slice(0, 10)
     : [];
-  
-  console.log('🔍 [CommandBar] Suggested links:', suggestedLinks.length, suggestedLinks.map(i => ({ title: i.title, type: i.type })));
 
   // Determine which autocomplete to show
   const showingAutocomplete = suggestedTags.length > 0 || suggestedPriorities.length > 0 || suggestedLinks.length > 0;
@@ -162,19 +148,9 @@ export function CommandBar() {
     if (!input.trim() || !user) return;
 
     const parsed = parseCommand(input);
-    console.log('[CommandBar] Parsed:', { 
-      input, 
-      title: parsed.title,
-      type: parsed.type,
-      tags: parsed.tags,
-      linkedItemTitles: parsed.linkedItemTitles,
-      priority: parsed.priority,
-      dueDate: parsed.dueDate 
-    });
 
     // If only tags were typed (no actual title), don't create an item
     if (!parsed.title.trim() && parsed.tags.length > 0) {
-      console.log('[CommandBar] Only tags, creating tags without item');
       // Just auto-create the tags and close
       parsed.tags.forEach(tag => {
         if (!allTags.includes(tag)) {
@@ -188,13 +164,10 @@ export function CommandBar() {
 
     // If there's no title at all, don't create anything
     if (!parsed.title.trim()) {
-      console.log('[CommandBar] No title, aborting');
       setInput('');
       setCommandBarOpen(false);
       return;
     }
-
-    console.log('[CommandBar] Creating item with title:', parsed.title);
 
     // Auto-create custom tags that don't exist yet
     parsed.tags.forEach(tag => {
@@ -208,8 +181,6 @@ export function CommandBar() {
     let parentItemId: string | undefined;
     
     if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
-      console.log('[CommandBar] Looking for linked items:', parsed.linkedItemTitles);
-      
       // Only use the FIRST @ link as the parent
       const firstLinkTitle = parsed.linkedItemTitles[0];
       const linkTitleLower = firstLinkTitle.toLowerCase();
@@ -228,14 +199,6 @@ export function CommandBar() {
       
       if (matchedItem) {
         parentItemId = matchedItem.id;
-        console.log(`[CommandBar] ✅ Set as parent: "${matchedItem.title}" (${matchedItem.type})`);
-      } else {
-        console.log(`[CommandBar] No match found for "${firstLinkTitle}"`);
-      }
-      
-      // Log warning if multiple @ links were provided (we only use the first)
-      if (parsed.linkedItemTitles.length > 1) {
-        console.warn('[CommandBar] Multiple @ links provided, only first one is used:', parsed.linkedItemTitles);
       }
     }
 
@@ -263,13 +226,6 @@ export function CommandBar() {
       ...(parentItemId && { parentId: parentItemId }),
     };
     
-    console.log('📦 [CommandBar] New item being created:', {
-      title: newItem.title,
-      type: newItem.type,
-      parentId: newItem.parentId || 'NONE',
-      hasParent: !!parentItemId,
-    });
-
     // Auto-add defaults for events
     if (parsed.type === 'event') {
       const startDate = parsed.startDate || new Date().toISOString().split('T')[0];
@@ -300,18 +256,16 @@ export function CommandBar() {
               calendarSynced: true 
             })
           );
-          console.log('[ORBIT] Event auto-synced to Google Calendar');
-        } catch (syncErr) {
-          console.warn('[ORBIT] Auto-sync failed (non-blocking):', syncErr);
+          // Auto-synced to Google Calendar
+        } catch {
           // Don't block item creation if sync fails
         }
       }
       
       setInput('');
       setCommandBarOpen(false);
-    } catch (err) {
-      console.error('[ORBIT] Failed to create item:', err);
-      // Item still appears via optimistic update — only log error
+    } catch {
+      // Item still appears via optimistic update
     }
   };
 
@@ -335,20 +289,10 @@ export function CommandBar() {
   };
 
   const handleSelectLink = (item: OrbitItem) => {
-    console.log('🎯 [CommandBar] handleSelectLink called with:', { 
-      itemId: item.id, 
-      itemTitle: item.title, 
-      currentInput: input 
-    });
     const atIndex = input.lastIndexOf('@');
-    console.log('🎯 [CommandBar] @ symbol found at index:', atIndex);
-    if (atIndex === -1) {
-      console.warn('⚠️ [CommandBar] No @ symbol found in input, aborting');
-      return;
-    }
+    if (atIndex === -1) return;
     const beforeAt = input.slice(0, atIndex);
     const newInput = `${beforeAt}@${item.title} `;
-    console.log('🎯 [CommandBar] Setting new input:', { beforeAt, newInput });
     setInput(newInput);
     setSelectedIndex(0);
     setTimeout(() => inputRef.current?.focus(), 0);
@@ -514,15 +458,7 @@ export function CommandBar() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => {
-                        console.log('🖱️ [CommandBar] Link suggestion clicked:', { 
-                          itemId: item.id, 
-                          itemTitle: item.title,
-                          itemType: item.type,
-                          willSetParent: isProject
-                        });
-                        handleSelectLink(item);
-                      }}
+                      onClick={() => handleSelectLink(item)}
                       className={cn(
                         'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
                         idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
