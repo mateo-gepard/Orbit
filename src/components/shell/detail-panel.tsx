@@ -363,7 +363,7 @@ export function DetailPanel() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <button onClick={() => setDetailPanelOpen(false)} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+            <button onClick={() => setDetailPanelOpen(false)} className="hidden lg:flex rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -863,7 +863,7 @@ export function DetailPanel() {
             </DropdownMenuContent>
           </DropdownMenu>
           
-          <button onClick={() => setDetailPanelOpen(false)} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+          <button onClick={() => setDetailPanelOpen(false)} className="hidden lg:flex rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
