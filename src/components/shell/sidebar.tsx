@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
-  Inbox,
   FolderKanban,
   Repeat,
   Target,
@@ -13,8 +12,6 @@ import {
   Archive,
   Sun,
   X,
-  Moon,
-  Monitor,
   LogOut,
   Plus,
   CheckSquare,
@@ -25,13 +22,7 @@ import { useAuth } from '@/components/providers/auth-provider';
 import { LIFE_AREA_TAGS } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { useTheme } from 'next-themes';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import {
   Tooltip,
   TooltipContent,
@@ -70,7 +61,6 @@ export function Sidebar() {
   const { user, signOut, isDemo } = useAuth();
   const { sidebarOpen, setSidebarOpen, activeTag, setActiveTag, setCommandBarOpen } =
     useOrbitStore();
-  const { setTheme } = useTheme();
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -192,24 +182,7 @@ export function Sidebar() {
         {/* Footer */}
         <div className="border-t border-sidebar-border px-3 py-3">
           <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground">
-                  <Monitor className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[120px]">
-                <DropdownMenuItem onClick={() => setTheme('light')}>
-                  <Sun className="h-3.5 w-3.5 mr-2" /> Light
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('dark')}>
-                  <Moon className="h-3.5 w-3.5 mr-2" /> Dark
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('system')}>
-                  <Monitor className="h-3.5 w-3.5 mr-2" /> System
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ThemeToggle />
 
             {user && (
               <>

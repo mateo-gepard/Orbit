@@ -31,6 +31,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
+import { CompletionAnimation } from '@/components/ui/completion-animation';
+import { calculateStreak } from '@/lib/habits';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
@@ -65,6 +67,10 @@ export function DetailPanel() {
   const [syncingCalendar, setSyncingCalendar] = useState(false);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [tagLongPressTimer, setTagLongPressTimer] = useState<NodeJS.Timeout | null>(null);
+  const [showCompletionAnimation, setShowCompletionAnimation] = useState<{
+    type: 'task' | 'habit';
+    streak?: number;
+  } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const allTags = getAllTags();
@@ -134,11 +140,24 @@ export function DetailPanel() {
   const handleArchive = () => handleUpdate({ status: 'archived' });
   const handleRestore = () => handleUpdate({ status: 'active' });
 
-  const handleComplete = () =>
+  const handleComplete = () => {
+    const newStatus = item?.status === 'done' ? 'active' : 'done';
+    
+    // Show completion animation when marking as done
+    if (newStatus === 'done' && item) {
+      if (item.type === 'habit') {
+        const streak = calculateStreak(item) + 1; // +1 for the completion about to happen
+        setShowCompletionAnimation({ type: 'habit', streak });
+      } else if (item.type === 'task') {
+        setShowCompletionAnimation({ type: 'task' });
+      }
+    }
+    
     handleUpdate({
-      status: item?.status === 'done' ? 'active' : 'done',
-      completedAt: item?.status === 'done' ? undefined : Date.now(),
+      status: newStatus,
+      completedAt: newStatus === 'done' ? Date.now() : undefined,
     });
+  };
 
   const handleAddToToday = () => {
     const today = new Date().toISOString().split('T')[0];
@@ -1122,6 +1141,15 @@ export function DetailPanel() {
 
   return (
     <>
+      {/* Completion Animation */}
+      {showCompletionAnimation && (
+        <CompletionAnimation
+          type={showCompletionAnimation.type}
+          streak={showCompletionAnimation.streak}
+          onComplete={() => setShowCompletionAnimation(null)}
+        />
+      )}
+
       {/* Desktop */}
       <div className={cn(
         'hidden lg:block border-l border-border/60 bg-background transition-all duration-200',
