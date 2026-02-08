@@ -325,13 +325,19 @@ export function DetailPanel() {
             <button 
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 setShowLinkGraph(true);
               }}
-              className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors touch-none"
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setShowLinkGraph(true);
+              }}
+              className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors active:scale-95"
               title="View link graph"
               type="button"
             >
-              <Network className="h-4 w-4 pointer-events-none" />
+              <Network className="h-4 w-4" />
             </button>
             
             <DropdownMenu>
@@ -771,13 +777,19 @@ export function DetailPanel() {
           <button 
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               setShowLinkGraph(true);
             }}
-            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors touch-none"
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setShowLinkGraph(true);
+            }}
+            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors active:scale-95"
             title="View link graph"
             type="button"
           >
-            <Network className="h-4 w-4 pointer-events-none" />
+            <Network className="h-4 w-4" />
           </button>
           
           {/* Three-dot menu */}
