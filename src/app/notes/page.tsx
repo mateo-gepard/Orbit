@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { FileText, Plus, Check } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -32,20 +32,6 @@ export default function NotesPage() {
 		if (filter === 'all') return all;
 		return all.filter((i) => i.noteSubtype === filter || i.tags?.includes(filter));
 	}, [items, filter]);
-
-	// Lock body scroll on mobile when creating to prevent keyboard shift
-	useEffect(() => {
-		if (isCreating && window.innerWidth < 1024) { // lg breakpoint
-			document.body.style.overflow = 'hidden';
-			document.body.style.position = 'fixed';
-			document.body.style.width = '100%';
-			return () => {
-				document.body.style.overflow = '';
-				document.body.style.position = '';
-				document.body.style.width = '';
-			};
-		}
-	}, [isCreating]);
 
 	const handleCreateNote = async () => {
 		if (!user || (!newNoteTitle.trim() && !newNoteContent.trim())) {
@@ -110,26 +96,16 @@ export default function NotesPage() {
 			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3" style={{ paddingBottom: isCreating ? '360px' : '16px' }}>
 				{/* Quick create card - Google Keep style */}
 				{isCreating && (
-					<>
-						{/* Fixed backdrop on mobile to prevent scroll */}
-						<div 
-							className="fixed inset-0 z-40 lg:hidden"
-							onClick={() => {
-								setIsCreating(false);
-								setNewNoteTitle('');
-								setNewNoteContent('');
-							}}
-						/>
-						<div 
-							className="lg:relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-lg lg:shadow-sm"
-							style={{ 
-								position: isCreating ? 'fixed' : 'relative',
-								bottom: isCreating ? 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)' : 'auto',
-								left: isCreating ? '16px' : 'auto',
-								right: isCreating ? '16px' : 'auto',
-								zIndex: 50,
-							}}
-						>
+					<div 
+						className="lg:relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-lg lg:shadow-sm"
+						style={{ 
+							position: isCreating ? 'fixed' : 'relative',
+							bottom: isCreating ? 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)' : 'auto',
+							left: isCreating ? '16px' : 'auto',
+							right: isCreating ? '16px' : 'auto',
+							zIndex: 50,
+						}}
+					>
 							<input
 								ref={titleInputRef}
 								value={newNoteTitle}
@@ -180,7 +156,6 @@ export default function NotesPage() {
 								</button>
 							</div>
 						</div>
-					</>
 				)}
 				{!isCreating && (
 					<button
