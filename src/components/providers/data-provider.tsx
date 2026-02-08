@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { useAuth } from './auth-provider';
-import { subscribeToItems } from '@/lib/firestore';
+import { subscribeToItems, subscribeToUserSettings } from '@/lib/firestore';
 import { useOrbitStore } from '@/lib/store';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 
@@ -13,25 +13,42 @@ const MIN_LOADING_TIME = 800; // Minimum time to show loading screen (feels bett
 export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const setItems = useOrbitStore((s) => s.setItems);
+  const setTagsFromCloud = useOrbitStore((s) => s.setTagsFromCloud);
+  const setSyncUserId = useOrbitStore((s) => s._setSyncUserId);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
   const reconnectAttempt = useRef(0);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const unsubSettingsRef = useRef<(() => void) | null>(null);
   const loadingStartTime = useRef(Date.now());
 
   const connect = useCallback(() => {
     if (!user) {
       setItems([]);
+      setSyncUserId(null);
       return;
     }
 
     try {
-      // Cleanup previous subscription
+      // Set sync user ID for tag cloud sync
+      setSyncUserId(user.uid);
+
+      // Cleanup previous subscriptions
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;
       }
+      if (unsubSettingsRef.current) {
+        unsubSettingsRef.current();
+        unsubSettingsRef.current = null;
+      }
+
+      // Subscribe to user settings (tags/areas)
+      const unsubSettings = subscribeToUserSettings(user.uid, (settings) => {
+        setTagsFromCloud(settings.customTags, settings.removedDefaultTags);
+      });
+      unsubSettingsRef.current = unsubSettings;
 
       const unsubscribe = subscribeToItems(user.uid, (items) => {
         setItems(items);
@@ -63,7 +80,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setError('Unable to connect. Your data is saved locally.');
       }
     }
-  }, [user, setItems]);
+  }, [user, setItems, setTagsFromCloud, setSyncUserId]);
 
   useEffect(() => {
     connect();
@@ -72,6 +89,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;
+      }
+      if (unsubSettingsRef.current) {
+        unsubSettingsRef.current();
+        unsubSettingsRef.current = null;
       }
     };
   }, [connect]);

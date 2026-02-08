@@ -11,6 +11,7 @@ import {
   onSnapshot,
   writeBatch,
   getDoc,
+  setDoc,
   type Firestore,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -577,4 +578,105 @@ export async function unlinkItems(
 
     await batch.commit();
   }, 'unlinkItems');
+}
+
+// ═══════════════════════════════════════════════════════════
+// User Settings (tags/areas cloud sync)
+// ═══════════════════════════════════════════════════════════
+
+const SETTINGS_COLLECTION = 'userSettings';
+const LOCAL_SETTINGS_KEY = 'orbit-user-settings';
+
+export interface UserSettings {
+  customTags: string[];
+  removedDefaultTags: string[];
+  updatedAt: number;
+}
+
+const DEFAULT_SETTINGS: UserSettings = {
+  customTags: [],
+  removedDefaultTags: [],
+  updatedAt: 0,
+};
+
+/**
+ * Subscribe to user settings (tags/areas) from Firestore.
+ * Returns unsubscribe function.
+ */
+export function subscribeToUserSettings(
+  userId: string,
+  callback: (settings: UserSettings) => void
+): () => void {
+  if (!isFirebaseAvailable()) {
+    // Local mode: load from localStorage
+    const stored = localStorage.getItem(LOCAL_SETTINGS_KEY);
+    if (stored) {
+      try {
+        callback(JSON.parse(stored));
+      } catch {
+        callback(DEFAULT_SETTINGS);
+      }
+    }
+    const handler = (e: StorageEvent) => {
+      if (e.key === LOCAL_SETTINGS_KEY && e.newValue) {
+        try { callback(JSON.parse(e.newValue)); } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }
+
+  const docRef = doc(getDb(), SETTINGS_COLLECTION, userId);
+
+  const unsubscribe = onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data() as UserSettings;
+        callback({
+          customTags: data.customTags || [],
+          removedDefaultTags: data.removedDefaultTags || [],
+          updatedAt: data.updatedAt || 0,
+        });
+      } else {
+        // No settings doc yet — use defaults
+        callback(DEFAULT_SETTINGS);
+      }
+    },
+    (error) => {
+      console.error('[ORBIT] User settings subscription error:', error);
+      // Fallback to localStorage
+      const stored = localStorage.getItem(LOCAL_SETTINGS_KEY);
+      if (stored) {
+        try { callback(JSON.parse(stored)); } catch { /* ignore */ }
+      }
+    }
+  );
+
+  return unsubscribe;
+}
+
+/**
+ * Save user settings (tags/areas) to Firestore.
+ */
+export async function saveUserSettings(
+  userId: string,
+  settings: Omit<UserSettings, 'updatedAt'>
+): Promise<void> {
+  const data: UserSettings = {
+    ...settings,
+    updatedAt: Date.now(),
+  };
+
+  // Always save locally
+  try {
+    localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(data));
+  } catch { /* quota exceeded — ignore */ }
+
+  if (!isFirebaseAvailable()) return;
+
+  await withRetry(async () => {
+    const docRef = doc(getDb(), SETTINGS_COLLECTION, userId);
+    await setDoc(docRef, data, { merge: true });
+  }, 'saveUserSettings');
 }

@@ -2,15 +2,19 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { OrbitItem, ItemType, ItemStatus } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
+import { saveUserSettings } from '@/lib/firestore';
 
 interface OrbitStore {
   // Items
   items: OrbitItem[];
   setItems: (items: OrbitItem[]) => void;
 
-  // Custom Tags
+  // Custom Tags (cloud-synced per user)
   customTags: string[];
   removedDefaultTags: string[]; // default tags the user has removed
+  _syncUserId: string | null; // set by data-provider when user logs in
+  _setSyncUserId: (userId: string | null) => void;
+  setTagsFromCloud: (customTags: string[], removedDefaultTags: string[]) => void;
   addCustomTag: (tag: string) => void;
   removeTag: (tag: string) => void;
   renameTag: (oldTag: string, newTag: string) => void;
@@ -48,6 +52,20 @@ interface OrbitStore {
   getLinkedItems: (itemId: string) => OrbitItem[];
 }
 
+/** Debounced cloud sync for tag changes */
+let syncTimeout: ReturnType<typeof setTimeout> | null = null;
+function debouncedSyncTags(get: () => OrbitStore) {
+  if (syncTimeout) clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => {
+    const userId = get()._syncUserId;
+    if (!userId) return;
+    saveUserSettings(userId, {
+      customTags: get().customTags,
+      removedDefaultTags: get().removedDefaultTags,
+    }).catch((err) => console.error('[ORBIT] Failed to sync tags:', err));
+  }, 300);
+}
+
 export const useOrbitStore = create<OrbitStore>()(
   persist(
     (set, get) => ({
@@ -63,6 +81,11 @@ export const useOrbitStore = create<OrbitStore>()(
 
       customTags: [],
       removedDefaultTags: [],
+      _syncUserId: null,
+      _setSyncUserId: (userId) => set({ _syncUserId: userId }),
+      setTagsFromCloud: (customTags, removedDefaultTags) => {
+        set({ customTags, removedDefaultTags });
+      },
       addCustomTag: (tag) => {
         const trimmed = tag.trim().toLowerCase();
         if (!trimmed) return;
@@ -72,15 +95,16 @@ export const useOrbitStore = create<OrbitStore>()(
         const defaultTags = LIFE_AREA_TAGS as readonly string[];
         if (defaultTags.includes(trimmed)) {
           set({ removedDefaultTags: get().removedDefaultTags.filter((t) => t !== trimmed) });
+          debouncedSyncTags(get);
           return;
         }
         set({ customTags: [...get().customTags, trimmed] });
+        debouncedSyncTags(get);
       },
       removeTag: (tag) => {
         const defaultTags = LIFE_AREA_TAGS as readonly string[];
         const isDefault = defaultTags.includes(tag);
         if (isDefault) {
-          // Track as removed default
           set({ removedDefaultTags: [...get().removedDefaultTags, tag] });
         } else {
           set({ customTags: get().customTags.filter((t) => t !== tag) });
@@ -94,6 +118,7 @@ export const useOrbitStore = create<OrbitStore>()(
           return item;
         });
         set({ items: updated });
+        debouncedSyncTags(get);
       },
       renameTag: (oldTag, newTag) => {
         const trimmed = newTag.trim().toLowerCase();
@@ -122,6 +147,7 @@ export const useOrbitStore = create<OrbitStore>()(
           return item;
         });
         set({ items: updated });
+        debouncedSyncTags(get);
       },
       // Legacy aliases
       removeCustomTag: (tag) => get().removeTag(tag),
