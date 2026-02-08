@@ -24,64 +24,54 @@ interface LinkGraphProps {
   onNavigate: (itemId: string) => void;
 }
 
-// Helper function to recursively collect all linked items AND their hierarchies
-function collectAllLinkedItems(
-  item: OrbitItem, 
-  allItems: OrbitItem[], 
-  visited: Set<string> = new Set(),
-  includeHierarchies: boolean = true
+// Helper function to recursively collect ALL related items through any connection
+function collectAllRelatedItems(
+  startItem: OrbitItem,
+  allItems: OrbitItem[],
+  visited: Set<string> = new Set()
 ): OrbitItem[] {
-  if (visited.has(item.id)) return [];
-  visited.add(item.id);
+  if (visited.has(startItem.id)) return [];
+  visited.add(startItem.id);
   
-  const linked: OrbitItem[] = [];
+  const related: OrbitItem[] = [];
   
-  // Get direct linked items
-  const directLinked = (item.linkedIds || [])
+  // 1. Get all items linked TO this item (linkedIds)
+  const directLinked = (startItem.linkedIds || [])
     .map(id => allItems.find(i => i.id === id))
-    .filter((i): i is OrbitItem => i !== undefined);
+    .filter((i): i is OrbitItem => i !== undefined && !visited.has(i.id));
   
-  // Get reverse links
+  // 2. Get all items that link to THIS item (reverse links)
   const reverseLinked = allItems.filter(i => 
-    i.linkedIds?.includes(item.id) && !item.linkedIds?.includes(i.id)
+    i.linkedIds?.includes(startItem.id) && !visited.has(i.id)
   );
   
-  // Combine direct and reverse
-  const allDirectLinks = [...directLinked, ...reverseLinked];
+  // 3. Get parent
+  const parent = startItem.parentId 
+    ? allItems.find(i => i.id === startItem.parentId && !visited.has(i.id))
+    : undefined;
   
-  // Add them to results
-  allDirectLinks.forEach(linkedItem => {
-    if (!visited.has(linkedItem.id)) {
-      linked.push(linkedItem);
-      
-      // If includeHierarchies, also add parent and all children of this linked item
-      if (includeHierarchies) {
-        // Add parent
-        if (linkedItem.parentId) {
-          const parent = allItems.find(i => i.id === linkedItem.parentId);
-          if (parent && !visited.has(parent.id)) {
-            linked.push(parent);
-            visited.add(parent.id);
-          }
-        }
-        
-        // Add all children
-        const children = allItems.filter(i => i.parentId === linkedItem.id);
-        children.forEach(child => {
-          if (!visited.has(child.id)) {
-            linked.push(child);
-            visited.add(child.id);
-          }
-        });
-      }
-      
-      // Recursively get their links
-      const nestedLinks = collectAllLinkedItems(linkedItem, allItems, visited, includeHierarchies);
-      linked.push(...nestedLinks);
+  // 4. Get all children
+  const children = allItems.filter(i => i.parentId === startItem.id && !visited.has(i.id));
+  
+  // Collect all immediate connections
+  const immediateConnections = [
+    ...directLinked,
+    ...reverseLinked,
+    ...(parent ? [parent] : []),
+    ...children
+  ];
+  
+  // Add immediate connections and recurse through each
+  immediateConnections.forEach(connectedItem => {
+    if (!visited.has(connectedItem.id)) {
+      related.push(connectedItem);
+      // Recursively get ALL items connected to this one
+      const deeperConnections = collectAllRelatedItems(connectedItem, allItems, visited);
+      related.push(...deeperConnections);
     }
   });
   
-  return linked;
+  return related;
 }
 
 // Helper to collect all descendants (children, grandchildren, etc.)
@@ -130,19 +120,10 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
   const [touchCurrent, setTouchCurrent] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Collect ALL ancestors (parent, grandparent, great-grandparent, etc.)
-  const allAncestors = collectAllAncestors(currentItem, allItems);
-  const topAncestor = allAncestors[allAncestors.length - 1]; // Furthest ancestor
-  const immediateParent = allAncestors[0]; // Direct parent
-
-  // Collect ALL descendants (children, grandchildren, etc.)
-  const allDescendants = collectAllDescendants(currentItem, allItems);
-  const immediateChildren = allItems.filter(i => i.parentId === currentItem.id);
-
-  // Collect ALL linked items recursively (peer links and their links, etc.) INCLUDING their hierarchies
-  const allLinkedItems = collectAllLinkedItems(currentItem, allItems, new Set(), true);
+  // Collect ALL related items through ANY connection (links, parent, children)
+  const allRelatedItems = collectAllRelatedItems(currentItem, allItems);
   
-  // Now we need to separate into categories more intelligently
+  // Now categorize them intelligently
   // Direct links are items that are explicitly linked to/from current item
   const directLinkedIds = new Set(currentItem.linkedIds || []);
   const directReverseIds = new Set(
@@ -150,23 +131,28 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
   );
   
   // Items that are directly linked (not their parents/children)
-  const directLinks = allLinkedItems.filter(i => 
+  const directLinks = allRelatedItems.filter((i: OrbitItem) => 
     directLinkedIds.has(i.id) || directReverseIds.has(i.id)
   );
   
-  // Everything else that came through the link chain
+  // Collect ALL ancestors and descendants of current item
+  const allAncestors = collectAllAncestors(currentItem, allItems);
+  const allDescendants = collectAllDescendants(currentItem, allItems);
+  const immediateChildren = allItems.filter(i => i.parentId === currentItem.id);
+  
+  // Everything else that came through the connection chain
   // Exclude items that are already in ancestors or descendants of the CURRENT item
   const ancestorIds = new Set(allAncestors.map(a => a.id));
   const descendantIds = new Set(allDescendants.map(d => d.id));
   
-  const indirectlyRelated = allLinkedItems.filter(i => 
+  const indirectlyRelated = allRelatedItems.filter((i: OrbitItem) => 
     !directLinkedIds.has(i.id) && 
     !directReverseIds.has(i.id) &&
     !ancestorIds.has(i.id) &&
     !descendantIds.has(i.id)
   );
 
-  const hasRelationships = allAncestors.length > 0 || allDescendants.length > 0 || allLinkedItems.length > 0;
+  const hasRelationships = allAncestors.length > 0 || allDescendants.length > 0 || allRelatedItems.length > 0;
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
     setTouchStart(touch.clientY);
@@ -445,7 +431,7 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                 <div className="mt-6 pt-4 border-t border-border/30 text-center">
                   <p className="text-[11px] text-muted-foreground/50">
                     Total: {allAncestors.length} ancestor{allAncestors.length !== 1 ? 's' : ''} · {' '}
-                    {allLinkedItems.length} linked · {' '}
+                    {allRelatedItems.length} related · {' '}
                     {allDescendants.length} descendant{allDescendants.length !== 1 ? 's' : ''}
                   </p>
                 </div>
