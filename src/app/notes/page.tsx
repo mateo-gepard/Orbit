@@ -7,7 +7,8 @@ import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import type { NoteSubtype } from '@/lib/types';
+import type { NoteSubtype, OrbitItem } from '@/lib/types';
+import { NoteEditor } from '@/components/notes/note-editor';
 
 const FILTERS: { label: string; value: NoteSubtype | 'all' }[] = [
 	{ label: 'All', value: 'all' },
@@ -24,6 +25,7 @@ export default function NotesPage() {
 	const [isCreating, setIsCreating] = useState(false);
 	const [newNoteTitle, setNewNoteTitle] = useState('');
 	const [newNoteContent, setNewNoteContent] = useState('');
+	const [editingNote, setEditingNote] = useState<OrbitItem | null>(null);
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	const contentInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -312,7 +314,7 @@ export default function NotesPage() {
 				{notes.map((note) => (
 					<button
 						key={note.id}
-						onClick={() => setSelectedItemId(note.id)}
+						onClick={() => setEditingNote(note)}
 						className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card p-4 text-left transition-all hover:bg-foreground/[0.02] hover:border-border group"
 					>
 						<div className="flex items-start justify-between gap-2">
@@ -356,6 +358,11 @@ export default function NotesPage() {
 				</div>
 			)}
 		</div>
+
+		{/* Note Editor */}
+		{editingNote && (
+			<NoteEditor note={editingNote} onClose={() => setEditingNote(null)} />
+		)}
 		</>
 	);
 }

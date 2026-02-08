@@ -147,7 +147,15 @@ export function CommandBar() {
     if (!input.trim() || !user) return;
 
     const parsed = parseCommand(input);
-    console.log('[CommandBar] Parsed:', { input, parsed });
+    console.log('[CommandBar] Parsed:', { 
+      input, 
+      title: parsed.title,
+      type: parsed.type,
+      tags: parsed.tags,
+      linkedItemTitles: parsed.linkedItemTitles,
+      priority: parsed.priority,
+      dueDate: parsed.dueDate 
+    });
 
     // If only tags were typed (no actual title), don't create an item
     if (!parsed.title.trim() && parsed.tags.length > 0) {
@@ -180,15 +188,28 @@ export function CommandBar() {
       }
     });
 
-    // Find linked items by title
+    // Find linked items by title (fuzzy matching)
     const linkedIds: string[] = [];
     if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
-      parsed.linkedItemTitles.forEach(title => {
-        const matchedItem = items.find(item => 
-          item.title.toLowerCase() === title.toLowerCase()
+      console.log('[CommandBar] Looking for linked items:', parsed.linkedItemTitles);
+      parsed.linkedItemTitles.forEach(linkTitle => {
+        const linkTitleLower = linkTitle.toLowerCase();
+        // First try exact match
+        let matchedItem = items.find(item => 
+          item.title.toLowerCase() === linkTitleLower
         );
+        // If no exact match, try fuzzy match (contains)
+        if (!matchedItem) {
+          matchedItem = items.find(item => 
+            item.title.toLowerCase().includes(linkTitleLower) ||
+            linkTitleLower.includes(item.title.toLowerCase())
+          );
+        }
         if (matchedItem) {
+          console.log(`[CommandBar] Linked "${linkTitle}" -> "${matchedItem.title}" (${matchedItem.type})`);
           linkedIds.push(matchedItem.id);
+        } else {
+          console.log(`[CommandBar] No match found for "${linkTitle}"`);
         }
       });
     }
