@@ -23,6 +23,10 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const files = project.files || [];
+  
+  console.log('[FileUpload] Rendering with project:', project.id);
+  console.log('[FileUpload] Files array:', files);
+  console.log('[FileUpload] Files count:', files.length);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
