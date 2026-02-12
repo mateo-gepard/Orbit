@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Inbox,
   CheckSquare,
@@ -12,6 +12,8 @@ import {
   ArrowRight,
   Plus,
   Sparkles,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -27,6 +29,8 @@ import {
   parseISO,
   startOfWeek,
   addDays,
+  subDays,
+  isSameDay,
 } from 'date-fns';
 import {
   calculateStreak,
@@ -146,8 +150,11 @@ export default function DashboardPage() {
   const { user, loading, signInWithGoogle } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
 
-  const today = new Date();
-  const todayStr = format(today, 'yyyy-MM-dd');
+  // Selected date state - defaults to today
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+  const isViewingToday = isToday(selectedDate);
+  const isViewingPast = isPast(selectedDate) && !isToday(selectedDate);
 
   const {
     todayTasks,
@@ -159,15 +166,32 @@ export default function DashboardPage() {
     principles,
     totalActive,
   } = useMemo(() => {
-    const todayTasks = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate === todayStr
-    );
-    const overdueItems = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate && isPast(parseISO(i.dueDate)) && !isToday(parseISO(i.dueDate))
-    );
-    const todayEvents = items.filter(
-      (i) => i.type === 'event' && i.status !== 'archived' && (i.startDate === todayStr || (!i.startDate && i.dueDate === todayStr))
-    );
+    // For current/future dates, show active tasks
+    // For past dates, also show tasks that were completed on that day (archived)
+    const todayTasks = items.filter((i) => {
+      if (i.type !== 'task') return false;
+      if (i.dueDate !== selectedDateStr) return false;
+      
+      // For past dates, include completed tasks from that day
+      if (isViewingPast) {
+        return i.status === 'done' || (i.status !== 'archived');
+      }
+      
+      // For today/future, only active tasks
+      return i.status !== 'done' && i.status !== 'archived';
+    });
+
+    const overdueItems = isViewingToday
+      ? items.filter(
+          (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate && isPast(parseISO(i.dueDate)) && !isToday(parseISO(i.dueDate))
+        )
+      : [];
+
+    const todayEvents = items.filter((i) => {
+      if (i.type !== 'event' || i.status === 'archived') return false;
+      return i.startDate === selectedDateStr || (!i.startDate && i.dueDate === selectedDateStr);
+    });
+
     const habits = items.filter((i) => i.type === 'habit' && i.status === 'active');
     const activeProjects = items.filter((i) => i.type === 'project' && i.status === 'active');
     const goals = items.filter((i) => i.type === 'goal' && i.status === 'active');
@@ -176,7 +200,7 @@ export default function DashboardPage() {
     );
     const totalActive = items.filter((i) => i.status !== 'archived').length;
     return { todayTasks, overdueItems, todayEvents, habits, activeProjects, goals, principles, totalActive };
-  }, [items, todayStr]);
+  }, [items, selectedDateStr, isViewingPast, isViewingToday]);
 
   if (loading) {
     return (
@@ -196,7 +220,7 @@ export default function DashboardPage() {
       <div className="p-4 lg:p-8 max-w-3xl mx-auto">
         <div className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">
-            {format(today, 'EEEE, d MMMM')}
+            {format(selectedDate, 'EEEE, d MMMM')}
           </h1>
         </div>
         <OnboardingState onOpen={() => setCommandBarOpen(true)} />
@@ -211,34 +235,73 @@ export default function DashboardPage() {
     return Math.round((done / children.length) * 100);
   };
 
-  const todayHabits = habits.filter((h) => isHabitScheduledForDate(h, today));
-  const completedHabitsToday = todayHabits.filter((h) => isHabitCompletedForDate(h, today)).length;
+  const todayHabits = habits.filter((h) => isHabitScheduledForDate(h, selectedDate));
+  const completedHabitsToday = todayHabits.filter((h) => isHabitCompletedForDate(h, selectedDate)).length;
 
   const toggleHabit = async (habit: typeof items[0]) => {
     const completions = { ...(habit.completions || {}) };
-    completions[todayStr] = !completions[todayStr];
+    completions[selectedDateStr] = !completions[selectedDateStr];
     await updateItem(habit.id, { completions });
   };
 
-  const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
     <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6 lg:space-y-8">
-      {/* ── Header ── */}
-      <div className="flex items-end justify-between">
-        <div>
+      {/* ── Header with Date Navigation ── */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1">
           <p className="text-[13px] text-muted-foreground">
-            {format(today, 'EEEE, d MMMM yyyy')}
+            {format(selectedDate, 'EEEE, d MMMM yyyy')}
+            {!isViewingToday && (
+              <span className="ml-2 text-[11px] text-muted-foreground/60">
+                ({isViewingPast ? 'Past' : 'Future'})
+              </span>
+            )}
           </p>
           <h1 className="text-xl font-semibold tracking-tight mt-0.5">
-            {new Date().getHours() < 12
-              ? 'Good morning'
-              : new Date().getHours() < 18
-              ? 'Good afternoon'
-              : 'Good evening'}
-            {user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}
+            {isViewingToday ? (
+              <>
+                {new Date().getHours() < 12
+                  ? 'Good morning'
+                  : new Date().getHours() < 18
+                  ? 'Good afternoon'
+                  : 'Good evening'}
+                {user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}
+              </>
+            ) : (
+              format(selectedDate, 'MMMM d, yyyy')
+            )}
           </h1>
+        </div>
+
+        {/* Date Navigation Controls */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-foreground/[0.05] active:scale-95 transition-all"
+            title="Previous day"
+          >
+            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          </button>
+          
+          {!isViewingToday && (
+            <button
+              onClick={() => setSelectedDate(new Date())}
+              className="rounded-lg px-3 py-1.5 text-[11px] font-medium bg-foreground/[0.08] hover:bg-foreground/[0.12] active:scale-95 transition-all"
+            >
+              Today
+            </button>
+          )}
+          
+          <button
+            onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-foreground/[0.05] active:scale-95 transition-all"
+            title="Next day"
+          >
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </button>
         </div>
       </div>
 
@@ -256,7 +319,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
           <span className="tabular-nums font-medium">{todayTasks.length + overdueItems.length}</span>
-          <span className="text-muted-foreground/60">tasks</span>
+          <span className="text-muted-foreground/60">{isViewingPast ? 'tasks' : 'tasks'}</span>
         </div>
         {todayHabits.length > 0 && (
           <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
@@ -265,11 +328,13 @@ export default function DashboardPage() {
             <span className="text-muted-foreground/60">habits</span>
           </div>
         )}
-        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
-          <FolderKanban className="h-3.5 w-3.5" strokeWidth={1.5} />
-          <span className="tabular-nums font-medium">{activeProjects.length}</span>
-          <span className="text-muted-foreground/60">projects</span>
-        </div>
+        {isViewingToday && (
+          <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
+            <FolderKanban className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <span className="tabular-nums font-medium">{activeProjects.length}</span>
+            <span className="text-muted-foreground/60">projects</span>
+          </div>
+        )}
       </div>
 
       {/* ── Week strip — larger touch targets on mobile ── */}
@@ -282,19 +347,32 @@ export default function DashboardPage() {
               ((i.type === 'task' && i.dueDate === dayStr) ||
                (i.type === 'event' && i.startDate === dayStr))
           );
-          const isCurrentDay = isToday(day);
+          const isCurrentDay = isSameDay(day, selectedDate);
+          const isDayToday = isToday(day);
           return (
-            <div
+            <button
               key={dayStr}
+              onClick={() => setSelectedDate(day)}
               className={cn(
                 'flex flex-1 flex-col items-center rounded-xl py-2.5 lg:py-2 transition-colors active:scale-95',
-                isCurrentDay ? 'bg-foreground text-background' : 'hover:bg-foreground/[0.03]'
+                isCurrentDay 
+                  ? 'bg-foreground text-background' 
+                  : isDayToday
+                  ? 'bg-foreground/[0.08] hover:bg-foreground/[0.12]'
+                  : 'hover:bg-foreground/[0.03]'
               )}
             >
-              <span className={cn('text-[10px] font-medium uppercase', !isCurrentDay && 'text-muted-foreground/50')}>
+              <span className={cn(
+                'text-[10px] font-medium uppercase', 
+                !isCurrentDay && !isDayToday && 'text-muted-foreground/50',
+                isDayToday && !isCurrentDay && 'text-foreground/70'
+              )}>
                 {format(day, 'EEE')}
               </span>
-              <span className={cn('text-sm font-semibold mt-0.5 tabular-nums', !isCurrentDay && 'text-foreground')}>
+              <span className={cn(
+                'text-sm font-semibold mt-0.5 tabular-nums', 
+                !isCurrentDay && 'text-foreground'
+              )}>
                 {format(day, 'd')}
               </span>
               {dayItems.length > 0 && (
@@ -310,7 +388,7 @@ export default function DashboardPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -319,7 +397,7 @@ export default function DashboardPage() {
       <div className="grid gap-4 lg:gap-6 lg:grid-cols-2">
         {/* Tasks */}
         <Section
-          title="Today"
+          title={isViewingToday ? 'Today' : format(selectedDate, 'MMM d')}
           icon={CheckSquare}
           count={todayTasks.length + overdueItems.length}
           href="/today"
@@ -333,7 +411,10 @@ export default function DashboardPage() {
             ))}
             {overdueItems.length === 0 && todayTasks.length === 0 && (
               <p className="px-4 py-5 text-center text-[12px] text-muted-foreground/50">
-                Nothing scheduled for today
+                {isViewingPast 
+                  ? 'No tasks were scheduled for this day'
+                  : 'Nothing scheduled for this day'
+                }
               </p>
             )}
           </div>
@@ -343,17 +424,19 @@ export default function DashboardPage() {
         <Section title="Habits" icon={Repeat} count={todayHabits.length} href="/habits">
           <div className="py-2 px-3 space-y-1">
             {todayHabits.map((habit) => {
-              const completed = isHabitCompletedForDate(habit, today);
+              const completed = isHabitCompletedForDate(habit, selectedDate);
               const streak = calculateStreak(habit);
               return (
                 <div key={habit.id} className="flex items-center gap-2.5 py-1">
                   <button
                     onClick={() => toggleHabit(habit)}
+                    disabled={isViewingPast && !completed} // Can't check off past habits
                     className={cn(
                       'flex h-5 w-5 items-center justify-center rounded-md border transition-all shrink-0',
                       completed
                         ? 'border-foreground/20 bg-foreground/10'
-                        : 'border-foreground/15 hover:border-foreground/30'
+                        : 'border-foreground/15 hover:border-foreground/30',
+                      isViewingPast && !completed && 'opacity-30 cursor-not-allowed'
                     )}
                   >
                     {completed && <CheckSquare className="h-3 w-3 text-foreground/50" />}

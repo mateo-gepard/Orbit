@@ -1,0 +1,421 @@
+═══════════════════════════════════════════════════════════════════════════════
+ORBIT — COMPLETE APP DESCRIPTION
+Personal Productivity OS
+═══════════════════════════════════════════════════════════════════════════════
+
+📋 CORE CONCEPT
+───────────────────────────────────────────────────────────────────────────────
+
+ORBIT is a Personal Productivity OS that unifies all productivity tools into a 
+single, interconnected system. Everything is an `OrbitItem` with a `type` field 
+that determines whether it's a task, project, habit, event, goal, or note.
+
+
+🏗️ ARCHITECTURE
+───────────────────────────────────────────────────────────────────────────────
+
+UNIVERSAL ITEM SYSTEM
+  • 6 Item Types: task, project, habit, event, goal, note
+  • All share the same OrbitItem interface with ~30 fields
+  • Type-specific fields only used when relevant
+  • Statuses: active, waiting, done, archived
+
+DATA LAYER (DUAL-MODE)
+  1. localStorage (Demo Mode)
+     - Works offline, no auth required
+     - 5MB storage limit with auto-cleanup
+     - Instant operations
+     
+  2. Firebase Firestore (Cloud Mode)
+     - Google Sign-In authentication
+     - Real-time sync across devices
+     - User isolation via security rules
+     - Retry logic: 500ms → 1s → 2s exponential backoff
+     - Optimistic updates with automatic rollback on failure
+
+STATE MANAGEMENT
+  • Zustand for UI state
+  • Real-time Firestore subscriptions for data
+  • Optimistic updates for instant UI feedback
+
+
+✨ CORE FEATURES
+───────────────────────────────────────────────────────────────────────────────
+
+1. COMMAND BAR (⌘K)
+   ─────────────────────────────────────────────────────────────────────────
+   • Activation: Cmd/Ctrl + K or tap "+" button
+   • Natural Language Parsing:
+     
+     Examples:
+     /t Buy groceries tomorrow !2 #health
+     → Creates task "Buy groceries" for tomorrow, priority 2, tagged #health
+     
+     /p Mobile App @Website
+     → Creates project "Mobile App" linked to item "Website"
+     
+     /h Workout 3x/week #health
+     → Creates habit "Workout" with custom frequency
+   
+   • Syntax:
+     - /t = task, /p = project, /h = habit, /e = event, /g = goal, /n = note
+     - !1-3 = priority (1=high, 2=medium, 3=low)
+     - #tag = life area tags
+     - @ItemTitle = link to another item
+     - Dates: today, tomorrow, monday, 2024-12-25, in 3 days
+   
+   • Auto-complete: Search existing items as you type
+   • Tag Creation: New tags auto-created on the fly
+
+2. DEEP LINKING SYSTEM
+   ─────────────────────────────────────────────────────────────────────────
+   Three types of relationships:
+
+   A) BIDIRECTIONAL LINKS (linkedIds)
+      - Peer-to-peer connections
+      - Example: Task "Review PR" ↔ Project "Website"
+      - Added via @ItemName in command bar or LinkManager
+
+   B) PARENT-CHILD (parentId)
+      - Hierarchical containment
+      - Example: Project "Mobile App" contains Tasks "Design UI", "Implement Auth"
+      - Circular reference prevention built-in
+      - Used for project task organization
+
+   C) REVERSE LINKS (automatic)
+      - System automatically tracks who links to what
+      - Example: If Task A links to Project B, B knows A links to it
+
+   UNIFIED API:
+   • useLinks() React hook provides all relationship data
+   • getItemRelationships() returns ancestors, descendants, linked, 
+     reverse-linked, all-related
+   • LinkGraph visualizes relationships as mindmap
+   • Network button shows visual graph of connections
+
+3. DASHBOARD (TODAY VIEW)
+   ─────────────────────────────────────────────────────────────────────────
+   Daily overview showing:
+   • Tasks: Due today, overdue, no date
+   • Habits: Scheduled for today with completion checkboxes
+   • Events: Happening today
+   • Active Projects: With progress bars
+   • Goals: In-progress goals
+   • Quick Stats: Completion rates, streaks
+   • Real-time updates as you check items off
+
+4. HABITS TRACKER
+   ─────────────────────────────────────────────────────────────────────────
+   • Frequencies:
+     - Daily
+     - Weekly (specific days: Mon, Wed, Fri)
+     - Custom (e.g., 3x/week, weekends only)
+   
+   • Views:
+     - Week View (Mobile): Horizontal grid of 7 days
+     - Month View (Desktop): Full calendar grid
+   
+   • Streak Calculation:
+     - Only counts scheduled days
+     - Resets when you miss a scheduled day
+     - Shows flame icon with count
+   
+   • Completion Tracking: Tap day to toggle completion
+   • Frequency Editor: Visual day picker
+
+5. CALENDAR
+   ─────────────────────────────────────────────────────────────────────────
+   • Month View: All events + task due dates
+   • Google Calendar Sync:
+     - Import events from Google Calendar
+     - Two-way sync (create events in ORBIT → appear in Google)
+     - OAuth authentication
+     - Syncs every 15 minutes
+   • Event Creation: Drag or click to create
+   • Color Coding: Events vs tasks
+   • Navigation: Month-by-month browsing
+
+6. PROJECTS
+   ─────────────────────────────────────────────────────────────────────────
+   • Task Organization: Parent-child hierarchy
+   • Files: Attach PDFs, images, documents
+     - Firebase Storage integration
+     - Inline preview for images
+     - Download links for other files
+   • Progress Tracking: X/Y tasks completed
+   • Project Dashboard: Shows all subtasks with completion checkboxes
+   • Linking: Connect projects to goals, notes, other projects
+
+7. GOALS
+   ─────────────────────────────────────────────────────────────────────────
+   • Timeframes: Short-term, long-term, ongoing
+   • Status: Planning, in-progress, achieved, paused
+   • Linking: Connect to tasks/projects implementing them
+   • Notes Field: Track progress, reflections
+   • Life Area Tags: Organize by category
+
+8. NOTES
+   ─────────────────────────────────────────────────────────────────────────
+   • Rich Text: Markdown-style formatting
+   • Whitespace Preserved: Plain text with white-space: pre-wrap
+   • Linking: Connect to tasks, projects, events
+   • Quick Capture: Create via command bar or Notes page
+
+9. TAG SYSTEM
+   ─────────────────────────────────────────────────────────────────────────
+   • Predefined Tags: #tech, #uni, #career, #health, #fitness, #finance, 
+     #social, #family, #creative, #personal
+   • Custom Tags: Create on the fly via command bar or UI
+   • Filtering: All pages support tag filtering
+   • Tag Manager: Add/remove tags from items
+
+10. FILES & ATTACHMENTS
+    ────────────────────────────────────────────────────────────────────────
+    • Storage: Firebase Storage with 5GB free tier
+    • Upload: Drag-drop or click to upload
+    • Supported Types: All file types
+    • Preview: Images show inline, others show download link
+    • CORS Configured: Public read access
+
+
+📱 PAGES & ROUTES
+───────────────────────────────────────────────────────────────────────────────
+
+/              Dashboard (Today view)
+/today         Same as dashboard
+/inbox         Unsorted tasks (no project, no date)
+/tasks         All tasks
+/projects      All projects
+/habits        Habit tracker with calendar
+/goals         All goals
+/notes         All notes
+/calendar      Month view with events
+/archive       Archived items
+/files         All uploaded files
+
+
+🔧 KEY COMPONENTS
+───────────────────────────────────────────────────────────────────────────────
+
+SHELL COMPONENTS
+  • AppShell: Main layout with sidebar, command bar, detail panel
+  • Sidebar: Navigation menu with sections, tags
+  • CommandBar: ⌘K quick capture interface
+  • DetailPanel: Right sidebar showing selected item details
+  • MobileNav: Bottom navigation for mobile
+  • ProjectDashboard: Project-specific view with subtasks
+
+ITEM COMPONENTS
+  • ItemRow: List item display with checkbox, title, tags, priority
+  • LinkManager: UI for adding/removing links
+  • LinkGraph: Mindmap-style relationship visualizer
+  • NoteEditor: Textarea for note content
+
+UI COMPONENTS (shadcn/ui)
+  • Button, Input, Checkbox, Dialog, Select, Tabs
+  • Calendar, Badge, Card, Progress, Tooltip
+  • CompletionAnimation: Confetti when completing tasks
+  • ThemeToggle: Light/dark mode switcher
+
+PROVIDERS
+  • AuthProvider: Firebase authentication
+  • DataProvider: Firestore real-time subscriptions
+  • ThemeProvider: Dark mode state
+  • PWAProvider: Service worker, offline support
+
+
+🛠️ LIBRARY FUNCTIONS
+───────────────────────────────────────────────────────────────────────────────
+
+src/lib/firestore.ts
+  CRUD operations with retry logic:
+  • createItem(), updateItem(), deleteItem()
+  • getAllItems(), subscribeToItems()
+  • Exponential backoff on failures
+  • Optimistic updates
+
+src/lib/command-parser.ts
+  Natural language parser:
+  • parseCommand(input) → ParsedCommand
+  • Extracts type, title, priority, tags, date, linkedItems
+  • Supports shortcuts like today, tomorrow, next friday
+  • Tag extraction: #health → ['health']
+
+src/lib/habits.ts
+  Habit utilities:
+  • calculateStreak(habit): Consecutive scheduled days completed
+  • isHabitScheduledForDate(habit, date): Check if habit scheduled
+  • isHabitCompletedForDate(habit, date): Check if completed
+  • getWeekGrid(habit): 7-day week view data
+  • getWeekCompletionRate(habits): Overall % for all habits
+
+src/lib/links.ts
+  Unified linking system:
+  • getLinkedItems(), getReverseLinkedItems()
+  • getParentItem(), getChildItems()
+  • getAllDescendants(), getAllAncestors(), getAllRelatedItems()
+  • addLink(), removeLink(), setParent()
+  • getItemRelationships(): Complete relationship data
+
+src/lib/hooks/use-links.ts
+  React hook wrapper for linking:
+  • Returns: linkedItems, reverseLinkedItems, parentItem, childItems, 
+    allRelatedItems, relationships
+  • Actions: handleAddLink(), handleRemoveLink(), handleSetParent(), 
+    isLinked(), canLink()
+
+src/lib/google-calendar.ts
+  Google Calendar integration:
+  • OAuth token management
+  • importEventsFromGoogleCalendar()
+  • syncEventToGoogleCalendar()
+  • refreshToken() for expired tokens
+
+src/lib/analytics.ts
+  Event tracking:
+  • trackEvent(eventType, metadata)
+  • Logged to console (ready for integration with analytics service)
+
+src/lib/storage.ts
+  Firebase Storage:
+  • uploadFile(file, userId, projectId)
+  • deleteFile(fileUrl)
+  • Returns download URL for attached files
+
+
+🔗 LINKING SYSTEM DEEP DIVE
+───────────────────────────────────────────────────────────────────────────────
+
+ARCHITECTURE
+  • Pure Functions (src/lib/links.ts): All link logic in one place
+  • React Hook (src/lib/hooks/use-links.ts): Clean API for components
+  • No Duplication: Single source of truth
+
+FUNCTIONS
+  Relationships:
+  • getLinkedItems(item, allItems) → OrbitItem[]
+  • getReverseLinkedItems(item, allItems) → OrbitItem[]
+  • getParentItem(item, allItems) → OrbitItem | undefined
+  • getChildItems(item, allItems) → OrbitItem[]
+  • getAllDescendants(item, allItems) → OrbitItem[] (recursive)
+  • getAllAncestors(item, allItems) → OrbitItem[] (recursive)
+  • getAllRelatedItems(item, allItems) → OrbitItem[] (everything)
+
+  Modifications:
+  • addLink(item, targetId) → Partial<OrbitItem>
+  • removeLink(item, targetId) → Partial<OrbitItem>
+  • setParent(item, parentId, allItems) → Partial<OrbitItem> (prevents cycles)
+
+  Utilities:
+  • areItemsConnected(item1, item2, allItems) → boolean
+  • getLinkableItems(item, allItems, type?) → OrbitItem[]
+  • getItemRelationships(item, allItems) → ItemRelationships
+
+USAGE IN COMPONENTS
+  const links = useLinks({ item, allItems, onUpdate });
+
+  // Display linked items
+  links.linkedItems.map(linked => <Badge>{linked.title}</Badge>)
+
+  // Add a link
+  <button onClick={() => links.handleAddLink(targetId)}>Link</button>
+
+  // Check if can link
+  if (links.canLink(targetId)) { /* ... */ }
+
+
+🎨 UI/UX FEATURES
+───────────────────────────────────────────────────────────────────────────────
+
+DESIGN SYSTEM
+  • Tailwind CSS: Utility-first styling
+  • shadcn/ui: Accessible component primitives
+  • Dark Mode: System preference + manual toggle
+  • Responsive: Mobile-first with desktop enhancements
+
+INTERACTIONS
+  • Swipe Gestures: Swipe rows to complete/delete (mobile)
+  • Pull to Refresh: Refresh data on mobile
+  • Touch Optimization: Larger tap targets, proper event handling
+  • Keyboard Shortcuts: ⌘K command bar, Esc to close
+
+ANIMATIONS
+  • Completion: Confetti on task completion
+  • Transitions: Smooth state changes
+  • Loading States: Spinners while fetching data
+
+
+📊 DATA FLOW
+───────────────────────────────────────────────────────────────────────────────
+
+1. User Action → Component event handler
+2. Optimistic Update → Zustand store updates immediately
+3. Firebase Call → createItem(), updateItem(), etc.
+4. Success → Firestore syncs, real-time listener updates all clients
+5. Failure → Retry (3 attempts), rollback on final failure
+
+
+🔐 SECURITY
+───────────────────────────────────────────────────────────────────────────────
+
+FIRESTORE RULES
+  match /users/{userId}/items/{itemId} {
+    allow read, write: if request.auth != null && request.auth.uid == userId;
+  }
+
+  • Users can only access their own data
+  • Authentication required for all operations
+
+STORAGE RULES
+  match /files/{userId}/{allPaths=**} {
+    allow read: if true;
+    allow write: if request.auth.uid == userId;
+  }
+
+  • Public read for file URLs
+  • Only owner can upload/delete
+
+
+📦 TECH STACK
+───────────────────────────────────────────────────────────────────────────────
+
+• Framework: Next.js 14 (App Router)
+• Language: TypeScript
+• Styling: Tailwind CSS
+• UI Components: shadcn/ui
+• Database: Firebase Firestore
+• Auth: Firebase Authentication (Google)
+• Storage: Firebase Storage
+• State: Zustand
+• Date Utilities: date-fns
+• Icons: lucide-react
+
+
+🚀 KEY INNOVATIONS
+───────────────────────────────────────────────────────────────────────────────
+
+1. Universal Item System: Everything is one type, reducing complexity
+2. Unified Linking: Single API for all relationship types
+3. Dual-Mode Operation: Works offline (localStorage) or cloud (Firestore)
+4. Natural Language Capture: Type like you think
+5. Optimistic Updates: UI feels instant
+6. Bulletproof Retry: Never lose data to network failures
+7. Mindmap Visualization: See your entire system at a glance
+
+
+📱 PWA FEATURES
+───────────────────────────────────────────────────────────────────────────────
+
+• Service Worker: Offline support
+• Manifest: Install as app on mobile/desktop
+• Responsive: Works on any device
+• Touch Optimized: Gestures, pull-to-refresh
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+This is ORBIT — a complete, interconnected productivity system where everything 
+links together, works offline, syncs across devices, and feels instant. Every 
+piece is designed to reduce friction and help you get things done.
+
+═══════════════════════════════════════════════════════════════════════════════
