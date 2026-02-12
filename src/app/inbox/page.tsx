@@ -13,7 +13,13 @@ export default function InboxPage() {
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
 
   const inboxItems = useMemo(
-    () => items.filter((i) => i.status === 'inbox'),
+    () => items.filter((i) => 
+      i.type === 'task' && 
+      i.status !== 'done' && 
+      i.status !== 'archived' && 
+      !i.dueDate && 
+      !i.parentId
+    ),
     [items]
   );
 
