@@ -5,6 +5,15 @@
 import { OrbitItem } from './types';
 import { calculateStreak } from './habits';
 import { format, parseISO, differenceInDays } from 'date-fns';
+import type { LucideIcon } from 'lucide-react';
+import { 
+  Flame, Zap, Sparkles, Star, Trophy,
+  CheckCircle, Target, Award, Shield, Crown,
+  Rocket, FolderKanban, Building2, CircleCheckBig, Medal,
+  Sprout, RefreshCw, Calendar,
+  Compass, Mountain, FlagTriangleRight,
+  Sunrise, Moon, Bolt, Grid3X3
+} from 'lucide-react';
 
 export type BadgeCategory = 'streak' | 'tasks' | 'projects' | 'habits' | 'goals' | 'special';
 
@@ -12,7 +21,7 @@ export interface Badge {
   id: string;
   name: string;
   description: string;
-  emoji: string;
+  icon: LucideIcon;
   category: BadgeCategory;
   requirement: number;
   isEarned: boolean;
