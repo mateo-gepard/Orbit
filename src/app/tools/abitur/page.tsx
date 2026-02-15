@@ -36,6 +36,10 @@ import {
   Layers,
   PenLine,
   CircleDot,
+  AlertTriangle,
+  BookOpen,
+  Plus,
+  X,
 } from 'lucide-react';
 
 // ─── Field color accents ───────────────────────────────────
@@ -52,12 +56,18 @@ const FIELD_BG: Record<number, string> = {
   3: 'bg-sky-500/10',
   0: 'bg-foreground/[0.03]',
 };
-const FIELD_LABEL: Record<number, string> = {
-  1: 'sprachlich',
-  2: 'gesellschaftsw.',
-  3: 'naturwiss.',
-  0: 'frei',
+
+const CAT_LABELS: Record<string, string> = {
+  language: 'Sprachen',
+  art: 'Musische Fächer',
+  social: 'Gesellschaftswiss.',
+  stem: 'MINT',
+  sport: 'Sport',
+  seminar: 'Seminare',
+  other: 'Sonstige',
 };
+
+const MANDATORY_IDS = ['deu', 'mat', 'wsem', 'psem'];
 
 // ═══════════════════════════════════════════════════════════
 // Main Page
@@ -67,6 +77,20 @@ export default function AbiturPage() {
   const profile = useAbiturStore((s) => s.profile);
   if (!profile.onboardingComplete) return <OnboardingWizard />;
   return <AbiturDashboard />;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════
+
+/** Count how many grades have been entered (non-null) across all semesters */
+function totalEnteredGrades(profile: AbiturProfile): number {
+  return profile.grades.filter((g) => g.points !== null && g.subjectId !== 'psem').length;
+}
+
+/** Has the user entered enough data for meaningful calculations? */
+function hasEnoughData(profile: AbiturProfile): boolean {
+  return totalEnteredGrades(profile) > 0;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -83,29 +107,20 @@ function OnboardingWizard() {
   const [exam4, setExam4] = useState(profile.examSubjects[3] || '');
   const [exam5, setExam5] = useState(profile.examSubjects[4] || '');
 
-  const mandatoryIds = ['deu', 'mat', 'wsem', 'psem'];
   const lfOptions = ALL_SUBJECTS.filter((s) => s.canBeLF);
 
   const groupedOptional = useMemo(() => {
     const cats: Record<string, SubjectDefinition[]> = {};
     ALL_SUBJECTS.forEach((s) => {
-      if (mandatoryIds.includes(s.id)) return;
+      if (MANDATORY_IDS.includes(s.id)) return;
       if (!cats[s.category]) cats[s.category] = [];
       cats[s.category].push(s);
     });
     return cats;
   }, []);
 
-  const catLabels: Record<string, string> = {
-    language: 'Sprachen',
-    art: 'Musische Fächer',
-    social: 'Gesellschaftswiss.',
-    stem: 'MINT',
-    sport: 'Sport',
-  };
-
   const toggleSubject = (id: string) => {
-    if (mandatoryIds.includes(id)) return;
+    if (MANDATORY_IDS.includes(id)) return;
     setSelectedSubjects((prev) =>
       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
     );
@@ -195,12 +210,12 @@ function OnboardingWizard() {
               {Object.entries(groupedOptional).map(([cat, subs]) => (
                 <div key={cat}>
                   <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest mb-2">
-                    {catLabels[cat] || cat}
+                    {CAT_LABELS[cat] || cat}
                   </p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {subs.map((s) => {
                       const selected = selectedSubjects.includes(s.id);
-                      const mandatory = mandatoryIds.includes(s.id);
+                      const mandatory = MANDATORY_IDS.includes(s.id);
                       return (
                         <button
                           key={s.id}
@@ -387,7 +402,7 @@ function OnboardingWizard() {
 // Main Dashboard
 // ═══════════════════════════════════════════════════════════
 
-type View = Semester | 'overview' | 'settings';
+type View = Semester | 'overview' | 'settings' | 'subjects' | 'einbringungen';
 
 function AbiturDashboard() {
   const profile = useAbiturStore((s) => s.profile);
@@ -395,7 +410,9 @@ function AbiturDashboard() {
 
   const result = useMemo(() => calculateAbitur(profile), [profile]);
 
-  if (view === 'settings') {
+  // Full-page sub-views with back navigation
+  if (view === 'settings' || view === 'subjects' || view === 'einbringungen') {
+    const titles: Record<string, string> = { settings: 'EINSTELLUNGEN', subjects: 'FÄCHER', einbringungen: 'EINBRINGUNGEN' };
     return (
       <div className="flex flex-col min-h-screen bg-background">
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center gap-2">
@@ -406,10 +423,12 @@ function AbiturDashboard() {
             <ArrowLeft className="h-3 w-3" />
           </button>
           <GraduationCap className="h-3.5 w-3.5 text-emerald-500" strokeWidth={1.5} />
-          <span className="text-[11px] font-mono text-muted-foreground/50">EINSTELLUNGEN</span>
+          <span className="text-[11px] font-mono text-muted-foreground/50">{titles[view]}</span>
         </div>
         <div className="flex-1 px-4 lg:px-8 py-6 max-w-2xl mx-auto w-full">
-          <SettingsView />
+          {view === 'settings' && <SettingsView />}
+          {view === 'subjects' && <SubjectsView />}
+          {view === 'einbringungen' && <EinbringungenView profile={profile} />}
         </div>
       </div>
     );
@@ -426,12 +445,29 @@ function AbiturDashboard() {
             · {profile.schoolYear}
           </span>
         </div>
-        <button
-          onClick={() => setView('settings')}
-          className="text-muted-foreground/30 hover:text-foreground transition-colors"
-        >
-          <Settings className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setView('subjects')}
+            className="text-muted-foreground/30 hover:text-foreground transition-colors"
+            title="Fächer verwalten"
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => setView('einbringungen')}
+            className="text-muted-foreground/30 hover:text-foreground transition-colors"
+            title="Einbringungen"
+          >
+            <CircleDot className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => setView('settings')}
+            className="text-muted-foreground/30 hover:text-foreground transition-colors"
+            title="Einstellungen"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -449,7 +485,7 @@ function AbiturDashboard() {
       {/* Content */}
       <div className="flex-1 px-4 lg:px-8 py-6 max-w-2xl mx-auto w-full">
         {view === 'overview' ? (
-          <OverviewTab result={result} profile={profile} />
+          <OverviewTab result={result} profile={profile} onNavigate={setView} />
         ) : (
           <SemesterTab semester={view as Semester} result={result} profile={profile} />
         )}
@@ -475,71 +511,151 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 }
 
 // ═══════════════════════════════════════════════════════════
-// Overview Tab — the hero view
+// Empty State Warning
 // ═══════════════════════════════════════════════════════════
 
-function OverviewTab({ result, profile }: { result: AbiturResult; profile: AbiturProfile }) {
-  const projection = useMemo(() => calculateNeededAverage(profile, 1.0), [profile]);
+function EmptyWarning({ gradesEntered, totalPossible, onNavigate }: { gradesEntered: number; totalPossible: number; onNavigate?: (v: View) => void }) {
+  return (
+    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-5">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+        <div className="flex-1">
+          <p className="text-[13px] font-medium text-amber-600 dark:text-amber-400">
+            {gradesEntered === 0 ? 'Noch keine Noten eingetragen' : 'Unvollständige Daten'}
+          </p>
+          <p className="text-[11px] text-muted-foreground/50 mt-1 leading-relaxed">
+            {gradesEntered === 0
+              ? 'Die Berechnung ist erst aussagekräftig, wenn du Noten in den Halbjahren einträgst. Wähle ein Halbjahr oben aus und trage deine Punkte ein.'
+              : `${gradesEntered} von ${totalPossible} möglichen Noten eingetragen. Die Prognose und Schnitte werden mit jeder weiteren Note genauer.`
+            }
+          </p>
+          {gradesEntered === 0 && onNavigate && (
+            <button
+              onClick={() => onNavigate('12/1')}
+              className="mt-3 flex items-center gap-1.5 text-[12px] font-medium text-amber-600 dark:text-amber-400 hover:text-amber-500 transition-colors"
+            >
+              <PenLine className="h-3 w-3" />
+              Noten eintragen
+              <ChevronRight className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Overview Tab — clean, only meaningful data
+// ═══════════════════════════════════════════════════════════
+
+function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; profile: AbiturProfile; onNavigate: (v: View) => void }) {
   const einCount = countAllEinbringungen(profile);
-  const pct = Math.round((result.totalPoints / result.maxPoints) * 100);
+  const entered = totalEnteredGrades(profile);
+  const totalPossible = profile.subjects.filter((s) => s !== 'psem').length * 4;
+  const hasData = hasEnoughData(profile);
+  const pct = hasData ? Math.round((result.totalPoints / result.maxPoints) * 100) : 0;
 
   return (
-    <div className="space-y-8">
-      {/* Grade hero — centered, dominant */}
-      <div className="flex flex-col items-center pt-2 pb-4">
-        {/* Circular grade display */}
-        <div className="relative h-32 w-32 flex items-center justify-center">
-          {/* Background ring */}
-          <svg className="absolute inset-0" viewBox="0 0 128 128">
-            <circle cx="64" cy="64" r="56" fill="none" stroke="currentColor" strokeWidth="3" className="text-foreground/[0.04]" />
-            <circle
-              cx="64" cy="64" r="56" fill="none" strokeWidth="3"
-              className={cn(result.passed ? 'text-emerald-500' : 'text-amber-500')}
-              strokeLinecap="round"
-              strokeDasharray={`${pct * 3.52} 352`}
-              strokeDashoffset="0"
-              transform="rotate(-90 64 64)"
-              style={{ transition: 'stroke-dasharray 1s ease' }}
-            />
+    <div className="space-y-6">
+      {/* Empty state warning */}
+      {!hasData && (
+        <EmptyWarning gradesEntered={0} totalPossible={totalPossible} onNavigate={onNavigate} />
+      )}
+
+      {/* Low data warning */}
+      {hasData && entered < totalPossible * 0.25 && (
+        <EmptyWarning gradesEntered={entered} totalPossible={totalPossible} />
+      )}
+
+      {/* Grade hero — only show when we have data */}
+      <div className="flex flex-col items-center pt-2 pb-2">
+        <div className="relative h-28 w-28 flex items-center justify-center">
+          <svg className="absolute inset-0" viewBox="0 0 112 112">
+            <circle cx="56" cy="56" r="48" fill="none" stroke="currentColor" strokeWidth="3" className="text-foreground/[0.04]" />
+            {hasData && (
+              <circle
+                cx="56" cy="56" r="48" fill="none" strokeWidth="3"
+                className={cn(result.passed ? 'text-emerald-500' : 'text-amber-500')}
+                strokeLinecap="round"
+                strokeDasharray={`${pct * 3.016} 301.6`}
+                strokeDashoffset="0"
+                transform="rotate(-90 56 56)"
+                style={{ transition: 'stroke-dasharray 1s ease' }}
+              />
+            )}
           </svg>
           <div className="text-center">
-            <p className="text-4xl font-black tabular-nums tracking-tight">{result.finalGrade.toFixed(1)}</p>
-            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest mt-0.5">Note</p>
+            {hasData ? (
+              <>
+                <p className="text-3xl font-black tabular-nums tracking-tight">{result.finalGrade.toFixed(1)}</p>
+                <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest mt-0.5">Note</p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-muted-foreground/15">—</p>
+                <p className="text-[9px] text-muted-foreground/20 uppercase tracking-widest mt-0.5">Keine Daten</p>
+              </>
+            )}
           </div>
         </div>
 
-        <p className="text-[12px] text-muted-foreground/40 mt-3 tabular-nums font-mono">
-          {result.totalPoints} / {result.maxPoints} Punkte
-        </p>
+        {hasData && (
+          <p className="text-[12px] text-muted-foreground/40 mt-2 tabular-nums font-mono">
+            {result.totalPoints} / {result.maxPoints} Punkte
+          </p>
+        )}
       </div>
 
-      {/* Block I + II strip */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className={cn(
-          'rounded-2xl border p-4 text-center',
-          result.blockI.passed ? 'border-emerald-500/20 bg-emerald-500/[0.03]' : 'border-red-500/20 bg-red-500/[0.03]'
-        )}>
-          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">Block I</p>
-          <p className="text-2xl font-bold tabular-nums mt-1">{result.blockI.totalPoints}</p>
-          <p className="text-[10px] text-muted-foreground/30 font-mono mt-0.5">/ {result.blockI.maxPoints}</p>
+      {/* Block I + II — only show meaningful values */}
+      {hasData && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className={cn(
+            'rounded-2xl border p-4 text-center',
+            result.blockI.contributedGrades.length > 0
+              ? result.blockI.passed ? 'border-emerald-500/20 bg-emerald-500/[0.03]' : 'border-red-500/20 bg-red-500/[0.03]'
+              : 'border-border/40'
+          )}>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">Block I</p>
+            <p className="text-2xl font-bold tabular-nums mt-1">{result.blockI.totalPoints}</p>
+            <p className="text-[10px] text-muted-foreground/30 font-mono mt-0.5">/ {result.blockI.maxPoints}</p>
+            <p className="text-[9px] text-muted-foreground/20 mt-1">{result.blockI.einbringungCount} Einbr.</p>
+          </div>
+          <div className={cn(
+            'rounded-2xl border p-4 text-center',
+            result.blockII.exams.length > 0
+              ? result.blockII.passed ? 'border-emerald-500/20 bg-emerald-500/[0.03]' : 'border-red-500/20 bg-red-500/[0.03]'
+              : 'border-border/40'
+          )}>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">Block II</p>
+            {result.blockII.exams.length > 0 ? (
+              <>
+                <p className="text-2xl font-bold tabular-nums mt-1">{result.blockII.totalPoints}</p>
+                <p className="text-[10px] text-muted-foreground/30 font-mono mt-0.5">/ {result.blockII.maxPoints}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-muted-foreground/15 mt-1">—</p>
+                <p className="text-[10px] text-muted-foreground/20 mt-0.5">Keine Prüfungen</p>
+              </>
+            )}
+          </div>
         </div>
-        <div className={cn(
-          'rounded-2xl border p-4 text-center',
-          result.blockII.passed ? 'border-emerald-500/20 bg-emerald-500/[0.03]' : 'border-red-500/20 bg-red-500/[0.03]'
-        )}>
-          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">Block II</p>
-          <p className="text-2xl font-bold tabular-nums mt-1">{result.blockII.totalPoints}</p>
-          <p className="text-[10px] text-muted-foreground/30 font-mono mt-0.5">/ {result.blockII.maxPoints}</p>
-        </div>
-      </div>
+      )}
 
       {/* Einbringungen bar */}
-      <div className="rounded-2xl border border-border/40 p-4">
+      <button
+        onClick={() => onNavigate('einbringungen')}
+        className="w-full rounded-2xl border border-border/40 p-4 text-left hover:bg-foreground/[0.02] transition-colors group"
+      >
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Einbringungen</span>
-          <span className={cn('text-[13px] font-bold tabular-nums', einCount >= 40 ? 'text-emerald-500' : 'text-amber-500')}>
-            {einCount}<span className="text-muted-foreground/30 font-normal"> / 40</span>
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={cn('text-[13px] font-bold tabular-nums', einCount >= 40 ? 'text-emerald-500' : 'text-amber-500')}>
+              {einCount}<span className="text-muted-foreground/30 font-normal"> / 40</span>
+            </span>
+            <ChevronRight className="h-3 w-3 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors" />
+          </div>
         </div>
         <div className="h-1.5 rounded-full bg-foreground/[0.05] overflow-hidden">
           <div
@@ -547,103 +663,124 @@ function OverviewTab({ result, profile }: { result: AbiturResult; profile: Abitu
             style={{ width: `${Math.min(100, (einCount / 40) * 100)}%` }}
           />
         </div>
-      </div>
+      </button>
 
-      {/* Semester cards */}
+      {/* Semester cards — clickable to navigate */}
       <div>
         <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest mb-3">Halbjahre</p>
         <div className="grid grid-cols-2 gap-3">
           {result.semesterStats.map((ss) => (
-            <div key={ss.semester} className="rounded-2xl border border-border/40 p-4 space-y-3">
+            <button
+              key={ss.semester}
+              onClick={() => onNavigate(ss.semester)}
+              className="rounded-2xl border border-border/40 p-4 space-y-3 text-left hover:bg-foreground/[0.02] transition-colors group"
+            >
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold">{SEMESTER_LABELS[ss.semester]}</span>
-                <span className="text-[9px] text-muted-foreground/25 font-mono">
-                  {ss.enteredCount}/{ss.totalSubjects}
-                </span>
-              </div>
-              {/* Two averages side by side */}
-              <div className="flex items-end gap-3">
-                <div>
-                  <p className="text-xl font-bold tabular-nums leading-none">
-                    {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
-                  </p>
-                  <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø alle</p>
-                </div>
-                <div className="h-6 w-px bg-border/40" />
-                <div>
-                  <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
-                    {ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}
-                  </p>
-                  <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø eingeb.</p>
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] text-muted-foreground/25 font-mono">
+                    {ss.enteredCount}/{ss.totalSubjects}
+                  </span>
+                  <ChevronRight className="h-2.5 w-2.5 text-muted-foreground/15 group-hover:text-muted-foreground/30 transition-colors" />
                 </div>
               </div>
-              {/* Compact metadata */}
-              <div className="flex items-center gap-2">
-                <span className={cn(
-                  'text-[10px] font-mono tabular-nums',
-                  ss.deficits > 0 ? 'text-red-400' : 'text-muted-foreground/25'
-                )}>
-                  {ss.deficits} Def.
-                </span>
-                <span className="text-[10px] text-muted-foreground/20">·</span>
-                <span className="text-[10px] text-muted-foreground/25 font-mono">
-                  {ss.einbringungCount} eingeb.
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Hurdles */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Hürden</p>
-          {result.hurdles.every((h) => h.passed) ? (
-            <span className="text-[10px] text-emerald-500 font-medium">Alle bestanden</span>
-          ) : (
-            <span className="text-[10px] text-red-400 font-medium">
-              {result.hurdles.filter((h) => !h.passed).length} offen
-            </span>
-          )}
-        </div>
-        <div className="rounded-2xl border border-border/40 divide-y divide-border/30">
-          {result.hurdles.map((h) => (
-            <div
-              key={h.id}
-              className={cn(
-                'flex items-center gap-2.5 px-4 py-2.5 text-[12px]',
-                h.passed ? 'text-muted-foreground/40' : 'text-foreground'
+              {ss.enteredCount > 0 ? (
+                <>
+                  <div className="flex items-end gap-3">
+                    <div>
+                      <p className="text-xl font-bold tabular-nums leading-none">
+                        {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
+                      </p>
+                      <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø alle</p>
+                    </div>
+                    <div className="h-6 w-px bg-border/40" />
+                    <div>
+                      <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
+                        {ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}
+                      </p>
+                      <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø eingeb.</p>
+                    </div>
+                  </div>
+                  {ss.deficits > 0 && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] font-mono tabular-nums text-red-400">
+                        {ss.deficits} Defizit{ss.deficits !== 1 ? 'e' : ''}
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-[11px] text-muted-foreground/20 py-1">
+                  Noch keine Noten
+                </p>
               )}
-            >
-              <div className={cn(
-                'h-1.5 w-1.5 rounded-full shrink-0',
-                h.passed ? 'bg-emerald-500' : 'bg-red-500'
-              )} />
-              <span className="flex-1">{h.label}</span>
-              <span className="text-[10px] text-muted-foreground/30 font-mono tabular-nums">{h.description}</span>
-            </div>
+            </button>
           ))}
         </div>
       </div>
 
-      {/* Projection */}
-      <div className="rounded-2xl border border-border/40 p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <TrendingUp className="h-3.5 w-3.5 text-muted-foreground/30" strokeWidth={1.5} />
-          <span className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Prognose 1,0</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-foreground/[0.03] p-3 text-center">
-            <p className="text-xl font-bold tabular-nums">{projection.neededBlockIAvg.toFixed(1)}</p>
-            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider mt-1">Ø Noten</p>
+      {/* Hurdles — only show when there's data */}
+      {hasData && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Hürden</p>
+            {result.hurdles.every((h) => h.passed) ? (
+              <span className="text-[10px] text-emerald-500 font-medium">Alle bestanden</span>
+            ) : (
+              <span className="text-[10px] text-red-400 font-medium">
+                {result.hurdles.filter((h) => !h.passed).length} offen
+              </span>
+            )}
           </div>
-          <div className="rounded-xl bg-foreground/[0.03] p-3 text-center">
-            <p className="text-xl font-bold tabular-nums">{projection.neededExamAvg.toFixed(1)}</p>
-            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider mt-1">Ø Prüfungen</p>
+          <div className="rounded-2xl border border-border/40 divide-y divide-border/30">
+            {result.hurdles.map((h) => (
+              <div
+                key={h.id}
+                className={cn(
+                  'flex items-center gap-2.5 px-4 py-2.5 text-[12px]',
+                  h.passed ? 'text-muted-foreground/40' : 'text-foreground'
+                )}
+              >
+                <div className={cn(
+                  'h-1.5 w-1.5 rounded-full shrink-0',
+                  h.passed ? 'bg-emerald-500' : 'bg-red-500'
+                )} />
+                <span className="flex-1">{h.label}</span>
+                <span className="text-[10px] text-muted-foreground/30 font-mono tabular-nums">{h.description}</span>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Projection — only when enough data */}
+      {hasData && entered >= 4 && (
+        <div className="rounded-2xl border border-border/40 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="h-3.5 w-3.5 text-muted-foreground/30" strokeWidth={1.5} />
+            <span className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Prognose 1,0</span>
+          </div>
+          {(() => {
+            const projection = calculateNeededAverage(profile, 1.0);
+            return (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-foreground/[0.03] p-3 text-center">
+                  <p className={cn('text-xl font-bold tabular-nums', !projection.achievable && 'text-muted-foreground/30')}>
+                    {projection.achievable ? projection.neededBlockIAvg.toFixed(1) : '—'}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider mt-1">Ø Noten nötig</p>
+                </div>
+                <div className="rounded-xl bg-foreground/[0.03] p-3 text-center">
+                  <p className={cn('text-xl font-bold tabular-nums', !projection.achievable && 'text-muted-foreground/30')}>
+                    {projection.achievable ? projection.neededExamAvg.toFixed(1) : '—'}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider mt-1">Ø Prüfungen nötig</p>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Exams section */}
       <ExamsSection profile={profile} />
@@ -652,7 +789,7 @@ function OverviewTab({ result, profile }: { result: AbiturResult; profile: Abitu
 }
 
 // ═══════════════════════════════════════════════════════════
-// Semester Tab — grade grid + einbringung toggles
+// Semester Tab — grade entry per subject + einbringung toggles
 // ═══════════════════════════════════════════════════════════
 
 function SemesterTab({ semester, result, profile }: { semester: Semester; result: AbiturResult; profile: AbiturProfile }) {
@@ -662,49 +799,63 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
 
   return (
     <div className="space-y-6">
-      {/* Semester stats strip */}
+      {/* Semester header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold tracking-tight">{SEMESTER_LABELS[semester]}</h2>
           <p className="text-[11px] text-muted-foreground/40">
-            {ss.enteredCount} von {ss.totalSubjects} Noten eingetragen
+            {ss.enteredCount === 0
+              ? 'Trage deine Noten hier ein'
+              : `${ss.enteredCount} von ${ss.totalSubjects} Noten eingetragen`
+            }
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-xl font-bold tabular-nums leading-none">
-              {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
-            </p>
-            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø alle</p>
+        {ss.enteredCount > 0 && (
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-xl font-bold tabular-nums leading-none">
+                {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
+              </p>
+              <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø alle</p>
+            </div>
+            <div className="h-6 w-px bg-border/40" />
+            <div className="text-right">
+              <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
+                {ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}
+              </p>
+              <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø eingeb.</p>
+            </div>
           </div>
-          <div className="h-6 w-px bg-border/40" />
-          <div className="text-right">
-            <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
-              {ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}
-            </p>
-            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø eingeb.</p>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Compact counters */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
-          <CircleDot className="h-3 w-3 text-emerald-500" />
-          <span className="text-[11px] font-mono tabular-nums">{ss.einbringungCount}</span>
-          <span className="text-[10px] text-muted-foreground/30">eingeb.</span>
+      {/* Empty hint */}
+      {ss.enteredCount === 0 && (
+        <div className="rounded-xl bg-foreground/[0.02] border border-dashed border-border/40 p-4 text-center">
+          <PenLine className="h-4 w-4 text-muted-foreground/20 mx-auto mb-2" />
+          <p className="text-[12px] text-muted-foreground/30">
+            Klicke auf das <span className="font-mono text-muted-foreground/40">—</span> neben einem Fach, um die Punktzahl einzutragen
+          </p>
         </div>
-        <div className={cn(
-          'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5',
-          ss.deficits > 0 ? 'bg-red-500/10' : 'bg-foreground/[0.03]'
-        )}>
-          <Shield className={cn('h-3 w-3', ss.deficits > 0 ? 'text-red-400' : 'text-muted-foreground/30')} />
-          <span className={cn('text-[11px] font-mono tabular-nums', ss.deficits > 0 && 'text-red-400')}>
-            {ss.deficits}
-          </span>
-          <span className="text-[10px] text-muted-foreground/30">Defizite</span>
+      )}
+
+      {/* Compact counters — only show when data exists */}
+      {ss.enteredCount > 0 && (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
+            <CircleDot className="h-3 w-3 text-emerald-500" />
+            <span className="text-[11px] font-mono tabular-nums">{ss.einbringungCount}</span>
+            <span className="text-[10px] text-muted-foreground/30">eingeb.</span>
+          </div>
+          {ss.deficits > 0 && (
+            <div className="flex items-center gap-1.5 rounded-lg bg-red-500/10 px-2.5 py-1.5">
+              <Shield className="h-3 w-3 text-red-400" />
+              <span className="text-[11px] font-mono tabular-nums text-red-400">{ss.deficits}</span>
+              <span className="text-[10px] text-muted-foreground/30">Defizite</span>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Grade rows */}
       <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden">
@@ -747,7 +898,7 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
                 )}
               </button>
 
-              {/* Subject info */}
+              {/* Subject badge */}
               <div className={cn(
                 'h-7 w-7 rounded-lg flex items-center justify-center text-[9px] font-bold font-mono shrink-0',
                 FIELD_BG[subj.field],
@@ -847,6 +998,220 @@ function PointsInput({ value, onChange, dimmed }: { value: number | null; onChan
     >
       {value !== null ? value.toString().padStart(2, '0') : '—'}
     </button>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Subjects View — add/remove subjects after onboarding
+// ═══════════════════════════════════════════════════════════
+
+function SubjectsView() {
+  const profile = useAbiturStore((s) => s.profile);
+  const { setSubjects } = useAbiturStore();
+
+  const grouped = useMemo(() => {
+    const cats: Record<string, SubjectDefinition[]> = {};
+    ALL_SUBJECTS.forEach((s) => {
+      if (MANDATORY_IDS.includes(s.id)) return;
+      if (!cats[s.category]) cats[s.category] = [];
+      cats[s.category].push(s);
+    });
+    return cats;
+  }, []);
+
+  const toggle = (id: string) => {
+    if (MANDATORY_IDS.includes(id)) return;
+    // Don't allow removing LF or exam subjects
+    if (id === profile.leistungsfach) return;
+    if (profile.examSubjects.includes(id)) return;
+
+    const next = profile.subjects.includes(id)
+      ? profile.subjects.filter((s) => s !== id)
+      : [...profile.subjects, id];
+    setSubjects(next);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-[13px] font-medium">Fächer verwalten</p>
+        <p className="text-[11px] text-muted-foreground/40 mt-1">
+          {profile.subjects.length} Fächer gewählt · Pflicht-, LF- und Prüfungsfächer können nicht entfernt werden
+        </p>
+      </div>
+
+      {/* Currently selected — Pflicht */}
+      <SGroup title="Pflichtfächer (fest)">
+        {MANDATORY_IDS.map((id) => {
+          const s = getSubject(id);
+          if (!s) return null;
+          return (
+            <div key={id} className="flex items-center gap-3 px-4 py-3">
+              <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center text-[9px] font-bold font-mono shrink-0', FIELD_BG[s.field], FIELD_COLOR[s.field])}>
+                {s.shortName}
+              </div>
+              <span className="text-[12px] font-medium flex-1">{s.name}</span>
+              <Lock className="h-3 w-3 text-muted-foreground/20" />
+            </div>
+          );
+        })}
+      </SGroup>
+
+      {/* Optional subjects by category */}
+      {Object.entries(grouped).map(([cat, subs]) => (
+        <SGroup key={cat} title={CAT_LABELS[cat] || cat}>
+          {subs.map((s) => {
+            const active = profile.subjects.includes(s.id);
+            const locked = s.id === profile.leistungsfach || profile.examSubjects.includes(s.id);
+            return (
+              <button
+                key={s.id}
+                onClick={() => toggle(s.id)}
+                disabled={locked}
+                className={cn(
+                  'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
+                  active ? 'hover:bg-foreground/[0.02]' : 'opacity-40 hover:opacity-60',
+                  locked && 'cursor-not-allowed'
+                )}
+              >
+                <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center text-[9px] font-bold font-mono shrink-0', FIELD_BG[s.field], FIELD_COLOR[s.field])}>
+                  {s.shortName}
+                </div>
+                <span className="text-[12px] font-medium flex-1 truncate">{s.name}</span>
+                {locked ? (
+                  <Lock className="h-3 w-3 text-muted-foreground/20" />
+                ) : active ? (
+                  <div className="h-5 w-5 rounded-[5px] bg-emerald-500 border border-emerald-500 flex items-center justify-center">
+                    <Check className="h-3 w-3 text-white" />
+                  </div>
+                ) : (
+                  <div className="h-5 w-5 rounded-[5px] border border-border/50" />
+                )}
+              </button>
+            );
+          })}
+        </SGroup>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Einbringungen View — overview + toggle across all semesters
+// ═══════════════════════════════════════════════════════════
+
+function EinbringungenView({ profile }: { profile: AbiturProfile }) {
+  const { toggleEinbringung } = useAbiturStore();
+  const einCount = countAllEinbringungen(profile);
+  const subjects = profile.subjects.filter((id) => id !== 'psem');
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-[13px] font-medium">Einbringungen verwalten</p>
+        <p className="text-[11px] text-muted-foreground/40 mt-1">
+          Wähle welche Halbjahresleistungen in Block I eingehen
+        </p>
+      </div>
+
+      {/* Counter bar */}
+      <div className="rounded-2xl border border-border/40 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Gesamt</span>
+          <span className={cn('text-[13px] font-bold tabular-nums', einCount >= 40 ? 'text-emerald-500' : einCount < 40 ? 'text-amber-500' : 'text-foreground')}>
+            {einCount}<span className="text-muted-foreground/30 font-normal"> / 40</span>
+          </span>
+        </div>
+        <div className="h-1.5 rounded-full bg-foreground/[0.05] overflow-hidden">
+          <div
+            className={cn('h-full rounded-full transition-all duration-700', einCount >= 40 ? 'bg-emerald-500' : 'bg-amber-500')}
+            style={{ width: `${Math.min(100, (einCount / 40) * 100)}%` }}
+          />
+        </div>
+        {einCount < 40 && (
+          <p className="text-[10px] text-amber-500/60 mt-2">
+            Noch {40 - einCount} Einbringungen nötig
+          </p>
+        )}
+      </div>
+
+      {/* Subject × Semester grid */}
+      <div className="rounded-2xl border border-border/40 overflow-hidden">
+        {/* Header row */}
+        <div className="flex items-center gap-0 border-b border-border/30 bg-foreground/[0.02]">
+          <div className="w-[140px] px-4 py-2.5">
+            <span className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">Fach</span>
+          </div>
+          {SEMESTERS.map((sem) => (
+            <div key={sem} className="flex-1 text-center py-2.5">
+              <span className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">{SEMESTER_LABELS[sem]}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Subject rows */}
+        {subjects.map((subjectId) => {
+          const subj = getSubject(subjectId);
+          if (!subj) return null;
+          const mandatory = isMandatory(subjectId, profile);
+          const toggleable = canToggle(subjectId, profile);
+
+          return (
+            <div key={subjectId} className="flex items-center gap-0 border-b border-border/30 last:border-b-0">
+              <div className="w-[140px] px-4 py-2.5 flex items-center gap-2">
+                <div className={cn('h-5 w-5 rounded flex items-center justify-center text-[8px] font-bold font-mono shrink-0', FIELD_BG[subj.field], FIELD_COLOR[subj.field])}>
+                  {subj.shortName}
+                </div>
+                <span className="text-[11px] truncate">{subj.name}</span>
+              </div>
+              {SEMESTERS.map((sem) => {
+                const grade = profile.grades.find((g) => g.subjectId === subjectId && g.semester === sem);
+                const pts = grade?.points ?? null;
+                const eingebracht = isEingebracht(subjectId, sem, profile);
+
+                return (
+                  <div key={sem} className="flex-1 flex justify-center py-2.5">
+                    <button
+                      onClick={() => toggleable && toggleEinbringung(subjectId, sem)}
+                      disabled={!toggleable}
+                      className={cn(
+                        'h-7 w-10 rounded-lg flex items-center justify-center text-[11px] font-mono font-bold transition-all',
+                        eingebracht
+                          ? mandatory
+                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
+                            : 'bg-emerald-500 text-white'
+                          : pts !== null
+                            ? 'bg-foreground/[0.03] text-muted-foreground/25 hover:border-emerald-500/30 border border-transparent'
+                            : 'text-muted-foreground/10',
+                        !toggleable && 'cursor-not-allowed'
+                      )}
+                    >
+                      {pts !== null ? pts.toString().padStart(2, '0') : '·'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 text-[10px] text-muted-foreground/25">
+        <div className="flex items-center gap-1.5">
+          <div className="h-4 w-6 rounded bg-emerald-500 text-[8px] text-white font-mono flex items-center justify-center">08</div>
+          <span>Eingebracht</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="h-4 w-6 rounded bg-emerald-500/10 border border-emerald-500/20 text-[8px] text-emerald-500 font-mono flex items-center justify-center">08</div>
+          <span>Pflicht</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="h-4 w-6 rounded bg-foreground/[0.03] text-[8px] text-muted-foreground/25 font-mono flex items-center justify-center">08</div>
+          <span>Gestrichen</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
