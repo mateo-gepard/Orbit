@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Inbox,
   CheckSquare,
@@ -150,8 +150,14 @@ export default function DashboardPage() {
   const { user, loading, signInWithGoogle } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
 
-  // Selected date state - defaults to today
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  // Hydration-safe: avoid rendering date-dependent text during SSR
+  const [mounted, setMounted] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
   const isViewingToday = isToday(selectedDate);
   const isViewingPast = isPast(selectedDate) && !isToday(selectedDate);
@@ -202,7 +208,7 @@ export default function DashboardPage() {
     return { todayTasks, overdueItems, todayEvents, habits, activeProjects, goals, principles, totalActive };
   }, [items, selectedDateStr, isViewingPast, isViewingToday]);
 
-  if (loading) {
+  if (loading || !mounted) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-foreground/20 border-t-foreground/60" />
