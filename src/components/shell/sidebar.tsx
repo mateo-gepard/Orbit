@@ -11,7 +11,6 @@ import {
   FileText,
   Calendar,
   Archive,
-  Sun,
   X,
   LogOut,
   Plus,
@@ -39,7 +38,6 @@ const NAV_SECTIONS = [
   {
     items: [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { href: '/today', label: 'Today', icon: Sun },
       { href: '/tasks', label: 'Tasks', icon: CheckSquare },
     ],
   },

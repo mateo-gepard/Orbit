@@ -4,7 +4,6 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard,
-  Sun,
   Inbox,
   CheckSquare,
   Repeat,
@@ -16,7 +15,6 @@ import { useOrbitStore } from '@/lib/store';
 
 const TABS = [
   { href: '/', icon: LayoutDashboard, label: 'Home' },
-  { href: '/today', icon: Sun, label: 'Today' },
   { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { href: '/habits', icon: Repeat, label: 'Habits' },
   { href: '/notes', icon: FileText, label: 'Notes' },
