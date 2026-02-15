@@ -9,6 +9,7 @@ import {
   Repeat,
   PenLine,
   Link,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { BadgeCategory, EarnedBadge, BadgeTier } from '@/lib/badges';
@@ -26,178 +27,119 @@ const ICON_MAP: Record<string, typeof Flame> = {
   Link,
 };
 
-// ─── Tier visual order (for the subtle ring on stacked cards) ──
+// ─── Tier visual order ─────────────────────────────────────
 
 const TIER_ORDER: BadgeTier[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond'];
 
-// ─── Single Badge Card ─────────────────────────────────────
+// ─── Detect touch device ───────────────────────────────────
 
-function BadgeCard({
-  badge,
-  size = 'md',
-  showDetails = false,
-  className,
-}: {
-  badge: EarnedBadge;
-  size?: 'sm' | 'md';
-  showDetails?: boolean;
-  className?: string;
-}) {
-  const Icon = ICON_MAP[badge.icon] || Target;
-  const style = TIER_STYLES[badge.tier];
-
-  return (
-    <div
-      className={cn(
-        'relative flex flex-col items-center rounded-xl border transition-all',
-        style.bg,
-        style.border,
-        style.glow,
-        badge.earned ? 'opacity-100' : 'opacity-30',
-        size === 'sm' ? 'p-2.5 min-w-[72px]' : 'p-3.5 min-w-[88px]',
-        className
-      )}
-    >
-      {/* Tier indicator dot */}
-      <div
-        className={cn(
-          'absolute -top-1 -right-1 rounded-full border text-[8px] font-bold leading-none',
-          'flex items-center justify-center',
-          size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4',
-          badge.earned
-            ? cn(style.bg, style.border, style.text)
-            : 'bg-muted/50 border-border/40 text-muted-foreground/30'
-        )}
-      >
-        {TIER_ORDER.indexOf(badge.tier) + 1}
-      </div>
-
-      {/* Icon */}
-      <div
-        className={cn(
-          'flex items-center justify-center rounded-lg',
-          size === 'sm' ? 'h-7 w-7 mb-1.5' : 'h-9 w-9 mb-2',
-          badge.earned ? style.text : 'text-muted-foreground/20'
-        )}
-      >
-        <Icon className={size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'} strokeWidth={1.5} />
-      </div>
-
-      {/* Name */}
-      <span
-        className={cn(
-          'font-semibold text-center leading-tight',
-          size === 'sm' ? 'text-[10px]' : 'text-[11px]',
-          badge.earned ? 'text-foreground' : 'text-muted-foreground/30'
-        )}
-      >
-        {badge.name}
-      </span>
-
-      {/* Tier label */}
-      <span
-        className={cn(
-          'font-medium mt-0.5',
-          size === 'sm' ? 'text-[8px]' : 'text-[9px]',
-          badge.earned ? style.text : 'text-muted-foreground/20'
-        )}
-      >
-        {style.label}
-      </span>
-
-      {/* Details on hover expansion */}
-      {showDetails && (
-        <div className="mt-1.5 text-center">
-          <p
-            className={cn(
-              'text-[9px] leading-snug',
-              badge.earned ? 'text-muted-foreground/60' : 'text-muted-foreground/20'
-            )}
-          >
-            {badge.description}
-          </p>
-          {!badge.earned && (
-            <p className="text-[9px] text-muted-foreground/30 mt-1 tabular-nums">
-              {badge.current}/{badge.threshold}
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
+function isTouchDevice() {
+  if (typeof window === 'undefined') return false;
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
 
 // ─── Badge Stack (collapsed → expandable) ──────────────────
 
 export function BadgeStack({ category }: { category: BadgeCategory }) {
-  const [expanded, setExpanded] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
-  const [overlayPos, setOverlayPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const stackRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const hoverTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [visible, setVisible] = useState(false); // controls mount/unmount
+  const [animState, setAnimState] = useState<'entering' | 'open' | 'exiting'>('entering');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { highestEarned, badges } = category;
   const Icon = ICON_MAP[category.icon] || Target;
 
-  // Get stacked badges (show top earned + hints of lower tiers underneath)
   const earnedBadges = badges.filter((b) => b.earned);
   const hasAny = earnedBadges.length > 0;
 
-  // Smooth close with exit animation
-  const handleClose = useCallback(() => {
-    if (isClosing) return;
-    setIsClosing(true);
-    setTimeout(() => {
-      setExpanded(false);
-      setIsClosing(false);
-    }, 180);
-  }, [isClosing]);
+  // ── Open / Close helpers ──
 
-  const handleEnter = () => {
-    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
-    // If closing, cancel the close and reopen
-    if (isClosing) {
-      setIsClosing(false);
+  const open = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
     }
-    if (stackRef.current) {
-      const rect = stackRef.current.getBoundingClientRect();
-      setOverlayPos({
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
+    if (!visible) {
+      setAnimState('entering');
+      setVisible(true);
+      // Transition to 'open' on next frame so CSS transition triggers
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setAnimState('open'));
       });
+    } else if (animState === 'exiting') {
+      // Was closing — reverse it
+      setAnimState('open');
     }
-    setExpanded(true);
-  };
+  }, [visible, animState]);
 
-  const handleLeave = () => {
-    hoverTimeout.current = setTimeout(() => {
-      handleClose();
-    }, 200);
-  };
+  const close = useCallback(() => {
+    if (!visible || animState === 'exiting') return;
+    setAnimState('exiting');
+    closeTimer.current = setTimeout(() => {
+      setVisible(false);
+      setAnimState('entering');
+      closeTimer.current = null;
+    }, 200); // match CSS transition duration
+  }, [visible, animState]);
 
-  // Close on escape
+  const scheduleClose = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(close, 250);
+  }, [close]);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+
+  // Cleanup timer on unmount
   useEffect(() => {
-    if (!expanded) return;
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  // ── Keyboard: Escape to close ──
+  useEffect(() => {
+    if (!visible) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
+      if (e.key === 'Escape') close();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [expanded, handleClose]);
+  }, [visible, close]);
 
-  // Close on click outside (desktop only — backdrop handles mobile)
-  useEffect(() => {
-    if (!expanded) return;
-    const handler = (e: MouseEvent) => {
-      if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
-        handleClose();
-      }
-    };
-    window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
-  }, [expanded, handleClose]);
+  // ── Pointer-aware hover: track if pointer is over stack OR overlay ──
+  // We use a single ref-based approach: both the stack and the overlay
+  // call the same enter/leave with a debounced close.
+  const handlePointerEnterStack = useCallback(() => {
+    if (isTouchDevice()) return; // touch devices use click only
+    cancelClose();
+    open();
+  }, [cancelClose, open]);
+
+  const handlePointerLeaveStack = useCallback(() => {
+    if (isTouchDevice()) return;
+    scheduleClose();
+  }, [scheduleClose]);
+
+  const handlePointerEnterOverlay = useCallback(() => {
+    cancelClose();
+  }, [cancelClose]);
+
+  const handlePointerLeaveOverlay = useCallback(() => {
+    scheduleClose();
+  }, [scheduleClose]);
+
+  const handleClick = useCallback(() => {
+    if (visible) {
+      close();
+    } else {
+      open();
+    }
+  }, [visible, open, close]);
 
   const topStyle = highestEarned ? TIER_STYLES[highestEarned.tier] : null;
 
@@ -205,10 +147,10 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
     <>
       {/* Collapsed stack */}
       <div
-        ref={stackRef}
-        onMouseEnter={handleEnter}
-        onMouseLeave={handleLeave}
-        onClick={handleEnter}
+        ref={containerRef}
+        onPointerEnter={handlePointerEnterStack}
+        onPointerLeave={handlePointerLeaveStack}
+        onClick={handleClick}
         className="relative cursor-pointer group"
       >
         {/* Visual stack layers behind the top card */}
@@ -295,70 +237,67 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
       </div>
 
       {/* Expanded overlay */}
-      {expanded && (
+      {visible && (
         <>
-          {/* Backdrop blur */}
+          {/* Backdrop */}
           <div
             className={cn(
-              'fixed inset-0 z-[60] bg-background/60 backdrop-blur-sm transition-opacity duration-200',
-              isClosing ? 'opacity-0' : 'animate-in fade-in duration-200'
+              'fixed inset-0 z-[60] bg-background/60 backdrop-blur-sm',
+              'transition-opacity duration-200 ease-out',
+              animState === 'open' ? 'opacity-100' : 'opacity-0'
             )}
-            onClick={handleClose}
+            onClick={close}
           />
 
-          {/* Centered container for mobile, positioned for desktop */}
-          <div
-            className="fixed z-[70] inset-0 flex items-center justify-center pointer-events-none sm:block"
-          >
+          {/* Centered overlay container */}
+          <div className="fixed z-[70] inset-0 flex items-center justify-center pointer-events-none">
             <div
-              ref={overlayRef}
-              onMouseEnter={() => {
-                if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
-              }}
-              onMouseLeave={handleLeave}
+              onPointerEnter={handlePointerEnterOverlay}
+              onPointerLeave={handlePointerLeaveOverlay}
               className={cn(
-                'pointer-events-auto',
+                'pointer-events-auto relative',
                 'rounded-2xl border border-border/60 bg-card/95 backdrop-blur-xl',
                 'shadow-2xl shadow-black/10 dark:shadow-black/30',
                 'p-5 w-[calc(100vw-48px)] max-w-[320px]',
                 'transition-all duration-200 ease-out',
-                isClosing
-                  ? 'opacity-0 scale-95'
-                  : 'animate-in zoom-in-95 fade-in duration-200'
+                animState === 'open'
+                  ? 'opacity-100 scale-100 translate-y-0'
+                  : 'opacity-0 scale-95 translate-y-2'
               )}
-              style={
-                // Position near the stack on desktop (sm+), centered on mobile via flex parent
-                typeof window !== 'undefined' && window.innerWidth >= 640 && overlayPos
-                  ? {
-                      position: 'fixed' as const,
-                      top: `${Math.min(overlayPos.top - 20, window.innerHeight - 400)}px`,
-                      left: `${Math.max(overlayPos.left - 40, 16)}px`,
-                    }
-                  : undefined
-              }
             >
-            {/* Header */}
-            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border/40">
-              <div className={cn(
-                'flex items-center justify-center h-8 w-8 rounded-lg',
-                hasAny && topStyle ? cn(topStyle.bg, topStyle.text) : 'bg-foreground/[0.04] text-muted-foreground/40'
-              )}>
-                <Icon className="h-4 w-4" strokeWidth={1.5} />
-              </div>
-              <div>
-                <h3 className="text-[13px] font-semibold">{category.label}</h3>
-                <p className="text-[10px] text-muted-foreground/50">
-                  {earnedBadges.length}/{badges.length} unlocked
-                </p>
-              </div>
-            </div>
+              {/* Close button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); close(); }}
+                className={cn(
+                  'absolute top-3 right-3 p-1 rounded-lg transition-colors',
+                  'text-muted-foreground/40 hover:text-foreground hover:bg-foreground/5'
+                )}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
 
-            {/* All tiers */}
-            <div className="flex flex-col gap-2">
-              {badges.map((badge) => (
-                <BadgeTierRow key={badge.id} badge={badge} />
-              ))}
-            </div>
+              {/* Header */}
+              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border/40">
+                <div className={cn(
+                  'flex items-center justify-center h-8 w-8 rounded-lg',
+                  hasAny && topStyle ? cn(topStyle.bg, topStyle.text) : 'bg-foreground/[0.04] text-muted-foreground/40'
+                )}>
+                  <Icon className="h-4 w-4" strokeWidth={1.5} />
+                </div>
+                <div>
+                  <h3 className="text-[13px] font-semibold">{category.label}</h3>
+                  <p className="text-[10px] text-muted-foreground/50">
+                    {earnedBadges.length}/{badges.length} unlocked
+                  </p>
+                </div>
+              </div>
+
+              {/* All tiers */}
+              <div className="flex flex-col gap-2">
+                {badges.map((badge) => (
+                  <BadgeTierRow key={badge.id} badge={badge} />
+                ))}
+              </div>
             </div>
           </div>
         </>
