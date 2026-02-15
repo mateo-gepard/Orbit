@@ -1,9 +1,38 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Sparkles, X } from 'lucide-react';
-import type { Badge } from '@/lib/badges';
+import { 
+  Sparkles, 
+  X, 
+  Flame, 
+  CheckCircle2, 
+  FolderKanban, 
+  Repeat, 
+  Target, 
+  Award 
+} from 'lucide-react';
+import type { Badge, BadgeCategory } from '@/lib/badges';
 import { cn } from '@/lib/utils';
+
+// Helper to get the icon for a badge based on its category
+function getBadgeIcon(category: BadgeCategory) {
+  switch (category) {
+    case 'streak':
+      return Flame;
+    case 'tasks':
+      return CheckCircle2;
+    case 'projects':
+      return FolderKanban;
+    case 'habits':
+      return Repeat;
+    case 'goals':
+      return Target;
+    case 'special':
+      return Sparkles;
+    default:
+      return Award;
+  }
+}
 
 interface BadgeUnlockAnimationProps {
   badge: Badge | null;
@@ -66,10 +95,15 @@ export function BadgeUnlockAnimation({ badge, onClose }: BadgeUnlockAnimationPro
           </button>
 
           <div className="text-center space-y-4">
-            {/* Badge emoji with glow */}
+            {/* Badge icon with glow */}
             <div className="relative inline-block animate-bounce-slow">
               <div className="absolute inset-0 blur-2xl bg-yellow-400/30 rounded-full" />
-              <span className="relative text-7xl block animate-wiggle">{badge.emoji}</span>
+              <div className="relative w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-yellow-500/20 to-amber-500/20 flex items-center justify-center animate-wiggle">
+                {(() => {
+                  const Icon = getBadgeIcon(badge.category);
+                  return <Icon className="h-10 w-10 text-yellow-600 dark:text-yellow-400" strokeWidth={2} />;
+                })()}
+              </div>
             </div>
 
             {/* Title */}
