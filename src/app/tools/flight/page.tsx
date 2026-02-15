@@ -41,15 +41,16 @@ type FlightView = 'preflight' | 'inflight' | 'debrief';
 export default function FlightPage() {
   const { items } = useOrbitStore();
   const { user } = useAuth();
+  const [mounted, setMounted] = useState(false);
 
   // ── Preflight state ──
   const [duration, setDuration] = useState<FlightDuration>(50);
   const [route, setRoute] = useState<FlightRoute>(() => getRouteForDuration(50));
   const [tasks, setTasks] = useState<FlightTask[]>([]);
-  const [flightNumber] = useState(() => generateFlightNumber());
-  const [gateNumber] = useState(() => Math.floor(Math.random() * 40) + 1);
-  const [seatRow] = useState(() => Math.floor(Math.random() * 30) + 1);
-  const [seatLetter] = useState(() => ['A', 'B', 'C', 'D', 'E', 'F'][Math.floor(Math.random() * 6)]);
+  const [flightNumber, setFlightNumber] = useState('');
+  const [gateNumber, setGateNumber] = useState(0);
+  const [seatRow, setSeatRow] = useState(0);
+  const [seatLetter, setSeatLetter] = useState('');
   const [pickingAirport, setPickingAirport] = useState<'from' | 'to' | null>(null);
   const [addingTasks, setAddingTasks] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
@@ -66,17 +67,28 @@ export default function FlightPage() {
   const [debriefNextAction, setDebriefNextAction] = useState('');
   const [completedNormally, setCompletedNormally] = useState(true);
 
-  // Compute departure and arrival times from route flight time
+  // Generate random/time-dependent values only on the client to avoid hydration mismatch
+  useEffect(() => {
+    setFlightNumber(generateFlightNumber());
+    setGateNumber(Math.floor(Math.random() * 40) + 1);
+    setSeatRow(Math.floor(Math.random() * 30) + 1);
+    setSeatLetter(['A', 'B', 'C', 'D', 'E', 'F'][Math.floor(Math.random() * 6)]);
+    setMounted(true);
+  }, []);
+
+  // Compute departure and arrival times from route flight time (client only)
   const departureTime = useMemo(() => {
+    if (!mounted) return null;
     const now = new Date();
     // Departure is "now" rounded up to next 5 min
     const mins = now.getMinutes();
     const roundedMins = Math.ceil(mins / 5) * 5;
     now.setMinutes(roundedMins, 0, 0);
     return now;
-  }, []);
+  }, [mounted]);
 
   const arrivalTime = useMemo(() => {
+    if (!departureTime) return null;
     const arrival = new Date(departureTime.getTime() + route.realFlightMin * 60 * 1000);
     return arrival;
   }, [departureTime, route.realFlightMin]);
@@ -576,7 +588,7 @@ export default function FlightPage() {
               </p>
               <p className="text-[11px] text-muted-foreground/50 mt-0.5">{route.from.city}</p>
               <p className="text-[18px] font-bold tabular-nums mt-1.5 tracking-tight">
-                {formatClock(departureTime)}
+                {departureTime ? formatClock(departureTime) : '--:--'}
               </p>
             </button>
 
@@ -600,7 +612,7 @@ export default function FlightPage() {
               </p>
               <p className="text-[11px] text-muted-foreground/50 mt-0.5">{route.to.city}</p>
               <p className="text-[18px] font-bold tabular-nums mt-1.5 tracking-tight">
-                {formatClock(arrivalTime)}
+                {arrivalTime ? formatClock(arrivalTime) : '--:--'}
               </p>
             </button>
           </div>
@@ -647,7 +659,7 @@ export default function FlightPage() {
                 key={i}
                 className="bg-foreground rounded-[0.5px]"
                 style={{
-                  width: [1, 2, 3][Math.abs(flightNumber.charCodeAt(i % flightNumber.length) + i) % 3] + 'px',
+                  width: [1, 2, 3][Math.abs((flightNumber || 'OA').charCodeAt(i % (flightNumber.length || 1)) + i) % 3] + 'px',
                   height: '100%',
                 }}
               />
