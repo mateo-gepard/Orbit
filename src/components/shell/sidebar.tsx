@@ -19,7 +19,12 @@ import {
   Pencil,
   Trash2,
   Check,
+  Wrench,
+  Plane,
+  Route,
+  FileBarChart,
 } from 'lucide-react';
+import { useToolboxStore, TOOLS, type ToolId } from '@/lib/toolbox-store';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -78,6 +83,13 @@ export function Sidebar() {
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const allTags = getAllTags();
+
+  const TOOL_ICON_MAP: Record<ToolId, typeof Plane> = {
+    flight: Plane,
+    dispatch: Route,
+    briefing: FileBarChart,
+  };
+  const enabledTools = useToolboxStore((s) => s.getEnabledTools());
 
   useEffect(() => {
     if (isAddingTag) addInputRef.current?.focus();
@@ -203,6 +215,60 @@ export function Sidebar() {
               </div>
             </div>
           ))}
+
+          {/* Toolbox */}
+          <div className="mt-5">
+            <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+              Toolbox
+            </div>
+            <div className="space-y-0.5">
+              <Link
+                href="/toolbox"
+                onClick={() => setSidebarOpen(false)}
+                className={cn(
+                  'group flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-all',
+                  pathname === '/toolbox'
+                    ? 'bg-foreground/[0.06] text-foreground'
+                    : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
+                )}
+              >
+                <Wrench
+                  className={cn(
+                    'h-[15px] w-[15px] shrink-0 transition-colors',
+                    pathname === '/toolbox' ? 'text-foreground' : 'text-muted-foreground/70'
+                  )}
+                  strokeWidth={pathname === '/toolbox' ? 2 : 1.5}
+                />
+                <span className="flex-1">All Tools</span>
+              </Link>
+              {enabledTools.map((tool) => {
+                const Icon = TOOL_ICON_MAP[tool.id];
+                const isActive = pathname === tool.href;
+                return (
+                  <Link
+                    key={tool.id}
+                    href={tool.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={cn(
+                      'group flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-all',
+                      isActive
+                        ? 'bg-foreground/[0.06] text-foreground'
+                        : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <Icon
+                      className={cn(
+                        'h-[15px] w-[15px] shrink-0 transition-colors',
+                        isActive ? 'text-foreground' : 'text-muted-foreground/70'
+                      )}
+                      strokeWidth={isActive ? 2 : 1.5}
+                    />
+                    <span className="flex-1">{tool.name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Tags / Areas */}
           <div className="mt-5">

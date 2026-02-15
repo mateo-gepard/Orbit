@@ -9,6 +9,7 @@ import {
   Repeat,
   Plus,
   FileText,
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
@@ -18,6 +19,7 @@ const TABS = [
   { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { href: '/habits', icon: Repeat, label: 'Habits' },
   { href: '/notes', icon: FileText, label: 'Notes' },
+  { href: '/toolbox', icon: Wrench, label: 'Toolbox' },
 ];
 
 export function MobileNav() {
