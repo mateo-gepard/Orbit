@@ -1,11 +1,12 @@
 'use client';
 
-import { Component, type ReactNode, type ErrorInfo } from 'react';
+import { Component, type ReactNode, type ErrorInfo, useEffect } from 'react';
 import { ThemeProvider } from './theme-provider';
 import { AuthProvider } from './auth-provider';
 import { DataProvider } from './data-provider';
 import { PWAProvider } from './pwa-provider';
 import { AppShell } from '@/components/shell/app-shell';
+import { useToolboxStore } from '@/lib/toolbox-store';
 
 // ── Error Boundary ──
 interface ErrorBoundaryProps {
@@ -61,6 +62,11 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 // ── Root Providers ──
 export function Providers({ children }: { children: ReactNode }) {
+  // Rehydrate persisted stores on the client to avoid SSR mismatch
+  useEffect(() => {
+    useToolboxStore.persist.rehydrate();
+  }, []);
+
   return (
     <ErrorBoundary>
       <ThemeProvider>

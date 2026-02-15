@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -89,7 +89,11 @@ export function Sidebar() {
     dispatch: Route,
     briefing: FileBarChart,
   };
-  const enabledTools = useToolboxStore((s) => s.getEnabledTools());
+  const enabledToolIds = useToolboxStore((s) => s.enabledTools);
+  const enabledTools = useMemo(
+    () => TOOLS.filter((t) => enabledToolIds.includes(t.id)),
+    [enabledToolIds]
+  );
 
   useEffect(() => {
     if (isAddingTag) addInputRef.current?.focus();

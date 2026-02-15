@@ -89,6 +89,7 @@ export const useToolboxStore = create<ToolboxStore>()(
     {
       name: 'orbit-toolbox',
       partialize: (state) => ({ enabledTools: state.enabledTools }),
+      skipHydration: true,
     }
   )
 );
