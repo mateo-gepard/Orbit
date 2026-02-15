@@ -23,6 +23,7 @@ import {
   Plane,
   Route,
   FileBarChart,
+  GraduationCap,
 } from 'lucide-react';
 import { useToolboxStore, TOOLS, type ToolId } from '@/lib/toolbox-store';
 import { cn } from '@/lib/utils';
@@ -88,6 +89,7 @@ export function Sidebar() {
     flight: Plane,
     dispatch: Route,
     briefing: FileBarChart,
+    abitur: GraduationCap,
   };
   const enabledToolIds = useToolboxStore((s) => s.enabledTools);
   const enabledTools = useMemo(

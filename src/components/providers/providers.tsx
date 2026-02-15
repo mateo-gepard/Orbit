@@ -7,6 +7,7 @@ import { DataProvider } from './data-provider';
 import { PWAProvider } from './pwa-provider';
 import { AppShell } from '@/components/shell/app-shell';
 import { useToolboxStore } from '@/lib/toolbox-store';
+import { useAbiturStore } from '@/lib/abitur-store';
 
 // ── Error Boundary ──
 interface ErrorBoundaryProps {
@@ -65,6 +66,7 @@ export function Providers({ children }: { children: ReactNode }) {
   // Rehydrate persisted stores on the client to avoid SSR mismatch
   useEffect(() => {
     useToolboxStore.persist.rehydrate();
+    useAbiturStore.persist.rehydrate();
   }, []);
 
   return (

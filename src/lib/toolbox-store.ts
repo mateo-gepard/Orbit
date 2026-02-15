@@ -6,7 +6,7 @@ import { persist } from 'zustand/middleware';
 // Tools are high-quality extensions that behave like native tabs.
 // ═══════════════════════════════════════════════════════════
 
-export type ToolId = 'flight' | 'dispatch' | 'briefing';
+export type ToolId = 'flight' | 'dispatch' | 'briefing' | 'abitur';
 
 export interface ToolDefinition {
   id: ToolId;
@@ -52,6 +52,17 @@ export const TOOLS: ToolDefinition[] = [
     href: '/tools/briefing',
     color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-500/10 dark:bg-amber-400/10',
+  },
+  {
+    id: 'abitur',
+    name: 'Abitur',
+    tagline: 'Track your Abitur score — Bayern G9.',
+    description:
+      'Enter grades per Halbjahr, optimise Einbringung, simulate exam results, and see your projected Abiturnote in real time.',
+    icon: 'GraduationCap',
+    href: '/tools/abitur',
+    color: 'text-violet-600 dark:text-violet-400',
+    bgColor: 'bg-violet-500/10 dark:bg-violet-400/10',
   },
 ];
 
