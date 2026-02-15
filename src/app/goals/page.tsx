@@ -80,10 +80,59 @@ export default function GoalsPage() {
     return groups;
   }, [goals]);
 
-  // Group badges by category
-  const filteredBadges = useMemo(() => {
-    if (selectedCategory === 'all') return badges;
-    return badges.filter((b) => b.category === selectedCategory);
+  // Group badges by category and create stacks for progression
+  const badgeStacks = useMemo(() => {
+    const tierOrder: Record<string, number> = {
+      'diamond': 5,
+      'platinum': 4,
+      'gold': 3,
+      'silver': 2,
+      'bronze': 1,
+      '': 0, // No tier
+    };
+
+    let filtered = selectedCategory === 'all' ? badges : badges.filter((b) => b.category === selectedCategory);
+    
+    // Group badges by their base ID (strip tier info to find progressions)
+    // Badges with same category and similar names are part of same stack
+    const stacks: Badge[][] = [];
+    const processed = new Set<string>();
+    
+    // Define progression groups manually for known progressions
+    const progressionGroups: Record<string, string[]> = {
+      'streak-progression': ['streak-10', 'streak-30', 'streak-90', 'streak-180', 'streak-365'],
+      'tasks-progression': ['tasks-1', 'tasks-10', 'tasks-30', 'tasks-100', 'tasks-250', 'tasks-500'],
+      'projects-count': ['projects-1', 'projects-5', 'projects-10'],
+      'projects-complete': ['projects-complete-1', 'projects-complete-5'],
+      'habits-count': ['habits-1', 'habits-5'],
+      'habits-perfect': ['habits-perfect-week'],
+      'goals-count': ['goals-1', 'goals-5'],
+      'goals-complete': ['goals-complete-1'],
+      'special-time-early': ['special-early-bird'],
+      'special-time-night': ['special-night-owl'],
+      'special-week': ['special-week-warrior'],
+      'special-organizer': ['special-organizer'],
+    };
+
+    // Create stacks based on progression groups
+    Object.values(progressionGroups).forEach((group) => {
+      const stackBadges = filtered.filter((b) => group.includes(b.id));
+      if (stackBadges.length > 0) {
+        // Sort by tier (highest first)
+        stackBadges.sort((a, b) => (tierOrder[b.tier || ''] || 0) - (tierOrder[a.tier || ''] || 0));
+        stacks.push(stackBadges);
+        stackBadges.forEach((b) => processed.add(b.id));
+      }
+    });
+
+    // Add any remaining badges as individual stacks
+    filtered.forEach((badge) => {
+      if (!processed.has(badge.id)) {
+        stacks.push([badge]);
+      }
+    });
+
+    return stacks;
   }, [badges, selectedCategory]);
 
   const categories: { 
@@ -178,111 +227,167 @@ export default function GoalsPage() {
           </div>
         </div>
 
-        {/* Badges Grid */}
+        {/* Badges Grid - Stacked by Progression */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredBadges.map((badge) => {
-            const Icon = getBadgeIcon(badge.category);
-            const progressPercent = badge.requirement > 0 
-              ? Math.min((badge.progress / badge.requirement) * 100, 100) 
-              : 0;
+          {badgeStacks.map((stack, stackIndex) => {
+            // Find highest earned badge in stack
+            const earnedInStack = stack.filter((b) => b.isEarned);
+            const highestEarned = earnedInStack.length > 0 ? earnedInStack[0] : null;
+            const topBadge = highestEarned || stack[0]; // Show highest earned, or first if none earned
+            const Icon = getBadgeIcon(topBadge.category);
+            const hasProgression = stack.length > 1;
 
             return (
               <div
-                key={badge.id}
-                className={cn(
-                  'relative rounded-lg border p-4 transition-all group',
-                  badge.isEarned
-                    ? cn(
-                        'bg-gradient-to-br border-border/40 hover:border-border/60 cursor-pointer hover:shadow-md',
-                        badge.tier === 'bronze' && 'from-amber-50/30 to-orange-50/20 dark:from-amber-950/10 dark:to-orange-950/5',
-                        badge.tier === 'silver' && 'from-slate-50/30 to-zinc-50/20 dark:from-slate-950/10 dark:to-zinc-950/5',
-                        badge.tier === 'gold' && 'from-yellow-50/30 to-amber-50/20 dark:from-yellow-950/10 dark:to-amber-950/5',
-                        badge.tier === 'platinum' && 'from-cyan-50/30 to-blue-50/20 dark:from-cyan-950/10 dark:to-blue-950/5',
-                        badge.tier === 'diamond' && 'from-purple-50/30 to-pink-50/20 dark:from-purple-950/10 dark:to-pink-950/5',
-                        !badge.tier && 'from-foreground/[0.02] to-foreground/[0.01]'
-                      )
-                    : 'bg-card border-border/30 opacity-60'
-                )}
+                key={`stack-${stackIndex}`}
+                className="group/stack relative"
               >
-                {/* Lock icon for unearned badges */}
-                {!badge.isEarned && (
-                  <div className="absolute top-3 right-3">
-                    <Lock className="h-3.5 w-3.5 text-muted-foreground/30" strokeWidth={2} />
-                  </div>
-                )}
+                {/* Stack Container - Expands on hover */}
+                <div className={cn(
+                  "relative transition-all duration-300",
+                  hasProgression && "group-hover/stack:mb-[420px]" // Space for expanded cards
+                )}>
+                  {/* Background blur overlay when expanded */}
+                  {hasProgression && (
+                    <div className="fixed inset-0 bg-background/60 backdrop-blur-sm opacity-0 pointer-events-none group-hover/stack:opacity-100 group-hover/stack:pointer-events-auto transition-opacity duration-300 z-[5]" />
+                  )}
 
-                <div className="flex items-start gap-3">
-                  {/* Icon */}
-                  <div className={cn(
-                    'shrink-0 h-10 w-10 rounded-lg flex items-center justify-center transition-all',
-                    badge.isEarned
-                      ? cn(
-                          badge.tier === 'bronze' && 'bg-gradient-to-br from-amber-500/20 to-orange-500/20',
-                          badge.tier === 'silver' && 'bg-gradient-to-br from-slate-400/20 to-zinc-400/20',
-                          badge.tier === 'gold' && 'bg-gradient-to-br from-yellow-500/20 to-amber-500/20',
-                          badge.tier === 'platinum' && 'bg-gradient-to-br from-cyan-400/20 to-blue-500/20',
-                          badge.tier === 'diamond' && 'bg-gradient-to-br from-purple-500/20 to-pink-500/20',
-                          !badge.tier && 'bg-foreground/5'
-                        )
-                      : 'bg-foreground/5'
-                  )}>
-                    <Icon className={cn(
-                      'h-5 w-5',
-                      badge.isEarned ? 'text-foreground/70' : 'text-muted-foreground/40'
-                    )} strokeWidth={2} />
-                  </div>
+                  {/* Stacked badges */}
+                  {stack.map((badge, index) => {
+                    const isTop = index === 0;
+                    const progressPercent = badge.requirement > 0 
+                      ? Math.min((badge.progress / badge.requirement) * 100, 100) 
+                      : 0;
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div>
-                      <h3 className={cn(
-                        'text-[13px] font-semibold leading-tight',
-                        badge.isEarned ? 'text-foreground' : 'text-muted-foreground/70'
-                      )}>
-                        {badge.name}
-                      </h3>
-                      <p className="text-[11px] text-muted-foreground/60 leading-relaxed mt-0.5">
-                        {badge.description}
-                      </p>
-                    </div>
+                    return (
+                      <div
+                        key={badge.id}
+                        className={cn(
+                          'absolute inset-0 rounded-lg border p-4 transition-all duration-300',
+                          // Stacking effect when collapsed
+                          !hasProgression && 'relative',
+                          hasProgression && !isTop && 'group-hover/stack:relative',
+                          hasProgression && index === 0 && 'z-[10] relative',
+                          hasProgression && index === 1 && 'z-[9] group-hover/stack:z-[9]',
+                          hasProgression && index === 2 && 'z-[8] group-hover/stack:z-[8]',
+                          hasProgression && index === 3 && 'z-[7] group-hover/stack:z-[7]',
+                          hasProgression && index === 4 && 'z-[6] group-hover/stack:z-[6]',
+                          hasProgression && index === 5 && 'z-[5] group-hover/stack:z-[5]',
+                          // Offset when collapsed (creating stack visual)
+                          hasProgression && !isTop && `translate-y-${Math.min(index * 1, 3)} translate-x-${Math.min(index * 1, 3)}`,
+                          hasProgression && index === 1 && 'top-1 left-1 opacity-70 scale-[0.98]',
+                          hasProgression && index === 2 && 'top-2 left-2 opacity-50 scale-[0.96]',
+                          hasProgression && index >= 3 && 'top-3 left-3 opacity-30 scale-[0.94]',
+                          // Expand on hover
+                          hasProgression && 'group-hover/stack:top-0 group-hover/stack:left-0 group-hover/stack:opacity-100 group-hover/stack:scale-100',
+                          hasProgression && index > 0 && `group-hover/stack:translate-y-[${(index) * 110}px] group-hover/stack:translate-x-0`,
+                          // Styling
+                          badge.isEarned
+                            ? cn(
+                                'bg-gradient-to-br border-border/40 hover:border-border/60 cursor-pointer hover:shadow-md',
+                                badge.tier === 'bronze' && 'from-amber-50/30 to-orange-50/20 dark:from-amber-950/10 dark:to-orange-950/5',
+                                badge.tier === 'silver' && 'from-slate-50/30 to-zinc-50/20 dark:from-slate-950/10 dark:to-zinc-950/5',
+                                badge.tier === 'gold' && 'from-yellow-50/30 to-amber-50/20 dark:from-yellow-950/10 dark:to-amber-950/5',
+                                badge.tier === 'platinum' && 'from-cyan-50/30 to-blue-50/20 dark:from-cyan-950/10 dark:to-blue-950/5',
+                                badge.tier === 'diamond' && 'from-purple-50/30 to-pink-50/20 dark:from-purple-950/10 dark:to-pink-950/5',
+                                !badge.tier && 'from-foreground/[0.02] to-foreground/[0.01]'
+                              )
+                            : 'bg-card border-border/30 opacity-60'
+                        )}
+                        style={hasProgression && index > 0 ? {
+                          transitionDelay: `${index * 30}ms`
+                        } : undefined}
+                      >
+                        {/* Lock icon for unearned badges */}
+                        {!badge.isEarned && (
+                          <div className="absolute top-3 right-3">
+                            <Lock className="h-3.5 w-3.5 text-muted-foreground/30" strokeWidth={2} />
+                          </div>
+                        )}
 
-                    {/* Tier badge */}
-                    {badge.tier && (
-                      <div className={cn(
-                        "inline-block px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider",
-                        badge.tier === 'bronze' && 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-                        badge.tier === 'silver' && 'bg-slate-400/10 text-slate-700 dark:text-slate-400',
-                        badge.tier === 'gold' && 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400',
-                        badge.tier === 'platinum' && 'bg-cyan-400/10 text-cyan-700 dark:text-cyan-400',
-                        badge.tier === 'diamond' && 'bg-purple-500/10 text-purple-700 dark:text-purple-400',
-                      )}>
-                        {badge.tier}
-                      </div>
-                    )}
+                        <div className="flex items-start gap-3">
+                          {/* Icon */}
+                          <div className={cn(
+                            'shrink-0 h-10 w-10 rounded-lg flex items-center justify-center transition-all',
+                            badge.isEarned
+                              ? cn(
+                                  badge.tier === 'bronze' && 'bg-gradient-to-br from-amber-500/20 to-orange-500/20',
+                                  badge.tier === 'silver' && 'bg-gradient-to-br from-slate-400/20 to-zinc-400/20',
+                                  badge.tier === 'gold' && 'bg-gradient-to-br from-yellow-500/20 to-amber-500/20',
+                                  badge.tier === 'platinum' && 'bg-gradient-to-br from-cyan-400/20 to-blue-500/20',
+                                  badge.tier === 'diamond' && 'bg-gradient-to-br from-purple-500/20 to-pink-500/20',
+                                  !badge.tier && 'bg-foreground/5'
+                                )
+                              : 'bg-foreground/5'
+                          )}>
+                            <Icon className={cn(
+                              'h-5 w-5',
+                              badge.isEarned ? 'text-foreground/70' : 'text-muted-foreground/40'
+                            )} strokeWidth={2} />
+                          </div>
 
-                    {/* Progress bar for unearned badges */}
-                    {!badge.isEarned && badge.progress > 0 && (
-                      <div className="space-y-1 pt-1">
-                        <div className="h-1.5 rounded-full bg-foreground/[0.08] overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-foreground/30 transition-all"
-                            style={{ width: `${progressPercent}%` }}
-                          />
+                          {/* Content */}
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <div>
+                              <h3 className={cn(
+                                'text-[13px] font-semibold leading-tight',
+                                badge.isEarned ? 'text-foreground' : 'text-muted-foreground/70'
+                              )}>
+                                {badge.name}
+                              </h3>
+                              <p className="text-[11px] text-muted-foreground/60 leading-relaxed mt-0.5">
+                                {badge.description}
+                              </p>
+                            </div>
+
+                            {/* Tier badge */}
+                            {badge.tier && (
+                              <div className={cn(
+                                "inline-block px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider",
+                                badge.tier === 'bronze' && 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+                                badge.tier === 'silver' && 'bg-slate-400/10 text-slate-700 dark:text-slate-400',
+                                badge.tier === 'gold' && 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400',
+                                badge.tier === 'platinum' && 'bg-cyan-400/10 text-cyan-700 dark:text-cyan-400',
+                                badge.tier === 'diamond' && 'bg-purple-500/10 text-purple-700 dark:text-purple-400',
+                              )}>
+                                {badge.tier}
+                              </div>
+                            )}
+
+                            {/* Progress bar for unearned badges */}
+                            {!badge.isEarned && badge.progress > 0 && (
+                              <div className="space-y-1 pt-1">
+                                <div className="h-1.5 rounded-full bg-foreground/[0.08] overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-foreground/30 transition-all"
+                                    style={{ width: `${progressPercent}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-muted-foreground/50 tabular-nums">
+                                  {badge.progress} / {badge.requirement}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Earned status */}
+                            {badge.isEarned && (
+                              <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground/60">
+                                <CheckCircle2 className="h-3 w-3" strokeWidth={2.5} />
+                                <span>Unlocked</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-[10px] text-muted-foreground/50 tabular-nums">
-                          {badge.progress} / {badge.requirement}
-                        </span>
-                      </div>
-                    )}
 
-                    {/* Earned status */}
-                    {badge.isEarned && (
-                      <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground/60">
-                        <CheckCircle2 className="h-3 w-3" strokeWidth={2.5} />
-                        <span>Unlocked</span>
+                        {/* Stack indicator */}
+                        {hasProgression && isTop && (
+                          <div className="absolute bottom-2 right-2 text-[9px] text-muted-foreground/40 font-medium">
+                            {earnedInStack.length}/{stack.length}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -290,7 +395,7 @@ export default function GoalsPage() {
         </div>
 
         {/* Empty state */}
-        {filteredBadges.length === 0 && (
+        {badgeStacks.length === 0 && (
           <div className="text-center py-12 border border-border/40 rounded-lg bg-card">
             <Award className="h-8 w-8 mx-auto mb-2 text-muted-foreground/20" strokeWidth={1.5} />
             <p className="text-[13px] text-muted-foreground/50">
