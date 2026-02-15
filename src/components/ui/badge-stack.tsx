@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Flame,
   CheckSquare,
@@ -131,6 +131,7 @@ function BadgeCard({
 
 export function BadgeStack({ category }: { category: BadgeCategory }) {
   const [expanded, setExpanded] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [overlayPos, setOverlayPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const stackRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -143,8 +144,22 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
   const earnedBadges = badges.filter((b) => b.earned);
   const hasAny = earnedBadges.length > 0;
 
+  // Smooth close with exit animation
+  const handleClose = useCallback(() => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      setExpanded(false);
+      setIsClosing(false);
+    }, 180);
+  }, [isClosing]);
+
   const handleEnter = () => {
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+    // If closing, cancel the close and reopen
+    if (isClosing) {
+      setIsClosing(false);
+    }
     if (stackRef.current) {
       const rect = stackRef.current.getBoundingClientRect();
       setOverlayPos({
@@ -158,7 +173,7 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
 
   const handleLeave = () => {
     hoverTimeout.current = setTimeout(() => {
-      setExpanded(false);
+      handleClose();
     }, 200);
   };
 
@@ -166,23 +181,23 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
   useEffect(() => {
     if (!expanded) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setExpanded(false);
+      if (e.key === 'Escape') handleClose();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [expanded]);
+  }, [expanded, handleClose]);
 
-  // Close on click outside
+  // Close on click outside (desktop only — backdrop handles mobile)
   useEffect(() => {
     if (!expanded) return;
     const handler = (e: MouseEvent) => {
       if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
-        setExpanded(false);
+        handleClose();
       }
     };
     window.addEventListener('mousedown', handler);
     return () => window.removeEventListener('mousedown', handler);
-  }, [expanded]);
+  }, [expanded, handleClose]);
 
   const topStyle = highestEarned ? TIER_STYLES[highestEarned.tier] : null;
 
@@ -284,32 +299,44 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
         <>
           {/* Backdrop blur */}
           <div
-            className="fixed inset-0 z-[60] bg-background/60 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={() => setExpanded(false)}
+            className={cn(
+              'fixed inset-0 z-[60] bg-background/60 backdrop-blur-sm transition-opacity duration-200',
+              isClosing ? 'opacity-0' : 'animate-in fade-in duration-200'
+            )}
+            onClick={handleClose}
           />
 
-          {/* Expanded panel */}
+          {/* Centered container for mobile, positioned for desktop */}
           <div
-            ref={overlayRef}
-            onMouseEnter={() => {
-              if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
-            }}
-            onMouseLeave={handleLeave}
-            className={cn(
-              'fixed z-[70] animate-in zoom-in-95 fade-in duration-200',
-              'rounded-2xl border border-border/60 bg-card/95 backdrop-blur-xl',
-              'shadow-2xl shadow-black/10 dark:shadow-black/30',
-              'p-5 min-w-[280px] max-w-[320px]'
-            )}
-            style={{
-              top: overlayPos
-                ? `${Math.min(overlayPos.top - 20, window.innerHeight - 400)}px`
-                : '50%',
-              left: overlayPos
-                ? `${Math.max(overlayPos.left - 40, 16)}px`
-                : '50%',
-            }}
+            className="fixed z-[70] inset-0 flex items-center justify-center pointer-events-none sm:block"
           >
+            <div
+              ref={overlayRef}
+              onMouseEnter={() => {
+                if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+              }}
+              onMouseLeave={handleLeave}
+              className={cn(
+                'pointer-events-auto',
+                'rounded-2xl border border-border/60 bg-card/95 backdrop-blur-xl',
+                'shadow-2xl shadow-black/10 dark:shadow-black/30',
+                'p-5 w-[calc(100vw-48px)] max-w-[320px]',
+                'transition-all duration-200 ease-out',
+                isClosing
+                  ? 'opacity-0 scale-95'
+                  : 'animate-in zoom-in-95 fade-in duration-200'
+              )}
+              style={
+                // Position near the stack on desktop (sm+), centered on mobile via flex parent
+                typeof window !== 'undefined' && window.innerWidth >= 640 && overlayPos
+                  ? {
+                      position: 'fixed' as const,
+                      top: `${Math.min(overlayPos.top - 20, window.innerHeight - 400)}px`,
+                      left: `${Math.max(overlayPos.left - 40, 16)}px`,
+                    }
+                  : undefined
+              }
+            >
             {/* Header */}
             <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border/40">
               <div className={cn(
@@ -331,6 +358,7 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
               {badges.map((badge) => (
                 <BadgeTierRow key={badge.id} badge={badge} />
               ))}
+            </div>
             </div>
           </div>
         </>
