@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Flame,
   CheckSquare,
@@ -27,136 +27,57 @@ const ICON_MAP: Record<string, typeof Flame> = {
   Link,
 };
 
-// ─── Tier visual order ─────────────────────────────────────
-
-const TIER_ORDER: BadgeTier[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond'];
-
-// ─── Detect touch device ───────────────────────────────────
-
-function isTouchDevice() {
-  if (typeof window === 'undefined') return false;
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-}
-
-// ─── Badge Stack (collapsed → expandable) ──────────────────
+// ─── Badge Stack (collapsed → click-to-expand) ────────────
 
 export function BadgeStack({ category }: { category: BadgeCategory }) {
-  const [visible, setVisible] = useState(false); // controls mount/unmount
-  const [animState, setAnimState] = useState<'entering' | 'open' | 'exiting'>('entering');
-  const containerRef = useRef<HTMLDivElement>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false); // true once enter animation should start
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { highestEarned, badges } = category;
   const Icon = ICON_MAP[category.icon] || Target;
-
   const earnedBadges = badges.filter((b) => b.earned);
   const hasAny = earnedBadges.length > 0;
-
-  // ── Open / Close helpers ──
-
-  const open = useCallback(() => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-    if (!visible) {
-      setAnimState('entering');
-      setVisible(true);
-      // Transition to 'open' on next frame so CSS transition triggers
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setAnimState('open'));
-      });
-    } else if (animState === 'exiting') {
-      // Was closing — reverse it
-      setAnimState('open');
-    }
-  }, [visible, animState]);
-
-  const close = useCallback(() => {
-    if (!visible || animState === 'exiting') return;
-    setAnimState('exiting');
-    closeTimer.current = setTimeout(() => {
-      setVisible(false);
-      setAnimState('entering');
-      closeTimer.current = null;
-    }, 200); // match CSS transition duration
-  }, [visible, animState]);
-
-  const scheduleClose = useCallback(() => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    closeTimer.current = setTimeout(close, 250);
-  }, [close]);
-
-  const cancelClose = useCallback(() => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  }, []);
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current);
-    };
-  }, []);
-
-  // ── Keyboard: Escape to close ──
-  useEffect(() => {
-    if (!visible) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [visible, close]);
-
-  // ── Pointer-aware hover: track if pointer is over stack OR overlay ──
-  // We use a single ref-based approach: both the stack and the overlay
-  // call the same enter/leave with a debounced close.
-  const handlePointerEnterStack = useCallback(() => {
-    if (isTouchDevice()) return; // touch devices use click only
-    cancelClose();
-    open();
-  }, [cancelClose, open]);
-
-  const handlePointerLeaveStack = useCallback(() => {
-    if (isTouchDevice()) return;
-    scheduleClose();
-  }, [scheduleClose]);
-
-  const handlePointerEnterOverlay = useCallback(() => {
-    cancelClose();
-  }, [cancelClose]);
-
-  const handlePointerLeaveOverlay = useCallback(() => {
-    scheduleClose();
-  }, [scheduleClose]);
-
-  const handleClick = useCallback(() => {
-    if (visible) {
-      close();
-    } else {
-      open();
-    }
-  }, [visible, open, close]);
-
   const topStyle = highestEarned ? TIER_STYLES[highestEarned.tier] : null;
+
+  // When `open` becomes true, trigger enter animation on next frame
+  useEffect(() => {
+    if (open) {
+      // Double rAF so the DOM mounts with opacity-0, then transitions to opacity-100
+      requestAnimationFrame(() => requestAnimationFrame(() => setMounted(true)));
+    } else {
+      setMounted(false);
+    }
+  }, [open]);
+
+  // Cleanup
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+  }, []);
+
+  const handleClose = () => {
+    setMounted(false); // start exit animation
+    closeTimerRef.current = setTimeout(() => setOpen(false), 200);
+  };
+
+  // Escape to close
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   return (
     <>
-      {/* Collapsed stack */}
+      {/* Collapsed card — click to open */}
       <div
-        ref={containerRef}
-        onPointerEnter={handlePointerEnterStack}
-        onPointerLeave={handlePointerLeaveStack}
-        onClick={handleClick}
+        onClick={() => { if (!open) setOpen(true); }}
         className="relative cursor-pointer group"
       >
-        {/* Visual stack layers behind the top card */}
+        {/* Stacked card layers */}
         {hasAny && earnedBadges.length > 1 && (
           <>
-            {/* Bottom layer */}
             <div
               className={cn(
                 'absolute inset-x-1.5 -bottom-1 h-3 rounded-b-xl border border-t-0 opacity-30',
@@ -168,7 +89,6 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
                   : TIER_STYLES[earnedBadges[0].tier].bg
               )}
             />
-            {/* Middle layer */}
             <div
               className={cn(
                 'absolute inset-x-0.5 -bottom-0.5 h-2 rounded-b-xl border border-t-0 opacity-50',
@@ -179,7 +99,7 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
           </>
         )}
 
-        {/* Top badge (highest earned) or empty state */}
+        {/* Top card */}
         <div
           className={cn(
             'relative flex flex-col items-center rounded-xl border p-3.5 min-w-[88px] transition-all',
@@ -189,7 +109,6 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
               : 'bg-foreground/[0.02] border-border/40'
           )}
         >
-          {/* Tier dot */}
           {hasAny && highestEarned && (
             <div
               className={cn(
@@ -202,76 +121,55 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
             </div>
           )}
 
-          <div
-            className={cn(
-              'flex items-center justify-center h-9 w-9 mb-2',
-              hasAny && topStyle ? topStyle.text : 'text-muted-foreground/20'
-            )}
-          >
+          <div className={cn('flex items-center justify-center h-9 w-9 mb-2', hasAny && topStyle ? topStyle.text : 'text-muted-foreground/20')}>
             <Icon className="h-5 w-5" strokeWidth={1.5} />
           </div>
 
-          <span
-            className={cn(
-              'text-[11px] font-semibold text-center leading-tight',
-              hasAny ? 'text-foreground' : 'text-muted-foreground/30'
-            )}
-          >
+          <span className={cn('text-[11px] font-semibold text-center leading-tight', hasAny ? 'text-foreground' : 'text-muted-foreground/30')}>
             {hasAny && highestEarned ? highestEarned.name : category.label}
           </span>
 
-          <span
-            className={cn(
-              'text-[9px] font-medium mt-0.5',
-              hasAny && topStyle ? topStyle.text : 'text-muted-foreground/20'
-            )}
-          >
+          <span className={cn('text-[9px] font-medium mt-0.5', hasAny && topStyle ? topStyle.text : 'text-muted-foreground/20')}>
             {hasAny && highestEarned ? TIER_STYLES[highestEarned.tier].label : 'Locked'}
           </span>
 
-          {/* Category label */}
           <span className="text-[8px] text-muted-foreground/40 mt-1 font-medium uppercase tracking-wider">
             {category.label}
           </span>
         </div>
       </div>
 
-      {/* Expanded overlay */}
-      {visible && (
+      {/* Modal overlay — click to open, click backdrop / X / Escape to close */}
+      {open && (
         <>
           {/* Backdrop */}
           <div
             className={cn(
               'fixed inset-0 z-[60] bg-background/60 backdrop-blur-sm',
               'transition-opacity duration-200 ease-out',
-              animState === 'open' ? 'opacity-100' : 'opacity-0'
+              mounted ? 'opacity-100' : 'opacity-0'
             )}
-            onClick={close}
+            onClick={handleClose}
           />
 
-          {/* Centered overlay container */}
-          <div className="fixed z-[70] inset-0 flex items-center justify-center pointer-events-none">
+          {/* Panel */}
+          <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none p-6">
             <div
-              onPointerEnter={handlePointerEnterOverlay}
-              onPointerLeave={handlePointerLeaveOverlay}
               className={cn(
                 'pointer-events-auto relative',
                 'rounded-2xl border border-border/60 bg-card/95 backdrop-blur-xl',
                 'shadow-2xl shadow-black/10 dark:shadow-black/30',
-                'p-5 w-[calc(100vw-48px)] max-w-[320px]',
+                'p-5 w-full max-w-[320px]',
                 'transition-all duration-200 ease-out',
-                animState === 'open'
+                mounted
                   ? 'opacity-100 scale-100 translate-y-0'
                   : 'opacity-0 scale-95 translate-y-2'
               )}
             >
               {/* Close button */}
               <button
-                onClick={(e) => { e.stopPropagation(); close(); }}
-                className={cn(
-                  'absolute top-3 right-3 p-1 rounded-lg transition-colors',
-                  'text-muted-foreground/40 hover:text-foreground hover:bg-foreground/5'
-                )}
+                onClick={handleClose}
+                className="absolute top-3 right-3 p-1 rounded-lg transition-colors text-muted-foreground/40 hover:text-foreground hover:bg-foreground/5"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -292,7 +190,7 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
                 </div>
               </div>
 
-              {/* All tiers */}
+              {/* Tiers */}
               <div className="flex flex-col gap-2">
                 {badges.map((badge) => (
                   <BadgeTierRow key={badge.id} badge={badge} />
