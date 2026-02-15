@@ -11,6 +11,29 @@ import {
   createDefaultProfile,
   eKey,
 } from './abitur';
+import { saveToolData } from './firestore';
+
+// ═══════════════════════════════════════════════════════════
+// Debounced Firestore sync — saves after 500ms of inactivity
+// ═══════════════════════════════════════════════════════════
+
+let _syncUserId: string | null = null;
+let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleSave(profile: AbiturProfile) {
+  if (!_syncUserId) return;
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    if (!_syncUserId) return;
+    saveToolData(_syncUserId, 'abitur', { profile }).catch((err) => {
+      console.error('[ORBIT] Failed to save Abitur data:', err);
+    });
+  }, 500);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Store
+// ═══════════════════════════════════════════════════════════
 
 interface AbiturState {
   profile: AbiturProfile;
@@ -41,8 +64,22 @@ interface AbiturState {
   setSeminarPresentationPoints: (points: number | null) => void;
   setSeminarTopic: (title: string) => void;
 
+  // Sync
+  _setProfileFromCloud: (profile: AbiturProfile) => void;
+  _setSyncUserId: (userId: string | null) => void;
+
   // Reset
   resetProfile: () => void;
+}
+
+/** Helper: update profile and schedule Firestore save */
+function updateProfile(
+  s: AbiturState,
+  updater: (profile: AbiturProfile) => AbiturProfile
+): { profile: AbiturProfile } {
+  const profile = updater(s.profile);
+  scheduleSave(profile);
+  return { profile };
 }
 
 export const useAbiturStore = create<AbiturState>()(
@@ -51,24 +88,24 @@ export const useAbiturStore = create<AbiturState>()(
       profile: createDefaultProfile(),
 
       completeOnboarding: () =>
-        set((s) => ({ profile: { ...s.profile, onboardingComplete: true } })),
+        set((s) => updateProfile(s, (p) => ({ ...p, onboardingComplete: true }))),
 
       setStudentName: (name) =>
-        set((s) => ({ profile: { ...s.profile, studentName: name } })),
+        set((s) => updateProfile(s, (p) => ({ ...p, studentName: name }))),
 
       setSchoolYear: (year) =>
-        set((s) => ({ profile: { ...s.profile, schoolYear: year } })),
+        set((s) => updateProfile(s, (p) => ({ ...p, schoolYear: year }))),
 
       setCurrentSemester: (semester) =>
-        set((s) => ({ profile: { ...s.profile, currentSemester: semester } })),
+        set((s) => updateProfile(s, (p) => ({ ...p, currentSemester: semester }))),
 
       setLeistungsfach: (subjectId) =>
-        set((s) => ({ profile: { ...s.profile, leistungsfach: subjectId } })),
+        set((s) => updateProfile(s, (p) => ({ ...p, leistungsfach: subjectId }))),
 
       setSubjects: (subjectIds) =>
-        set((s) => {
-          const grades = s.profile.grades ?? [];
-          const einbringungen = s.profile.einbringungen ?? [];
+        set((s) => updateProfile(s, (p) => {
+          const grades = p.grades ?? [];
+          const einbringungen = p.einbringungen ?? [];
           const existing = new Set(grades.map((g) => `${g.subjectId}:${g.semester}`));
           const newGrades: SemesterGrade[] = [...grades];
           for (const sid of subjectIds) {
@@ -83,66 +120,74 @@ export const useAbiturStore = create<AbiturState>()(
             const [sid] = k.split(':');
             return subjectIds.includes(sid);
           });
-          return { profile: { ...s.profile, subjects: subjectIds, grades: filteredGrades, einbringungen: filteredEin } };
-        }),
+          return { ...p, subjects: subjectIds, grades: filteredGrades, einbringungen: filteredEin };
+        })),
 
       setGrade: (subjectId, semester, points) =>
-        set((s) => {
-          const grades = (s.profile.grades ?? []).map((g) =>
+        set((s) => updateProfile(s, (p) => {
+          const grades = (p.grades ?? []).map((g) =>
             g.subjectId === subjectId && g.semester === semester ? { ...g, points } : g
           );
           const exists = grades.some((g) => g.subjectId === subjectId && g.semester === semester);
           if (!exists) grades.push({ subjectId, semester, points });
-          return { profile: { ...s.profile, grades } };
-        }),
+          return { ...p, grades };
+        })),
 
       toggleEinbringung: (subjectId, semester) =>
-        set((s) => {
-          const current = s.profile.einbringungen ?? [];
+        set((s) => updateProfile(s, (p) => {
+          const current = p.einbringungen ?? [];
           const key = eKey(subjectId, semester);
           const has = current.includes(key);
           const einbringungen = has
             ? current.filter((k) => k !== key)
             : [...current, key];
-          return { profile: { ...s.profile, einbringungen } };
-        }),
-
-      setExamSubject: (index, subjectId) =>
-        set((s) => {
-          const subs = [...s.profile.examSubjects];
-          subs[index] = subjectId;
-          const exams = [...s.profile.exams];
-          if (exams[index]) exams[index] = { ...exams[index], subjectId };
-          return { profile: { ...s.profile, examSubjects: subs, exams } };
-        }),
-
-      setExamType: (index, examType) =>
-        set((s) => {
-          const exams = [...s.profile.exams];
-          if (exams[index]) exams[index] = { ...exams[index], examType };
-          return { profile: { ...s.profile, exams } };
-        }),
-
-      setExamPoints: (subjectId, points) =>
-        set((s) => ({
-          profile: {
-            ...s.profile,
-            exams: s.profile.exams.map((e) =>
-              e.subjectId === subjectId ? { ...e, points } : e
-            ),
-          },
+          return { ...p, einbringungen };
         })),
 
+      setExamSubject: (index, subjectId) =>
+        set((s) => updateProfile(s, (p) => {
+          const subs = [...p.examSubjects];
+          subs[index] = subjectId;
+          const exams = [...p.exams];
+          if (exams[index]) exams[index] = { ...exams[index], subjectId };
+          return { ...p, examSubjects: subs, exams };
+        })),
+
+      setExamType: (index, examType) =>
+        set((s) => updateProfile(s, (p) => {
+          const exams = [...p.exams];
+          if (exams[index]) exams[index] = { ...exams[index], examType };
+          return { ...p, exams };
+        })),
+
+      setExamPoints: (subjectId, points) =>
+        set((s) => updateProfile(s, (p) => ({
+          ...p,
+          exams: p.exams.map((e) =>
+            e.subjectId === subjectId ? { ...e, points } : e
+          ),
+        }))),
+
       setSeminarPaperPoints: (points) =>
-        set((s) => ({ profile: { ...s.profile, seminarPaperPoints: points } })),
+        set((s) => updateProfile(s, (p) => ({ ...p, seminarPaperPoints: points }))),
 
       setSeminarPresentationPoints: (points) =>
-        set((s) => ({ profile: { ...s.profile, seminarPresentationPoints: points } })),
+        set((s) => updateProfile(s, (p) => ({ ...p, seminarPresentationPoints: points }))),
 
       setSeminarTopic: (title) =>
-        set((s) => ({ profile: { ...s.profile, seminarTopicTitle: title } })),
+        set((s) => updateProfile(s, (p) => ({ ...p, seminarTopicTitle: title }))),
 
-      resetProfile: () => set({ profile: createDefaultProfile() }),
+      _setProfileFromCloud: (profile) => set({ profile }),
+
+      _setSyncUserId: (userId) => {
+        _syncUserId = userId;
+      },
+
+      resetProfile: () => {
+        const profile = createDefaultProfile();
+        scheduleSave(profile);
+        set({ profile });
+      },
     }),
     { name: 'orbit-abitur', skipHydration: true }
   )

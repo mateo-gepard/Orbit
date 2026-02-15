@@ -2,9 +2,13 @@
 
 import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { useAuth } from './auth-provider';
-import { subscribeToItems, subscribeToUserSettings } from '@/lib/firestore';
+import { subscribeToItems, subscribeToUserSettings, subscribeToToolData } from '@/lib/firestore';
 import { useOrbitStore } from '@/lib/store';
+import { useAbiturStore } from '@/lib/abitur-store';
+import { useToolboxStore } from '@/lib/toolbox-store';
 import { LoadingScreen } from '@/components/ui/loading-screen';
+import type { AbiturProfile } from '@/lib/abitur';
+import type { ToolId } from '@/lib/toolbox-store';
 
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -21,18 +25,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const reconnectAttempt = useRef(0);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubSettingsRef = useRef<(() => void) | null>(null);
+  const unsubToolDataRefs = useRef<(() => void)[]>([]);
   const loadingStartTime = useRef(Date.now());
 
   const connect = useCallback(() => {
     if (!user) {
       setItems([]);
       setSyncUserId(null);
+      useAbiturStore.getState()._setSyncUserId(null);
+      useToolboxStore.getState()._setSyncUserId(null);
       return;
     }
 
     try {
       // Set sync user ID for tag cloud sync
       setSyncUserId(user.uid);
+
+      // Set sync user IDs for tool stores
+      useAbiturStore.getState()._setSyncUserId(user.uid);
+      useToolboxStore.getState()._setSyncUserId(user.uid);
 
       // Cleanup previous subscriptions
       if (unsubscribeRef.current) {
@@ -43,12 +54,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
         unsubSettingsRef.current();
         unsubSettingsRef.current = null;
       }
+      for (const unsub of unsubToolDataRefs.current) {
+        unsub();
+      }
+      unsubToolDataRefs.current = [];
 
       // Subscribe to user settings (tags/areas)
       const unsubSettings = subscribeToUserSettings(user.uid, (settings) => {
         setTagsFromCloud(settings.customTags, settings.removedDefaultTags);
       });
       unsubSettingsRef.current = unsubSettings;
+
+      // Subscribe to Abitur tool data
+      const unsubAbitur = subscribeToToolData<{ profile: AbiturProfile }>(
+        user.uid,
+        'abitur',
+        (data) => {
+          if (data?.profile) {
+            useAbiturStore.getState()._setProfileFromCloud(data.profile);
+          }
+        },
+        () => {
+          const profile = useAbiturStore.getState().profile;
+          return profile.onboardingComplete ? { profile } : null;
+        }
+      );
+      unsubToolDataRefs.current.push(unsubAbitur);
+
+      // Subscribe to Toolbox tool data
+      const unsubToolbox = subscribeToToolData<{ enabledTools: ToolId[] }>(
+        user.uid,
+        'toolbox',
+        (data) => {
+          if (data?.enabledTools) {
+            useToolboxStore.getState()._setFromCloud(data.enabledTools);
+          }
+        },
+        () => {
+          const enabled = useToolboxStore.getState().enabledTools;
+          return enabled.length > 0 ? { enabledTools: enabled } : null;
+        }
+      );
+      unsubToolDataRefs.current.push(unsubToolbox);
 
       const unsubscribe = subscribeToItems(user.uid, (items) => {
         setItems(items);
@@ -94,6 +141,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         unsubSettingsRef.current();
         unsubSettingsRef.current = null;
       }
+      for (const unsub of unsubToolDataRefs.current) {
+        unsub();
+      }
+      unsubToolDataRefs.current = [];
     };
   }, [connect]);
 

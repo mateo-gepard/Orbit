@@ -692,3 +692,89 @@ export async function saveUserSettings(
     await setDoc(docRef, data, { merge: true });
   }, 'saveUserSettings');
 }
+
+// ═══════════════════════════════════════════════════════════
+// Tool Data (per-user tool state cloud sync)
+// ═══════════════════════════════════════════════════════════
+
+const TOOL_DATA_COLLECTION = 'toolData';
+
+/**
+ * Save tool data to Firestore.
+ * Doc ID = `${userId}_${toolId}` for simple per-user-per-tool storage.
+ */
+export async function saveToolData<T extends Record<string, unknown>>(
+  userId: string,
+  toolId: string,
+  data: T
+): Promise<void> {
+  const payload = { ...data, userId, toolId, updatedAt: Date.now() };
+
+  // Always save locally as fallback
+  try {
+    localStorage.setItem(`orbit-tool-${toolId}`, JSON.stringify(payload));
+  } catch { /* quota exceeded — ignore */ }
+
+  if (!isFirebaseAvailable()) return;
+
+  await withRetry(async () => {
+    const docRef = doc(getDb(), TOOL_DATA_COLLECTION, `${userId}_${toolId}`);
+    await setDoc(docRef, payload, { merge: true });
+  }, `saveToolData(${toolId})`);
+}
+
+/**
+ * Subscribe to tool data from Firestore.
+ * On first load, if no cloud doc exists, seeds Firestore with current local state.
+ */
+export function subscribeToToolData<T extends Record<string, unknown>>(
+  userId: string,
+  toolId: string,
+  callback: (data: T | null) => void,
+  getLocalState?: () => T | null
+): () => void {
+  const localKey = `orbit-tool-${toolId}`;
+
+  if (!isFirebaseAvailable()) {
+    // Local mode
+    try {
+      const stored = localStorage.getItem(localKey);
+      if (stored) {
+        callback(JSON.parse(stored) as T);
+      }
+    } catch { /* ignore */ }
+
+    const handler = (e: StorageEvent) => {
+      if (e.key === localKey && e.newValue) {
+        try { callback(JSON.parse(e.newValue) as T); } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }
+
+  const docRef = doc(getDb(), TOOL_DATA_COLLECTION, `${userId}_${toolId}`);
+  let isFirstSnapshot = true;
+
+  const unsubscribe = onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.data() as T);
+      } else if (isFirstSnapshot) {
+        // No cloud data yet — seed from local state if available
+        const local = getLocalState?.();
+        if (local) {
+          saveToolData(userId, toolId, local).catch(() => { /* ignore seed error */ });
+        }
+        // Don't call callback — keep current local state
+      }
+      isFirstSnapshot = false;
+    },
+    (error) => {
+      console.error(`[ORBIT] Tool data subscription error (${toolId}):`, error);
+    }
+  );
+
+  return unsubscribe;
+}

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { saveToolData } from './firestore';
 
 // ═══════════════════════════════════════════════════════════
 // ORBIT — Toolbox Store
@@ -66,12 +67,27 @@ export const TOOLS: ToolDefinition[] = [
   },
 ];
 
+// ═══════════════════════════════════════════════════════════
+// Sync
+// ═══════════════════════════════════════════════════════════
+
+let _syncUserId: string | null = null;
+
+function scheduleSave(enabledTools: ToolId[]) {
+  if (!_syncUserId) return;
+  saveToolData(_syncUserId, 'toolbox', { enabledTools }).catch((err) => {
+    console.error('[ORBIT] Failed to save Toolbox data:', err);
+  });
+}
+
 interface ToolboxStore {
   enabledTools: ToolId[];
   enableTool: (id: ToolId) => void;
   disableTool: (id: ToolId) => void;
   isToolEnabled: (id: ToolId) => boolean;
   getEnabledTools: () => ToolDefinition[];
+  _setFromCloud: (enabledTools: ToolId[]) => void;
+  _setSyncUserId: (userId: string | null) => void;
 }
 
 export const useToolboxStore = create<ToolboxStore>()(
@@ -82,12 +98,16 @@ export const useToolboxStore = create<ToolboxStore>()(
       enableTool: (id) => {
         const current = get().enabledTools;
         if (!current.includes(id)) {
-          set({ enabledTools: [...current, id] });
+          const next = [...current, id];
+          set({ enabledTools: next });
+          scheduleSave(next);
         }
       },
 
       disableTool: (id) => {
-        set({ enabledTools: get().enabledTools.filter((t) => t !== id) });
+        const next = get().enabledTools.filter((t) => t !== id);
+        set({ enabledTools: next });
+        scheduleSave(next);
       },
 
       isToolEnabled: (id) => get().enabledTools.includes(id),
@@ -95,6 +115,12 @@ export const useToolboxStore = create<ToolboxStore>()(
       getEnabledTools: () => {
         const enabled = get().enabledTools;
         return TOOLS.filter((t) => enabled.includes(t.id));
+      },
+
+      _setFromCloud: (enabledTools) => set({ enabledTools }),
+
+      _setSyncUserId: (userId) => {
+        _syncUserId = userId;
       },
     }),
     {
