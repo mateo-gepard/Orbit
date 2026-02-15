@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAbiturStore } from '@/lib/abitur-store';
 import {
   ALL_SUBJECTS,
@@ -15,16 +15,12 @@ import {
   countAllEinbringungen,
   calculateAbitur,
   calculateNeededAverage,
-  checkFieldCoverage,
   getPointsColor,
   getPointsBg,
   isDeficit,
-  pointsToGrade,
   type AbiturProfile,
   type AbiturResult,
 } from '@/lib/abitur';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import {
   GraduationCap,
@@ -32,17 +28,36 @@ import {
   ChevronLeft,
   Check,
   Lock,
-  AlertTriangle,
-  CheckCircle2,
   TrendingUp,
-  Target,
-  BarChart3,
-  BookOpen,
   Settings,
-  XCircle,
-  Info,
   ArrowLeft,
+  Sparkles,
+  Shield,
+  Layers,
+  PenLine,
+  CircleDot,
 } from 'lucide-react';
+
+// ─── Field color accents ───────────────────────────────────
+
+const FIELD_COLOR: Record<number, string> = {
+  1: 'text-violet-400',
+  2: 'text-amber-400',
+  3: 'text-sky-400',
+  0: 'text-muted-foreground/40',
+};
+const FIELD_BG: Record<number, string> = {
+  1: 'bg-violet-500/10',
+  2: 'bg-amber-500/10',
+  3: 'bg-sky-500/10',
+  0: 'bg-foreground/[0.03]',
+};
+const FIELD_LABEL: Record<number, string> = {
+  1: 'sprachlich',
+  2: 'gesellschaftsw.',
+  3: 'naturwiss.',
+  0: 'frei',
+};
 
 // ═══════════════════════════════════════════════════════════
 // Main Page
@@ -50,13 +65,12 @@ import {
 
 export default function AbiturPage() {
   const profile = useAbiturStore((s) => s.profile);
-
   if (!profile.onboardingComplete) return <OnboardingWizard />;
   return <AbiturDashboard />;
 }
 
 // ═══════════════════════════════════════════════════════════
-// Onboarding Wizard
+// Onboarding Wizard — Immersive full-screen flow
 // ═══════════════════════════════════════════════════════════
 
 function OnboardingWizard() {
@@ -76,9 +90,8 @@ function OnboardingWizard() {
     const cats: Record<string, SubjectDefinition[]> = {};
     ALL_SUBJECTS.forEach((s) => {
       if (mandatoryIds.includes(s.id)) return;
-      const c = s.category;
-      if (!cats[c]) cats[c] = [];
-      cats[c].push(s);
+      if (!cats[s.category]) cats[s.category] = [];
+      cats[s.category].push(s);
     });
     return cats;
   }, []);
@@ -87,9 +100,8 @@ function OnboardingWizard() {
     language: 'Sprachen',
     art: 'Musische Fächer',
     social: 'Gesellschaftswiss.',
-    stem: 'Naturwiss. & Mathe',
+    stem: 'MINT',
     sport: 'Sport',
-    seminar: 'Seminare',
   };
 
   const toggleSubject = (id: string) => {
@@ -107,187 +119,266 @@ function OnboardingWizard() {
     completeOnboarding();
   };
 
-  const steps = [
-    // Step 0: Welcome
-    <div key="welcome" className="flex flex-col items-center gap-6 text-center">
-      <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
-        <GraduationCap className="h-10 w-10 text-primary" />
-      </div>
-      <div>
-        <h2 className="text-2xl font-bold">Abitur Tracker</h2>
-        <p className="text-muted-foreground mt-2 max-w-md">
-          Behalte den Überblick über deine Qualifikationsphase. Wähle deine Fächer, Prüfungen und verwalte deine Einbringungen.
-        </p>
-      </div>
-    </div>,
-
-    // Step 1: Select subjects
-    <div key="subjects" className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-xl font-bold">Deine Fächer</h2>
-        <p className="text-sm text-muted-foreground">Pflichtfächer sind vorausgewählt</p>
-      </div>
-      <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
-        {Object.entries(groupedOptional).map(([cat, subs]) => (
-          <div key={cat}>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-              {catLabels[cat] || cat}
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {subs.map((s) => {
-                const selected = selectedSubjects.includes(s.id);
-                const mandatory = mandatoryIds.includes(s.id);
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => toggleSubject(s.id)}
-                    disabled={mandatory}
-                    className={cn(
-                      'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all text-left',
-                      selected
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border hover:border-primary/50',
-                      mandatory && 'opacity-60 cursor-not-allowed'
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        'h-4 w-4 rounded border flex items-center justify-center shrink-0',
-                        selected ? 'bg-primary border-primary' : 'border-muted-foreground/40'
-                      )}
-                    >
-                      {selected && <Check className="h-3 w-3 text-primary-foreground" />}
-                    </div>
-                    <span className="truncate">{s.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>,
-
-    // Step 2: Leistungsfach
-    <div key="lf" className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-xl font-bold">Leistungsfach (LF)</h2>
-        <p className="text-sm text-muted-foreground">
-          Dein 3. schriftliches Abiturfach neben Deutsch und Mathematik
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto pr-2">
-        {lfOptions
-          .filter((s) => selectedSubjects.includes(s.id))
-          .map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setLf(s.id)}
-              className={cn(
-                'rounded-lg border px-3 py-3 text-sm transition-all text-left',
-                lf === s.id
-                  ? 'border-primary bg-primary/10 text-primary font-medium'
-                  : 'border-border hover:border-primary/50'
-              )}
-            >
-              {s.name}
-            </button>
-          ))}
-      </div>
-    </div>,
-
-    // Step 3: Colloquium subjects (4th + 5th exam)
-    <div key="exams" className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-xl font-bold">Kolloquiumsfächer</h2>
-        <p className="text-sm text-muted-foreground">
-          Wähle dein 4. und 5. Prüfungsfach (mündlich)
-        </p>
-      </div>
-      {[
-        { label: '4. Prüfungsfach', val: exam4, setVal: setExam4 },
-        { label: '5. Prüfungsfach', val: exam5, setVal: setExam5 },
-      ].map((row) => (
-        <div key={row.label} className="space-y-2">
-          <p className="text-sm font-medium">{row.label}</p>
-          <div className="grid grid-cols-2 gap-2 max-h-[20vh] overflow-y-auto pr-1">
-            {selectedSubjects
-              .filter((id) => id !== 'deu' && id !== 'mat' && id !== lf && id !== 'wsem' && id !== 'psem')
-              .filter((id) => id !== (row === arguments[0] ? exam5 : exam4))
-              .map((id) => {
-                const s = getSubject(id);
-                if (!s) return null;
-                return (
-                  <button
-                    key={id}
-                    onClick={() => row.setVal(id)}
-                    className={cn(
-                      'rounded-lg border px-3 py-2 text-sm transition-all text-left',
-                      row.val === id
-                        ? 'border-primary bg-primary/10 text-primary font-medium'
-                        : 'border-border hover:border-primary/50'
-                    )}
-                  >
-                    {s.name}
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-      ))}
-    </div>,
-  ];
-
   const canNext =
     step === 0 ||
     (step === 1 && selectedSubjects.length >= 8) ||
     (step === 2 && lf !== '') ||
     (step === 3 && exam4 !== '' && exam5 !== '');
 
+  const stepTitles = ['', 'Fächerwahl', 'Leistungsfach', 'Kolloquien'];
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] p-4">
-      <Card className="w-full max-w-lg">
-        <CardContent className="pt-6 pb-4 space-y-6">
-          {/* Progress */}
-          <div className="flex items-center gap-1 justify-center">
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className={cn(
-                  'h-1.5 rounded-full transition-all',
-                  i <= step ? 'bg-primary w-8' : 'bg-muted w-4'
-                )}
-              />
+    <div className="flex flex-col min-h-screen bg-background">
+      {/* Top strip */}
+      <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <GraduationCap className="h-3.5 w-3.5 text-emerald-500" strokeWidth={1.5} />
+          <span className="text-[11px] font-mono text-muted-foreground/50">ABITUR SETUP</span>
+          {step > 0 && (
+            <span className="text-[11px] text-muted-foreground/30">
+              · {stepTitles[step]}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className={cn(
+                'h-1 rounded-full transition-all duration-500',
+                i <= step ? 'bg-emerald-500 w-6' : 'bg-foreground/[0.06] w-3'
+              )}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 lg:px-8 py-8">
+        {step === 0 && (
+          <div className="text-center max-w-md space-y-6">
+            <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-emerald-500/10 mb-2">
+              <GraduationCap className="h-8 w-8 text-emerald-500" strokeWidth={1.5} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Qualifikationsphase</h1>
+              <p className="text-[13px] text-muted-foreground/50 mt-2 leading-relaxed">
+                Dein persönlicher Abiturrechner. Noten eintragen, Einbringungen verwalten, Schnitte pro Halbjahr tracken.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-6 pt-2">
+              {[
+                { icon: Layers, label: 'Halbjahre' },
+                { icon: CircleDot, label: 'Einbringungen' },
+                { icon: Shield, label: 'Hürden' },
+              ].map((f) => (
+                <div key={f.label} className="flex flex-col items-center gap-1.5">
+                  <div className="h-9 w-9 rounded-xl bg-foreground/[0.04] flex items-center justify-center">
+                    <f.icon className="h-4 w-4 text-muted-foreground/40" strokeWidth={1.5} />
+                  </div>
+                  <span className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">{f.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === 1 && (
+          <div className="w-full max-w-lg space-y-5">
+            <div className="text-center">
+              <h2 className="text-lg font-semibold tracking-tight">Deine Fächer</h2>
+              <p className="text-[11px] text-muted-foreground/40 mt-1">
+                Pflichtfächer vorausgewählt · {selectedSubjects.length} gewählt
+              </p>
+            </div>
+            <div className="space-y-5 max-h-[55vh] overflow-y-auto pr-1">
+              {Object.entries(groupedOptional).map(([cat, subs]) => (
+                <div key={cat}>
+                  <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest mb-2">
+                    {catLabels[cat] || cat}
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {subs.map((s) => {
+                      const selected = selectedSubjects.includes(s.id);
+                      const mandatory = mandatoryIds.includes(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => toggleSubject(s.id)}
+                          disabled={mandatory}
+                          className={cn(
+                            'flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[12px] text-left transition-all',
+                            selected
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                              : 'hover:bg-foreground/[0.03] text-muted-foreground/60',
+                            mandatory && 'opacity-40 cursor-not-allowed'
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'h-4 w-4 rounded-[5px] border flex items-center justify-center shrink-0 transition-all',
+                              selected
+                                ? 'bg-emerald-500 border-emerald-500'
+                                : 'border-border/60'
+                            )}
+                          >
+                            {selected && (
+                              <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 16 16" fill="none">
+                                <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </div>
+                          <span className="truncate">{s.name}</span>
+                          <span className={cn('ml-auto text-[9px] font-mono', FIELD_COLOR[s.field])}>
+                            {s.shortName}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="w-full max-w-md space-y-5">
+            <div className="text-center">
+              <h2 className="text-lg font-semibold tracking-tight">Leistungsfach</h2>
+              <p className="text-[11px] text-muted-foreground/40 mt-1">
+                Dein 3. schriftliches Abiturfach
+              </p>
+            </div>
+            <div className="space-y-1.5 max-h-[55vh] overflow-y-auto pr-1">
+              {lfOptions
+                .filter((s) => selectedSubjects.includes(s.id))
+                .map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setLf(s.id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left transition-all',
+                      lf === s.id
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
+                        : 'hover:bg-foreground/[0.03] text-muted-foreground/70'
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'h-8 w-8 rounded-lg flex items-center justify-center text-[11px] font-bold font-mono',
+                        lf === s.id ? 'bg-emerald-500/20 text-emerald-500' : FIELD_BG[s.field],
+                        lf !== s.id && FIELD_COLOR[s.field]
+                      )}
+                    >
+                      {s.shortName}
+                    </div>
+                    <div className="flex-1">
+                      <p>{s.name}</p>
+                      <p className="text-[10px] text-muted-foreground/30">
+                        Aufgabenfeld {s.field || '—'} · {s.hoursPerWeek}h/Woche
+                      </p>
+                    </div>
+                    {lf === s.id && (
+                      <div className="h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                        <Check className="h-3 w-3 text-white" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="w-full max-w-md space-y-6">
+            <div className="text-center">
+              <h2 className="text-lg font-semibold tracking-tight">Kolloquiumsfächer</h2>
+              <p className="text-[11px] text-muted-foreground/40 mt-1">
+                4. und 5. Prüfungsfach (mündlich)
+              </p>
+            </div>
+            {[
+              { label: '4. Prüfung', val: exam4, setVal: setExam4, other: exam5 },
+              { label: '5. Prüfung', val: exam5, setVal: setExam5, other: exam4 },
+            ].map((row) => (
+              <div key={row.label}>
+                <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest mb-2">
+                  {row.label}
+                </p>
+                <div className="grid grid-cols-2 gap-1.5 max-h-[22vh] overflow-y-auto pr-1">
+                  {selectedSubjects
+                    .filter((id) => id !== 'deu' && id !== 'mat' && id !== lf && id !== 'wsem' && id !== 'psem' && id !== row.other)
+                    .map((id) => {
+                      const s = getSubject(id);
+                      if (!s) return null;
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => row.setVal(id)}
+                          className={cn(
+                            'rounded-xl px-3 py-2.5 text-[12px] text-left transition-all',
+                            row.val === id
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
+                              : 'hover:bg-foreground/[0.03] text-muted-foreground/60'
+                          )}
+                        >
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
             ))}
           </div>
+        )}
+      </div>
 
-          {steps[step]}
-
-          {/* Nav */}
-          <div className="flex items-center justify-between pt-2">
-            <Button
-              variant="ghost"
-              onClick={() => setStep((s) => s - 1)}
-              disabled={step === 0}
-              size="sm"
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Zurück
-            </Button>
-            {step < 3 ? (
-              <Button onClick={() => setStep((s) => s + 1)} disabled={!canNext} size="sm">
-                Weiter
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            ) : (
-              <Button onClick={finish} disabled={!canNext} size="sm">
-                <Check className="h-4 w-4 mr-1" />
-                Fertig
-              </Button>
+      {/* Bottom nav */}
+      <div className="px-4 lg:px-8 py-4 border-t border-border/30 flex items-center justify-between">
+        <button
+          onClick={() => setStep((s) => s - 1)}
+          disabled={step === 0}
+          className={cn(
+            'flex items-center gap-1 text-[12px] transition-colors',
+            step === 0
+              ? 'text-muted-foreground/20 cursor-not-allowed'
+              : 'text-muted-foreground/50 hover:text-foreground'
+          )}
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Zurück
+        </button>
+        {step < 3 ? (
+          <button
+            onClick={() => setStep((s) => s + 1)}
+            disabled={!canNext}
+            className={cn(
+              'flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-medium transition-all active:scale-95',
+              canNext
+                ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-600/20'
+                : 'bg-foreground/[0.05] text-muted-foreground/30 cursor-not-allowed'
             )}
-          </div>
-        </CardContent>
-      </Card>
+          >
+            Weiter
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        ) : (
+          <button
+            onClick={finish}
+            disabled={!canNext}
+            className={cn(
+              'flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-medium transition-all active:scale-95',
+              canNext
+                ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-600/20'
+                : 'bg-foreground/[0.05] text-muted-foreground/30 cursor-not-allowed'
+            )}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Starten
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -304,26 +395,47 @@ function AbiturDashboard() {
 
   const result = useMemo(() => calculateAbitur(profile), [profile]);
 
-  return (
-    <div className="max-w-4xl mx-auto p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-            <GraduationCap className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">Abitur Tracker</h1>
-            <p className="text-xs text-muted-foreground">{profile.schoolYear}</p>
-          </div>
+  if (view === 'settings') {
+    return (
+      <div className="flex flex-col min-h-screen bg-background">
+        <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center gap-2">
+          <button
+            onClick={() => setView('overview')}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-3 w-3" />
+          </button>
+          <GraduationCap className="h-3.5 w-3.5 text-emerald-500" strokeWidth={1.5} />
+          <span className="text-[11px] font-mono text-muted-foreground/50">EINSTELLUNGEN</span>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => setView('settings')}>
-          <Settings className="h-4 w-4" />
-        </Button>
+        <div className="flex-1 px-4 lg:px-8 py-6 max-w-2xl mx-auto w-full">
+          <SettingsView />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen bg-background">
+      {/* Flight-strip header */}
+      <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <GraduationCap className="h-3.5 w-3.5 text-emerald-500" strokeWidth={1.5} />
+          <span className="text-[11px] font-mono text-muted-foreground/50">ABITUR</span>
+          <span className="text-[11px] text-muted-foreground/30">
+            · {profile.schoolYear}
+          </span>
+        </div>
+        <button
+          onClick={() => setView('settings')}
+          className="text-muted-foreground/30 hover:text-foreground transition-colors"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 bg-muted/50 rounded-xl p-1 overflow-x-auto">
+      <div className="px-4 lg:px-8 py-2 border-b border-border/30 flex items-center gap-1 overflow-x-auto">
         <TabBtn active={view === 'overview'} onClick={() => setView('overview')}>
           Gesamt
         </TabBtn>
@@ -335,13 +447,13 @@ function AbiturDashboard() {
       </div>
 
       {/* Content */}
-      {view === 'settings' ? (
-        <SettingsView onBack={() => setView('overview')} />
-      ) : view === 'overview' ? (
-        <OverviewTab result={result} profile={profile} />
-      ) : (
-        <SemesterTab semester={view as Semester} result={result} profile={profile} />
-      )}
+      <div className="flex-1 px-4 lg:px-8 py-6 max-w-2xl mx-auto w-full">
+        {view === 'overview' ? (
+          <OverviewTab result={result} profile={profile} />
+        ) : (
+          <SemesterTab semester={view as Semester} result={result} profile={profile} />
+        )}
+      </div>
     </div>
   );
 }
@@ -351,8 +463,10 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
     <button
       onClick={onClick}
       className={cn(
-        'px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap',
-        active ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
+        'px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all whitespace-nowrap',
+        active
+          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          : 'text-muted-foreground/40 hover:text-foreground/70 hover:bg-foreground/[0.03]'
       )}
     >
       {children}
@@ -361,88 +475,175 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 }
 
 // ═══════════════════════════════════════════════════════════
-// Overview Tab
+// Overview Tab — the hero view
 // ═══════════════════════════════════════════════════════════
 
 function OverviewTab({ result, profile }: { result: AbiturResult; profile: AbiturProfile }) {
   const projection = useMemo(() => calculateNeededAverage(profile, 1.0), [profile]);
   const einCount = countAllEinbringungen(profile);
+  const pct = Math.round((result.totalPoints / result.maxPoints) * 100);
 
   return (
-    <div className="space-y-4">
-      {/* Score Hero */}
-      <Card>
-        <CardContent className="pt-6 pb-5">
-          <div className="text-center space-y-1">
-            <p className="text-5xl font-black tracking-tight">{result.finalGrade.toFixed(1)}</p>
-            <p className="text-sm text-muted-foreground">
-              {result.totalPoints} / {result.maxPoints} Punkte
-            </p>
+    <div className="space-y-8">
+      {/* Grade hero — centered, dominant */}
+      <div className="flex flex-col items-center pt-2 pb-4">
+        {/* Circular grade display */}
+        <div className="relative h-32 w-32 flex items-center justify-center">
+          {/* Background ring */}
+          <svg className="absolute inset-0" viewBox="0 0 128 128">
+            <circle cx="64" cy="64" r="56" fill="none" stroke="currentColor" strokeWidth="3" className="text-foreground/[0.04]" />
+            <circle
+              cx="64" cy="64" r="56" fill="none" strokeWidth="3"
+              className={cn(result.passed ? 'text-emerald-500' : 'text-amber-500')}
+              strokeLinecap="round"
+              strokeDasharray={`${pct * 3.52} 352`}
+              strokeDashoffset="0"
+              transform="rotate(-90 64 64)"
+              style={{ transition: 'stroke-dasharray 1s ease' }}
+            />
+          </svg>
+          <div className="text-center">
+            <p className="text-4xl font-black tabular-nums tracking-tight">{result.finalGrade.toFixed(1)}</p>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest mt-0.5">Note</p>
           </div>
-          <div className="grid grid-cols-2 gap-3 mt-5">
-            <MiniStat label="Block I" value={`${result.blockI.totalPoints}`} sub={`/ ${result.blockI.maxPoints}`} ok={result.blockI.passed} />
-            <MiniStat label="Block II" value={`${result.blockII.totalPoints}`} sub={`/ ${result.blockII.maxPoints}`} ok={result.blockII.passed} />
-          </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Einbringungen count */}
-      <Card>
-        <CardContent className="py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Einbringungen</span>
-          </div>
-          <span className={cn('text-sm font-bold', einCount >= 40 ? 'text-emerald-500' : 'text-amber-500')}>
-            {einCount} / 40
-          </span>
-        </CardContent>
-      </Card>
+        <p className="text-[12px] text-muted-foreground/40 mt-3 tabular-nums font-mono">
+          {result.totalPoints} / {result.maxPoints} Punkte
+        </p>
+      </div>
 
-      {/* Semester overview cards */}
+      {/* Block I + II strip */}
       <div className="grid grid-cols-2 gap-3">
-        {result.semesterStats.map((ss) => (
-          <Card key={ss.semester}>
-            <CardContent className="py-4 space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground">{SEMESTER_LABELS[ss.semester]}</p>
-              <div className="flex items-end gap-2">
-                <p className="text-2xl font-bold">{ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}</p>
-                <p className="text-xs text-muted-foreground mb-1">Ø Alle</p>
+        <div className={cn(
+          'rounded-2xl border p-4 text-center',
+          result.blockI.passed ? 'border-emerald-500/20 bg-emerald-500/[0.03]' : 'border-red-500/20 bg-red-500/[0.03]'
+        )}>
+          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">Block I</p>
+          <p className="text-2xl font-bold tabular-nums mt-1">{result.blockI.totalPoints}</p>
+          <p className="text-[10px] text-muted-foreground/30 font-mono mt-0.5">/ {result.blockI.maxPoints}</p>
+        </div>
+        <div className={cn(
+          'rounded-2xl border p-4 text-center',
+          result.blockII.passed ? 'border-emerald-500/20 bg-emerald-500/[0.03]' : 'border-red-500/20 bg-red-500/[0.03]'
+        )}>
+          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest">Block II</p>
+          <p className="text-2xl font-bold tabular-nums mt-1">{result.blockII.totalPoints}</p>
+          <p className="text-[10px] text-muted-foreground/30 font-mono mt-0.5">/ {result.blockII.maxPoints}</p>
+        </div>
+      </div>
+
+      {/* Einbringungen bar */}
+      <div className="rounded-2xl border border-border/40 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Einbringungen</span>
+          <span className={cn('text-[13px] font-bold tabular-nums', einCount >= 40 ? 'text-emerald-500' : 'text-amber-500')}>
+            {einCount}<span className="text-muted-foreground/30 font-normal"> / 40</span>
+          </span>
+        </div>
+        <div className="h-1.5 rounded-full bg-foreground/[0.05] overflow-hidden">
+          <div
+            className={cn('h-full rounded-full transition-all duration-700', einCount >= 40 ? 'bg-emerald-500' : 'bg-amber-500')}
+            style={{ width: `${Math.min(100, (einCount / 40) * 100)}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Semester cards */}
+      <div>
+        <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest mb-3">Halbjahre</p>
+        <div className="grid grid-cols-2 gap-3">
+          {result.semesterStats.map((ss) => (
+            <div key={ss.semester} className="rounded-2xl border border-border/40 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold">{SEMESTER_LABELS[ss.semester]}</span>
+                <span className="text-[9px] text-muted-foreground/25 font-mono">
+                  {ss.enteredCount}/{ss.totalSubjects}
+                </span>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-muted-foreground">Ø Eingebrachte:</span>
-                <span className="font-medium">{ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}</span>
+              {/* Two averages side by side */}
+              <div className="flex items-end gap-3">
+                <div>
+                  <p className="text-xl font-bold tabular-nums leading-none">
+                    {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
+                  </p>
+                  <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø alle</p>
+                </div>
+                <div className="h-6 w-px bg-border/40" />
+                <div>
+                  <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
+                    {ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}
+                  </p>
+                  <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø eingeb.</p>
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {ss.enteredCount}/{ss.totalSubjects} Noten · {ss.einbringungCount} eingebracht · {ss.deficits} Defizite
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+              {/* Compact metadata */}
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  'text-[10px] font-mono tabular-nums',
+                  ss.deficits > 0 ? 'text-red-400' : 'text-muted-foreground/25'
+                )}>
+                  {ss.deficits} Def.
+                </span>
+                <span className="text-[10px] text-muted-foreground/20">·</span>
+                <span className="text-[10px] text-muted-foreground/25 font-mono">
+                  {ss.einbringungCount} eingeb.
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Hurdles */}
-      <HurdlesSection hurdles={result.hurdles} />
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Hürden</p>
+          {result.hurdles.every((h) => h.passed) ? (
+            <span className="text-[10px] text-emerald-500 font-medium">Alle bestanden</span>
+          ) : (
+            <span className="text-[10px] text-red-400 font-medium">
+              {result.hurdles.filter((h) => !h.passed).length} offen
+            </span>
+          )}
+        </div>
+        <div className="rounded-2xl border border-border/40 divide-y divide-border/30">
+          {result.hurdles.map((h) => (
+            <div
+              key={h.id}
+              className={cn(
+                'flex items-center gap-2.5 px-4 py-2.5 text-[12px]',
+                h.passed ? 'text-muted-foreground/40' : 'text-foreground'
+              )}
+            >
+              <div className={cn(
+                'h-1.5 w-1.5 rounded-full shrink-0',
+                h.passed ? 'bg-emerald-500' : 'bg-red-500'
+              )} />
+              <span className="flex-1">{h.label}</span>
+              <span className="text-[10px] text-muted-foreground/30 font-mono tabular-nums">{h.description}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Projection */}
-      <Card>
-        <CardContent className="py-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-medium">Prognose für 1,0</p>
+      <div className="rounded-2xl border border-border/40 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <TrendingUp className="h-3.5 w-3.5 text-muted-foreground/30" strokeWidth={1.5} />
+          <span className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Prognose 1,0</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-foreground/[0.03] p-3 text-center">
+            <p className="text-xl font-bold tabular-nums">{projection.neededBlockIAvg.toFixed(1)}</p>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider mt-1">Ø Noten</p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="text-center p-2 rounded-lg bg-muted/50">
-              <p className="text-lg font-bold">{projection.neededBlockIAvg.toFixed(1)}</p>
-              <p className="text-xs text-muted-foreground">Ø Noten nötig</p>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-muted/50">
-              <p className="text-lg font-bold">{projection.neededExamAvg.toFixed(1)}</p>
-              <p className="text-xs text-muted-foreground">Ø Prüfungen nötig</p>
-            </div>
+          <div className="rounded-xl bg-foreground/[0.03] p-3 text-center">
+            <p className="text-xl font-bold tabular-nums">{projection.neededExamAvg.toFixed(1)}</p>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider mt-1">Ø Prüfungen</p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Exams section */}
       <ExamsSection profile={profile} />
@@ -450,112 +651,157 @@ function OverviewTab({ result, profile }: { result: AbiturResult; profile: Abitu
   );
 }
 
-function MiniStat({ label, value, sub, ok }: { label: string; value: string; sub: string; ok: boolean }) {
-  return (
-    <div className={cn('rounded-lg p-3 text-center', ok ? 'bg-emerald-500/10' : 'bg-red-500/10')}>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-xl font-bold">
-        {value} <span className="text-xs font-normal text-muted-foreground">{sub}</span>
-      </p>
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════
-// Semester Tab
+// Semester Tab — grade grid + einbringung toggles
 // ═══════════════════════════════════════════════════════════
 
 function SemesterTab({ semester, result, profile }: { semester: Semester; result: AbiturResult; profile: AbiturProfile }) {
   const ss = result.semesterStats.find((s) => s.semester === semester)!;
   const { setGrade, toggleEinbringung } = useAbiturStore();
-
   const subjects = profile.subjects.filter((id) => id !== 'psem');
 
   return (
-    <div className="space-y-4">
-      {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="py-3 text-center">
-            <p className="text-2xl font-bold">{ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}</p>
-            <p className="text-xs text-muted-foreground">Ø Alle</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3 text-center">
-            <p className="text-2xl font-bold">{ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}</p>
-            <p className="text-xs text-muted-foreground">Ø Eingebr.</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3 text-center">
-            <p className={cn('text-2xl font-bold', ss.deficits > 0 ? 'text-red-500' : 'text-emerald-500')}>{ss.deficits}</p>
-            <p className="text-xs text-muted-foreground">Defizite</p>
-          </CardContent>
-        </Card>
+    <div className="space-y-6">
+      {/* Semester stats strip */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold tracking-tight">{SEMESTER_LABELS[semester]}</h2>
+          <p className="text-[11px] text-muted-foreground/40">
+            {ss.enteredCount} von {ss.totalSubjects} Noten eingetragen
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-xl font-bold tabular-nums leading-none">
+              {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
+            </p>
+            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø alle</p>
+          </div>
+          <div className="h-6 w-px bg-border/40" />
+          <div className="text-right">
+            <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
+              {ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}
+            </p>
+            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø eingeb.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Compact counters */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
+          <CircleDot className="h-3 w-3 text-emerald-500" />
+          <span className="text-[11px] font-mono tabular-nums">{ss.einbringungCount}</span>
+          <span className="text-[10px] text-muted-foreground/30">eingeb.</span>
+        </div>
+        <div className={cn(
+          'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5',
+          ss.deficits > 0 ? 'bg-red-500/10' : 'bg-foreground/[0.03]'
+        )}>
+          <Shield className={cn('h-3 w-3', ss.deficits > 0 ? 'text-red-400' : 'text-muted-foreground/30')} />
+          <span className={cn('text-[11px] font-mono tabular-nums', ss.deficits > 0 && 'text-red-400')}>
+            {ss.deficits}
+          </span>
+          <span className="text-[10px] text-muted-foreground/30">Defizite</span>
+        </div>
       </div>
 
       {/* Grade rows */}
-      <Card>
-        <CardContent className="py-2 divide-y divide-border">
-          {subjects.map((subjectId) => {
-            const subj = getSubject(subjectId);
-            if (!subj) return null;
-            const grade = profile.grades.find((g) => g.subjectId === subjectId && g.semester === semester);
-            const pts = grade?.points ?? null;
-            const mandatory = isMandatory(subjectId, profile);
-            const eingebracht = isEingebracht(subjectId, semester, profile);
-            const toggleable = canToggle(subjectId, profile);
+      <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden">
+        {subjects.map((subjectId) => {
+          const subj = getSubject(subjectId);
+          if (!subj) return null;
+          const grade = profile.grades.find((g) => g.subjectId === subjectId && g.semester === semester);
+          const pts = grade?.points ?? null;
+          const mandatory = isMandatory(subjectId, profile);
+          const eingebracht = isEingebracht(subjectId, semester, profile);
+          const toggleable = canToggle(subjectId, profile);
 
-            return (
-              <div key={subjectId} className="flex items-center gap-3 py-2.5">
-                {/* Einbringung toggle */}
-                <button
-                  onClick={() => toggleable && toggleEinbringung(subjectId, semester)}
-                  disabled={!toggleable}
-                  className={cn(
-                    'h-5 w-5 rounded border flex items-center justify-center shrink-0 transition-all',
-                    eingebracht
-                      ? mandatory
-                        ? 'bg-primary/20 border-primary/40'
-                        : 'bg-primary border-primary'
-                      : 'border-muted-foreground/30 hover:border-primary/50',
-                    !toggleable && 'cursor-not-allowed'
-                  )}
-                  title={mandatory ? 'Pflichteinbringung' : eingebracht ? 'Eingebracht (klicken zum Entfernen)' : 'Nicht eingebracht (klicken zum Einbringen)'}
-                >
-                  {eingebracht && (mandatory ? <Lock className="h-3 w-3 text-primary" /> : <Check className="h-3 w-3 text-primary-foreground" />)}
-                </button>
+          return (
+            <div
+              key={subjectId}
+              className={cn(
+                'flex items-center gap-3 px-4 py-3 transition-colors',
+                !eingebracht && pts !== null && 'bg-foreground/[0.01]'
+              )}
+            >
+              {/* Einbringung toggle */}
+              <button
+                onClick={() => toggleable && toggleEinbringung(subjectId, semester)}
+                disabled={!toggleable}
+                className={cn(
+                  'h-5 w-5 rounded-[5px] border flex items-center justify-center shrink-0 transition-all',
+                  eingebracht
+                    ? mandatory
+                      ? 'bg-emerald-500/15 border-emerald-500/30'
+                      : 'bg-emerald-500 border-emerald-500'
+                    : 'border-border/50 hover:border-emerald-500/40',
+                  !toggleable && 'cursor-not-allowed'
+                )}
+              >
+                {eingebracht && mandatory && <Lock className="h-2.5 w-2.5 text-emerald-500" />}
+                {eingebracht && !mandatory && (
+                  <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 16 16" fill="none">
+                    <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
 
-                {/* Subject name */}
-                <div className="flex-1 min-w-0">
-                  <p className={cn('text-sm font-medium truncate', !eingebracht && pts !== null && 'text-muted-foreground')}>
-                    {subj.name}
-                  </p>
-                </div>
-
-                {/* Points input */}
-                <PointsInput
-                  value={pts}
-                  onChange={(v) => setGrade(subjectId, semester, v)}
-                  dimmed={!eingebracht}
-                />
+              {/* Subject info */}
+              <div className={cn(
+                'h-7 w-7 rounded-lg flex items-center justify-center text-[9px] font-bold font-mono shrink-0',
+                FIELD_BG[subj.field],
+                FIELD_COLOR[subj.field],
+                !eingebracht && pts !== null && 'opacity-40'
+              )}>
+                {subj.shortName}
               </div>
-            );
-          })}
-        </CardContent>
-      </Card>
 
-      <p className="text-xs text-muted-foreground flex items-center gap-1">
-        <Info className="h-3 w-3" />
-        <Lock className="h-3 w-3" /> = Pflichteinbringung (D, M, LF, Prüfungsfächer). Checkbox = freiwillige Einbringung.
-      </p>
+              <div className="flex-1 min-w-0">
+                <p className={cn(
+                  'text-[12px] font-medium truncate',
+                  !eingebracht && pts !== null && 'text-muted-foreground/40'
+                )}>
+                  {subj.name}
+                </p>
+              </div>
+
+              {/* Points input */}
+              <PointsInput
+                value={pts}
+                onChange={(v) => setGrade(subjectId, semester, v)}
+                dimmed={!eingebracht && pts !== null}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 text-[10px] text-muted-foreground/25">
+        <div className="flex items-center gap-1">
+          <Lock className="h-2.5 w-2.5" />
+          <span>Pflicht</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="h-3 w-3 rounded-[3px] bg-emerald-500 flex items-center justify-center">
+            <svg className="h-2 w-2 text-white" viewBox="0 0 16 16" fill="none">
+              <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <span>Eingebracht</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="h-3 w-3 rounded-[3px] border border-border/50" />
+          <span>Gestrichen</span>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// Points Input
+// Points Input — inline, clean
 // ═══════════════════════════════════════════════════════════
 
 function PointsInput({ value, onChange, dimmed }: { value: number | null; onChange: (v: number | null) => void; dimmed?: boolean }) {
@@ -584,7 +830,7 @@ function PointsInput({ value, onChange, dimmed }: { value: number | null; onChan
         onChange={(e) => setTmp(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
         onBlur={commit}
         onKeyDown={(e) => e.key === 'Enter' && commit()}
-        className="w-12 h-8 rounded-md border text-center text-sm font-mono bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+        className="w-11 h-8 rounded-lg border border-emerald-500/40 text-center text-[13px] font-mono font-bold bg-background focus:outline-none"
       />
     );
   }
@@ -593,10 +839,10 @@ function PointsInput({ value, onChange, dimmed }: { value: number | null; onChan
     <button
       onClick={startEdit}
       className={cn(
-        'w-12 h-8 rounded-md text-center text-sm font-mono font-bold transition-all',
-        value !== null ? getPointsBg(value) : 'bg-muted/50',
-        value !== null ? getPointsColor(value) : 'text-muted-foreground/40',
-        dimmed && 'opacity-50'
+        'w-11 h-8 rounded-lg text-center text-[13px] font-mono font-bold transition-all hover:ring-1 hover:ring-border/40',
+        value !== null ? getPointsBg(value) : 'bg-foreground/[0.03]',
+        value !== null ? getPointsColor(value) : 'text-muted-foreground/20',
+        dimmed && 'opacity-40'
       )}
     >
       {value !== null ? value.toString().padStart(2, '0') : '—'}
@@ -612,83 +858,35 @@ function ExamsSection({ profile }: { profile: AbiturProfile }) {
   const { setExamPoints } = useAbiturStore();
 
   return (
-    <Card>
-      <CardContent className="py-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Target className="h-4 w-4 text-muted-foreground" />
-          <p className="text-sm font-medium">Abiturprüfungen</p>
-        </div>
-        <div className="space-y-2">
-          {profile.exams.map((exam, i) => {
-            const s = getSubject(exam.subjectId);
-            if (!s) return (
-              <div key={i} className="flex items-center justify-between py-1.5 text-sm text-muted-foreground">
-                <span>{i + 1}. Prüfung — nicht gewählt</span>
+    <div>
+      <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest mb-3">Abiturprüfungen</p>
+      <div className="rounded-2xl border border-border/40 divide-y divide-border/30">
+        {profile.exams.map((exam, i) => {
+          const s = getSubject(exam.subjectId);
+          if (!s) return (
+            <div key={i} className="flex items-center justify-between px-4 py-3 text-[12px] text-muted-foreground/25">
+              <span>{i + 1}. Prüfung — nicht gewählt</span>
+            </div>
+          );
+          return (
+            <div key={exam.subjectId} className="flex items-center gap-3 px-4 py-3">
+              <div className={cn(
+                'h-7 w-7 rounded-lg flex items-center justify-center text-[9px] font-bold font-mono shrink-0',
+                FIELD_BG[s.field], FIELD_COLOR[s.field]
+              )}>
+                {s.shortName}
               </div>
-            );
-            return (
-              <div key={exam.subjectId} className="flex items-center justify-between py-1.5">
-                <div>
-                  <p className="text-sm font-medium">{s.name}</p>
-                  <p className="text-xs text-muted-foreground">{exam.examType === 'written' ? 'Schriftlich' : 'Kolloquium'}</p>
-                </div>
-                <PointsInput value={exam.points} onChange={(v) => setExamPoints(exam.subjectId, v)} />
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-medium truncate">{s.name}</p>
+                <p className="text-[10px] text-muted-foreground/30">
+                  {exam.examType === 'written' ? 'Schriftlich' : 'Kolloquium'}
+                </p>
               </div>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// Hurdles Section
-// ═══════════════════════════════════════════════════════════
-
-function HurdlesSection({ hurdles }: { hurdles: AbiturResult['hurdles'] }) {
-  const failed = hurdles.filter((h) => !h.passed);
-  const passed = hurdles.filter((h) => h.passed);
-
-  return (
-    <Card>
-      <CardContent className="py-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          <p className="text-sm font-medium">Hürden</p>
-          {failed.length === 0 ? (
-            <span className="text-xs bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full ml-auto">
-              Alle bestanden
-            </span>
-          ) : (
-            <span className="text-xs bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full ml-auto">
-              {failed.length} offen
-            </span>
-          )}
-        </div>
-        <div className="space-y-1.5">
-          {failed.map((h) => (
-            <HurdleRow key={h.id} hurdle={h} />
-          ))}
-          {passed.map((h) => (
-            <HurdleRow key={h.id} hurdle={h} />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function HurdleRow({ hurdle }: { hurdle: AbiturResult['hurdles'][0] }) {
-  return (
-    <div className={cn('flex items-center gap-2 py-1 text-sm', hurdle.passed ? 'text-muted-foreground' : 'text-foreground')}>
-      {hurdle.passed ? (
-        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-      ) : (
-        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-      )}
-      <span className="flex-1">{hurdle.label}</span>
-      <span className="text-xs text-muted-foreground font-mono">{hurdle.description}</span>
+              <PointsInput value={exam.points} onChange={(v) => setExamPoints(exam.subjectId, v)} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -697,11 +895,11 @@ function HurdleRow({ hurdle }: { hurdle: AbiturResult['hurdles'][0] }) {
 // Settings View
 // ═══════════════════════════════════════════════════════════
 
-function SettingsView({ onBack }: { onBack: () => void }) {
+function SettingsView() {
   const profile = useAbiturStore((s) => s.profile);
   const {
     setStudentName, setSchoolYear, setCurrentSemester, setLeistungsfach,
-    setSubjects, setExamSubject, setSeminarTopic, setSeminarPaperPoints,
+    setExamSubject, setSeminarTopic, setSeminarPaperPoints,
     setSeminarPresentationPoints, resetProfile,
   } = useAbiturStore();
 
@@ -709,68 +907,61 @@ function SettingsView({ onBack }: { onBack: () => void }) {
   const lfOptions = ALL_SUBJECTS.filter((s) => s.canBeLF && profile.subjects.includes(s.id));
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h2 className="text-lg font-bold">Einstellungen</h2>
-      </div>
-
-      <SettingsSection title="Persönlich">
-        <SettingsField label="Name">
+    <div className="space-y-6">
+      <SGroup title="Persönlich">
+        <SField label="Name">
           <input
             value={profile.studentName}
             onChange={(e) => setStudentName(e.target.value)}
             placeholder="Dein Name"
-            className="w-full bg-transparent text-sm outline-none"
+            className="w-full bg-transparent text-[13px] text-right outline-none placeholder:text-muted-foreground/20"
           />
-        </SettingsField>
-        <SettingsField label="Schuljahr">
+        </SField>
+        <SField label="Schuljahr">
           <input
             value={profile.schoolYear}
             onChange={(e) => setSchoolYear(e.target.value)}
             placeholder="2025/2027"
-            className="w-full bg-transparent text-sm outline-none"
+            className="w-full bg-transparent text-[13px] text-right outline-none placeholder:text-muted-foreground/20 font-mono"
           />
-        </SettingsField>
-        <SettingsField label="Aktuelles Halbjahr">
+        </SField>
+        <SField label="Aktuelles Halbjahr">
           <select
             value={profile.currentSemester}
             onChange={(e) => setCurrentSemester(e.target.value as Semester)}
-            className="bg-transparent text-sm outline-none"
+            className="bg-transparent text-[13px] outline-none text-right"
           >
             {SEMESTERS.map((s) => (
               <option key={s} value={s}>{SEMESTER_LABELS[s]}</option>
             ))}
           </select>
-        </SettingsField>
-      </SettingsSection>
+        </SField>
+      </SGroup>
 
-      <SettingsSection title="Leistungsfach">
-        <SettingsField label="LF (3. Schriftliches)">
+      <SGroup title="Leistungsfach">
+        <SField label="3. Schriftliches">
           <select
             value={profile.leistungsfach}
             onChange={(e) => setLeistungsfach(e.target.value)}
-            className="bg-transparent text-sm outline-none"
+            className="bg-transparent text-[13px] outline-none text-right"
           >
             {lfOptions.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
-        </SettingsField>
-      </SettingsSection>
+        </SField>
+      </SGroup>
 
-      <SettingsSection title="Prüfungsfächer">
+      <SGroup title="Prüfungsfächer">
         {profile.examSubjects.map((sid, i) => (
-          <SettingsField key={i} label={`${i + 1}. Prüfung${i < 3 ? ' (schriftl.)' : ' (Kolloquium)'}`}>
+          <SField key={i} label={`${i + 1}. ${i < 3 ? 'Schriftl.' : 'Kolloquium'}`}>
             {i < 3 ? (
-              <span className="text-sm text-muted-foreground">{getSubject(sid)?.name || '—'}</span>
+              <span className="text-[13px] text-muted-foreground/50">{getSubject(sid)?.name || '—'}</span>
             ) : (
               <select
                 value={sid}
                 onChange={(e) => setExamSubject(i, e.target.value)}
-                className="bg-transparent text-sm outline-none"
+                className="bg-transparent text-[13px] outline-none text-right"
               >
                 <option value="">Wählen...</option>
                 {profile.subjects
@@ -781,66 +972,72 @@ function SettingsView({ onBack }: { onBack: () => void }) {
                   })}
               </select>
             )}
-          </SettingsField>
+          </SField>
         ))}
-      </SettingsSection>
+      </SGroup>
 
-      <SettingsSection title="W-Seminar">
-        <SettingsField label="Thema">
+      <SGroup title="W-Seminar">
+        <SField label="Thema">
           <input
             value={profile.seminarTopicTitle}
             onChange={(e) => setSeminarTopic(e.target.value)}
             placeholder="Seminarthema"
-            className="w-full bg-transparent text-sm outline-none"
+            className="w-full bg-transparent text-[13px] text-right outline-none placeholder:text-muted-foreground/20"
           />
-        </SettingsField>
-        <SettingsField label="Seminararbeit (0-15)">
+        </SField>
+        <SField label="Seminararbeit">
           <PointsInput value={profile.seminarPaperPoints} onChange={setSeminarPaperPoints} />
-        </SettingsField>
-        <SettingsField label="Präsentation (0-15)">
+        </SField>
+        <SField label="Präsentation">
           <PointsInput value={profile.seminarPresentationPoints} onChange={setSeminarPresentationPoints} />
-        </SettingsField>
-      </SettingsSection>
+        </SField>
+      </SGroup>
 
-      <SettingsSection title="Daten">
+      <div className="rounded-2xl border border-red-500/10 p-4">
         {confirmReset ? (
-          <div className="flex items-center gap-2 py-2">
-            <p className="text-sm text-red-500 flex-1">Alle Daten löschen?</p>
-            <Button size="sm" variant="destructive" onClick={() => { resetProfile(); setConfirmReset(false); }}>
-              Ja, löschen
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirmReset(false)}>
+          <div className="flex items-center gap-3">
+            <p className="text-[12px] text-red-400 flex-1">Alle Daten unwiderruflich löschen?</p>
+            <button
+              onClick={() => { resetProfile(); setConfirmReset(false); }}
+              className="text-[12px] font-medium text-red-500 bg-red-500/10 px-3 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors"
+            >
+              Löschen
+            </button>
+            <button
+              onClick={() => setConfirmReset(false)}
+              className="text-[12px] text-muted-foreground/40 hover:text-foreground transition-colors"
+            >
               Abbrechen
-            </Button>
+            </button>
           </div>
         ) : (
           <button
             onClick={() => setConfirmReset(true)}
-            className="w-full text-left text-sm text-red-500 py-2 hover:bg-red-500/5 rounded-lg px-2 transition-colors"
+            className="text-[12px] text-red-400 hover:text-red-300 transition-colors"
           >
             Alle Daten zurücksetzen
           </button>
         )}
-      </SettingsSection>
+      </div>
     </div>
   );
 }
 
-function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+function SGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Card>
-      <CardContent className="py-3 space-y-1">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{title}</p>
+    <div>
+      <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest mb-2">{title}</p>
+      <div className="rounded-2xl border border-border/40 divide-y divide-border/30">
         {children}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-function SettingsField({ label, children }: { label: string; children: React.ReactNode }) {
+function SField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-1.5">
-      <span className="text-sm text-muted-foreground">{label}</span>
+    <div className="flex items-center justify-between px-4 py-3">
+      <span className="text-[12px] text-muted-foreground/50">{label}</span>
       <div className="text-right">{children}</div>
     </div>
   );
