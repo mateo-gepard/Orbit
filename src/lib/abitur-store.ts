@@ -1,231 +1,156 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {
-  type SubjectDefinition,
-  type Halbjahr,
-  type GradeEntry,
-  type AbiturExam,
-  type EinbringungSlot,
-  HALBJAHRE,
-  createEmptyGrade,
+  createDefaultProfile,
+  type AbiturProfile,
+  type SemesterGrade,
+  type ExamResult,
+  type Semester,
+  SEMESTERS,
 } from './abitur';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Abitur Store (Bayern G9)
-// Persisted via Zustand + localStorage
+// ORBIT — Abitur Store
+// Persistent state for the Abitur tracker tool.
 // ═══════════════════════════════════════════════════════════
 
-export type AbiturView =
-  | 'dashboard'
-  | 'halbjahr'
-  | 'subject'
-  | 'einbringung'
-  | 'exams'
-  | 'setup';
+interface AbiturStore {
+  profile: AbiturProfile;
 
-export interface AbiturState {
-  // Setup
-  isSetupComplete: boolean;
-  detailedMode: boolean;
+  // Profile actions
+  setStudentName: (name: string) => void;
+  setSchoolYear: (year: string) => void;
+  setCurrentSemester: (semester: Semester) => void;
+  setLeistungsfach: (subjectId: string) => void;
+  setSeminarTopicTitle: (title: string) => void;
 
-  // Subjects
-  subjects: SubjectDefinition[];
+  // Subject management
+  addSubject: (subjectId: string) => void;
+  removeSubject: (subjectId: string) => void;
+  setExamSubject: (index: number, subjectId: string) => void;
 
-  // Grades: subjectId → halbjahr → GradeEntry
-  grades: Record<string, Record<Halbjahr, GradeEntry>>;
+  // Grade management
+  setGrade: (subjectId: string, semester: Semester, points: number | null) => void;
 
-  // Einbringung
-  einbringungStrategy: 'maximize' | 'stable';
-  lockedSlots: string[]; // "subjectId:halbjahr"
-  onlyFortgefuehrteFremdsprache: string | null;
-  onlyFortgefuehrteNaturwissenschaft: string | null;
-  pugSubjectId: string | null;
-  wrGeoSubjectId: string | null;
+  // Exam management
+  setExamPoints: (subjectId: string, points: number | null) => void;
 
-  // Block II exams
-  exams: AbiturExam[];
+  // Seminar
+  setSeminarPaperPoints: (points: number | null) => void;
+  setSeminarPresentationPoints: (points: number | null) => void;
 
-  // UI state (not persisted)
-  currentView: AbiturView;
-  selectedHalbjahr: Halbjahr;
-  selectedSubjectId: string | null;
-  targetGrade: number;
+  // Reset
+  resetProfile: () => void;
 }
 
-export interface AbiturActions {
-  // Setup
-  completeSetup: (subjects: SubjectDefinition[], config: {
-    onlyFortgefuehrteFremdsprache: string | null;
-    onlyFortgefuehrteNaturwissenschaft: string | null;
-    pugSubjectId: string | null;
-    wrGeoSubjectId: string | null;
-  }) => void;
-  resetSetup: () => void;
-  setDetailedMode: (v: boolean) => void;
-
-  // Grades
-  setGrade: (subjectId: string, halbjahr: Halbjahr, entry: Partial<GradeEntry>) => void;
-  setFinalOverride: (subjectId: string, halbjahr: Halbjahr, points: number | null) => void;
-  addKleineNote: (subjectId: string, halbjahr: Halbjahr, points: number) => void;
-  removeKleineNote: (subjectId: string, halbjahr: Halbjahr, index: number) => void;
-
-  // Einbringung
-  setStrategy: (s: 'maximize' | 'stable') => void;
-  toggleLockSlot: (subjectId: string, halbjahr: Halbjahr) => void;
-
-  // Exams
-  setExam: (index: number, exam: Partial<AbiturExam>) => void;
-
-  // UI
-  setView: (view: AbiturView) => void;
-  setSelectedHalbjahr: (hj: Halbjahr) => void;
-  setSelectedSubjectId: (id: string | null) => void;
-  setTargetGrade: (g: number) => void;
-}
-
-const initialState: AbiturState = {
-  isSetupComplete: false,
-  detailedMode: false,
-  subjects: [],
-  grades: {},
-  einbringungStrategy: 'maximize',
-  lockedSlots: [],
-  onlyFortgefuehrteFremdsprache: null,
-  onlyFortgefuehrteNaturwissenschaft: null,
-  pugSubjectId: null,
-  wrGeoSubjectId: null,
-  exams: [],
-  currentView: 'setup',
-  selectedHalbjahr: '12/1',
-  selectedSubjectId: null,
-  targetGrade: 2.0,
-};
-
-export const useAbiturStore = create<AbiturState & AbiturActions>()(
+export const useAbiturStore = create<AbiturStore>()(
   persist(
     (set, get) => ({
-      ...initialState,
+      profile: createDefaultProfile(),
 
-      completeSetup: (subjects, config) => {
-        // Initialize grade entries for each subject × halbjahr
-        const grades: Record<string, Record<Halbjahr, GradeEntry>> = {};
-        for (const sub of subjects) {
-          grades[sub.id] = {} as Record<Halbjahr, GradeEntry>;
-          for (const hj of HALBJAHRE) {
-            grades[sub.id][hj] = createEmptyGrade();
+      setStudentName: (name) =>
+        set((s) => ({ profile: { ...s.profile, studentName: name } })),
+
+      setSchoolYear: (year) =>
+        set((s) => ({ profile: { ...s.profile, schoolYear: year } })),
+
+      setCurrentSemester: (semester) =>
+        set((s) => ({ profile: { ...s.profile, currentSemester: semester } })),
+
+      setLeistungsfach: (subjectId) =>
+        set((s) => {
+          const profile = { ...s.profile, leistungsfach: subjectId };
+          // Update exam subjects: index 2 is always the LF
+          const examSubjects = [...profile.examSubjects];
+          examSubjects[2] = subjectId;
+          profile.examSubjects = examSubjects;
+          // Update exams
+          const exams = [...profile.exams];
+          exams[2] = { subjectId, examType: 'written', points: exams[2]?.points ?? null };
+          profile.exams = exams;
+          return { profile };
+        }),
+
+      setSeminarTopicTitle: (title) =>
+        set((s) => ({ profile: { ...s.profile, seminarTopicTitle: title } })),
+
+      addSubject: (subjectId) =>
+        set((s) => {
+          if (s.profile.subjects.includes(subjectId)) return s;
+          const subjects = [...s.profile.subjects, subjectId];
+          // Add grades for all semesters
+          const newGrades: SemesterGrade[] = SEMESTERS.map((sem) => ({
+            subjectId,
+            semester: sem,
+            points: null,
+          }));
+          const grades = [...s.profile.grades, ...newGrades];
+          return { profile: { ...s.profile, subjects, grades } };
+        }),
+
+      removeSubject: (subjectId) =>
+        set((s) => {
+          // Don't remove mandatory subjects
+          if (['deu', 'mat'].includes(subjectId)) return s;
+          if (subjectId === s.profile.leistungsfach) return s;
+          if (s.profile.examSubjects.includes(subjectId)) return s;
+
+          const subjects = s.profile.subjects.filter((id) => id !== subjectId);
+          const grades = s.profile.grades.filter((g) => g.subjectId !== subjectId);
+          return { profile: { ...s.profile, subjects, grades } };
+        }),
+
+      setExamSubject: (index, subjectId) =>
+        set((s) => {
+          // Index 0=Deutsch (fixed), 1=Math (fixed), 2=LF (fixed), 3/4=Colloquiums
+          if (index < 3) return s; // Can't change fixed exams
+          const examSubjects = [...s.profile.examSubjects];
+          examSubjects[index] = subjectId;
+          const exams = [...s.profile.exams];
+          exams[index] = {
+            subjectId,
+            examType: 'colloquium',
+            points: null,
+          };
+          return { profile: { ...s.profile, examSubjects, exams } };
+        }),
+
+      setGrade: (subjectId, semester, points) =>
+        set((s) => {
+          const grades = s.profile.grades.map((g) =>
+            g.subjectId === subjectId && g.semester === semester
+              ? { ...g, points }
+              : g
+          );
+          // If grade doesn't exist yet, add it
+          const exists = grades.some(
+            (g) => g.subjectId === subjectId && g.semester === semester
+          );
+          if (!exists) {
+            grades.push({ subjectId, semester, points });
           }
-        }
+          return { profile: { ...s.profile, grades } };
+        }),
 
-        // Initialize 5 exam slots
-        const abiSubjects = subjects.filter((s) => s.isAbiturFach).sort((a, b) => (a.abiturFachNr ?? 0) - (b.abiturFachNr ?? 0));
-        const exams: AbiturExam[] = abiSubjects.map((s) => ({
-          subjectId: s.id,
-          expectedPoints: null,
-          actualPoints: null,
-        }));
+      setExamPoints: (subjectId, points) =>
+        set((s) => {
+          const exams = s.profile.exams.map((e) =>
+            e.subjectId === subjectId ? { ...e, points } : e
+          );
+          return { profile: { ...s.profile, exams } };
+        }),
 
-        set({
-          subjects,
-          grades,
-          exams,
-          ...config,
-          isSetupComplete: true,
-          currentView: 'dashboard',
-        });
-      },
+      setSeminarPaperPoints: (points) =>
+        set((s) => ({ profile: { ...s.profile, seminarPaperPoints: points } })),
 
-      resetSetup: () => set(initialState),
+      setSeminarPresentationPoints: (points) =>
+        set((s) => ({ profile: { ...s.profile, seminarPresentationPoints: points } })),
 
-      setDetailedMode: (v) => set({ detailedMode: v }),
-
-      setGrade: (subjectId, halbjahr, entry) => {
-        const grades = { ...get().grades };
-        if (!grades[subjectId]) return;
-        grades[subjectId] = {
-          ...grades[subjectId],
-          [halbjahr]: { ...grades[subjectId][halbjahr], ...entry },
-        };
-        set({ grades });
-      },
-
-      setFinalOverride: (subjectId, halbjahr, points) => {
-        const grades = { ...get().grades };
-        if (!grades[subjectId]) return;
-        grades[subjectId] = {
-          ...grades[subjectId],
-          [halbjahr]: { ...grades[subjectId][halbjahr], finalOverride: points, status: points !== null ? 'actual' : 'expected' },
-        };
-        set({ grades });
-      },
-
-      addKleineNote: (subjectId, halbjahr, points) => {
-        const grades = { ...get().grades };
-        if (!grades[subjectId]) return;
-        const current = grades[subjectId][halbjahr];
-        grades[subjectId] = {
-          ...grades[subjectId],
-          [halbjahr]: {
-            ...current,
-            kleineNachweise: [...current.kleineNachweise, points],
-            status: 'actual',
-          },
-        };
-        set({ grades });
-      },
-
-      removeKleineNote: (subjectId, halbjahr, index) => {
-        const grades = { ...get().grades };
-        if (!grades[subjectId]) return;
-        const current = grades[subjectId][halbjahr];
-        grades[subjectId] = {
-          ...grades[subjectId],
-          [halbjahr]: {
-            ...current,
-            kleineNachweise: current.kleineNachweise.filter((_, i) => i !== index),
-          },
-        };
-        set({ grades });
-      },
-
-      setStrategy: (s) => set({ einbringungStrategy: s }),
-
-      toggleLockSlot: (subjectId, halbjahr) => {
-        const key = `${subjectId}:${halbjahr}`;
-        const locked = get().lockedSlots;
-        if (locked.includes(key)) {
-          set({ lockedSlots: locked.filter((k) => k !== key) });
-        } else {
-          set({ lockedSlots: [...locked, key] });
-        }
-      },
-
-      setExam: (index, exam) => {
-        const exams = [...get().exams];
-        exams[index] = { ...exams[index], ...exam };
-        set({ exams });
-      },
-
-      setView: (view) => set({ currentView: view }),
-      setSelectedHalbjahr: (hj) => set({ selectedHalbjahr: hj }),
-      setSelectedSubjectId: (id) => set({ selectedSubjectId: id }),
-      setTargetGrade: (g) => set({ targetGrade: g }),
+      resetProfile: () => set({ profile: createDefaultProfile() }),
     }),
     {
       name: 'orbit-abitur',
-      partialize: (state) => ({
-        isSetupComplete: state.isSetupComplete,
-        detailedMode: state.detailedMode,
-        subjects: state.subjects,
-        grades: state.grades,
-        einbringungStrategy: state.einbringungStrategy,
-        lockedSlots: state.lockedSlots,
-        onlyFortgefuehrteFremdsprache: state.onlyFortgefuehrteFremdsprache,
-        onlyFortgefuehrteNaturwissenschaft: state.onlyFortgefuehrteNaturwissenschaft,
-        pugSubjectId: state.pugSubjectId,
-        wrGeoSubjectId: state.wrGeoSubjectId,
-        exams: state.exams,
-        targetGrade: state.targetGrade,
-      }),
+      partialize: (state) => ({ profile: state.profile }),
       skipHydration: true,
     }
   )

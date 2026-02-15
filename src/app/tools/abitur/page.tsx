@@ -3,1492 +3,1021 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   GraduationCap,
-  ArrowLeft,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  ChevronDown,
   ChevronRight,
-  Check,
-  X,
   Plus,
-  Target,
+  X,
+  Settings,
   BarChart3,
   BookOpen,
+  Target,
   Shield,
-  AlertTriangle,
-  TrendingUp,
-  Calculator,
-  Lock,
-  Unlock,
-  Settings,
-  Sparkles,
+  ArrowLeft,
   Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAbiturStore } from '@/lib/abitur-store';
 import {
-  SUBJECT_TEMPLATES,
-  HALBJAHRE,
-  hasSchulaufgabe,
-  computeHalbjahresleistung,
-  computeEinbringung,
-  computeBlockII,
+  ALL_SUBJECTS,
+  SEMESTERS,
+  getSubject,
+  getPointsColor,
+  getPointsBg,
   pointsToGrade,
-  gradeToString,
-  runQualificationChecks,
-  whatDoINeedForGrade,
-  whatSADoINeed,
-  pointsColor,
+  pointsToLabel,
+  isDeficit,
+  calculateAbitur,
+  calculateNeededAverage,
+  checkFieldCoverage,
+  totalPointsToGrade,
+  type Semester,
+  type AbiturProfile,
   type SubjectDefinition,
-  type Halbjahr,
-  type GradeEntry,
 } from '@/lib/abitur';
 
-// ═══════════════════════════════════════════════════════════
-// ABITUR SCORE TOOL — Bayern G9
-// ═══════════════════════════════════════════════════════════
+type AbiturView = 'dashboard' | 'grades' | 'exams' | 'hurdles' | 'settings';
 
 export default function AbiturPage() {
-  const store = useAbiturStore();
+  const { profile, setGrade, setExamPoints, setSeminarPaperPoints, setSeminarPresentationPoints } = useAbiturStore();
+  const [view, setView] = useState<AbiturView>('dashboard');
+  const [hydrated, setHydrated] = useState(false);
 
-  // Rehydrate persisted store on mount
   useEffect(() => {
-    useAbiturStore.persist.rehydrate();
+    setHydrated(true);
   }, []);
 
-  if (!store.isSetupComplete) {
-    return <SetupWizard />;
-  }
+  const result = useMemo(() => calculateAbitur(profile), [profile]);
 
-  switch (store.currentView) {
-    case 'halbjahr':
-      return <HalbjahrView />;
-    case 'subject':
-      return <SubjectDetailView />;
-    case 'einbringung':
-      return <EinbringungView />;
-    case 'exams':
-      return <ExamsView />;
-    default:
-      return <DashboardView />;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-// SETUP WIZARD
-// ═══════════════════════════════════════════════════════════
-
-function SetupWizard() {
-  const { completeSetup } = useAbiturStore();
-  const [step, setStep] = useState(0);
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([
-    'Deutsch', 'Mathematik', 'Englisch', 'Geschichte',
-    'Politik und Gesellschaft', 'Sport',
-  ]);
-  const [leistungsfach, setLeistungsfach] = useState<string>('');
-  const [abiturFaecher, setAbiturFaecher] = useState<string[]>([]);
-  const [onlyFremdsprache, setOnlyFremdsprache] = useState<string>('');
-  const [onlyNaWi, setOnlyNaWi] = useState<string>('');
-  const [wrGeo, setWrGeo] = useState<string>('');
-
-  const selectedTemplates = SUBJECT_TEMPLATES.filter((t) =>
-    selectedSubjects.includes(t.name)
+  const projection = useMemo(
+    () => ({
+      for10: calculateNeededAverage(profile, 1.0),
+      for15: calculateNeededAverage(profile, 1.5),
+      for20: calculateNeededAverage(profile, 2.0),
+      for25: calculateNeededAverage(profile, 2.5),
+      for30: calculateNeededAverage(profile, 3.0),
+    }),
+    [profile]
   );
 
-  const fremdsprachen = selectedTemplates.filter(
-    (t) => t.category === 'fremdsprache'
-  );
-  const naturwissenschaften = selectedTemplates.filter(
-    (t) => t.category === 'naturwissenschaft'
-  );
-  const wrGeoOptions = selectedTemplates.filter(
-    (t) => t.name === 'Wirtschaft und Recht' || t.name === 'Geographie'
-  );
-  const pugOption = selectedTemplates.find(
-    (t) => t.name === 'Politik und Gesellschaft'
+  const enteredGrades = useMemo(
+    () => profile.grades.filter((g) => g.points !== null),
+    [profile.grades]
   );
 
-  const handleFinish = () => {
-    // Build SubjectDefinition[]
-    const subjects: SubjectDefinition[] = selectedTemplates.map((t, i) => ({
-      id: `sub_${i}_${t.shortName}`,
-      name: t.name,
-      shortName: t.shortName,
-      category: t.category,
-      aufgabenfeld: t.aufgabenfeld,
-      isLeistungsfach: t.name === leistungsfach,
-      isAbiturFach: abiturFaecher.includes(t.name) || t.name === leistungsfach,
-      abiturFachNr: t.name === leistungsfach
-        ? 1
-        : abiturFaecher.indexOf(t.name) >= 0
-          ? abiturFaecher.indexOf(t.name) + 2
-          : null,
-    }));
+  const totalGradeSlots = useMemo(
+    () => profile.subjects.filter((s) => s !== 'psem').length * 4,
+    [profile.subjects]
+  );
 
-    const onlyFS = fremdsprachen.length === 1
-      ? subjects.find((s) => s.category === 'fremdsprache')?.id ?? null
-      : onlyFremdsprache
-        ? subjects.find((s) => s.name === onlyFremdsprache)?.id ?? null
-        : null;
+  const enteredExams = useMemo(
+    () => profile.exams.filter((e) => e.points !== null),
+    [profile.exams]
+  );
 
-    const onlyNW = naturwissenschaften.length === 1
-      ? subjects.find((s) => s.category === 'naturwissenschaft')?.id ?? null
-      : onlyNaWi
-        ? subjects.find((s) => s.name === onlyNaWi)?.id ?? null
-        : null;
+  const fieldCoverage = useMemo(
+    () => checkFieldCoverage(profile.examSubjects.filter(Boolean)),
+    [profile.examSubjects]
+  );
 
-    const pugId = subjects.find((s) => s.name === 'Politik und Gesellschaft')?.id ?? null;
-    const wrGeoId = wrGeo ? subjects.find((s) => s.name === wrGeo)?.id ?? null : null;
-
-    completeSetup(subjects, {
-      onlyFortgefuehrteFremdsprache: onlyFS,
-      onlyFortgefuehrteNaturwissenschaft: onlyNW,
-      pugSubjectId: pugId,
-      wrGeoSubjectId: wrGeoId,
-    });
-  };
-
-  const toggleAbiturFach = (name: string) => {
-    if (name === leistungsfach) return;
-    setAbiturFaecher((prev) =>
-      prev.includes(name)
-        ? prev.filter((n) => n !== name)
-        : prev.length < 4
-          ? [...prev, name]
-          : prev
+  if (!hydrated) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-2">
+          <GraduationCap className="h-6 w-6 text-violet-500 mx-auto animate-pulse" />
+          <p className="text-[12px] text-muted-foreground/40">Lade Abitur-Daten...</p>
+        </div>
+      </div>
     );
-  };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // SETTINGS VIEW
+  // ═══════════════════════════════════════════════════════════
+
+  if (view === 'settings') {
+    return (
+      <SettingsView
+        profile={profile}
+        onBack={() => setView('dashboard')}
+      />
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // MAIN DASHBOARD
+  // ═══════════════════════════════════════════════════════════
 
   return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-2">
-        <GraduationCap className="h-5 w-5 text-violet-500" strokeWidth={1.5} />
-        <h1 className="text-xl font-semibold tracking-tight">Abitur Setup</h1>
-      </div>
-
-      <p className="text-[13px] text-muted-foreground/50">
-        Richte dein Abitur ein. Du kannst später alles ändern.
-      </p>
-
-      {/* Step indicator */}
-      <div className="flex items-center gap-1">
-        {[0, 1, 2].map((s) => (
-          <div
-            key={s}
-            className={cn(
-              'h-1 flex-1 rounded-full transition-colors',
-              s <= step ? 'bg-violet-500' : 'bg-foreground/[0.06]'
-            )}
-          />
-        ))}
-      </div>
-
-      {/* Step 0: Subject Selection */}
-      {step === 0 && (
-        <div className="space-y-4">
-          <p className="text-[14px] font-semibold">Fächer auswählen</p>
-          <p className="text-[12px] text-muted-foreground/40">
-            Wähle alle Fächer, die du in der Oberstufe belegst. Deutsch und Mathe sind Pflicht.
-          </p>
-
-          <div className="space-y-3">
-            {(['SLK', 'GPR', 'MINT', null] as const).map((feld) => {
-              const group = SUBJECT_TEMPLATES.filter((t) =>
-                feld === null
-                  ? t.aufgabenfeld === null
-                  : t.aufgabenfeld === feld
-              );
-              const label = feld === 'SLK'
-                ? 'Sprachlich-literarisch-künstlerisch'
-                : feld === 'GPR'
-                  ? 'Gesellschaftswissenschaftlich'
-                  : feld === 'MINT'
-                    ? 'Mathematisch-naturwissenschaftlich'
-                    : 'Weitere';
-              return (
-                <div key={feld ?? 'other'}>
-                  <p className="text-[10px] text-muted-foreground/30 uppercase tracking-wider mb-1.5">
-                    {label}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {group.map((t) => {
-                      const isSelected = selectedSubjects.includes(t.name);
-                      const isRequired = t.name === 'Deutsch' || t.name === 'Mathematik';
-                      return (
-                        <button
-                          key={t.name}
-                          onClick={() => {
-                            if (isRequired) return;
-                            setSelectedSubjects((prev) =>
-                              isSelected
-                                ? prev.filter((n) => n !== t.name)
-                                : [...prev, t.name]
-                            );
-                          }}
-                          className={cn(
-                            'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all border',
-                            isSelected
-                              ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                              : 'border-border/40 text-muted-foreground/50 hover:border-border/60',
-                            isRequired && 'opacity-70 cursor-not-allowed'
-                          )}
-                        >
-                          {t.shortName}
-                          {isRequired && ' ✓'}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <button
-            onClick={() => setStep(1)}
-            disabled={selectedSubjects.length < 6}
-            className="w-full rounded-2xl py-3 text-[13px] font-semibold bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-          >
-            Weiter — Leistungsfach & Abiturfächer
-          </button>
-        </div>
-      )}
-
-      {/* Step 1: Leistungsfach + Abiturfächer */}
-      {step === 1 && (
-        <div className="space-y-4">
-          <button
-            onClick={() => setStep(0)}
-            className="flex items-center gap-1 text-[12px] text-muted-foreground/40 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-3 w-3" /> Zurück
-          </button>
-
-          <div>
-            <p className="text-[14px] font-semibold">Leistungsfach (erhöhtes Anforderungsniveau)</p>
-            <p className="text-[12px] text-muted-foreground/40 mt-0.5">
-              Dein Leistungsfach wird automatisch als 1. Abiturfach gesetzt.
-            </p>
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {selectedTemplates
-                .filter((t) => t.category !== 'wseminar' && t.category !== 'pseminar' && t.category !== 'sport')
-                .map((t) => (
-                  <button
-                    key={t.name}
-                    onClick={() => setLeistungsfach(t.name)}
-                    className={cn(
-                      'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all border',
-                      leistungsfach === t.name
-                        ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                        : 'border-border/40 text-muted-foreground/50 hover:border-border/60'
-                    )}
-                  >
-                    {t.shortName}
-                  </button>
-                ))}
-            </div>
-          </div>
-
-          {leistungsfach && (
-            <div>
-              <p className="text-[14px] font-semibold">
-                Weitere Abiturfächer (wähle 4 weitere)
-              </p>
-              <p className="text-[12px] text-muted-foreground/40 mt-0.5">
-                Insgesamt 5 Abiturfächer. Aus allen 3 Aufgabenfeldern.
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-3">
-                {selectedTemplates
-                  .filter(
-                    (t) =>
-                      t.name !== leistungsfach &&
-                      t.category !== 'wseminar' &&
-                      t.category !== 'pseminar'
-                  )
-                  .map((t) => {
-                    const isAbi = abiturFaecher.includes(t.name);
-                    return (
-                      <button
-                        key={t.name}
-                        onClick={() => toggleAbiturFach(t.name)}
-                        className={cn(
-                          'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all border',
-                          isAbi
-                            ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                            : 'border-border/40 text-muted-foreground/50 hover:border-border/60'
-                        )}
-                      >
-                        {t.shortName}
-                        {isAbi && ` (${abiturFaecher.indexOf(t.name) + 2})`}
-                      </button>
-                    );
-                  })}
-              </div>
-
-              {/* Aufgabenfeld coverage check */}
-              {abiturFaecher.length === 4 && (
-                <div className="mt-3">
-                  {(() => {
-                    const allAbiNames = [leistungsfach, ...abiturFaecher];
-                    const fields = new Set(
-                      allAbiNames
-                        .map((n) => SUBJECT_TEMPLATES.find((t) => t.name === n)?.aufgabenfeld)
-                        .filter(Boolean)
-                    );
-                    const covered = fields.size >= 3;
-                    return (
-                      <p
-                        className={cn(
-                          'text-[11px] font-medium',
-                          covered ? 'text-emerald-500' : 'text-red-400'
-                        )}
-                      >
-                        {covered
-                          ? '✓ Alle 3 Aufgabenfelder abgedeckt'
-                          : '✗ Nicht alle 3 Aufgabenfelder abgedeckt'}
-                      </p>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-          )}
-
-          <button
-            onClick={() => setStep(2)}
-            disabled={!leistungsfach || abiturFaecher.length < 4}
-            className="w-full rounded-2xl py-3 text-[13px] font-semibold bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-          >
-            Weiter — Einbringungsregeln
-          </button>
-        </div>
-      )}
-
-      {/* Step 2: Einbringung config */}
-      {step === 2 && (
-        <div className="space-y-4">
-          <button
-            onClick={() => setStep(1)}
-            className="flex items-center gap-1 text-[12px] text-muted-foreground/40 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-3 w-3" /> Zurück
-          </button>
-
-          <p className="text-[14px] font-semibold">Einbringungsregeln</p>
-
-          {fremdsprachen.length > 1 && (
-            <div>
-              <p className="text-[12px] text-muted-foreground/50 mb-2">
-                Welche ist deine einzige fortgeführte Fremdsprache? (4 Halbjahre Pflicht)
-              </p>
-              <div className="flex gap-2">
-                {fremdsprachen.map((t) => (
-                  <button
-                    key={t.name}
-                    onClick={() => setOnlyFremdsprache(t.name)}
-                    className={cn(
-                      'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all border',
-                      onlyFremdsprache === t.name
-                        ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                        : 'border-border/40 text-muted-foreground/50'
-                    )}
-                  >
-                    {t.shortName}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setOnlyFremdsprache('')}
-                  className={cn(
-                    'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all border',
-                    onlyFremdsprache === ''
-                      ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                      : 'border-border/40 text-muted-foreground/50'
-                  )}
-                >
-                  Keine (mehrere fortgeführt)
-                </button>
-              </div>
-            </div>
-          )}
-
-          {naturwissenschaften.length > 1 && (
-            <div>
-              <p className="text-[12px] text-muted-foreground/50 mb-2">
-                Welche ist deine einzige fortgeführte Naturwissenschaft? (4 Halbjahre Pflicht)
-              </p>
-              <div className="flex gap-2">
-                {naturwissenschaften.map((t) => (
-                  <button
-                    key={t.name}
-                    onClick={() => setOnlyNaWi(t.name)}
-                    className={cn(
-                      'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all border',
-                      onlyNaWi === t.name
-                        ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                        : 'border-border/40 text-muted-foreground/50'
-                    )}
-                  >
-                    {t.shortName}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setOnlyNaWi('')}
-                  className={cn(
-                    'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all border',
-                    onlyNaWi === ''
-                      ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                      : 'border-border/40 text-muted-foreground/50'
-                  )}
-                >
-                  Keine (mehrere fortgeführt)
-                </button>
-              </div>
-            </div>
-          )}
-
-          {wrGeoOptions.length > 0 && (
-            <div>
-              <p className="text-[12px] text-muted-foreground/50 mb-2">
-                Welches Fach erfüllt die Belegungsverpflichtung WR/Geo? (3 HJL Pflicht)
-              </p>
-              <div className="flex gap-2">
-                {wrGeoOptions.map((t) => (
-                  <button
-                    key={t.name}
-                    onClick={() => setWrGeo(t.name)}
-                    className={cn(
-                      'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all border',
-                      wrGeo === t.name
-                        ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                        : 'border-border/40 text-muted-foreground/50'
-                    )}
-                  >
-                    {t.shortName}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={handleFinish}
-            className="w-full rounded-2xl py-3.5 text-[14px] font-semibold bg-violet-600 text-white hover:bg-violet-500 transition-all active:scale-[0.98] shadow-lg shadow-violet-600/20"
-          >
-            <Sparkles className="h-4 w-4 inline mr-2" />
-            Abitur starten
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// DASHBOARD
-// ═══════════════════════════════════════════════════════════
-
-function DashboardView() {
-  const store = useAbiturStore();
-  const { subjects, grades, exams, einbringungStrategy, lockedSlots, targetGrade } = store;
-
-  // Compute Block I
-  const blockI = useMemo(
-    () =>
-      computeEinbringung({
-        subjects,
-        grades,
-        lockedSlots: new Set(lockedSlots),
-        strategy: einbringungStrategy,
-        onlyFortgefuehrteFremdsprache: store.onlyFortgefuehrteFremdsprache,
-        onlyFortgefuehrteNaturwissenschaft: store.onlyFortgefuehrteNaturwissenschaft,
-        pugSubjectId: store.pugSubjectId,
-        wrGeoSubjectId: store.wrGeoSubjectId,
-      }),
-    [subjects, grades, lockedSlots, einbringungStrategy, store.onlyFortgefuehrteFremdsprache, store.onlyFortgefuehrteNaturwissenschaft, store.pugSubjectId, store.wrGeoSubjectId]
-  );
-
-  const blockII = useMemo(() => computeBlockII(exams), [exams]);
-  const totalPoints = blockI.totalPoints + blockII.totalPoints;
-  const abiturGrade = pointsToGrade(totalPoints);
-  const checks = useMemo(
-    () => runQualificationChecks(blockI, blockII, subjects, grades),
-    [blockI, blockII, subjects, grades]
-  );
-  const passedChecks = checks.filter((c) => c.passed).length;
-
-  // Averages
-  const allGradesFlat = useMemo(() => {
-    const result: number[] = [];
-    for (const sub of subjects) {
-      for (const hj of HALBJAHRE) {
-        const entry = grades[sub.id]?.[hj];
-        if (!entry) continue;
-        const hasSA = hasSchulaufgabe(sub, hj);
-        const r = computeHalbjahresleistung(entry, hasSA);
-        if (r.source !== 'expected' || r.points > 0) result.push(r.points);
-      }
-    }
-    return result;
-  }, [subjects, grades]);
-
-  const overallAvg =
-    allGradesFlat.length > 0
-      ? allGradesFlat.reduce((a, b) => a + b, 0) / allGradesFlat.length
-      : 0;
-  const einbringungAvg =
-    blockI.slots.length > 0
-      ? blockI.totalPoints / blockI.slots.length
-      : 0;
-
-  // "What do I need?" calculation
-  const whatINeed = useMemo(
-    () => whatDoINeedForGrade(targetGrade, blockI, blockII),
-    [targetGrade, blockI, blockII]
-  );
-
-  // Count actual vs expected grades
-  const actualCount = allGradesFlat.length;
-  const totalPossible = subjects.length * 4;
-  const confidence = totalPossible > 0 ? actualCount / totalPossible : 0;
-
-  return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-5">
+    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <GraduationCap className="h-5 w-5 text-violet-500" strokeWidth={1.5} />
-          <h1 className="text-xl font-semibold tracking-tight">Abitur</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Abitur Tracker</h1>
+          <span className="text-[11px] text-muted-foreground/40 font-mono ml-1">{profile.schoolYear}</span>
         </div>
         <button
-          onClick={() => {
-            if (confirm('Setup zurücksetzen? Alle Daten werden gelöscht.')) {
-              store.resetSetup();
-            }
-          }}
-          className="text-muted-foreground/30 hover:text-foreground transition-colors"
+          onClick={() => setView('settings')}
+          className="text-muted-foreground/40 hover:text-foreground transition-colors"
         >
           <Settings className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Hero Score */}
-      <div className="text-center py-4">
-        <p className="text-6xl font-black tabular-nums tracking-tight">
-          {gradeToString(abiturGrade)}
-        </p>
-        <p className="text-[12px] text-muted-foreground/40 mt-1">
-          {totalPoints}/900 Punkte
-        </p>
-        {/* Confidence bar */}
-        <div className="flex items-center justify-center gap-2 mt-2">
-          <div className="h-1 w-24 rounded-full bg-foreground/[0.05] overflow-hidden">
-            <div
-              className="h-full rounded-full bg-violet-500 transition-all"
-              style={{ width: `${confidence * 100}%` }}
-            />
-          </div>
-          <span className="text-[10px] text-muted-foreground/30">
-            {actualCount}/{totalPossible} Noten
+      {/* ── Score Overview ── */}
+      <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
+        {/* Top strip */}
+        <div className={cn(
+          'px-5 py-3 flex items-center justify-between',
+          result.passed ? 'bg-emerald-600 dark:bg-emerald-700' : result.totalPoints >= 300 ? 'bg-amber-600 dark:bg-amber-700' : 'bg-violet-600 dark:bg-violet-700'
+        )}>
+          <span className="text-[12px] font-semibold text-white/90">
+            {result.passed ? 'Bestanden' : result.totalPoints >= 300 ? 'Hürden prüfen' : 'In Bearbeitung'}
+          </span>
+          <span className="text-[11px] text-white/60 font-mono">
+            Semester {profile.currentSemester}
           </span>
         </div>
-      </div>
 
-      {/* Block I + Block II cards */}
-      <div className="grid grid-cols-2 gap-3">
-        <button
-          onClick={() => store.setView('einbringung')}
-          className="rounded-xl border border-border/40 p-4 text-left hover:border-violet-500/30 transition-colors"
-        >
-          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider font-medium">
-            Block I
-          </p>
-          <p className="text-2xl font-bold tabular-nums mt-1">
-            {blockI.totalPoints}
-            <span className="text-[12px] text-muted-foreground/30 font-normal">/600</span>
-          </p>
-          <p className="text-[10px] text-muted-foreground/40 mt-0.5">
-            {blockI.slots.length}/40 Einbringungen
-          </p>
-          <div className={cn('text-[10px] font-medium mt-1', blockI.isValid ? 'text-emerald-500' : 'text-amber-500')}>
-            {blockI.isValid ? '✓ Gültig' : '⚠ Prüfung nötig'}
-          </div>
-        </button>
+        {/* Score body */}
+        <div className="p-5">
+          <div className="flex items-start gap-8">
+            {/* Big grade */}
+            <div className="text-center">
+              <p className="text-5xl font-black tabular-nums tracking-tight leading-none">
+                {enteredGrades.length > 0 ? result.finalGrade.toFixed(1) : '—'}
+              </p>
+              <p className="text-[10px] text-muted-foreground/40 mt-1.5 uppercase tracking-widest">
+                {enteredGrades.length > 0 ? pointsToLabel(Math.round(result.blockI.average)) : 'Noch keine Noten'}
+              </p>
+            </div>
 
-        <button
-          onClick={() => store.setView('exams')}
-          className="rounded-xl border border-border/40 p-4 text-left hover:border-violet-500/30 transition-colors"
-        >
-          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider font-medium">
-            Block II
-          </p>
-          <p className="text-2xl font-bold tabular-nums mt-1">
-            {blockII.totalPoints}
-            <span className="text-[12px] text-muted-foreground/30 font-normal">/300</span>
-          </p>
-          <p className="text-[10px] text-muted-foreground/40 mt-0.5">
-            {exams.filter((e) => e.actualPoints !== null).length}/5 Prüfungen
-          </p>
-        </button>
-      </div>
-
-      {/* Averages */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-border/30 p-3">
-          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Ø Alle Noten</p>
-          <p className="text-lg font-bold tabular-nums mt-0.5">
-            {overallAvg.toFixed(2)} <span className="text-[11px] text-muted-foreground/30">P</span>
-          </p>
-        </div>
-        <div className="rounded-xl border border-border/30 p-3">
-          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Ø Einbringungen</p>
-          <p className="text-lg font-bold tabular-nums mt-0.5">
-            {einbringungAvg.toFixed(2)} <span className="text-[11px] text-muted-foreground/30">P</span>
-          </p>
-        </div>
-      </div>
-
-      {/* What do I need? */}
-      <div className="rounded-xl border border-border/30 p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-1.5">
-            <Calculator className="h-3.5 w-3.5 text-violet-500" />
-            <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
-              Was brauche ich?
-            </p>
-          </div>
-          <div className="flex items-center gap-1">
-            {[1.0, 1.5, 2.0, 2.5, 3.0].map((g) => (
-              <button
-                key={g}
-                onClick={() => store.setTargetGrade(g)}
-                className={cn(
-                  'text-[11px] px-2 py-0.5 rounded-md font-medium transition-all',
-                  targetGrade === g
-                    ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
-                    : 'text-muted-foreground/30 hover:text-muted-foreground/50'
-                )}
-              >
-                {gradeToString(g)}
-              </button>
-            ))}
-          </div>
-        </div>
-        <p className="text-[12px] text-muted-foreground/60 leading-relaxed">
-          {whatINeed.sentence}
-        </p>
-      </div>
-
-      {/* Qualification checks */}
-      <div className="rounded-xl border border-border/30 p-4">
-        <div className="flex items-center gap-1.5 mb-2">
-          <Shield className="h-3.5 w-3.5 text-emerald-500" />
-          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
-            Qualifikation ({passedChecks}/{checks.length})
-          </p>
-        </div>
-        <div className="space-y-1">
-          {checks.map((check, i) => (
-            <div key={i} className="flex items-start gap-2 py-1">
-              <div className={cn('mt-0.5 shrink-0', check.passed ? 'text-emerald-500' : 'text-red-400')}>
-                {check.passed ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+            {/* Points breakdown */}
+            <div className="flex-1 space-y-3">
+              {/* Block I */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] text-muted-foreground/50">
+                    Block I — Halbjahresleistungen
+                  </span>
+                  <span className="text-[12px] font-semibold tabular-nums">
+                    {result.blockI.totalPoints} / {result.blockI.maxPoints}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-foreground/[0.05] overflow-hidden">
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-all',
+                      result.blockI.totalPoints >= 200 ? 'bg-violet-500' : 'bg-red-400'
+                    )}
+                    style={{ width: `${Math.min(100, (result.blockI.totalPoints / result.blockI.maxPoints) * 100)}%` }}
+                  />
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className={cn('text-[12px] font-medium', check.passed ? 'text-muted-foreground/60' : 'text-red-400')}>
-                  {check.label}
-                </p>
-                <p className="text-[10px] text-muted-foreground/30">{check.detail}</p>
+
+              {/* Block II */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] text-muted-foreground/50">
+                    Block II — Abiturprüfungen
+                  </span>
+                  <span className="text-[12px] font-semibold tabular-nums">
+                    {result.blockII.totalPoints} / {result.blockII.maxPoints}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-foreground/[0.05] overflow-hidden">
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-all',
+                      result.blockII.totalPoints >= 100 ? 'bg-violet-500' : 'bg-red-400'
+                    )}
+                    style={{ width: `${Math.min(100, (result.blockII.totalPoints / result.blockII.maxPoints) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Total */}
+              <div className="flex items-center justify-between pt-1 border-t border-border/20">
+                <span className="text-[11px] text-muted-foreground/50">Gesamt</span>
+                <span className="text-[13px] font-bold tabular-nums">
+                  {result.totalPoints} / {result.maxPoints} Punkte
+                </span>
               </div>
             </div>
-          ))}
+          </div>
         </div>
       </div>
 
-      {/* Navigation grid */}
-      <div className="grid grid-cols-2 gap-2">
-        {HALBJAHRE.map((hj) => (
-          <button
-            key={hj}
-            onClick={() => {
-              store.setSelectedHalbjahr(hj);
-              store.setView('halbjahr');
-            }}
-            className="rounded-xl border border-border/30 p-3 text-left hover:border-violet-500/30 hover:bg-violet-500/[0.02] transition-all group"
-          >
-            <p className="text-[13px] font-semibold group-hover:text-violet-500 transition-colors">
-              {hj}
-            </p>
-            <p className="text-[10px] text-muted-foreground/30 mt-0.5">
-              {subjects.filter((s) => {
-                const entry = grades[s.id]?.[hj];
-                if (!entry) return false;
-                const r = computeHalbjahresleistung(entry, hasSchulaufgabe(s, hj));
-                return r.source !== 'expected' || r.points > 0;
-              }).length}/{subjects.length} Noten
-            </p>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// HALBJAHR VIEW
-// ═══════════════════════════════════════════════════════════
-
-function HalbjahrView() {
-  const store = useAbiturStore();
-  const { subjects, grades, selectedHalbjahr: hj, detailedMode } = store;
-  const [editingSubject, setEditingSubject] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-
-  return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-4">
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => store.setView('dashboard')}
-          className="text-muted-foreground/40 hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <BookOpen className="h-4 w-4 text-violet-500" />
-        <h1 className="text-lg font-semibold tracking-tight">{hj}</h1>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => store.setDetailedMode(!detailedMode)}
-            className={cn(
-              'text-[10px] px-2 py-1 rounded-md font-medium transition-colors',
-              detailedMode
-                ? 'bg-violet-500/10 text-violet-500'
-                : 'text-muted-foreground/30 hover:text-muted-foreground/50'
-            )}
-          >
-            {detailedMode ? 'Detailliert' : 'Einfach'}
-          </button>
-        </div>
+      {/* ── Quick Stats ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard
+          label="Noten eingetragen"
+          value={`${enteredGrades.length} / ${totalGradeSlots}`}
+          sub={`${Math.round((enteredGrades.length / Math.max(1, totalGradeSlots)) * 100)}%`}
+          color="text-violet-500"
+        />
+        <StatCard
+          label="Durchschnitt"
+          value={enteredGrades.length > 0 ? (enteredGrades.reduce((s, g) => s + (g.points ?? 0), 0) / enteredGrades.length).toFixed(1) : '—'}
+          sub={enteredGrades.length > 0 ? `≈ Note ${pointsToGrade(Math.round(enteredGrades.reduce((s, g) => s + (g.points ?? 0), 0) / enteredGrades.length))}` : ''}
+          color="text-sky-500"
+        />
+        <StatCard
+          label="Unterpunktungen"
+          value={`${result.blockI.deficitCount}`}
+          sub={`max. 8 erlaubt`}
+          color={result.blockI.deficitCount > 6 ? 'text-red-500' : result.blockI.deficitCount > 4 ? 'text-amber-500' : 'text-emerald-500'}
+        />
+        <StatCard
+          label="Prüfungen"
+          value={`${enteredExams.length} / 5`}
+          sub={enteredExams.length > 0 ? `Ø ${(enteredExams.reduce((s, e) => s + (e.points ?? 0), 0) / enteredExams.length).toFixed(1)} P.` : 'ausstehend'}
+          color="text-amber-500"
+        />
       </div>
 
-      {/* Halbjahr tabs */}
+      {/* ── Navigation Tabs ── */}
       <div className="flex rounded-xl bg-foreground/[0.03] p-0.5">
-        {HALBJAHRE.map((h) => (
+        {([
+          { id: 'grades' as const, label: 'Noten', icon: BookOpen },
+          { id: 'exams' as const, label: 'Prüfungen', icon: Target },
+          { id: 'hurdles' as const, label: 'Hürden', icon: Shield },
+        ]).map(({ id, label, icon: Icon }) => (
           <button
-            key={h}
-            onClick={() => store.setSelectedHalbjahr(h)}
+            key={id}
+            onClick={() => setView(view === id ? 'dashboard' : id)}
             className={cn(
-              'flex-1 rounded-lg py-1.5 text-[12px] font-medium transition-all text-center',
-              h === hj
+              'flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-[12px] font-medium transition-all',
+              view === id
                 ? 'bg-background shadow-sm text-foreground'
                 : 'text-muted-foreground/40 hover:text-muted-foreground/60'
             )}
           >
-            {h}
+            <Icon className="h-3.5 w-3.5" />
+            {label}
           </button>
         ))}
       </div>
 
-      {/* Subject grid */}
-      <div className="space-y-1">
-        {subjects.map((sub) => {
-          const entry = grades[sub.id]?.[hj];
-          if (!entry) return null;
-          const hasSA = hasSchulaufgabe(sub, hj);
-          const result = computeHalbjahresleistung(entry, hasSA);
-          const isEditing = editingSubject === sub.id;
+      {/* ── Grades Grid ── */}
+      {(view === 'dashboard' || view === 'grades') && (
+        <GradesGrid profile={profile} onSetGrade={setGrade} />
+      )}
+
+      {/* ── Exam Section ── */}
+      {(view === 'dashboard' || view === 'exams') && (
+        <ExamsSection
+          profile={profile}
+          result={result}
+          onSetExamPoints={setExamPoints}
+          onSetSeminarPaper={setSeminarPaperPoints}
+          onSetSeminarPresentation={setSeminarPresentationPoints}
+        />
+      )}
+
+      {/* ── Hurdles Section ── */}
+      {(view === 'dashboard' || view === 'hurdles') && (
+        <HurdlesSection result={result} fieldCoverage={fieldCoverage} />
+      )}
+
+      {/* ── Grade Projection ── */}
+      {view === 'dashboard' && enteredGrades.length > 0 && (
+        <div>
+          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">
+            Notenprojektion
+          </p>
+          <div className="rounded-xl border border-border/40 overflow-hidden">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-border/20">
+                  <th className="text-left px-3 py-2 text-[10px] text-muted-foreground/40 font-medium uppercase">Ziel</th>
+                  <th className="text-center px-3 py-2 text-[10px] text-muted-foreground/40 font-medium uppercase">Ø Noten nötig</th>
+                  <th className="text-center px-3 py-2 text-[10px] text-muted-foreground/40 font-medium uppercase">Ø Prüfungen</th>
+                  <th className="text-center px-3 py-2 text-[10px] text-muted-foreground/40 font-medium uppercase">Erreichbar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([
+                  { label: '1,0', data: projection.for10 },
+                  { label: '1,5', data: projection.for15 },
+                  { label: '2,0', data: projection.for20 },
+                  { label: '2,5', data: projection.for25 },
+                  { label: '3,0', data: projection.for30 },
+                ]).map(({ label, data }) => (
+                  <tr key={label} className="border-b border-border/10 last:border-0">
+                    <td className="px-3 py-2 font-semibold">{label}</td>
+                    <td className={cn('text-center px-3 py-2 tabular-nums', getPointsColor(Math.round(data.neededBlockIAvg)))}>
+                      {data.neededBlockIAvg.toFixed(1)} P.
+                    </td>
+                    <td className={cn('text-center px-3 py-2 tabular-nums', getPointsColor(Math.round(data.neededExamAvg)))}>
+                      {data.neededExamAvg.toFixed(1)} P.
+                    </td>
+                    <td className="text-center px-3 py-2">
+                      {data.achievable ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 inline" />
+                      ) : (
+                        <XCircle className="h-3.5 w-3.5 text-red-400 inline" />
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// GRADES GRID
+// ═══════════════════════════════════════════════════════════
+
+function GradesGrid({
+  profile,
+  onSetGrade,
+}: {
+  profile: AbiturProfile;
+  onSetGrade: (subjectId: string, semester: Semester, points: number | null) => void;
+}) {
+  const [editingCell, setEditingCell] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const subjects = profile.subjects
+    .map((id) => getSubject(id))
+    .filter((s): s is SubjectDefinition => !!s && s.id !== 'psem');
+
+  // Group by field
+  const field1 = subjects.filter((s) => s.field === 1);
+  const field2 = subjects.filter((s) => s.field === 2);
+  const field3 = subjects.filter((s) => s.field === 3);
+  const field0 = subjects.filter((s) => s.field === 0);
+
+  const getGrade = (subjectId: string, semester: Semester): number | null => {
+    const g = profile.grades.find((g) => g.subjectId === subjectId && g.semester === semester);
+    return g?.points ?? null;
+  };
+
+  const subjectAverage = (subjectId: string): number | null => {
+    const grades = SEMESTERS.map((s) => getGrade(subjectId, s)).filter((g): g is number => g !== null);
+    if (grades.length === 0) return null;
+    return grades.reduce((a, b) => a + b, 0) / grades.length;
+  };
+
+  const handleCellClick = (subjectId: string, semester: Semester) => {
+    const cellKey = `${subjectId}-${semester}`;
+    const currentGrade = getGrade(subjectId, semester);
+    setEditingCell(cellKey);
+    setEditValue(currentGrade !== null ? String(currentGrade) : '');
+  };
+
+  const handleCellSubmit = (subjectId: string, semester: Semester) => {
+    const trimmed = editValue.trim();
+    if (trimmed === '') {
+      onSetGrade(subjectId, semester, null);
+    } else {
+      const val = parseInt(trimmed, 10);
+      if (!isNaN(val) && val >= 0 && val <= 15) {
+        onSetGrade(subjectId, semester, val);
+      }
+    }
+    setEditingCell(null);
+  };
+
+  const renderFieldGroup = (label: string, fieldSubjects: SubjectDefinition[], fieldNum: number) => {
+    if (fieldSubjects.length === 0) return null;
+    const fieldColors: Record<number, string> = {
+      1: 'border-l-sky-500',
+      2: 'border-l-amber-500',
+      3: 'border-l-emerald-500',
+      0: 'border-l-muted-foreground/30',
+    };
+
+    return (
+      <div key={fieldNum}>
+        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest mb-1.5 mt-4 first:mt-0">
+          {label}
+        </p>
+        {fieldSubjects.map((subject) => {
+          const isExamSubject = profile.examSubjects.includes(subject.id);
+          const isLF = profile.leistungsfach === subject.id;
+          const avg = subjectAverage(subject.id);
 
           return (
             <div
-              key={sub.id}
-              className="rounded-xl border border-border/30 overflow-hidden"
+              key={subject.id}
+              className={cn(
+                'flex items-center border-l-2 mb-0.5 rounded-r-lg transition-colors',
+                fieldColors[fieldNum],
+                isLF && 'bg-violet-500/[0.04]'
+              )}
             >
-              {/* Subject row */}
-              <div
-                className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-foreground/[0.02] transition-colors"
-                onClick={() => {
-                  if (detailedMode) {
-                    store.setSelectedSubjectId(sub.id);
-                    store.setView('subject');
-                  } else {
-                    if (isEditing) {
-                      setEditingSubject(null);
-                    } else {
-                      setEditingSubject(sub.id);
-                      setEditValue(
-                        entry.finalOverride !== null
-                          ? String(entry.finalOverride)
-                          : result.points > 0
-                            ? String(result.points)
-                            : ''
-                      );
-                    }
-                  }
-                }}
-              >
-                <div className="w-8 text-center">
-                  <span className="text-[11px] font-bold text-muted-foreground/40">{sub.shortName}</span>
-                </div>
-                <span className="text-[12px] flex-1 truncate text-muted-foreground/60">{sub.name}</span>
-
-                {hasSA && detailedMode && (
-                  <span className="text-[9px] text-muted-foreground/25 uppercase">SA</span>
-                )}
-
-                <span
-                  className={cn(
-                    'text-[15px] font-bold tabular-nums w-8 text-right',
-                    result.source === 'expected' && result.points === 0
-                      ? 'text-muted-foreground/15'
-                      : pointsColor(result.points)
-                  )}
-                >
-                  {result.source === 'expected' && result.points === 0 ? '—' : result.points}
+              {/* Subject name */}
+              <div className="w-28 lg:w-36 px-2.5 py-1.5 shrink-0 flex items-center gap-1.5">
+                <span className={cn('text-[12px] truncate', isLF ? 'font-bold text-violet-500' : isExamSubject ? 'font-semibold' : '')}>
+                  {subject.shortName}
                 </span>
-
-                <span className="text-[8px] text-muted-foreground/20 w-3 uppercase">
-                  {result.source === 'override'
-                    ? '✓'
-                    : result.source === 'range'
-                      ? '~'
-                      : result.source === 'expected'
-                        ? ''
-                        : ''}
-                </span>
-
-                {detailedMode && (
-                  <ChevronRight className="h-3 w-3 text-muted-foreground/20" />
-                )}
+                {isLF && <span className="text-[8px] bg-violet-500/15 text-violet-500 px-1 rounded font-bold">LF</span>}
+                {isExamSubject && !isLF && <span className="text-[8px] bg-foreground/5 text-muted-foreground/40 px-1 rounded">P</span>}
               </div>
 
-              {/* Quick-edit inline (Simple Mode) */}
-              {!detailedMode && isEditing && (
-                <div className="px-3 pb-2.5 flex items-center gap-2">
-                  <input
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    placeholder="0–15"
-                    autoFocus
-                    type="number"
-                    min={0}
-                    max={15}
-                    className="w-16 rounded-lg border border-border/40 bg-transparent px-2 py-1 text-[13px] text-center tabular-nums focus:outline-none focus:border-violet-500/40 transition-colors"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseInt(editValue);
-                        if (!isNaN(val) && val >= 0 && val <= 15) {
-                          store.setFinalOverride(sub.id, hj, val);
-                        }
-                        setEditingSubject(null);
-                      } else if (e.key === 'Escape') {
-                        setEditingSubject(null);
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      const val = parseInt(editValue);
-                      if (!isNaN(val) && val >= 0 && val <= 15) {
-                        store.setFinalOverride(sub.id, hj, val);
-                      }
-                      setEditingSubject(null);
-                    }}
-                    className="text-[11px] text-violet-500 font-medium hover:text-violet-400"
-                  >
-                    Speichern
-                  </button>
-                  {entry.finalOverride !== null && (
-                    <button
-                      onClick={() => {
-                        store.setFinalOverride(sub.id, hj, null);
-                        setEditingSubject(null);
-                      }}
-                      className="text-[11px] text-muted-foreground/30 hover:text-red-400"
-                    >
-                      Löschen
-                    </button>
-                  )}
-                </div>
-              )}
+              {/* Semester cells */}
+              {SEMESTERS.map((semester) => {
+                const cellKey = `${subject.id}-${semester}`;
+                const points = getGrade(subject.id, semester);
+                const isEditing = editingCell === cellKey;
+
+                return (
+                  <div key={semester} className="flex-1 px-0.5">
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        min={0}
+                        max={15}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={() => handleCellSubmit(subject.id, semester)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleCellSubmit(subject.id, semester);
+                          if (e.key === 'Escape') setEditingCell(null);
+                        }}
+                        autoFocus
+                        className="w-full h-8 rounded-md border border-violet-500/40 bg-transparent text-center text-[13px] font-semibold tabular-nums focus:outline-none"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => handleCellClick(subject.id, semester)}
+                        className={cn(
+                          'w-full h-8 rounded-md text-[13px] font-semibold tabular-nums transition-all',
+                          points !== null ? getPointsBg(points) : 'hover:bg-foreground/[0.03]',
+                          points !== null ? getPointsColor(points) : 'text-muted-foreground/15',
+                          points !== null && isDeficit(points) && 'ring-1 ring-inset ring-red-400/30',
+                        )}
+                      >
+                        {points !== null ? points : '·'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Average */}
+              <div className="w-12 text-center shrink-0">
+                <span className={cn('text-[11px] tabular-nums font-medium', avg !== null ? getPointsColor(Math.round(avg)) : 'text-muted-foreground/15')}>
+                  {avg !== null ? avg.toFixed(1) : '—'}
+                </span>
+              </div>
             </div>
           );
         })}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">
+        Halbjahresleistungen
+      </p>
+      <div className="rounded-xl border border-border/40 p-3 overflow-x-auto">
+        {/* Header */}
+        <div className="flex items-center mb-2">
+          <div className="w-28 lg:w-36 shrink-0" />
+          {SEMESTERS.map((s) => (
+            <div key={s} className="flex-1 text-center">
+              <span className={cn(
+                'text-[10px] font-medium uppercase tracking-wider',
+                s === profile.currentSemester ? 'text-violet-500' : 'text-muted-foreground/30'
+              )}>
+                {s}
+              </span>
+            </div>
+          ))}
+          <div className="w-12 text-center shrink-0">
+            <span className="text-[10px] text-muted-foreground/30 font-medium">Ø</span>
+          </div>
+        </div>
+
+        {renderFieldGroup('Aufgabenfeld I — Sprachen & Kunst', field1, 1)}
+        {renderFieldGroup('Aufgabenfeld II — Gesellschaft', field2, 2)}
+        {renderFieldGroup('Aufgabenfeld III — MINT', field3, 3)}
+        {renderFieldGroup('Weitere', field0, 0)}
       </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// SUBJECT DETAIL VIEW
+// EXAMS SECTION
 // ═══════════════════════════════════════════════════════════
 
-function SubjectDetailView() {
-  const store = useAbiturStore();
-  const { subjects, grades, selectedSubjectId } = store;
-  const subject = subjects.find((s) => s.id === selectedSubjectId);
-  const [addingKleine, setAddingKleine] = useState<Halbjahr | null>(null);
-  const [kleineValue, setKleineValue] = useState('');
-  const [saValue, setSaValue] = useState('');
-  const [editingSA, setEditingSA] = useState<Halbjahr | null>(null);
-  const [targetHJL, setTargetHJL] = useState(10);
+function ExamsSection({
+  profile,
+  result,
+  onSetExamPoints,
+  onSetSeminarPaper,
+  onSetSeminarPresentation,
+}: {
+  profile: AbiturProfile;
+  result: ReturnType<typeof calculateAbitur>;
+  onSetExamPoints: (subjectId: string, points: number | null) => void;
+  onSetSeminarPaper: (points: number | null) => void;
+  onSetSeminarPresentation: (points: number | null) => void;
+}) {
+  const [editingExam, setEditingExam] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
-  if (!subject) {
+  const examLabels = ['Schriftlich: Deutsch', 'Schriftlich: Mathematik', 'Schriftlich: Leistungsfach', 'Kolloquium 1', 'Kolloquium 2'];
+
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">
+        Abiturprüfungen
+      </p>
+      <div className="rounded-xl border border-border/40 overflow-hidden">
+        {profile.exams.map((exam, i) => {
+          const subject = getSubject(exam.subjectId);
+          const isEditing = editingExam === exam.subjectId;
+          const weighted = exam.points !== null ? exam.points * 4 : null;
+
+          return (
+            <div
+              key={i}
+              className={cn(
+                'flex items-center gap-3 px-4 py-3 border-b border-border/20 last:border-0',
+                i < 3 ? 'bg-foreground/[0.01]' : ''
+              )}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-medium truncate">
+                  {subject ? subject.name : exam.subjectId ? exam.subjectId : '— Fach wählen —'}
+                </p>
+                <p className="text-[10px] text-muted-foreground/40">{examLabels[i]}</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {isEditing ? (
+                  <input
+                    type="number"
+                    min={0}
+                    max={15}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => {
+                      const val = parseInt(editValue, 10);
+                      if (!isNaN(val) && val >= 0 && val <= 15) {
+                        onSetExamPoints(exam.subjectId, val);
+                      } else if (editValue.trim() === '') {
+                        onSetExamPoints(exam.subjectId, null);
+                      }
+                      setEditingExam(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                      if (e.key === 'Escape') setEditingExam(null);
+                    }}
+                    autoFocus
+                    className="w-14 h-8 rounded-md border border-violet-500/40 bg-transparent text-center text-[13px] font-semibold tabular-nums focus:outline-none"
+                  />
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (!exam.subjectId) return;
+                      setEditingExam(exam.subjectId);
+                      setEditValue(exam.points !== null ? String(exam.points) : '');
+                    }}
+                    className={cn(
+                      'w-14 h-8 rounded-md text-[13px] font-semibold tabular-nums transition-all',
+                      exam.points !== null ? getPointsBg(exam.points) : 'bg-foreground/[0.03]',
+                      exam.points !== null ? getPointsColor(exam.points) : 'text-muted-foreground/20'
+                    )}
+                  >
+                    {exam.points !== null ? exam.points : '·'}
+                  </button>
+                )}
+
+                <div className="w-16 text-right">
+                  <span className="text-[11px] text-muted-foreground/40 tabular-nums">
+                    {weighted !== null ? `×4 = ${weighted}` : ''}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Block II total */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-foreground/[0.02] border-t border-border/30">
+          <span className="text-[11px] text-muted-foreground/50 font-medium">Block II Gesamt</span>
+          <span className="text-[13px] font-bold tabular-nums">
+            {result.blockII.totalPoints} / 300
+          </span>
+        </div>
+      </div>
+
+      {/* Seminar */}
+      <div className="mt-3 rounded-xl border border-border/40 p-4 space-y-3">
+        <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
+          W-Seminar
+        </p>
+        {profile.seminarTopicTitle && (
+          <p className="text-[12px] text-muted-foreground/60 italic">&ldquo;{profile.seminarTopicTitle}&rdquo;</p>
+        )}
+        <div className="flex gap-4">
+          <SeminarInput
+            label="Seminararbeit"
+            value={profile.seminarPaperPoints}
+            onChange={onSetSeminarPaper}
+          />
+          <SeminarInput
+            label="Präsentation"
+            value={profile.seminarPresentationPoints}
+            onChange={onSetSeminarPresentation}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SeminarInput({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number | null) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState('');
+
+  if (editing) {
     return (
-      <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-        <button onClick={() => store.setView('dashboard')} className="text-[12px] text-muted-foreground/40">
-          ← Zurück
-        </button>
-        <p className="text-muted-foreground/40 mt-4">Fach nicht gefunden.</p>
+      <div className="flex-1">
+        <p className="text-[10px] text-muted-foreground/40 mb-1">{label}</p>
+        <input
+          type="number"
+          min={0}
+          max={15}
+          value={editVal}
+          onChange={(e) => setEditVal(e.target.value)}
+          onBlur={() => {
+            const val = parseInt(editVal, 10);
+            if (!isNaN(val) && val >= 0 && val <= 15) onChange(val);
+            else if (editVal.trim() === '') onChange(null);
+            setEditing(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          autoFocus
+          className="w-full h-8 rounded-md border border-violet-500/40 bg-transparent text-center text-[13px] font-semibold tabular-nums focus:outline-none"
+        />
       </div>
     );
   }
 
-  const subjectGrades = grades[subject.id];
-
   return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-5">
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => store.setView('halbjahr')}
-          className="text-muted-foreground/40 hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <h1 className="text-lg font-semibold tracking-tight">{subject.name}</h1>
-        {subject.isLeistungsfach && (
-          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md bg-violet-500/10 text-violet-500 border border-violet-500/20">
-            Leistungsfach
-          </span>
+    <div className="flex-1">
+      <p className="text-[10px] text-muted-foreground/40 mb-1">{label}</p>
+      <button
+        onClick={() => { setEditVal(value !== null ? String(value) : ''); setEditing(true); }}
+        className={cn(
+          'w-full h-8 rounded-md text-[13px] font-semibold tabular-nums transition-all',
+          value !== null ? getPointsBg(value) : 'bg-foreground/[0.03]',
+          value !== null ? getPointsColor(value) : 'text-muted-foreground/20'
         )}
-        {subject.isAbiturFach && !subject.isLeistungsfach && (
-          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md bg-sky-500/10 text-sky-500 border border-sky-500/20">
-            Abiturfach {subject.abiturFachNr}
-          </span>
-        )}
-      </div>
+      >
+        {value !== null ? value : '·'}
+      </button>
+    </div>
+  );
+}
 
-      {/* 4-halves trend */}
-      <div className="grid grid-cols-4 gap-2">
-        {HALBJAHRE.map((hj) => {
-          const entry = subjectGrades?.[hj];
-          if (!entry) return null;
-          const hasSA = hasSchulaufgabe(subject, hj);
-          const result = computeHalbjahresleistung(entry, hasSA);
-          return (
-            <div key={hj} className="rounded-xl border border-border/30 p-3 text-center">
-              <p className="text-[10px] text-muted-foreground/30 font-medium">{hj}</p>
-              <p
-                className={cn(
-                  'text-2xl font-bold tabular-nums mt-1',
-                  result.source === 'expected' && result.points === 0
-                    ? 'text-muted-foreground/15'
-                    : pointsColor(result.points)
-                )}
-              >
-                {result.source === 'expected' && result.points === 0 ? '—' : result.points}
-              </p>
-              <p className="text-[9px] text-muted-foreground/20 mt-0.5">
-                {result.source === 'override' ? 'Endnote' : result.source === 'computed' ? 'Berechnet' : result.source}
-              </p>
-            </div>
-          );
-        })}
-      </div>
+// ═══════════════════════════════════════════════════════════
+// HURDLES SECTION
+// ═══════════════════════════════════════════════════════════
 
-      {/* Detail per halbjahr */}
-      {HALBJAHRE.map((hj) => {
-        const entry = subjectGrades?.[hj];
-        if (!entry) return null;
-        const hasSA = hasSchulaufgabe(subject, hj);
-        const result = computeHalbjahresleistung(entry, hasSA);
-        const smallAvg =
-          entry.kleineNachweise.length > 0
-            ? entry.kleineNachweise.reduce((a, b) => a + b, 0) / entry.kleineNachweise.length
-            : null;
-
-        return (
-          <div key={hj} className="rounded-xl border border-border/30 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-[13px] font-semibold">{hj}</p>
-              <p className={cn('text-[15px] font-bold tabular-nums', pointsColor(result.points))}>
-                {result.points} P
-              </p>
-            </div>
-
-            {/* SA */}
-            {hasSA && (
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-muted-foreground/40 w-14">SA:</span>
-                {editingSA === hj ? (
-                  <div className="flex items-center gap-1">
-                    <input
-                      value={saValue}
-                      onChange={(e) => setSaValue(e.target.value)}
-                      type="number" min={0} max={15}
-                      autoFocus
-                      className="w-14 rounded-lg border border-border/40 bg-transparent px-2 py-1 text-[12px] text-center tabular-nums focus:outline-none focus:border-violet-500/40"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const val = parseInt(saValue);
-                          if (!isNaN(val) && val >= 0 && val <= 15) {
-                            store.setGrade(subject.id, hj, { schulaufgabe: val, status: 'actual' });
-                          }
-                          setEditingSA(null);
-                        } else if (e.key === 'Escape') {
-                          setEditingSA(null);
-                        }
-                      }}
-                    />
-                    <button onClick={() => setEditingSA(null)} className="text-muted-foreground/20">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setSaValue(entry.schulaufgabe !== null ? String(entry.schulaufgabe) : '');
-                      setEditingSA(hj);
-                    }}
-                    className={cn(
-                      'text-[12px] tabular-nums font-medium',
-                      entry.schulaufgabe !== null ? pointsColor(entry.schulaufgabe) : 'text-muted-foreground/20'
-                    )}
-                  >
-                    {entry.schulaufgabe !== null ? `${entry.schulaufgabe} P` : '—'}
-                  </button>
-                )}
-              </div>
+function HurdlesSection({
+  result,
+  fieldCoverage,
+}: {
+  result: ReturnType<typeof calculateAbitur>;
+  fieldCoverage: ReturnType<typeof checkFieldCoverage>;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">
+        Zulassungshürden
+      </p>
+      <div className="rounded-xl border border-border/40 overflow-hidden">
+        {result.hurdles.map((hurdle) => (
+          <div
+            key={hurdle.id}
+            className={cn(
+              'flex items-center gap-3 px-4 py-3 border-b border-border/20 last:border-0',
+              !hurdle.passed && 'bg-red-500/[0.03]'
             )}
-
-            {/* Kleine Nachweise */}
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] text-muted-foreground/40 w-14">Mündl.:</span>
-                {smallAvg !== null && (
-                  <span className="text-[10px] text-muted-foreground/30">
-                    Ø {smallAvg.toFixed(1)}
-                  </span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {entry.kleineNachweise.map((p, i) => (
-                  <span
-                    key={i}
-                    className={cn(
-                      'inline-flex items-center gap-0.5 text-[11px] font-medium px-2 py-0.5 rounded-md bg-foreground/[0.04]',
-                      pointsColor(p)
-                    )}
-                  >
-                    {p}
-                    <button
-                      onClick={() => store.removeKleineNote(subject.id, hj, i)}
-                      className="text-muted-foreground/20 hover:text-red-400 ml-0.5"
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  </span>
-                ))}
-                {addingKleine === hj ? (
-                  <input
-                    value={kleineValue}
-                    onChange={(e) => setKleineValue(e.target.value)}
-                    type="number" min={0} max={15}
-                    autoFocus
-                    placeholder="0-15"
-                    className="w-12 rounded-md border border-border/40 bg-transparent px-1.5 py-0.5 text-[11px] text-center tabular-nums focus:outline-none focus:border-violet-500/40"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseInt(kleineValue);
-                        if (!isNaN(val) && val >= 0 && val <= 15) {
-                          store.addKleineNote(subject.id, hj, val);
-                          setKleineValue('');
-                        }
-                      } else if (e.key === 'Escape') {
-                        setAddingKleine(null);
-                        setKleineValue('');
-                      }
-                    }}
-                    onBlur={() => {
-                      setAddingKleine(null);
-                      setKleineValue('');
-                    }}
-                  />
-                ) : (
-                  <button
-                    onClick={() => {
-                      setAddingKleine(hj);
-                      setKleineValue('');
-                    }}
-                    className="text-[11px] px-2 py-0.5 rounded-md border border-dashed border-border/40 text-muted-foreground/30 hover:border-violet-500/30 hover:text-violet-500 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Final override */}
-            <div className="flex items-center gap-2 pt-1 border-t border-border/20">
-              <span className="text-[10px] text-muted-foreground/40 w-14">Endnote:</span>
-              <input
-                type="number" min={0} max={15}
-                value={entry.finalOverride ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value === '' ? null : parseInt(e.target.value);
-                  if (val === null || (!isNaN(val) && val >= 0 && val <= 15)) {
-                    store.setFinalOverride(subject.id, hj, val);
-                  }
-                }}
-                placeholder="—"
-                className="w-14 rounded-lg border border-border/40 bg-transparent px-2 py-1 text-[12px] text-center tabular-nums focus:outline-none focus:border-violet-500/40"
-              />
-              <span className="text-[10px] text-muted-foreground/20">
-                (überschreibt Berechnung)
-              </span>
+          >
+            {hurdle.passed ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+            ) : (
+              <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-medium">{hurdle.label}</p>
+              <p className="text-[10px] text-muted-foreground/40">{hurdle.description}</p>
             </div>
           </div>
-        );
-      })}
+        ))}
 
-      {/* "What SA do I need?" Cherry */}
-      <div className="rounded-xl border border-border/30 p-4">
-        <div className="flex items-center gap-1.5 mb-2">
-          <Target className="h-3.5 w-3.5 text-violet-500" />
-          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
-            Was brauche ich?
-          </p>
+        {/* Field coverage */}
+        <div className={cn(
+          'flex items-center gap-3 px-4 py-3 border-t border-border/30',
+          !fieldCoverage.allCovered && 'bg-amber-500/[0.03]'
+        )}>
+          {fieldCoverage.allCovered ? (
+            <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+          ) : (
+            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] font-medium">Aufgabenfeldabdeckung</p>
+            <div className="flex gap-2 mt-1">
+              {([
+                { label: 'AF I', ok: fieldCoverage.field1 },
+                { label: 'AF II', ok: fieldCoverage.field2 },
+                { label: 'AF III', ok: fieldCoverage.field3 },
+              ]).map(({ label, ok }) => (
+                <span
+                  key={label}
+                  className={cn(
+                    'text-[9px] font-medium px-1.5 py-0.5 rounded',
+                    ok ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-400'
+                  )}
+                >
+                  {label} {ok ? '✓' : '✗'}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-[12px] text-muted-foreground/40">Ziel-HJL:</span>
-          <div className="flex items-center gap-1">
-            {[7, 8, 9, 10, 11, 12, 13, 14, 15].map((p) => (
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// SETTINGS VIEW
+// ═══════════════════════════════════════════════════════════
+
+function SettingsView({ profile, onBack }: { profile: AbiturProfile; onBack: () => void }) {
+  const {
+    setStudentName, setSchoolYear, setCurrentSemester,
+    setLeistungsfach, setSeminarTopicTitle,
+    addSubject, removeSubject, setExamSubject, resetProfile,
+  } = useAbiturStore();
+
+  const [showAddSubject, setShowAddSubject] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  const availableSubjects = ALL_SUBJECTS.filter(
+    (s) => !profile.subjects.includes(s.id) && s.id !== 'psem'
+  );
+
+  const lfOptions = ALL_SUBJECTS.filter((s) => s.canBeLF && s.id !== 'deu' && s.id !== 'mat');
+
+  const colloquiumOptions = profile.subjects
+    .map((id) => getSubject(id))
+    .filter((s): s is SubjectDefinition =>
+      !!s && !['deu', 'mat', profile.leistungsfach].includes(s.id) && s.id !== 'psem' && s.id !== 'wsem'
+    );
+
+  return (
+    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
+      <div className="flex items-center gap-2">
+        <button onClick={onBack} className="text-muted-foreground/40 hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <Settings className="h-4 w-4 text-violet-500" />
+        <h1 className="text-lg font-semibold tracking-tight">Einstellungen</h1>
+      </div>
+
+      {/* Profile */}
+      <SettingsSection title="Profil">
+        <SettingsField label="Name">
+          <input
+            value={profile.studentName}
+            onChange={(e) => setStudentName(e.target.value)}
+            placeholder="Dein Name"
+            className="w-full rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-violet-500/40"
+          />
+        </SettingsField>
+        <SettingsField label="Schuljahr">
+          <input
+            value={profile.schoolYear}
+            onChange={(e) => setSchoolYear(e.target.value)}
+            placeholder="2025/2027"
+            className="w-full rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-violet-500/40"
+          />
+        </SettingsField>
+        <SettingsField label="Aktuelles Halbjahr">
+          <div className="flex gap-2">
+            {SEMESTERS.map((s) => (
               <button
-                key={p}
-                onClick={() => setTargetHJL(p)}
+                key={s}
+                onClick={() => setCurrentSemester(s)}
                 className={cn(
-                  'text-[11px] px-1.5 py-0.5 rounded font-medium transition-all tabular-nums',
-                  targetHJL === p
-                    ? 'bg-violet-500/10 text-violet-500'
-                    : 'text-muted-foreground/25 hover:text-muted-foreground/40'
+                  'flex-1 rounded-lg py-2 text-[12px] font-medium transition-all border',
+                  s === profile.currentSemester
+                    ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
+                    : 'border-border/40 text-muted-foreground/50 hover:border-border/60'
                 )}
               >
-                {p}
+                {s}
               </button>
             ))}
           </div>
-        </div>
-        {HALBJAHRE.map((hj) => {
-          const entry = subjectGrades?.[hj];
-          if (!entry) return null;
-          const hasSA = hasSchulaufgabe(subject, hj);
-          const smallAvg =
-            entry.kleineNachweise.length > 0
-              ? entry.kleineNachweise.reduce((a, b) => a + b, 0) / entry.kleineNachweise.length
-              : null;
-          const needed = whatSADoINeed(targetHJL, smallAvg, hasSA);
-          if (entry.finalOverride !== null) return null;
-          return (
-            <p key={hj} className="text-[12px] text-muted-foreground/50 py-0.5">
-              <span className="font-medium">{hj}:</span> {needed.sentence}
-            </p>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+        </SettingsField>
+      </SettingsSection>
 
-// ═══════════════════════════════════════════════════════════
-// EINBRINGUNG VIEW
-// ═══════════════════════════════════════════════════════════
-
-function EinbringungView() {
-  const store = useAbiturStore();
-  const {
-    subjects,
-    grades,
-    einbringungStrategy,
-    lockedSlots,
-  } = store;
-
-  const blockI = useMemo(
-    () =>
-      computeEinbringung({
-        subjects,
-        grades,
-        lockedSlots: new Set(lockedSlots),
-        strategy: einbringungStrategy,
-        onlyFortgefuehrteFremdsprache: store.onlyFortgefuehrteFremdsprache,
-        onlyFortgefuehrteNaturwissenschaft: store.onlyFortgefuehrteNaturwissenschaft,
-        pugSubjectId: store.pugSubjectId,
-        wrGeoSubjectId: store.wrGeoSubjectId,
-      }),
-    [subjects, grades, lockedSlots, einbringungStrategy, store.onlyFortgefuehrteFremdsprache, store.onlyFortgefuehrteNaturwissenschaft, store.pugSubjectId, store.wrGeoSubjectId]
-  );
-
-  // Build lookup for quick checks
-  const includedSet = new Set(
-    blockI.slots.map((s) => `${s.subjectId}:${s.halbjahr}`)
-  );
-
-  return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-5">
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => store.setView('dashboard')}
-          className="text-muted-foreground/40 hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <BarChart3 className="h-4 w-4 text-violet-500" />
-        <h1 className="text-lg font-semibold tracking-tight">Einbringung</h1>
-        <span className="ml-auto text-[12px] font-medium tabular-nums text-muted-foreground/50">
-          {blockI.slots.length}/40
-        </span>
-      </div>
-
-      {/* Strategy toggle */}
-      <div className="flex rounded-xl bg-foreground/[0.03] p-0.5">
-        {(['maximize', 'stable'] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => store.setStrategy(s)}
-            className={cn(
-              'flex-1 rounded-lg py-2 text-[12px] font-medium transition-all text-center',
-              einbringungStrategy === s
-                ? 'bg-background shadow-sm text-foreground'
-                : 'text-muted-foreground/40 hover:text-muted-foreground/60'
-            )}
-          >
-            {s === 'maximize' ? '🔼 Maximieren' : '🔒 Stabil'}
-          </button>
-        ))}
-      </div>
-
-      {/* Summary bar */}
-      <div className="flex items-center gap-4 text-[12px]">
-        <span className="text-muted-foreground/40">
-          Pflicht: <span className="font-semibold text-foreground">{blockI.mandatoryCount}</span>
-        </span>
-        <span className="text-muted-foreground/20">·</span>
-        <span className="text-muted-foreground/40">
-          Frei wählbar: <span className="font-semibold text-foreground">{blockI.freeCount}</span>
-        </span>
-        <span className="text-muted-foreground/20">·</span>
-        <span className={cn('font-semibold', blockI.isValid ? 'text-emerald-500' : 'text-amber-500')}>
-          {blockI.totalPoints} Punkte
-        </span>
-      </div>
-
-      {/* Issues */}
-      {blockI.issues.length > 0 && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3 space-y-1">
-          {blockI.issues.map((issue, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 shrink-0" />
-              <p className="text-[12px] text-amber-600 dark:text-amber-400">{issue}</p>
-            </div>
+      {/* Leistungsfach */}
+      <SettingsSection title="Leistungsfach">
+        <p className="text-[10px] text-muted-foreground/40 mb-2">
+          Dein gewähltes Leistungsfach (5 Wochenstunden, schriftliche Abiturprüfung)
+        </p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {lfOptions.filter((s) => profile.subjects.includes(s.id)).map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setLeistungsfach(s.id)}
+              className={cn(
+                'rounded-lg px-3 py-2 text-[12px] font-medium transition-all border text-left',
+                s.id === profile.leistungsfach
+                  ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
+                  : 'border-border/40 text-muted-foreground/50 hover:border-border/60'
+              )}
+            >
+              {s.shortName}
+            </button>
           ))}
         </div>
-      )}
+      </SettingsSection>
 
-      {/* Matrix: subjects × halbjahre */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr className="text-muted-foreground/30">
-              <th className="text-left font-medium py-1.5 pr-3 w-16">Fach</th>
-              {HALBJAHRE.map((hj) => (
-                <th key={hj} className="text-center font-medium py-1.5 px-1 w-16">{hj}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {subjects.map((sub) => (
-              <tr key={sub.id} className="border-t border-border/10">
-                <td className="py-1.5 pr-3">
-                  <span className="font-semibold text-muted-foreground/50">{sub.shortName}</span>
-                </td>
-                {HALBJAHRE.map((hj) => {
-                  const entry = grades[sub.id]?.[hj];
-                  if (!entry) return <td key={hj} />;
+      {/* Exam Subjects (Colloquiums) */}
+      <SettingsSection title="Kolloquien (Prüfungsfächer 4 & 5)">
+        <p className="text-[10px] text-muted-foreground/40 mb-2">
+          Wähle deine beiden mündlichen Prüfungsfächer. Fächer I, II und III müssen abgedeckt sein.
+        </p>
+        {([3, 4] as const).map((idx) => (
+          <div key={idx} className="mb-2">
+            <p className="text-[10px] text-muted-foreground/30 mb-1">Kolloquium {idx - 2}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {colloquiumOptions.map((s) => {
+                const isSelected = profile.examSubjects[idx] === s.id;
+                const isUsedElsewhere = profile.examSubjects.includes(s.id) && !isSelected;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => !isUsedElsewhere && setExamSubject(idx, s.id)}
+                    disabled={isUsedElsewhere}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all border',
+                      isSelected
+                        ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
+                        : isUsedElsewhere
+                          ? 'border-border/20 text-muted-foreground/20 cursor-not-allowed'
+                          : 'border-border/40 text-muted-foreground/50 hover:border-border/60'
+                    )}
+                  >
+                    {s.shortName}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </SettingsSection>
 
-                  const hasSA = hasSchulaufgabe(sub, hj);
-                  const result = computeHalbjahresleistung(entry, hasSA);
-                  const key = `${sub.id}:${hj}`;
-                  const isIncluded = includedSet.has(key);
-                  const slot = blockI.slots.find(
-                    (s) => s.subjectId === sub.id && s.halbjahr === hj
-                  );
-                  const isMandatory = slot?.isMandatory ?? false;
-                  const isLocked = lockedSlots.includes(key);
-
-                  return (
-                    <td key={hj} className="text-center py-1.5 px-1">
-                      <button
-                        onClick={() => {
-                          if (!isMandatory) {
-                            store.toggleLockSlot(sub.id, hj);
-                          }
-                        }}
-                        disabled={isMandatory}
-                        className={cn(
-                          'inline-flex items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[12px] font-bold tabular-nums transition-all w-full',
-                          isIncluded
-                            ? isMandatory
-                              ? 'bg-violet-500/10 text-violet-500 cursor-default'
-                              : isLocked
-                                ? 'bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20'
-                                : 'bg-emerald-500/10 text-emerald-500'
-                            : 'bg-foreground/[0.02] text-muted-foreground/25',
-                          !isMandatory && 'hover:opacity-80 cursor-pointer'
-                        )}
-                        title={
-                          isMandatory
-                            ? slot?.reason
-                            : isLocked
-                              ? 'Gesperrt (klicken zum Entsperren)'
-                              : 'Klicken zum Sperren'
-                        }
-                      >
-                        {result.points > 0 || result.source !== 'expected' ? result.points : '—'}
-                        {isMandatory && <Lock className="h-2.5 w-2.5 ml-0.5" />}
-                        {isLocked && !isMandatory && <Lock className="h-2.5 w-2.5 ml-0.5" />}
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
+      {/* Subjects */}
+      <SettingsSection title="Fächerbelegung">
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {profile.subjects.map((id) => {
+            const subject = getSubject(id);
+            if (!subject) return null;
+            const isMandatory = ['deu', 'mat'].includes(id) || id === profile.leistungsfach || profile.examSubjects.includes(id);
+            return (
+              <div
+                key={id}
+                className={cn(
+                  'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium border',
+                  isMandatory ? 'border-violet-500/20 bg-violet-500/5 text-violet-600 dark:text-violet-400' : 'border-border/40 text-muted-foreground/60'
+                )}
+              >
+                <span>{subject.shortName}</span>
+                {!isMandatory && (
+                  <button onClick={() => removeSubject(id)} className="text-muted-foreground/30 hover:text-red-400 transition-colors">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button
+            onClick={() => setShowAddSubject(!showAddSubject)}
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium border border-dashed border-border/40 text-muted-foreground/40 hover:text-violet-500 hover:border-violet-500/30 transition-colors"
+          >
+            <Plus className="h-3 w-3" />
+            Fach
+          </button>
+        </div>
+        {showAddSubject && availableSubjects.length > 0 && (
+          <div className="rounded-xl border border-border/40 p-3 space-y-1">
+            {availableSubjects.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => { addSubject(s.id); setShowAddSubject(false); }}
+                className="w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] hover:bg-foreground/[0.03] transition-colors"
+              >
+                <Plus className="h-3 w-3 text-violet-500" />
+                <span>{s.name}</span>
+                <span className="text-[10px] text-muted-foreground/30 ml-auto">AF {s.field || '—'}</span>
+              </button>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        )}
+      </SettingsSection>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 text-[10px] text-muted-foreground/30 pt-2">
-        <span className="flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded bg-violet-500/20" /> Pflicht
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded bg-sky-500/20" /> Gesperrt
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded bg-emerald-500/20" /> Auto-gewählt
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded bg-foreground/[0.04]" /> Nicht eingebracht
-        </span>
+      {/* W-Seminar */}
+      <SettingsSection title="W-Seminar">
+        <SettingsField label="Thema">
+          <input
+            value={profile.seminarTopicTitle}
+            onChange={(e) => setSeminarTopicTitle(e.target.value)}
+            placeholder="Thema der Seminararbeit"
+            className="w-full rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-violet-500/40"
+          />
+        </SettingsField>
+      </SettingsSection>
+
+      {/* Reset */}
+      <div className="pt-4 border-t border-border/20">
+        {confirmReset ? (
+          <div className="flex items-center gap-3">
+            <p className="text-[12px] text-red-400">Wirklich alle Daten zurücksetzen?</p>
+            <button
+              onClick={() => { resetProfile(); setConfirmReset(false); onBack(); }}
+              className="text-[12px] text-red-500 font-medium hover:text-red-400 transition-colors"
+            >
+              Ja, zurücksetzen
+            </button>
+            <button
+              onClick={() => setConfirmReset(false)}
+              className="text-[12px] text-muted-foreground/40 hover:text-foreground transition-colors"
+            >
+              Abbrechen
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmReset(true)}
+            className="text-[12px] text-muted-foreground/40 hover:text-red-400 transition-colors"
+          >
+            Alle Daten zurücksetzen
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// EXAMS VIEW (Block II)
+// Shared Helpers
 // ═══════════════════════════════════════════════════════════
 
-function ExamsView() {
-  const store = useAbiturStore();
-  const { subjects, exams } = store;
-
-  const blockII = useMemo(() => computeBlockII(exams), [exams]);
-
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
   return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-5">
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => store.setView('dashboard')}
-          className="text-muted-foreground/40 hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <TrendingUp className="h-4 w-4 text-violet-500" />
-        <h1 className="text-lg font-semibold tracking-tight">Abiturprüfungen</h1>
-        <span className="ml-auto text-[14px] font-bold tabular-nums">
-          {blockII.totalPoints}<span className="text-muted-foreground/30 text-[12px]">/300</span>
-        </span>
-      </div>
+    <div className="rounded-xl border border-border/40 p-3">
+      <p className={cn('text-xl font-bold tabular-nums', color)}>{value}</p>
+      <p className="text-[10px] text-muted-foreground/40 mt-0.5">{label}</p>
+      <p className="text-[9px] text-muted-foreground/25 mt-0.5">{sub}</p>
+    </div>
+  );
+}
 
-      <p className="text-[12px] text-muted-foreground/40">
-        5 Prüfungen × 4 = max. 300 Punkte (Block II). Trage erwartete oder tatsächliche Punkte ein.
-      </p>
+function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">{title}</p>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
 
-      <div className="space-y-3">
-        {exams.map((exam, i) => {
-          const sub = subjects.find((s) => s.id === exam.subjectId);
-          const pts = exam.actualPoints ?? exam.expectedPoints ?? 0;
-          const weighted = pts * 4;
-
-          return (
-            <div
-              key={exam.subjectId}
-              className="rounded-xl border border-border/40 p-4"
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-[10px] font-bold text-violet-500 bg-violet-500/10 px-1.5 py-0.5 rounded">
-                  {i + 1}
-                </span>
-                <p className="text-[13px] font-semibold">{sub?.name ?? 'Unbekannt'}</p>
-                <span className="ml-auto text-[12px] font-bold tabular-nums text-muted-foreground/40">
-                  {weighted} P
-                </span>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <label className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">
-                    Erwartet
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={15}
-                    value={exam.expectedPoints ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value === '' ? null : parseInt(e.target.value);
-                      if (val === null || (!isNaN(val) && val >= 0 && val <= 15)) {
-                        store.setExam(i, { expectedPoints: val });
-                      }
-                    }}
-                    placeholder="—"
-                    className="mt-1 w-full rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[14px] text-center tabular-nums font-semibold focus:outline-none focus:border-violet-500/40 transition-colors"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">
-                    Tatsächlich
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={15}
-                    value={exam.actualPoints ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value === '' ? null : parseInt(e.target.value);
-                      if (val === null || (!isNaN(val) && val >= 0 && val <= 15)) {
-                        store.setExam(i, { actualPoints: val });
-                      }
-                    }}
-                    placeholder="—"
-                    className="mt-1 w-full rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[14px] text-center tabular-nums font-semibold focus:outline-none focus:border-emerald-500/40 transition-colors"
-                  />
-                </div>
-                <div className="w-14 text-center">
-                  <label className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">
-                    ×4
-                  </label>
-                  <p className={cn('text-[16px] font-bold tabular-nums mt-1', pointsColor(pts))}>
-                    {weighted}
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Summary */}
-      <div className="rounded-xl border border-border/40 p-4 text-center">
-        <p className="text-[10px] text-muted-foreground/30 uppercase tracking-wider">Block II Gesamt</p>
-        <p className="text-3xl font-black tabular-nums mt-1">
-          {blockII.totalPoints}
-          <span className="text-[14px] text-muted-foreground/30 font-normal">/300</span>
-        </p>
-      </div>
+function SettingsField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-[10px] text-muted-foreground/40 mb-1 block">{label}</label>
+      {children}
     </div>
   );
 }

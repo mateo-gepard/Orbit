@@ -55,10 +55,10 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     id: 'abitur',
-    name: 'Abitur',
-    tagline: 'Track your Abitur score — Bayern G9.',
+    name: 'Abitur Tracker',
+    tagline: 'Your path to Abitur, calculated in real-time.',
     description:
-      'Enter grades per Halbjahr, optimise Einbringung, simulate exam results, and see your projected Abiturnote in real time.',
+      'Full Bavarian G9 Abitur calculator. Track semester grades, exam scores, Block I/II points, deficit warnings, and your projected final grade — all in one place.',
     icon: 'GraduationCap',
     href: '/tools/abitur',
     color: 'text-violet-600 dark:text-violet-400',
