@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { updateItem } from '@/lib/firestore';
+import { PlaneAnimation } from '@/components/flight/plane-animation';
 import {
   AIRPORTS,
   DURATION_PRESETS,
@@ -24,6 +25,7 @@ import {
   getCurrentPhase,
   generateFlightNumber,
   getRouteForDuration,
+  getRouteForAirports,
   formatFlightTime,
   type Airport,
   type FlightRoute,
@@ -124,8 +126,9 @@ export default function FlightPage() {
   }, [activeTasks, tasks, taskSearch]);
 
   const handleDurationChange = (d: FlightDuration) => {
+    const newRoute = getRouteForDuration(d);
     setDuration(d);
-    setRoute(getRouteForDuration(d));
+    setRoute(newRoute);
   };
 
   // ── Timer ──
@@ -218,9 +221,9 @@ export default function FlightPage() {
 
   const handleSelectAirport = (airport: Airport) => {
     if (pickingAirport === 'from') {
-      setRoute((prev) => ({ ...prev, from: airport }));
+      setRoute((prev) => getRouteForAirports(airport, prev.to));
     } else if (pickingAirport === 'to') {
-      setRoute((prev) => ({ ...prev, to: airport }));
+      setRoute((prev) => getRouteForAirports(prev.from, airport));
     }
     setPickingAirport(null);
   };
@@ -310,6 +313,13 @@ export default function FlightPage() {
           >
             {status === 'paused' ? 'Holding Pattern' : phaseInfo.label}
           </p>
+
+          <PlaneAnimation
+            phase={phaseInfo.phase}
+            phaseProgress={phaseInfo.phaseProgress}
+            progress={phaseInfo.progress}
+            isPaused={status === 'paused'}
+          />
 
           <p
             className={cn(
@@ -733,21 +743,21 @@ export default function FlightPage() {
         </p>
         <div className="space-y-2">
           {DURATION_PRESETS.map((preset) => (
-            <div key={preset.category}>
+            <div key={preset.label}>
               <p className="text-[10px] text-muted-foreground/30 mb-1.5">{preset.label}</p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {preset.durations.map((d) => (
                   <button
                     key={d}
                     onClick={() => handleDurationChange(d)}
                     className={cn(
-                      'rounded-xl px-4 py-2 text-[13px] font-medium transition-all active:scale-95 border',
+                      'rounded-xl px-3 py-1.5 text-[12px] font-medium transition-all active:scale-95 border',
                       d === duration
                         ? 'bg-sky-500/10 border-sky-500/25 text-sky-600 dark:text-sky-400'
                         : 'border-border/40 text-muted-foreground/50 hover:border-border/60 hover:text-foreground/70'
                     )}
                   >
-                    {d}m
+                    {formatFlightTime(d)}
                   </button>
                 ))}
               </div>
