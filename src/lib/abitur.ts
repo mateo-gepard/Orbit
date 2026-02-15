@@ -8,10 +8,15 @@
 export type Semester = '12/1' | '12/2' | '13/1' | '13/2';
 export const SEMESTERS: Semester[] = ['12/1', '12/2', '13/1', '13/2'];
 
+export const SEMESTER_LABELS: Record<Semester, string> = {
+  '12/1': 'Q12/1',
+  '12/2': 'Q12/2',
+  '13/1': 'Q13/1',
+  '13/2': 'Q13/2',
+};
+
 export type SubjectLevel = 'eA' | 'gA' | 'wahlpflicht';
-
-export type SubjectField = 1 | 2 | 3 | 0; // 0 = no field (Sport)
-
+export type SubjectField = 1 | 2 | 3 | 0;
 export type ExamType = 'written' | 'colloquium';
 
 export interface SubjectDefinition {
@@ -28,43 +33,36 @@ export interface SubjectDefinition {
 export interface SemesterGrade {
   subjectId: string;
   semester: Semester;
-  points: number | null; // 0-15, null = not yet entered
+  points: number | null;
 }
 
 export interface ExamResult {
   subjectId: string;
   examType: ExamType;
-  points: number | null; // 0-15
+  points: number | null;
 }
 
 export interface AbiturProfile {
   id: string;
-  // Chosen subjects
-  leistungsfach: string; // subject ID
-  subjects: string[]; // all subject IDs the student is taking
-  examSubjects: string[]; // 5 exam subject IDs (order: written1=Deutsch, written2=Math, written3=LF, colloquium1, colloquium2)
-
-  // All semester grades
+  onboardingComplete: boolean;
+  leistungsfach: string;
+  subjects: string[];
+  examSubjects: string[];
   grades: SemesterGrade[];
-
-  // Exam results
+  /** User-selected einbringung keys ("subjectId:semester"). Mandatory ones are implicit. */
+  einbringungen: string[];
   exams: ExamResult[];
-
-  // Seminar
   seminarPaperPoints: number | null;
   seminarPresentationPoints: number | null;
   seminarTopicTitle: string;
-
-  // Metadata
   studentName: string;
-  schoolYear: string; // e.g. "2025/2027"
+  schoolYear: string;
   currentSemester: Semester;
 }
 
 // ─── Subject Database ──────────────────────────────────────
 
 export const ALL_SUBJECTS: SubjectDefinition[] = [
-  // Field I — Language, Literature, Arts
   { id: 'deu', name: 'Deutsch', shortName: 'D', field: 1, defaultLevel: 'eA', hoursPerWeek: 4, canBeLF: false, category: 'language' },
   { id: 'eng', name: 'Englisch', shortName: 'E', field: 1, defaultLevel: 'gA', hoursPerWeek: 3, canBeLF: true, category: 'language' },
   { id: 'fra', name: 'Französisch', shortName: 'F', field: 1, defaultLevel: 'gA', hoursPerWeek: 3, canBeLF: true, category: 'language' },
@@ -75,7 +73,6 @@ export const ALL_SUBJECTS: SubjectDefinition[] = [
   { id: 'gri', name: 'Griechisch', shortName: 'Gr', field: 1, defaultLevel: 'gA', hoursPerWeek: 3, canBeLF: true, category: 'language' },
   { id: 'kun', name: 'Kunst', shortName: 'Ku', field: 1, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: true, category: 'art' },
   { id: 'mus', name: 'Musik', shortName: 'Mu', field: 1, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: true, category: 'art' },
-  // Field II — Social Sciences
   { id: 'ges', name: 'Geschichte', shortName: 'G', field: 2, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: true, category: 'social' },
   { id: 'geo', name: 'Geographie', shortName: 'Geo', field: 2, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: true, category: 'social' },
   { id: 'pug', name: 'Politik & Gesellschaft', shortName: 'PuG', field: 2, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: false, category: 'social' },
@@ -83,15 +80,12 @@ export const ALL_SUBJECTS: SubjectDefinition[] = [
   { id: 'rev', name: 'Ev. Religionslehre', shortName: 'EvR', field: 2, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: false, category: 'social' },
   { id: 'rka', name: 'Kath. Religionslehre', shortName: 'KR', field: 2, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: false, category: 'social' },
   { id: 'eth', name: 'Ethik', shortName: 'Eth', field: 2, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: false, category: 'social' },
-  // Field III — Math & Natural Sciences
   { id: 'mat', name: 'Mathematik', shortName: 'M', field: 3, defaultLevel: 'eA', hoursPerWeek: 4, canBeLF: false, category: 'stem' },
   { id: 'phy', name: 'Physik', shortName: 'Ph', field: 3, defaultLevel: 'gA', hoursPerWeek: 3, canBeLF: true, category: 'stem' },
   { id: 'che', name: 'Chemie', shortName: 'Ch', field: 3, defaultLevel: 'gA', hoursPerWeek: 3, canBeLF: true, category: 'stem' },
   { id: 'bio', name: 'Biologie', shortName: 'Bio', field: 3, defaultLevel: 'gA', hoursPerWeek: 3, canBeLF: true, category: 'stem' },
   { id: 'inf', name: 'Informatik', shortName: 'Inf', field: 3, defaultLevel: 'gA', hoursPerWeek: 3, canBeLF: true, category: 'stem' },
-  // No field
   { id: 'spo', name: 'Sport', shortName: 'Spo', field: 0, defaultLevel: 'gA', hoursPerWeek: 2, canBeLF: true, category: 'sport' },
-  // Seminars
   { id: 'wsem', name: 'W-Seminar', shortName: 'W', field: 0, defaultLevel: 'wahlpflicht', hoursPerWeek: 2, canBeLF: false, category: 'seminar' },
   { id: 'psem', name: 'P-Seminar', shortName: 'P', field: 0, defaultLevel: 'wahlpflicht', hoursPerWeek: 2, canBeLF: false, category: 'seminar' },
 ];
@@ -100,9 +94,47 @@ export function getSubject(id: string): SubjectDefinition | undefined {
   return ALL_SUBJECTS.find((s) => s.id === id);
 }
 
+// ─── Einbringung Helpers ───────────────────────────────────
+
+export function eKey(subjectId: string, semester: Semester): string {
+  return `${subjectId}:${semester}`;
+}
+
+/** Is this grade mandatory? (user cannot deselect it) */
+export function isMandatory(subjectId: string, profile: AbiturProfile): boolean {
+  if (subjectId === 'deu' || subjectId === 'mat') return true;
+  if (subjectId === profile.leistungsfach) return true;
+  if (profile.examSubjects.includes(subjectId)) return true;
+  return false;
+}
+
+/** Is a specific grade eingebracht? Either mandatory or user-selected. */
+export function isEingebracht(subjectId: string, semester: Semester, profile: AbiturProfile): boolean {
+  if (isMandatory(subjectId, profile)) return true;
+  return profile.einbringungen.includes(eKey(subjectId, semester));
+}
+
+/** Can the user toggle this einbringung? */
+export function canToggle(subjectId: string, profile: AbiturProfile): boolean {
+  if (isMandatory(subjectId, profile)) return false;
+  if (subjectId === 'wsem' || subjectId === 'psem') return false;
+  return true;
+}
+
+/** Count total einbringungen across all semesters */
+export function countAllEinbringungen(profile: AbiturProfile): number {
+  let count = 0;
+  for (const subjectId of profile.subjects) {
+    if (subjectId === 'psem') continue;
+    for (const sem of SEMESTERS) {
+      if (isEingebracht(subjectId, sem, profile)) count++;
+    }
+  }
+  return count;
+}
+
 // ─── Grade Helpers ─────────────────────────────────────────
 
-/** Convert 0-15 points to German grade 1-6 */
 export function pointsToGrade(points: number): string {
   if (points >= 13) return '1';
   if (points >= 10) return '2';
@@ -112,7 +144,6 @@ export function pointsToGrade(points: number): string {
   return '6';
 }
 
-/** Convert 0-15 points to label */
 export function pointsToLabel(points: number): string {
   if (points >= 13) return 'Sehr gut';
   if (points >= 10) return 'Gut';
@@ -122,12 +153,8 @@ export function pointsToLabel(points: number): string {
   return 'Ungenügend';
 }
 
-/** Is this grade a deficit? (under 5 points) */
-export function isDeficit(points: number): boolean {
-  return points < 5;
-}
+export function isDeficit(points: number): boolean { return points < 5; }
 
-/** Get color class for points */
 export function getPointsColor(points: number | null): string {
   if (points === null) return 'text-muted-foreground/30';
   if (points >= 13) return 'text-emerald-500';
@@ -138,7 +165,6 @@ export function getPointsColor(points: number | null): string {
   return 'text-red-500';
 }
 
-/** Get background color class for points */
 export function getPointsBg(points: number | null): string {
   if (points === null) return 'bg-muted-foreground/5';
   if (points >= 13) return 'bg-emerald-500/10';
@@ -149,330 +175,204 @@ export function getPointsBg(points: number | null): string {
   return 'bg-red-500/10';
 }
 
-// ─── Block I: Semester Grades Calculation ──────────────────
+// ─── Per-Semester Statistics ───────────────────────────────
+
+export interface SemesterStats {
+  semester: Semester;
+  allGrades: SemesterGrade[];
+  eingebrachte: SemesterGrade[];
+  allAverage: number | null;
+  eingebrachteAverage: number | null;
+  deficits: number;
+  enteredCount: number;
+  totalSubjects: number;
+  einbringungCount: number;
+}
+
+export function calcSemesterStats(semester: Semester, profile: AbiturProfile): SemesterStats {
+  const subjects = profile.subjects.filter((s) => s !== 'psem');
+  const allGrades = profile.grades.filter(
+    (g) => g.semester === semester && g.points !== null && g.subjectId !== 'psem'
+  );
+  const eingebrachte = allGrades.filter((g) => isEingebracht(g.subjectId, semester, profile));
+
+  const allAvg = allGrades.length > 0
+    ? allGrades.reduce((s, g) => s + (g.points ?? 0), 0) / allGrades.length
+    : null;
+  const einAvg = eingebrachte.length > 0
+    ? eingebrachte.reduce((s, g) => s + (g.points ?? 0), 0) / eingebrachte.length
+    : null;
+
+  return {
+    semester,
+    allGrades,
+    eingebrachte,
+    allAverage: allAvg,
+    eingebrachteAverage: einAvg,
+    deficits: eingebrachte.filter((g) => isDeficit(g.points!)).length,
+    enteredCount: allGrades.length,
+    totalSubjects: subjects.length,
+    einbringungCount: eingebrachte.length,
+  };
+}
+
+// ─── Block I ───────────────────────────────────────────────
 
 export interface BlockIResult {
   totalPoints: number;
-  maxPoints: number; // 600
-  contributedGrades: SemesterGrade[]; // the 40 used
-  droppedGrades: SemesterGrade[]; // optimized out
+  maxPoints: number;
+  contributedGrades: SemesterGrade[];
+  droppedGrades: SemesterGrade[];
+  einbringungCount: number;
   deficitCount: number;
   zeroCount: number;
   passed: boolean;
-  average: number; // average of 40 grades
+  average: number;
 }
 
-/**
- * Calculate Block I score.
- * Selects the optimal 40 grades, enforcing mandatory Einbringungen.
- */
 export function calculateBlockI(profile: AbiturProfile): BlockIResult {
-  const allGrades = profile.grades.filter((g) => g.points !== null);
-
-  // Mandatory grades that MUST be contributed
-  const mandatorySubjectIds = new Set<string>();
-
-  // Deutsch, Math, LF: all 4 semesters
-  mandatorySubjectIds.add('deu');
-  mandatorySubjectIds.add('mat');
-  mandatorySubjectIds.add(profile.leistungsfach);
-
-  // All 5 exam subjects: all 4 semesters
-  for (const examSubject of profile.examSubjects) {
-    mandatorySubjectIds.add(examSubject);
-  }
-
-  // Identify mandatory grades (all semesters for mandatory subjects)
-  const mandatoryGrades: SemesterGrade[] = [];
-  const optionalGrades: SemesterGrade[] = [];
+  const allGrades = profile.grades.filter((g) => g.points !== null && g.subjectId !== 'psem');
+  const contributed: SemesterGrade[] = [];
+  const dropped: SemesterGrade[] = [];
 
   for (const g of allGrades) {
-    if (mandatorySubjectIds.has(g.subjectId)) {
-      mandatoryGrades.push(g);
+    if (isEingebracht(g.subjectId, g.semester, profile)) {
+      contributed.push(g);
     } else {
-      optionalGrades.push(g);
+      dropped.push(g);
     }
   }
 
-  // Add W-Seminar grades (paper + presentation count as 2 grades)
-  // These are handled separately in the profile
-
-  // Sort optional grades by points descending (for optimization)
-  optionalGrades.sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
-
-  // Build the 40 grades
-  const contributed: SemesterGrade[] = [...mandatoryGrades];
-
-  // Fill remaining slots with best optional grades
-  const remaining = 40 - contributed.length;
-  const usedOptional = optionalGrades.slice(0, Math.max(0, remaining));
-  contributed.push(...usedOptional);
-
-  const dropped = optionalGrades.slice(Math.max(0, remaining));
-
-  // Calculate
   const totalPoints = contributed.reduce((sum, g) => sum + (g.points ?? 0), 0);
-  const deficitCount = contributed.filter((g) => g.points !== null && isDeficit(g.points)).length;
+  const deficitCount = contributed.filter((g) => isDeficit(g.points!)).length;
   const zeroCount = contributed.filter((g) => g.points === 0).length;
   const average = contributed.length > 0 ? totalPoints / contributed.length : 0;
 
   return {
-    totalPoints,
-    maxPoints: 600,
-    contributedGrades: contributed,
-    droppedGrades: dropped,
-    deficitCount,
-    zeroCount,
+    totalPoints, maxPoints: 600,
+    contributedGrades: contributed, droppedGrades: dropped,
+    einbringungCount: contributed.length,
+    deficitCount, zeroCount,
     passed: totalPoints >= 200 && deficitCount <= 8,
     average,
   };
 }
 
-// ─── Block II: Exam Calculation ────────────────────────────
+// ─── Block II ──────────────────────────────────────────────
 
 export interface BlockIIResult {
-  totalPoints: number; // sum * 4
-  maxPoints: number; // 300
-  rawSum: number;
+  totalPoints: number; maxPoints: number; rawSum: number;
   exams: ExamResult[];
-  passingExamCount: number; // exams >= 5 points
-  hasZeroExam: boolean;
-  coreExamPassed: boolean; // at least 1 of D/M/LF >= 5
-  passed: boolean;
+  passingExamCount: number; hasZeroExam: boolean; coreExamPassed: boolean; passed: boolean;
 }
 
 export function calculateBlockII(profile: AbiturProfile): BlockIIResult {
   const exams = profile.exams.filter((e) => e.points !== null);
-  const rawSum = exams.reduce((sum, e) => sum + (e.points ?? 0), 0);
+  const rawSum = exams.reduce((s, e) => s + (e.points ?? 0), 0);
   const totalPoints = rawSum * 4;
-
-  const passingExams = exams.filter((e) => (e.points ?? 0) >= 5);
-  const coreSubjects = ['deu', 'mat', profile.leistungsfach];
-  const coreExamPassed = passingExams.some((e) => coreSubjects.includes(e.subjectId));
-
+  const passing = exams.filter((e) => (e.points ?? 0) >= 5);
+  const core = ['deu', 'mat', profile.leistungsfach];
+  const coreOk = passing.some((e) => core.includes(e.subjectId));
   return {
-    totalPoints,
-    maxPoints: 300,
-    rawSum,
-    exams,
-    passingExamCount: passingExams.length,
+    totalPoints, maxPoints: 300, rawSum, exams,
+    passingExamCount: passing.length,
     hasZeroExam: exams.some((e) => e.points === 0),
-    coreExamPassed,
-    passed: totalPoints >= 100 && passingExams.length >= 3 && coreExamPassed && !exams.some((e) => e.points === 0),
+    coreExamPassed: coreOk,
+    passed: totalPoints >= 100 && passing.length >= 3 && coreOk && !exams.some((e) => e.points === 0),
   };
 }
 
-// ─── Total Score & Final Grade ─────────────────────────────
+// ─── Full Calculation ──────────────────────────────────────
 
 export interface AbiturResult {
-  blockI: BlockIResult;
-  blockII: BlockIIResult;
-  totalPoints: number;
-  maxPoints: number; // 900
-  finalGrade: number; // 1.0 - 6.0
-  passed: boolean;
-  hurdles: HurdleCheck[];
+  blockI: BlockIResult; blockII: BlockIIResult;
+  totalPoints: number; maxPoints: number; finalGrade: number;
+  passed: boolean; hurdles: HurdleCheck[];
+  semesterStats: SemesterStats[];
 }
 
 export interface HurdleCheck {
-  id: string;
-  label: string;
-  description: string;
-  passed: boolean;
-  severity: 'critical' | 'warning';
+  id: string; label: string; description: string; passed: boolean; severity: 'critical' | 'warning';
 }
 
-/** Convert total points (0-900) to Abitur grade (1.0-6.0) */
 export function totalPointsToGrade(points: number): number {
   if (points < 300) return 6.0;
-  // Official formula: grade = 17/3 - points/180
   const grade = 17 / 3 - points / 180;
   return Math.max(1.0, Math.min(6.0, Math.round(grade * 10) / 10));
 }
 
-/** Full Abitur calculation with hurdle checks */
 export function calculateAbitur(profile: AbiturProfile): AbiturResult {
   const blockI = calculateBlockI(profile);
   const blockII = calculateBlockII(profile);
   const totalPoints = blockI.totalPoints + blockII.totalPoints;
   const finalGrade = totalPointsToGrade(totalPoints);
+  const semesterStats = SEMESTERS.map((s) => calcSemesterStats(s, profile));
 
-  const hurdles: HurdleCheck[] = [];
-
-  // Hurdle 1: Block I minimum
-  hurdles.push({
-    id: 'block1-min',
-    label: 'Block I Minimum (200 Punkte)',
-    description: `${blockI.totalPoints} von 200 benötigten Punkten`,
-    passed: blockI.totalPoints >= 200,
-    severity: 'critical',
-  });
-
-  // Hurdle 2: Block I deficit limit
-  hurdles.push({
-    id: 'block1-deficits',
-    label: 'Max. 8 Unterpunktungen (Block I)',
-    description: `${blockI.deficitCount} von maximal 8 Unterpunktungen`,
-    passed: blockI.deficitCount <= 8,
-    severity: 'critical',
-  });
-
-  // Hurdle 3: No zero in mandatory grades
-  hurdles.push({
-    id: 'block1-zeros',
-    label: 'Keine 0 Punkte in Pflichtfächern',
-    description: blockI.zeroCount > 0 ? `${blockI.zeroCount} Fächer mit 0 Punkten` : 'Alle Pflichtfächer bestanden',
-    passed: blockI.zeroCount === 0,
-    severity: 'critical',
-  });
-
-  // Hurdle 4: Block II minimum
-  hurdles.push({
-    id: 'block2-min',
-    label: 'Block II Minimum (100 Punkte)',
-    description: `${blockII.totalPoints} von 100 benötigten Punkten`,
-    passed: blockII.totalPoints >= 100,
-    severity: 'critical',
-  });
-
-  // Hurdle 5: 3 exams >= 5 points
-  hurdles.push({
-    id: 'block2-3exams',
-    label: 'Mind. 3 Prüfungen ≥ 5 Punkte',
-    description: `${blockII.passingExamCount} von 3 benötigten Prüfungen bestanden`,
-    passed: blockII.passingExamCount >= 3,
-    severity: 'critical',
-  });
-
-  // Hurdle 6: Core exam passed
-  hurdles.push({
-    id: 'block2-core',
-    label: 'Kernfach bestanden (D/M/LF)',
-    description: blockII.coreExamPassed ? 'Mindestens 1 Kernfach ≥ 5 Punkte' : 'Kein Kernfach ≥ 5 Punkte',
-    passed: blockII.coreExamPassed,
-    severity: 'critical',
-  });
-
-  // Hurdle 7: No zero exam
-  hurdles.push({
-    id: 'block2-no-zero',
-    label: 'Keine 0 Punkte in Prüfungen',
-    description: blockII.hasZeroExam ? 'Mindestens 1 Prüfung mit 0 Punkten' : 'Alle Prüfungen > 0 Punkte',
-    passed: !blockII.hasZeroExam,
-    severity: 'critical',
-  });
-
-  // Hurdle 8: Seminar paper
-  hurdles.push({
-    id: 'seminar-paper',
-    label: 'W-Seminararbeit > 0 Punkte',
-    description: profile.seminarPaperPoints === null
-      ? 'Noch nicht bewertet'
-      : profile.seminarPaperPoints === 0
-        ? 'Seminararbeit mit 0 Punkten — Nichtzulassung!'
-        : `Seminararbeit: ${profile.seminarPaperPoints} Punkte`,
-    passed: profile.seminarPaperPoints === null || profile.seminarPaperPoints > 0,
-    severity: 'critical',
-  });
-
-  const allHurdlesPassed = hurdles.every((h) => h.passed);
+  const hurdles: HurdleCheck[] = [
+    { id: 'b1-min', label: 'Block I ≥ 200 Punkte', description: `${blockI.totalPoints}/200`, passed: blockI.totalPoints >= 200, severity: 'critical' },
+    { id: 'b1-40', label: '40 Einbringungen', description: `${blockI.einbringungCount}/40`, passed: blockI.einbringungCount >= 40, severity: 'critical' },
+    { id: 'b1-def', label: 'Max. 8 Unterpunktungen', description: `${blockI.deficitCount}/8`, passed: blockI.deficitCount <= 8, severity: 'critical' },
+    { id: 'b1-zero', label: 'Keine 0 Punkte (Pflicht)', description: blockI.zeroCount > 0 ? `${blockI.zeroCount}× 0P` : '✓', passed: blockI.zeroCount === 0, severity: 'critical' },
+    { id: 'b2-min', label: 'Block II ≥ 100 Punkte', description: `${blockII.totalPoints}/100`, passed: blockII.totalPoints >= 100, severity: 'critical' },
+    { id: 'b2-3', label: '≥ 3 Prüfungen ≥ 5P', description: `${blockII.passingExamCount}/3`, passed: blockII.passingExamCount >= 3, severity: 'critical' },
+    { id: 'b2-core', label: 'Kernfach bestanden', description: blockII.coreExamPassed ? '✓' : '✗', passed: blockII.coreExamPassed, severity: 'critical' },
+    { id: 'b2-zero', label: 'Keine 0P in Prüfungen', description: blockII.hasZeroExam ? '✗' : '✓', passed: !blockII.hasZeroExam, severity: 'critical' },
+    { id: 'sem', label: 'Seminararbeit > 0P', description: profile.seminarPaperPoints === null ? 'offen' : profile.seminarPaperPoints === 0 ? '0P!' : `${profile.seminarPaperPoints}P`, passed: profile.seminarPaperPoints === null || profile.seminarPaperPoints > 0, severity: 'critical' },
+  ];
 
   return {
-    blockI,
-    blockII,
-    totalPoints,
-    maxPoints: 900,
-    finalGrade,
-    passed: allHurdlesPassed && totalPoints >= 300,
-    hurdles,
+    blockI, blockII, totalPoints, maxPoints: 900, finalGrade,
+    passed: hurdles.every((h) => h.passed) && totalPoints >= 300,
+    hurdles, semesterStats,
   };
 }
 
-// ─── Projection / Simulation ───────────────────────────────
+// ─── Projection ────────────────────────────────────────────
 
-/** Calculate what average you need on remaining grades to hit a target */
 export function calculateNeededAverage(
-  profile: AbiturProfile,
-  targetGrade: number
+  profile: AbiturProfile, targetGrade: number
 ): { neededBlockIAvg: number; neededExamAvg: number; achievable: boolean } {
   const targetPoints = Math.ceil((17 / 3 - targetGrade) * 180);
-
-  const currentBlockI = calculateBlockI(profile);
-  const currentBlockII = calculateBlockII(profile);
-
-  // How many grades are still missing?
-  const enteredGradeCount = profile.grades.filter((g) => g.points !== null).length;
-  const remainingGrades = Math.max(0, 40 - enteredGradeCount);
-
-  // How many exams are still missing?
-  const enteredExamCount = profile.exams.filter((e) => e.points !== null).length;
-  const remainingExams = Math.max(0, 5 - enteredExamCount);
-
-  if (remainingGrades === 0 && remainingExams === 0) {
-    return { neededBlockIAvg: 0, neededExamAvg: 0, achievable: currentBlockI.totalPoints + currentBlockII.totalPoints >= targetPoints };
-  }
-
-  // Points still needed
-  const pointsNeeded = targetPoints - currentBlockI.totalPoints - currentBlockII.totalPoints;
-
-  // Split needed points between blocks proportionally
-  const blockINeeded = remainingGrades > 0 ? Math.max(0, pointsNeeded * 0.67) : 0;
-  const blockIINeeded = remainingExams > 0 ? Math.max(0, pointsNeeded * 0.33) : 0;
-
-  const neededBlockIAvg = remainingGrades > 0 ? Math.min(15, blockINeeded / remainingGrades) : 0;
-  const neededExamAvg = remainingExams > 0 ? Math.min(15, blockIINeeded / (remainingExams * 4)) : 0;
-
-  return {
-    neededBlockIAvg: Math.round(neededBlockIAvg * 10) / 10,
-    neededExamAvg: Math.round(neededExamAvg * 10) / 10,
-    achievable: neededBlockIAvg <= 15 && neededExamAvg <= 15,
-  };
+  const bI = calculateBlockI(profile);
+  const bII = calculateBlockII(profile);
+  const remG = Math.max(0, 40 - profile.grades.filter((g) => g.points !== null).length);
+  const remE = Math.max(0, 5 - profile.exams.filter((e) => e.points !== null).length);
+  if (remG === 0 && remE === 0) return { neededBlockIAvg: 0, neededExamAvg: 0, achievable: bI.totalPoints + bII.totalPoints >= targetPoints };
+  const need = targetPoints - bI.totalPoints - bII.totalPoints;
+  const nBI = remG > 0 ? Math.min(15, Math.max(0, need * 0.67) / remG) : 0;
+  const nBII = remE > 0 ? Math.min(15, Math.max(0, need * 0.33) / (remE * 4)) : 0;
+  return { neededBlockIAvg: Math.round(nBI * 10) / 10, neededExamAvg: Math.round(nBII * 10) / 10, achievable: nBI <= 15 && nBII <= 15 };
 }
 
-// ─── Field Coverage Check ──────────────────────────────────
-
-export function checkFieldCoverage(examSubjects: string[]): { field1: boolean; field2: boolean; field3: boolean; allCovered: boolean } {
-  const fields = examSubjects.map((id) => getSubject(id)?.field ?? 0);
-  const field1 = fields.includes(1);
-  const field2 = fields.includes(2);
-  const field3 = fields.includes(3);
-  return { field1, field2, field3, allCovered: field1 && field2 && field3 };
+export function checkFieldCoverage(examSubjects: string[]) {
+  const f = examSubjects.map((id) => getSubject(id)?.field ?? 0);
+  const f1 = f.includes(1), f2 = f.includes(2), f3 = f.includes(3);
+  return { field1: f1, field2: f2, field3: f3, allCovered: f1 && f2 && f3 };
 }
 
 // ─── Create Default Profile ────────────────────────────────
 
 export function createDefaultProfile(): AbiturProfile {
-  const defaultSubjects = ['deu', 'mat', 'eng', 'ges', 'pug', 'phy', 'rev', 'spo', 'kun', 'wsem', 'psem'];
-
+  const subs = ['deu', 'mat', 'eng', 'ges', 'pug', 'phy', 'rev', 'spo', 'kun', 'wsem', 'psem'];
   const grades: SemesterGrade[] = [];
-  for (const subjectId of defaultSubjects) {
+  for (const subjectId of subs) {
     for (const semester of SEMESTERS) {
       grades.push({ subjectId, semester, points: null });
     }
   }
-
-  const examSubjects = ['deu', 'mat', 'eng', '', ''];
-
-  const exams: ExamResult[] = [
-    { subjectId: 'deu', examType: 'written', points: null },
-    { subjectId: 'mat', examType: 'written', points: null },
-    { subjectId: 'eng', examType: 'written', points: null },
-    { subjectId: '', examType: 'colloquium', points: null },
-    { subjectId: '', examType: 'colloquium', points: null },
-  ];
-
   return {
-    id: crypto.randomUUID(),
-    leistungsfach: 'eng',
-    subjects: defaultSubjects,
-    examSubjects,
-    grades,
-    exams,
-    seminarPaperPoints: null,
-    seminarPresentationPoints: null,
-    seminarTopicTitle: '',
-    studentName: '',
-    schoolYear: '2025/2027',
-    currentSemester: '12/1',
+    id: crypto.randomUUID(), onboardingComplete: false,
+    leistungsfach: 'eng', subjects: subs,
+    examSubjects: ['deu', 'mat', 'eng', '', ''],
+    grades, einbringungen: [],
+    exams: [
+      { subjectId: 'deu', examType: 'written', points: null },
+      { subjectId: 'mat', examType: 'written', points: null },
+      { subjectId: 'eng', examType: 'written', points: null },
+      { subjectId: '', examType: 'colloquium', points: null },
+      { subjectId: '', examType: 'colloquium', points: null },
+    ],
+    seminarPaperPoints: null, seminarPresentationPoints: null, seminarTopicTitle: '',
+    studentName: '', schoolYear: '2025/2027', currentSemester: '12/1',
   };
 }

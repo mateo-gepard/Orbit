@@ -1,815 +1,729 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
-import {
-  GraduationCap,
-  TrendingUp,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  X,
-  Settings,
-  BarChart3,
-  BookOpen,
-  Target,
-  Shield,
-  ArrowLeft,
-  Info,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useAbiturStore } from '@/lib/abitur-store';
 import {
   ALL_SUBJECTS,
   SEMESTERS,
+  SEMESTER_LABELS,
+  type Semester,
+  type SubjectDefinition,
   getSubject,
-  getPointsColor,
-  getPointsBg,
-  pointsToGrade,
-  pointsToLabel,
-  isDeficit,
+  isEingebracht,
+  canToggle,
+  isMandatory,
+  countAllEinbringungen,
   calculateAbitur,
   calculateNeededAverage,
   checkFieldCoverage,
-  totalPointsToGrade,
-  type Semester,
+  getPointsColor,
+  getPointsBg,
+  isDeficit,
+  pointsToGrade,
   type AbiturProfile,
-  type SubjectDefinition,
+  type AbiturResult,
 } from '@/lib/abitur';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import {
+  GraduationCap,
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  Lock,
+  AlertTriangle,
+  CheckCircle2,
+  TrendingUp,
+  Target,
+  BarChart3,
+  BookOpen,
+  Settings,
+  XCircle,
+  Info,
+  ArrowLeft,
+} from 'lucide-react';
 
-type AbiturView = 'dashboard' | 'grades' | 'exams' | 'hurdles' | 'settings';
+// ═══════════════════════════════════════════════════════════
+// Main Page
+// ═══════════════════════════════════════════════════════════
 
 export default function AbiturPage() {
-  const { profile, setGrade, setExamPoints, setSeminarPaperPoints, setSeminarPresentationPoints } = useAbiturStore();
-  const [view, setView] = useState<AbiturView>('dashboard');
-  const [hydrated, setHydrated] = useState(false);
+  const profile = useAbiturStore((s) => s.profile);
 
-  useEffect(() => {
-    setHydrated(true);
+  if (!profile.onboardingComplete) return <OnboardingWizard />;
+  return <AbiturDashboard />;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Onboarding Wizard
+// ═══════════════════════════════════════════════════════════
+
+function OnboardingWizard() {
+  const { setSubjects, setLeistungsfach, setExamSubject, completeOnboarding } = useAbiturStore();
+  const profile = useAbiturStore((s) => s.profile);
+
+  const [step, setStep] = useState(0);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(profile.subjects);
+  const [lf, setLf] = useState(profile.leistungsfach);
+  const [exam4, setExam4] = useState(profile.examSubjects[3] || '');
+  const [exam5, setExam5] = useState(profile.examSubjects[4] || '');
+
+  const mandatoryIds = ['deu', 'mat', 'wsem', 'psem'];
+  const lfOptions = ALL_SUBJECTS.filter((s) => s.canBeLF);
+
+  const groupedOptional = useMemo(() => {
+    const cats: Record<string, SubjectDefinition[]> = {};
+    ALL_SUBJECTS.forEach((s) => {
+      if (mandatoryIds.includes(s.id)) return;
+      const c = s.category;
+      if (!cats[c]) cats[c] = [];
+      cats[c].push(s);
+    });
+    return cats;
   }, []);
+
+  const catLabels: Record<string, string> = {
+    language: 'Sprachen',
+    art: 'Musische Fächer',
+    social: 'Gesellschaftswiss.',
+    stem: 'Naturwiss. & Mathe',
+    sport: 'Sport',
+    seminar: 'Seminare',
+  };
+
+  const toggleSubject = (id: string) => {
+    if (mandatoryIds.includes(id)) return;
+    setSelectedSubjects((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  };
+
+  const finish = () => {
+    setSubjects(selectedSubjects);
+    setLeistungsfach(lf);
+    setExamSubject(3, exam4);
+    setExamSubject(4, exam5);
+    completeOnboarding();
+  };
+
+  const steps = [
+    // Step 0: Welcome
+    <div key="welcome" className="flex flex-col items-center gap-6 text-center">
+      <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
+        <GraduationCap className="h-10 w-10 text-primary" />
+      </div>
+      <div>
+        <h2 className="text-2xl font-bold">Abitur Tracker</h2>
+        <p className="text-muted-foreground mt-2 max-w-md">
+          Behalte den Überblick über deine Qualifikationsphase. Wähle deine Fächer, Prüfungen und verwalte deine Einbringungen.
+        </p>
+      </div>
+    </div>,
+
+    // Step 1: Select subjects
+    <div key="subjects" className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-xl font-bold">Deine Fächer</h2>
+        <p className="text-sm text-muted-foreground">Pflichtfächer sind vorausgewählt</p>
+      </div>
+      <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
+        {Object.entries(groupedOptional).map(([cat, subs]) => (
+          <div key={cat}>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              {catLabels[cat] || cat}
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+              {subs.map((s) => {
+                const selected = selectedSubjects.includes(s.id);
+                const mandatory = mandatoryIds.includes(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => toggleSubject(s.id)}
+                    disabled={mandatory}
+                    className={cn(
+                      'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all text-left',
+                      selected
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border hover:border-primary/50',
+                      mandatory && 'opacity-60 cursor-not-allowed'
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'h-4 w-4 rounded border flex items-center justify-center shrink-0',
+                        selected ? 'bg-primary border-primary' : 'border-muted-foreground/40'
+                      )}
+                    >
+                      {selected && <Check className="h-3 w-3 text-primary-foreground" />}
+                    </div>
+                    <span className="truncate">{s.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>,
+
+    // Step 2: Leistungsfach
+    <div key="lf" className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-xl font-bold">Leistungsfach (LF)</h2>
+        <p className="text-sm text-muted-foreground">
+          Dein 3. schriftliches Abiturfach neben Deutsch und Mathematik
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto pr-2">
+        {lfOptions
+          .filter((s) => selectedSubjects.includes(s.id))
+          .map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setLf(s.id)}
+              className={cn(
+                'rounded-lg border px-3 py-3 text-sm transition-all text-left',
+                lf === s.id
+                  ? 'border-primary bg-primary/10 text-primary font-medium'
+                  : 'border-border hover:border-primary/50'
+              )}
+            >
+              {s.name}
+            </button>
+          ))}
+      </div>
+    </div>,
+
+    // Step 3: Colloquium subjects (4th + 5th exam)
+    <div key="exams" className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-xl font-bold">Kolloquiumsfächer</h2>
+        <p className="text-sm text-muted-foreground">
+          Wähle dein 4. und 5. Prüfungsfach (mündlich)
+        </p>
+      </div>
+      {[
+        { label: '4. Prüfungsfach', val: exam4, setVal: setExam4 },
+        { label: '5. Prüfungsfach', val: exam5, setVal: setExam5 },
+      ].map((row) => (
+        <div key={row.label} className="space-y-2">
+          <p className="text-sm font-medium">{row.label}</p>
+          <div className="grid grid-cols-2 gap-2 max-h-[20vh] overflow-y-auto pr-1">
+            {selectedSubjects
+              .filter((id) => id !== 'deu' && id !== 'mat' && id !== lf && id !== 'wsem' && id !== 'psem')
+              .filter((id) => id !== (row === arguments[0] ? exam5 : exam4))
+              .map((id) => {
+                const s = getSubject(id);
+                if (!s) return null;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => row.setVal(id)}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-sm transition-all text-left',
+                      row.val === id
+                        ? 'border-primary bg-primary/10 text-primary font-medium'
+                        : 'border-border hover:border-primary/50'
+                    )}
+                  >
+                    {s.name}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      ))}
+    </div>,
+  ];
+
+  const canNext =
+    step === 0 ||
+    (step === 1 && selectedSubjects.length >= 8) ||
+    (step === 2 && lf !== '') ||
+    (step === 3 && exam4 !== '' && exam5 !== '');
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[80vh] p-4">
+      <Card className="w-full max-w-lg">
+        <CardContent className="pt-6 pb-4 space-y-6">
+          {/* Progress */}
+          <div className="flex items-center gap-1 justify-center">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className={cn(
+                  'h-1.5 rounded-full transition-all',
+                  i <= step ? 'bg-primary w-8' : 'bg-muted w-4'
+                )}
+              />
+            ))}
+          </div>
+
+          {steps[step]}
+
+          {/* Nav */}
+          <div className="flex items-center justify-between pt-2">
+            <Button
+              variant="ghost"
+              onClick={() => setStep((s) => s - 1)}
+              disabled={step === 0}
+              size="sm"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Zurück
+            </Button>
+            {step < 3 ? (
+              <Button onClick={() => setStep((s) => s + 1)} disabled={!canNext} size="sm">
+                Weiter
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            ) : (
+              <Button onClick={finish} disabled={!canNext} size="sm">
+                <Check className="h-4 w-4 mr-1" />
+                Fertig
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Main Dashboard
+// ═══════════════════════════════════════════════════════════
+
+type View = Semester | 'overview' | 'settings';
+
+function AbiturDashboard() {
+  const profile = useAbiturStore((s) => s.profile);
+  const [view, setView] = useState<View>('overview');
 
   const result = useMemo(() => calculateAbitur(profile), [profile]);
 
-  const projection = useMemo(
-    () => ({
-      for10: calculateNeededAverage(profile, 1.0),
-      for15: calculateNeededAverage(profile, 1.5),
-      for20: calculateNeededAverage(profile, 2.0),
-      for25: calculateNeededAverage(profile, 2.5),
-      for30: calculateNeededAverage(profile, 3.0),
-    }),
-    [profile]
-  );
-
-  const enteredGrades = useMemo(
-    () => profile.grades.filter((g) => g.points !== null),
-    [profile.grades]
-  );
-
-  const totalGradeSlots = useMemo(
-    () => profile.subjects.filter((s) => s !== 'psem').length * 4,
-    [profile.subjects]
-  );
-
-  const enteredExams = useMemo(
-    () => profile.exams.filter((e) => e.points !== null),
-    [profile.exams]
-  );
-
-  const fieldCoverage = useMemo(
-    () => checkFieldCoverage(profile.examSubjects.filter(Boolean)),
-    [profile.examSubjects]
-  );
-
-  if (!hydrated) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-2">
-          <GraduationCap className="h-6 w-6 text-violet-500 mx-auto animate-pulse" />
-          <p className="text-[12px] text-muted-foreground/40">Lade Abitur-Daten...</p>
+  return (
+    <div className="max-w-4xl mx-auto p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <GraduationCap className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold">Abitur Tracker</h1>
+            <p className="text-xs text-muted-foreground">{profile.schoolYear}</p>
+          </div>
         </div>
+        <Button variant="ghost" size="icon" onClick={() => setView('settings')}>
+          <Settings className="h-4 w-4" />
+        </Button>
       </div>
-    );
-  }
 
-  // ═══════════════════════════════════════════════════════════
-  // SETTINGS VIEW
-  // ═══════════════════════════════════════════════════════════
+      {/* Tab bar */}
+      <div className="flex gap-1 bg-muted/50 rounded-xl p-1 overflow-x-auto">
+        <TabBtn active={view === 'overview'} onClick={() => setView('overview')}>
+          Gesamt
+        </TabBtn>
+        {SEMESTERS.map((s) => (
+          <TabBtn key={s} active={view === s} onClick={() => setView(s)}>
+            {SEMESTER_LABELS[s]}
+          </TabBtn>
+        ))}
+      </div>
 
-  if (view === 'settings') {
+      {/* Content */}
+      {view === 'settings' ? (
+        <SettingsView onBack={() => setView('overview')} />
+      ) : view === 'overview' ? (
+        <OverviewTab result={result} profile={profile} />
+      ) : (
+        <SemesterTab semester={view as Semester} result={result} profile={profile} />
+      )}
+    </div>
+  );
+}
+
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap',
+        active ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Overview Tab
+// ═══════════════════════════════════════════════════════════
+
+function OverviewTab({ result, profile }: { result: AbiturResult; profile: AbiturProfile }) {
+  const projection = useMemo(() => calculateNeededAverage(profile, 1.0), [profile]);
+  const einCount = countAllEinbringungen(profile);
+
+  return (
+    <div className="space-y-4">
+      {/* Score Hero */}
+      <Card>
+        <CardContent className="pt-6 pb-5">
+          <div className="text-center space-y-1">
+            <p className="text-5xl font-black tracking-tight">{result.finalGrade.toFixed(1)}</p>
+            <p className="text-sm text-muted-foreground">
+              {result.totalPoints} / {result.maxPoints} Punkte
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mt-5">
+            <MiniStat label="Block I" value={`${result.blockI.totalPoints}`} sub={`/ ${result.blockI.maxPoints}`} ok={result.blockI.passed} />
+            <MiniStat label="Block II" value={`${result.blockII.totalPoints}`} sub={`/ ${result.blockII.maxPoints}`} ok={result.blockII.passed} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Einbringungen count */}
+      <Card>
+        <CardContent className="py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Einbringungen</span>
+          </div>
+          <span className={cn('text-sm font-bold', einCount >= 40 ? 'text-emerald-500' : 'text-amber-500')}>
+            {einCount} / 40
+          </span>
+        </CardContent>
+      </Card>
+
+      {/* Semester overview cards */}
+      <div className="grid grid-cols-2 gap-3">
+        {result.semesterStats.map((ss) => (
+          <Card key={ss.semester}>
+            <CardContent className="py-4 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">{SEMESTER_LABELS[ss.semester]}</p>
+              <div className="flex items-end gap-2">
+                <p className="text-2xl font-bold">{ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}</p>
+                <p className="text-xs text-muted-foreground mb-1">Ø Alle</p>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Ø Eingebrachte:</span>
+                <span className="font-medium">{ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {ss.enteredCount}/{ss.totalSubjects} Noten · {ss.einbringungCount} eingebracht · {ss.deficits} Defizite
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Hurdles */}
+      <HurdlesSection hurdles={result.hurdles} />
+
+      {/* Projection */}
+      <Card>
+        <CardContent className="py-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-medium">Prognose für 1,0</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="text-center p-2 rounded-lg bg-muted/50">
+              <p className="text-lg font-bold">{projection.neededBlockIAvg.toFixed(1)}</p>
+              <p className="text-xs text-muted-foreground">Ø Noten nötig</p>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-muted/50">
+              <p className="text-lg font-bold">{projection.neededExamAvg.toFixed(1)}</p>
+              <p className="text-xs text-muted-foreground">Ø Prüfungen nötig</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Exams section */}
+      <ExamsSection profile={profile} />
+    </div>
+  );
+}
+
+function MiniStat({ label, value, sub, ok }: { label: string; value: string; sub: string; ok: boolean }) {
+  return (
+    <div className={cn('rounded-lg p-3 text-center', ok ? 'bg-emerald-500/10' : 'bg-red-500/10')}>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-xl font-bold">
+        {value} <span className="text-xs font-normal text-muted-foreground">{sub}</span>
+      </p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Semester Tab
+// ═══════════════════════════════════════════════════════════
+
+function SemesterTab({ semester, result, profile }: { semester: Semester; result: AbiturResult; profile: AbiturProfile }) {
+  const ss = result.semesterStats.find((s) => s.semester === semester)!;
+  const { setGrade, toggleEinbringung } = useAbiturStore();
+
+  const subjects = profile.subjects.filter((id) => id !== 'psem');
+
+  return (
+    <div className="space-y-4">
+      {/* Stats bar */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card>
+          <CardContent className="py-3 text-center">
+            <p className="text-2xl font-bold">{ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}</p>
+            <p className="text-xs text-muted-foreground">Ø Alle</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3 text-center">
+            <p className="text-2xl font-bold">{ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}</p>
+            <p className="text-xs text-muted-foreground">Ø Eingebr.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3 text-center">
+            <p className={cn('text-2xl font-bold', ss.deficits > 0 ? 'text-red-500' : 'text-emerald-500')}>{ss.deficits}</p>
+            <p className="text-xs text-muted-foreground">Defizite</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Grade rows */}
+      <Card>
+        <CardContent className="py-2 divide-y divide-border">
+          {subjects.map((subjectId) => {
+            const subj = getSubject(subjectId);
+            if (!subj) return null;
+            const grade = profile.grades.find((g) => g.subjectId === subjectId && g.semester === semester);
+            const pts = grade?.points ?? null;
+            const mandatory = isMandatory(subjectId, profile);
+            const eingebracht = isEingebracht(subjectId, semester, profile);
+            const toggleable = canToggle(subjectId, profile);
+
+            return (
+              <div key={subjectId} className="flex items-center gap-3 py-2.5">
+                {/* Einbringung toggle */}
+                <button
+                  onClick={() => toggleable && toggleEinbringung(subjectId, semester)}
+                  disabled={!toggleable}
+                  className={cn(
+                    'h-5 w-5 rounded border flex items-center justify-center shrink-0 transition-all',
+                    eingebracht
+                      ? mandatory
+                        ? 'bg-primary/20 border-primary/40'
+                        : 'bg-primary border-primary'
+                      : 'border-muted-foreground/30 hover:border-primary/50',
+                    !toggleable && 'cursor-not-allowed'
+                  )}
+                  title={mandatory ? 'Pflichteinbringung' : eingebracht ? 'Eingebracht (klicken zum Entfernen)' : 'Nicht eingebracht (klicken zum Einbringen)'}
+                >
+                  {eingebracht && (mandatory ? <Lock className="h-3 w-3 text-primary" /> : <Check className="h-3 w-3 text-primary-foreground" />)}
+                </button>
+
+                {/* Subject name */}
+                <div className="flex-1 min-w-0">
+                  <p className={cn('text-sm font-medium truncate', !eingebracht && pts !== null && 'text-muted-foreground')}>
+                    {subj.name}
+                  </p>
+                </div>
+
+                {/* Points input */}
+                <PointsInput
+                  value={pts}
+                  onChange={(v) => setGrade(subjectId, semester, v)}
+                  dimmed={!eingebracht}
+                />
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <p className="text-xs text-muted-foreground flex items-center gap-1">
+        <Info className="h-3 w-3" />
+        <Lock className="h-3 w-3" /> = Pflichteinbringung (D, M, LF, Prüfungsfächer). Checkbox = freiwillige Einbringung.
+      </p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Points Input
+// ═══════════════════════════════════════════════════════════
+
+function PointsInput({ value, onChange, dimmed }: { value: number | null; onChange: (v: number | null) => void; dimmed?: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [tmp, setTmp] = useState('');
+
+  const startEdit = () => {
+    setTmp(value !== null ? String(value) : '');
+    setEditing(true);
+  };
+
+  const commit = () => {
+    setEditing(false);
+    const n = parseInt(tmp);
+    if (tmp === '' || tmp === '-') onChange(null);
+    else if (!isNaN(n) && n >= 0 && n <= 15) onChange(n);
+  };
+
+  if (editing) {
     return (
-      <SettingsView
-        profile={profile}
-        onBack={() => setView('dashboard')}
+      <input
+        autoFocus
+        type="text"
+        inputMode="numeric"
+        value={tmp}
+        onChange={(e) => setTmp(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+        className="w-12 h-8 rounded-md border text-center text-sm font-mono bg-background focus:outline-none focus:ring-2 focus:ring-primary"
       />
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // MAIN DASHBOARD
-  // ═══════════════════════════════════════════════════════════
-
   return (
-    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <GraduationCap className="h-5 w-5 text-violet-500" strokeWidth={1.5} />
-          <h1 className="text-xl font-semibold tracking-tight">Abitur Tracker</h1>
-          <span className="text-[11px] text-muted-foreground/40 font-mono ml-1">{profile.schoolYear}</span>
-        </div>
-        <button
-          onClick={() => setView('settings')}
-          className="text-muted-foreground/40 hover:text-foreground transition-colors"
-        >
-          <Settings className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* ── Score Overview ── */}
-      <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
-        {/* Top strip */}
-        <div className={cn(
-          'px-5 py-3 flex items-center justify-between',
-          result.passed ? 'bg-emerald-600 dark:bg-emerald-700' : result.totalPoints >= 300 ? 'bg-amber-600 dark:bg-amber-700' : 'bg-violet-600 dark:bg-violet-700'
-        )}>
-          <span className="text-[12px] font-semibold text-white/90">
-            {result.passed ? 'Bestanden' : result.totalPoints >= 300 ? 'Hürden prüfen' : 'In Bearbeitung'}
-          </span>
-          <span className="text-[11px] text-white/60 font-mono">
-            Semester {profile.currentSemester}
-          </span>
-        </div>
-
-        {/* Score body */}
-        <div className="p-5">
-          <div className="flex items-start gap-8">
-            {/* Big grade */}
-            <div className="text-center">
-              <p className="text-5xl font-black tabular-nums tracking-tight leading-none">
-                {enteredGrades.length > 0 ? result.finalGrade.toFixed(1) : '—'}
-              </p>
-              <p className="text-[10px] text-muted-foreground/40 mt-1.5 uppercase tracking-widest">
-                {enteredGrades.length > 0 ? pointsToLabel(Math.round(result.blockI.average)) : 'Noch keine Noten'}
-              </p>
-            </div>
-
-            {/* Points breakdown */}
-            <div className="flex-1 space-y-3">
-              {/* Block I */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-muted-foreground/50">
-                    Block I — Halbjahresleistungen
-                  </span>
-                  <span className="text-[12px] font-semibold tabular-nums">
-                    {result.blockI.totalPoints} / {result.blockI.maxPoints}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-foreground/[0.05] overflow-hidden">
-                  <div
-                    className={cn(
-                      'h-full rounded-full transition-all',
-                      result.blockI.totalPoints >= 200 ? 'bg-violet-500' : 'bg-red-400'
-                    )}
-                    style={{ width: `${Math.min(100, (result.blockI.totalPoints / result.blockI.maxPoints) * 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Block II */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-muted-foreground/50">
-                    Block II — Abiturprüfungen
-                  </span>
-                  <span className="text-[12px] font-semibold tabular-nums">
-                    {result.blockII.totalPoints} / {result.blockII.maxPoints}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-foreground/[0.05] overflow-hidden">
-                  <div
-                    className={cn(
-                      'h-full rounded-full transition-all',
-                      result.blockII.totalPoints >= 100 ? 'bg-violet-500' : 'bg-red-400'
-                    )}
-                    style={{ width: `${Math.min(100, (result.blockII.totalPoints / result.blockII.maxPoints) * 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Total */}
-              <div className="flex items-center justify-between pt-1 border-t border-border/20">
-                <span className="text-[11px] text-muted-foreground/50">Gesamt</span>
-                <span className="text-[13px] font-bold tabular-nums">
-                  {result.totalPoints} / {result.maxPoints} Punkte
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Quick Stats ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard
-          label="Noten eingetragen"
-          value={`${enteredGrades.length} / ${totalGradeSlots}`}
-          sub={`${Math.round((enteredGrades.length / Math.max(1, totalGradeSlots)) * 100)}%`}
-          color="text-violet-500"
-        />
-        <StatCard
-          label="Durchschnitt"
-          value={enteredGrades.length > 0 ? (enteredGrades.reduce((s, g) => s + (g.points ?? 0), 0) / enteredGrades.length).toFixed(1) : '—'}
-          sub={enteredGrades.length > 0 ? `≈ Note ${pointsToGrade(Math.round(enteredGrades.reduce((s, g) => s + (g.points ?? 0), 0) / enteredGrades.length))}` : ''}
-          color="text-sky-500"
-        />
-        <StatCard
-          label="Unterpunktungen"
-          value={`${result.blockI.deficitCount}`}
-          sub={`max. 8 erlaubt`}
-          color={result.blockI.deficitCount > 6 ? 'text-red-500' : result.blockI.deficitCount > 4 ? 'text-amber-500' : 'text-emerald-500'}
-        />
-        <StatCard
-          label="Prüfungen"
-          value={`${enteredExams.length} / 5`}
-          sub={enteredExams.length > 0 ? `Ø ${(enteredExams.reduce((s, e) => s + (e.points ?? 0), 0) / enteredExams.length).toFixed(1)} P.` : 'ausstehend'}
-          color="text-amber-500"
-        />
-      </div>
-
-      {/* ── Navigation Tabs ── */}
-      <div className="flex rounded-xl bg-foreground/[0.03] p-0.5">
-        {([
-          { id: 'grades' as const, label: 'Noten', icon: BookOpen },
-          { id: 'exams' as const, label: 'Prüfungen', icon: Target },
-          { id: 'hurdles' as const, label: 'Hürden', icon: Shield },
-        ]).map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setView(view === id ? 'dashboard' : id)}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-[12px] font-medium transition-all',
-              view === id
-                ? 'bg-background shadow-sm text-foreground'
-                : 'text-muted-foreground/40 hover:text-muted-foreground/60'
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Grades Grid ── */}
-      {(view === 'dashboard' || view === 'grades') && (
-        <GradesGrid profile={profile} onSetGrade={setGrade} />
+    <button
+      onClick={startEdit}
+      className={cn(
+        'w-12 h-8 rounded-md text-center text-sm font-mono font-bold transition-all',
+        value !== null ? getPointsBg(value) : 'bg-muted/50',
+        value !== null ? getPointsColor(value) : 'text-muted-foreground/40',
+        dimmed && 'opacity-50'
       )}
-
-      {/* ── Exam Section ── */}
-      {(view === 'dashboard' || view === 'exams') && (
-        <ExamsSection
-          profile={profile}
-          result={result}
-          onSetExamPoints={setExamPoints}
-          onSetSeminarPaper={setSeminarPaperPoints}
-          onSetSeminarPresentation={setSeminarPresentationPoints}
-        />
-      )}
-
-      {/* ── Hurdles Section ── */}
-      {(view === 'dashboard' || view === 'hurdles') && (
-        <HurdlesSection result={result} fieldCoverage={fieldCoverage} />
-      )}
-
-      {/* ── Grade Projection ── */}
-      {view === 'dashboard' && enteredGrades.length > 0 && (
-        <div>
-          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">
-            Notenprojektion
-          </p>
-          <div className="rounded-xl border border-border/40 overflow-hidden">
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr className="border-b border-border/20">
-                  <th className="text-left px-3 py-2 text-[10px] text-muted-foreground/40 font-medium uppercase">Ziel</th>
-                  <th className="text-center px-3 py-2 text-[10px] text-muted-foreground/40 font-medium uppercase">Ø Noten nötig</th>
-                  <th className="text-center px-3 py-2 text-[10px] text-muted-foreground/40 font-medium uppercase">Ø Prüfungen</th>
-                  <th className="text-center px-3 py-2 text-[10px] text-muted-foreground/40 font-medium uppercase">Erreichbar</th>
-                </tr>
-              </thead>
-              <tbody>
-                {([
-                  { label: '1,0', data: projection.for10 },
-                  { label: '1,5', data: projection.for15 },
-                  { label: '2,0', data: projection.for20 },
-                  { label: '2,5', data: projection.for25 },
-                  { label: '3,0', data: projection.for30 },
-                ]).map(({ label, data }) => (
-                  <tr key={label} className="border-b border-border/10 last:border-0">
-                    <td className="px-3 py-2 font-semibold">{label}</td>
-                    <td className={cn('text-center px-3 py-2 tabular-nums', getPointsColor(Math.round(data.neededBlockIAvg)))}>
-                      {data.neededBlockIAvg.toFixed(1)} P.
-                    </td>
-                    <td className={cn('text-center px-3 py-2 tabular-nums', getPointsColor(Math.round(data.neededExamAvg)))}>
-                      {data.neededExamAvg.toFixed(1)} P.
-                    </td>
-                    <td className="text-center px-3 py-2">
-                      {data.achievable ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 inline" />
-                      ) : (
-                        <XCircle className="h-3.5 w-3.5 text-red-400 inline" />
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
+    >
+      {value !== null ? value.toString().padStart(2, '0') : '—'}
+    </button>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// GRADES GRID
+// Exams Section
 // ═══════════════════════════════════════════════════════════
 
-function GradesGrid({
-  profile,
-  onSetGrade,
-}: {
-  profile: AbiturProfile;
-  onSetGrade: (subjectId: string, semester: Semester, points: number | null) => void;
-}) {
-  const [editingCell, setEditingCell] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-
-  const subjects = profile.subjects
-    .map((id) => getSubject(id))
-    .filter((s): s is SubjectDefinition => !!s && s.id !== 'psem');
-
-  // Group by field
-  const field1 = subjects.filter((s) => s.field === 1);
-  const field2 = subjects.filter((s) => s.field === 2);
-  const field3 = subjects.filter((s) => s.field === 3);
-  const field0 = subjects.filter((s) => s.field === 0);
-
-  const getGrade = (subjectId: string, semester: Semester): number | null => {
-    const g = profile.grades.find((g) => g.subjectId === subjectId && g.semester === semester);
-    return g?.points ?? null;
-  };
-
-  const subjectAverage = (subjectId: string): number | null => {
-    const grades = SEMESTERS.map((s) => getGrade(subjectId, s)).filter((g): g is number => g !== null);
-    if (grades.length === 0) return null;
-    return grades.reduce((a, b) => a + b, 0) / grades.length;
-  };
-
-  const handleCellClick = (subjectId: string, semester: Semester) => {
-    const cellKey = `${subjectId}-${semester}`;
-    const currentGrade = getGrade(subjectId, semester);
-    setEditingCell(cellKey);
-    setEditValue(currentGrade !== null ? String(currentGrade) : '');
-  };
-
-  const handleCellSubmit = (subjectId: string, semester: Semester) => {
-    const trimmed = editValue.trim();
-    if (trimmed === '') {
-      onSetGrade(subjectId, semester, null);
-    } else {
-      const val = parseInt(trimmed, 10);
-      if (!isNaN(val) && val >= 0 && val <= 15) {
-        onSetGrade(subjectId, semester, val);
-      }
-    }
-    setEditingCell(null);
-  };
-
-  const renderFieldGroup = (label: string, fieldSubjects: SubjectDefinition[], fieldNum: number) => {
-    if (fieldSubjects.length === 0) return null;
-    const fieldColors: Record<number, string> = {
-      1: 'border-l-sky-500',
-      2: 'border-l-amber-500',
-      3: 'border-l-emerald-500',
-      0: 'border-l-muted-foreground/30',
-    };
-
-    return (
-      <div key={fieldNum}>
-        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-widest mb-1.5 mt-4 first:mt-0">
-          {label}
-        </p>
-        {fieldSubjects.map((subject) => {
-          const isExamSubject = profile.examSubjects.includes(subject.id);
-          const isLF = profile.leistungsfach === subject.id;
-          const avg = subjectAverage(subject.id);
-
-          return (
-            <div
-              key={subject.id}
-              className={cn(
-                'flex items-center border-l-2 mb-0.5 rounded-r-lg transition-colors',
-                fieldColors[fieldNum],
-                isLF && 'bg-violet-500/[0.04]'
-              )}
-            >
-              {/* Subject name */}
-              <div className="w-28 lg:w-36 px-2.5 py-1.5 shrink-0 flex items-center gap-1.5">
-                <span className={cn('text-[12px] truncate', isLF ? 'font-bold text-violet-500' : isExamSubject ? 'font-semibold' : '')}>
-                  {subject.shortName}
-                </span>
-                {isLF && <span className="text-[8px] bg-violet-500/15 text-violet-500 px-1 rounded font-bold">LF</span>}
-                {isExamSubject && !isLF && <span className="text-[8px] bg-foreground/5 text-muted-foreground/40 px-1 rounded">P</span>}
-              </div>
-
-              {/* Semester cells */}
-              {SEMESTERS.map((semester) => {
-                const cellKey = `${subject.id}-${semester}`;
-                const points = getGrade(subject.id, semester);
-                const isEditing = editingCell === cellKey;
-
-                return (
-                  <div key={semester} className="flex-1 px-0.5">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        min={0}
-                        max={15}
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => handleCellSubmit(subject.id, semester)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleCellSubmit(subject.id, semester);
-                          if (e.key === 'Escape') setEditingCell(null);
-                        }}
-                        autoFocus
-                        className="w-full h-8 rounded-md border border-violet-500/40 bg-transparent text-center text-[13px] font-semibold tabular-nums focus:outline-none"
-                      />
-                    ) : (
-                      <button
-                        onClick={() => handleCellClick(subject.id, semester)}
-                        className={cn(
-                          'w-full h-8 rounded-md text-[13px] font-semibold tabular-nums transition-all',
-                          points !== null ? getPointsBg(points) : 'hover:bg-foreground/[0.03]',
-                          points !== null ? getPointsColor(points) : 'text-muted-foreground/15',
-                          points !== null && isDeficit(points) && 'ring-1 ring-inset ring-red-400/30',
-                        )}
-                      >
-                        {points !== null ? points : '·'}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Average */}
-              <div className="w-12 text-center shrink-0">
-                <span className={cn('text-[11px] tabular-nums font-medium', avg !== null ? getPointsColor(Math.round(avg)) : 'text-muted-foreground/15')}>
-                  {avg !== null ? avg.toFixed(1) : '—'}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
+function ExamsSection({ profile }: { profile: AbiturProfile }) {
+  const { setExamPoints } = useAbiturStore();
 
   return (
-    <div>
-      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">
-        Halbjahresleistungen
-      </p>
-      <div className="rounded-xl border border-border/40 p-3 overflow-x-auto">
-        {/* Header */}
-        <div className="flex items-center mb-2">
-          <div className="w-28 lg:w-36 shrink-0" />
-          {SEMESTERS.map((s) => (
-            <div key={s} className="flex-1 text-center">
-              <span className={cn(
-                'text-[10px] font-medium uppercase tracking-wider',
-                s === profile.currentSemester ? 'text-violet-500' : 'text-muted-foreground/30'
-              )}>
-                {s}
-              </span>
-            </div>
-          ))}
-          <div className="w-12 text-center shrink-0">
-            <span className="text-[10px] text-muted-foreground/30 font-medium">Ø</span>
-          </div>
+    <Card>
+      <CardContent className="py-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Target className="h-4 w-4 text-muted-foreground" />
+          <p className="text-sm font-medium">Abiturprüfungen</p>
         </div>
-
-        {renderFieldGroup('Aufgabenfeld I — Sprachen & Kunst', field1, 1)}
-        {renderFieldGroup('Aufgabenfeld II — Gesellschaft', field2, 2)}
-        {renderFieldGroup('Aufgabenfeld III — MINT', field3, 3)}
-        {renderFieldGroup('Weitere', field0, 0)}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// EXAMS SECTION
-// ═══════════════════════════════════════════════════════════
-
-function ExamsSection({
-  profile,
-  result,
-  onSetExamPoints,
-  onSetSeminarPaper,
-  onSetSeminarPresentation,
-}: {
-  profile: AbiturProfile;
-  result: ReturnType<typeof calculateAbitur>;
-  onSetExamPoints: (subjectId: string, points: number | null) => void;
-  onSetSeminarPaper: (points: number | null) => void;
-  onSetSeminarPresentation: (points: number | null) => void;
-}) {
-  const [editingExam, setEditingExam] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-
-  const examLabels = ['Schriftlich: Deutsch', 'Schriftlich: Mathematik', 'Schriftlich: Leistungsfach', 'Kolloquium 1', 'Kolloquium 2'];
-
-  return (
-    <div>
-      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">
-        Abiturprüfungen
-      </p>
-      <div className="rounded-xl border border-border/40 overflow-hidden">
-        {profile.exams.map((exam, i) => {
-          const subject = getSubject(exam.subjectId);
-          const isEditing = editingExam === exam.subjectId;
-          const weighted = exam.points !== null ? exam.points * 4 : null;
-
-          return (
-            <div
-              key={i}
-              className={cn(
-                'flex items-center gap-3 px-4 py-3 border-b border-border/20 last:border-0',
-                i < 3 ? 'bg-foreground/[0.01]' : ''
-              )}
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-medium truncate">
-                  {subject ? subject.name : exam.subjectId ? exam.subjectId : '— Fach wählen —'}
-                </p>
-                <p className="text-[10px] text-muted-foreground/40">{examLabels[i]}</p>
+        <div className="space-y-2">
+          {profile.exams.map((exam, i) => {
+            const s = getSubject(exam.subjectId);
+            if (!s) return (
+              <div key={i} className="flex items-center justify-between py-1.5 text-sm text-muted-foreground">
+                <span>{i + 1}. Prüfung — nicht gewählt</span>
               </div>
-
-              <div className="flex items-center gap-3">
-                {isEditing ? (
-                  <input
-                    type="number"
-                    min={0}
-                    max={15}
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onBlur={() => {
-                      const val = parseInt(editValue, 10);
-                      if (!isNaN(val) && val >= 0 && val <= 15) {
-                        onSetExamPoints(exam.subjectId, val);
-                      } else if (editValue.trim() === '') {
-                        onSetExamPoints(exam.subjectId, null);
-                      }
-                      setEditingExam(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                      if (e.key === 'Escape') setEditingExam(null);
-                    }}
-                    autoFocus
-                    className="w-14 h-8 rounded-md border border-violet-500/40 bg-transparent text-center text-[13px] font-semibold tabular-nums focus:outline-none"
-                  />
-                ) : (
-                  <button
-                    onClick={() => {
-                      if (!exam.subjectId) return;
-                      setEditingExam(exam.subjectId);
-                      setEditValue(exam.points !== null ? String(exam.points) : '');
-                    }}
-                    className={cn(
-                      'w-14 h-8 rounded-md text-[13px] font-semibold tabular-nums transition-all',
-                      exam.points !== null ? getPointsBg(exam.points) : 'bg-foreground/[0.03]',
-                      exam.points !== null ? getPointsColor(exam.points) : 'text-muted-foreground/20'
-                    )}
-                  >
-                    {exam.points !== null ? exam.points : '·'}
-                  </button>
-                )}
-
-                <div className="w-16 text-right">
-                  <span className="text-[11px] text-muted-foreground/40 tabular-nums">
-                    {weighted !== null ? `×4 = ${weighted}` : ''}
-                  </span>
+            );
+            return (
+              <div key={exam.subjectId} className="flex items-center justify-between py-1.5">
+                <div>
+                  <p className="text-sm font-medium">{s.name}</p>
+                  <p className="text-xs text-muted-foreground">{exam.examType === 'written' ? 'Schriftlich' : 'Kolloquium'}</p>
                 </div>
+                <PointsInput value={exam.points} onChange={(v) => setExamPoints(exam.subjectId, v)} />
               </div>
-            </div>
-          );
-        })}
-
-        {/* Block II total */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-foreground/[0.02] border-t border-border/30">
-          <span className="text-[11px] text-muted-foreground/50 font-medium">Block II Gesamt</span>
-          <span className="text-[13px] font-bold tabular-nums">
-            {result.blockII.totalPoints} / 300
-          </span>
+            );
+          })}
         </div>
-      </div>
-
-      {/* Seminar */}
-      <div className="mt-3 rounded-xl border border-border/40 p-4 space-y-3">
-        <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
-          W-Seminar
-        </p>
-        {profile.seminarTopicTitle && (
-          <p className="text-[12px] text-muted-foreground/60 italic">&ldquo;{profile.seminarTopicTitle}&rdquo;</p>
-        )}
-        <div className="flex gap-4">
-          <SeminarInput
-            label="Seminararbeit"
-            value={profile.seminarPaperPoints}
-            onChange={onSetSeminarPaper}
-          />
-          <SeminarInput
-            label="Präsentation"
-            value={profile.seminarPresentationPoints}
-            onChange={onSetSeminarPresentation}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SeminarInput({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number | null) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [editVal, setEditVal] = useState('');
-
-  if (editing) {
-    return (
-      <div className="flex-1">
-        <p className="text-[10px] text-muted-foreground/40 mb-1">{label}</p>
-        <input
-          type="number"
-          min={0}
-          max={15}
-          value={editVal}
-          onChange={(e) => setEditVal(e.target.value)}
-          onBlur={() => {
-            const val = parseInt(editVal, 10);
-            if (!isNaN(val) && val >= 0 && val <= 15) onChange(val);
-            else if (editVal.trim() === '') onChange(null);
-            setEditing(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-            if (e.key === 'Escape') setEditing(false);
-          }}
-          autoFocus
-          className="w-full h-8 rounded-md border border-violet-500/40 bg-transparent text-center text-[13px] font-semibold tabular-nums focus:outline-none"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex-1">
-      <p className="text-[10px] text-muted-foreground/40 mb-1">{label}</p>
-      <button
-        onClick={() => { setEditVal(value !== null ? String(value) : ''); setEditing(true); }}
-        className={cn(
-          'w-full h-8 rounded-md text-[13px] font-semibold tabular-nums transition-all',
-          value !== null ? getPointsBg(value) : 'bg-foreground/[0.03]',
-          value !== null ? getPointsColor(value) : 'text-muted-foreground/20'
-        )}
-      >
-        {value !== null ? value : '·'}
-      </button>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// HURDLES SECTION
+// Hurdles Section
 // ═══════════════════════════════════════════════════════════
 
-function HurdlesSection({
-  result,
-  fieldCoverage,
-}: {
-  result: ReturnType<typeof calculateAbitur>;
-  fieldCoverage: ReturnType<typeof checkFieldCoverage>;
-}) {
-  return (
-    <div>
-      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">
-        Zulassungshürden
-      </p>
-      <div className="rounded-xl border border-border/40 overflow-hidden">
-        {result.hurdles.map((hurdle) => (
-          <div
-            key={hurdle.id}
-            className={cn(
-              'flex items-center gap-3 px-4 py-3 border-b border-border/20 last:border-0',
-              !hurdle.passed && 'bg-red-500/[0.03]'
-            )}
-          >
-            {hurdle.passed ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-            ) : (
-              <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-medium">{hurdle.label}</p>
-              <p className="text-[10px] text-muted-foreground/40">{hurdle.description}</p>
-            </div>
-          </div>
-        ))}
+function HurdlesSection({ hurdles }: { hurdles: AbiturResult['hurdles'] }) {
+  const failed = hurdles.filter((h) => !h.passed);
+  const passed = hurdles.filter((h) => h.passed);
 
-        {/* Field coverage */}
-        <div className={cn(
-          'flex items-center gap-3 px-4 py-3 border-t border-border/30',
-          !fieldCoverage.allCovered && 'bg-amber-500/[0.03]'
-        )}>
-          {fieldCoverage.allCovered ? (
-            <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+  return (
+    <Card>
+      <CardContent className="py-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-muted-foreground" />
+          <p className="text-sm font-medium">Hürden</p>
+          {failed.length === 0 ? (
+            <span className="text-xs bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full ml-auto">
+              Alle bestanden
+            </span>
           ) : (
-            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            <span className="text-xs bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full ml-auto">
+              {failed.length} offen
+            </span>
           )}
-          <div className="flex-1 min-w-0">
-            <p className="text-[12px] font-medium">Aufgabenfeldabdeckung</p>
-            <div className="flex gap-2 mt-1">
-              {([
-                { label: 'AF I', ok: fieldCoverage.field1 },
-                { label: 'AF II', ok: fieldCoverage.field2 },
-                { label: 'AF III', ok: fieldCoverage.field3 },
-              ]).map(({ label, ok }) => (
-                <span
-                  key={label}
-                  className={cn(
-                    'text-[9px] font-medium px-1.5 py-0.5 rounded',
-                    ok ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-400'
-                  )}
-                >
-                  {label} {ok ? '✓' : '✗'}
-                </span>
-              ))}
-            </div>
-          </div>
         </div>
-      </div>
+        <div className="space-y-1.5">
+          {failed.map((h) => (
+            <HurdleRow key={h.id} hurdle={h} />
+          ))}
+          {passed.map((h) => (
+            <HurdleRow key={h.id} hurdle={h} />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function HurdleRow({ hurdle }: { hurdle: AbiturResult['hurdles'][0] }) {
+  return (
+    <div className={cn('flex items-center gap-2 py-1 text-sm', hurdle.passed ? 'text-muted-foreground' : 'text-foreground')}>
+      {hurdle.passed ? (
+        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+      ) : (
+        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+      )}
+      <span className="flex-1">{hurdle.label}</span>
+      <span className="text-xs text-muted-foreground font-mono">{hurdle.description}</span>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// SETTINGS VIEW
+// Settings View
 // ═══════════════════════════════════════════════════════════
 
-function SettingsView({ profile, onBack }: { profile: AbiturProfile; onBack: () => void }) {
+function SettingsView({ onBack }: { onBack: () => void }) {
+  const profile = useAbiturStore((s) => s.profile);
   const {
-    setStudentName, setSchoolYear, setCurrentSemester,
-    setLeistungsfach, setSeminarTopicTitle,
-    addSubject, removeSubject, setExamSubject, resetProfile,
+    setStudentName, setSchoolYear, setCurrentSemester, setLeistungsfach,
+    setSubjects, setExamSubject, setSeminarTopic, setSeminarPaperPoints,
+    setSeminarPresentationPoints, resetProfile,
   } = useAbiturStore();
 
-  const [showAddSubject, setShowAddSubject] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-
-  const availableSubjects = ALL_SUBJECTS.filter(
-    (s) => !profile.subjects.includes(s.id) && s.id !== 'psem'
-  );
-
-  const lfOptions = ALL_SUBJECTS.filter((s) => s.canBeLF && s.id !== 'deu' && s.id !== 'mat');
-
-  const colloquiumOptions = profile.subjects
-    .map((id) => getSubject(id))
-    .filter((s): s is SubjectDefinition =>
-      !!s && !['deu', 'mat', profile.leistungsfach].includes(s.id) && s.id !== 'psem' && s.id !== 'wsem'
-    );
+  const lfOptions = ALL_SUBJECTS.filter((s) => s.canBeLF && profile.subjects.includes(s.id));
 
   return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <button onClick={onBack} className="text-muted-foreground/40 hover:text-foreground transition-colors">
+        <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
-        </button>
-        <Settings className="h-4 w-4 text-violet-500" />
-        <h1 className="text-lg font-semibold tracking-tight">Einstellungen</h1>
+        </Button>
+        <h2 className="text-lg font-bold">Einstellungen</h2>
       </div>
 
-      {/* Profile */}
-      <SettingsSection title="Profil">
+      <SettingsSection title="Persönlich">
         <SettingsField label="Name">
           <input
             value={profile.studentName}
             onChange={(e) => setStudentName(e.target.value)}
             placeholder="Dein Name"
-            className="w-full rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-violet-500/40"
+            className="w-full bg-transparent text-sm outline-none"
           />
         </SettingsField>
         <SettingsField label="Schuljahr">
@@ -817,207 +731,117 @@ function SettingsView({ profile, onBack }: { profile: AbiturProfile; onBack: () 
             value={profile.schoolYear}
             onChange={(e) => setSchoolYear(e.target.value)}
             placeholder="2025/2027"
-            className="w-full rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-violet-500/40"
+            className="w-full bg-transparent text-sm outline-none"
           />
         </SettingsField>
         <SettingsField label="Aktuelles Halbjahr">
-          <div className="flex gap-2">
+          <select
+            value={profile.currentSemester}
+            onChange={(e) => setCurrentSemester(e.target.value as Semester)}
+            className="bg-transparent text-sm outline-none"
+          >
             {SEMESTERS.map((s) => (
-              <button
-                key={s}
-                onClick={() => setCurrentSemester(s)}
-                className={cn(
-                  'flex-1 rounded-lg py-2 text-[12px] font-medium transition-all border',
-                  s === profile.currentSemester
-                    ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                    : 'border-border/40 text-muted-foreground/50 hover:border-border/60'
-                )}
-              >
-                {s}
-              </button>
+              <option key={s} value={s}>{SEMESTER_LABELS[s]}</option>
             ))}
-          </div>
+          </select>
         </SettingsField>
       </SettingsSection>
 
-      {/* Leistungsfach */}
       <SettingsSection title="Leistungsfach">
-        <p className="text-[10px] text-muted-foreground/40 mb-2">
-          Dein gewähltes Leistungsfach (5 Wochenstunden, schriftliche Abiturprüfung)
-        </p>
-        <div className="grid grid-cols-3 gap-1.5">
-          {lfOptions.filter((s) => profile.subjects.includes(s.id)).map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setLeistungsfach(s.id)}
-              className={cn(
-                'rounded-lg px-3 py-2 text-[12px] font-medium transition-all border text-left',
-                s.id === profile.leistungsfach
-                  ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                  : 'border-border/40 text-muted-foreground/50 hover:border-border/60'
-              )}
-            >
-              {s.shortName}
-            </button>
-          ))}
-        </div>
+        <SettingsField label="LF (3. Schriftliches)">
+          <select
+            value={profile.leistungsfach}
+            onChange={(e) => setLeistungsfach(e.target.value)}
+            className="bg-transparent text-sm outline-none"
+          >
+            {lfOptions.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </SettingsField>
       </SettingsSection>
 
-      {/* Exam Subjects (Colloquiums) */}
-      <SettingsSection title="Kolloquien (Prüfungsfächer 4 & 5)">
-        <p className="text-[10px] text-muted-foreground/40 mb-2">
-          Wähle deine beiden mündlichen Prüfungsfächer. Fächer I, II und III müssen abgedeckt sein.
-        </p>
-        {([3, 4] as const).map((idx) => (
-          <div key={idx} className="mb-2">
-            <p className="text-[10px] text-muted-foreground/30 mb-1">Kolloquium {idx - 2}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {colloquiumOptions.map((s) => {
-                const isSelected = profile.examSubjects[idx] === s.id;
-                const isUsedElsewhere = profile.examSubjects.includes(s.id) && !isSelected;
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => !isUsedElsewhere && setExamSubject(idx, s.id)}
-                    disabled={isUsedElsewhere}
-                    className={cn(
-                      'rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all border',
-                      isSelected
-                        ? 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-400'
-                        : isUsedElsewhere
-                          ? 'border-border/20 text-muted-foreground/20 cursor-not-allowed'
-                          : 'border-border/40 text-muted-foreground/50 hover:border-border/60'
-                    )}
-                  >
-                    {s.shortName}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+      <SettingsSection title="Prüfungsfächer">
+        {profile.examSubjects.map((sid, i) => (
+          <SettingsField key={i} label={`${i + 1}. Prüfung${i < 3 ? ' (schriftl.)' : ' (Kolloquium)'}`}>
+            {i < 3 ? (
+              <span className="text-sm text-muted-foreground">{getSubject(sid)?.name || '—'}</span>
+            ) : (
+              <select
+                value={sid}
+                onChange={(e) => setExamSubject(i, e.target.value)}
+                className="bg-transparent text-sm outline-none"
+              >
+                <option value="">Wählen...</option>
+                {profile.subjects
+                  .filter((id) => id !== 'deu' && id !== 'mat' && id !== profile.leistungsfach && id !== 'wsem' && id !== 'psem')
+                  .map((id) => {
+                    const s = getSubject(id);
+                    return s ? <option key={id} value={id}>{s.name}</option> : null;
+                  })}
+              </select>
+            )}
+          </SettingsField>
         ))}
       </SettingsSection>
 
-      {/* Subjects */}
-      <SettingsSection title="Fächerbelegung">
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {profile.subjects.map((id) => {
-            const subject = getSubject(id);
-            if (!subject) return null;
-            const isMandatory = ['deu', 'mat'].includes(id) || id === profile.leistungsfach || profile.examSubjects.includes(id);
-            return (
-              <div
-                key={id}
-                className={cn(
-                  'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium border',
-                  isMandatory ? 'border-violet-500/20 bg-violet-500/5 text-violet-600 dark:text-violet-400' : 'border-border/40 text-muted-foreground/60'
-                )}
-              >
-                <span>{subject.shortName}</span>
-                {!isMandatory && (
-                  <button onClick={() => removeSubject(id)} className="text-muted-foreground/30 hover:text-red-400 transition-colors">
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          <button
-            onClick={() => setShowAddSubject(!showAddSubject)}
-            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium border border-dashed border-border/40 text-muted-foreground/40 hover:text-violet-500 hover:border-violet-500/30 transition-colors"
-          >
-            <Plus className="h-3 w-3" />
-            Fach
-          </button>
-        </div>
-        {showAddSubject && availableSubjects.length > 0 && (
-          <div className="rounded-xl border border-border/40 p-3 space-y-1">
-            {availableSubjects.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => { addSubject(s.id); setShowAddSubject(false); }}
-                className="w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] hover:bg-foreground/[0.03] transition-colors"
-              >
-                <Plus className="h-3 w-3 text-violet-500" />
-                <span>{s.name}</span>
-                <span className="text-[10px] text-muted-foreground/30 ml-auto">AF {s.field || '—'}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </SettingsSection>
-
-      {/* W-Seminar */}
       <SettingsSection title="W-Seminar">
         <SettingsField label="Thema">
           <input
             value={profile.seminarTopicTitle}
-            onChange={(e) => setSeminarTopicTitle(e.target.value)}
-            placeholder="Thema der Seminararbeit"
-            className="w-full rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-violet-500/40"
+            onChange={(e) => setSeminarTopic(e.target.value)}
+            placeholder="Seminarthema"
+            className="w-full bg-transparent text-sm outline-none"
           />
+        </SettingsField>
+        <SettingsField label="Seminararbeit (0-15)">
+          <PointsInput value={profile.seminarPaperPoints} onChange={setSeminarPaperPoints} />
+        </SettingsField>
+        <SettingsField label="Präsentation (0-15)">
+          <PointsInput value={profile.seminarPresentationPoints} onChange={setSeminarPresentationPoints} />
         </SettingsField>
       </SettingsSection>
 
-      {/* Reset */}
-      <div className="pt-4 border-t border-border/20">
+      <SettingsSection title="Daten">
         {confirmReset ? (
-          <div className="flex items-center gap-3">
-            <p className="text-[12px] text-red-400">Wirklich alle Daten zurücksetzen?</p>
-            <button
-              onClick={() => { resetProfile(); setConfirmReset(false); onBack(); }}
-              className="text-[12px] text-red-500 font-medium hover:text-red-400 transition-colors"
-            >
-              Ja, zurücksetzen
-            </button>
-            <button
-              onClick={() => setConfirmReset(false)}
-              className="text-[12px] text-muted-foreground/40 hover:text-foreground transition-colors"
-            >
+          <div className="flex items-center gap-2 py-2">
+            <p className="text-sm text-red-500 flex-1">Alle Daten löschen?</p>
+            <Button size="sm" variant="destructive" onClick={() => { resetProfile(); setConfirmReset(false); }}>
+              Ja, löschen
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmReset(false)}>
               Abbrechen
-            </button>
+            </Button>
           </div>
         ) : (
           <button
             onClick={() => setConfirmReset(true)}
-            className="text-[12px] text-muted-foreground/40 hover:text-red-400 transition-colors"
+            className="w-full text-left text-sm text-red-500 py-2 hover:bg-red-500/5 rounded-lg px-2 transition-colors"
           >
             Alle Daten zurücksetzen
           </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// Shared Helpers
-// ═══════════════════════════════════════════════════════════
-
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
-  return (
-    <div className="rounded-xl border border-border/40 p-3">
-      <p className={cn('text-xl font-bold tabular-nums', color)}>{value}</p>
-      <p className="text-[10px] text-muted-foreground/40 mt-0.5">{label}</p>
-      <p className="text-[9px] text-muted-foreground/25 mt-0.5">{sub}</p>
+      </SettingsSection>
     </div>
   );
 }
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div>
-      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2.5">{title}</p>
-      <div className="space-y-3">{children}</div>
-    </div>
+    <Card>
+      <CardContent className="py-3 space-y-1">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{title}</p>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
 function SettingsField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <label className="text-[10px] text-muted-foreground/40 mb-1 block">{label}</label>
-      {children}
+    <div className="flex items-center justify-between py-1.5">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <div className="text-right">{children}</div>
     </div>
   );
 }
