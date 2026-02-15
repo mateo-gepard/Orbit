@@ -67,8 +67,10 @@ export const useAbiturStore = create<AbiturState>()(
 
       setSubjects: (subjectIds) =>
         set((s) => {
-          const existing = new Set(s.profile.grades.map((g) => `${g.subjectId}:${g.semester}`));
-          const newGrades: SemesterGrade[] = [...s.profile.grades];
+          const grades = s.profile.grades ?? [];
+          const einbringungen = s.profile.einbringungen ?? [];
+          const existing = new Set(grades.map((g) => `${g.subjectId}:${g.semester}`));
+          const newGrades: SemesterGrade[] = [...grades];
           for (const sid of subjectIds) {
             for (const sem of SEMESTERS) {
               if (!existing.has(`${sid}:${sem}`)) {
@@ -77,7 +79,7 @@ export const useAbiturStore = create<AbiturState>()(
             }
           }
           const filteredGrades = newGrades.filter((g) => subjectIds.includes(g.subjectId));
-          const filteredEin = s.profile.einbringungen.filter((k) => {
+          const filteredEin = einbringungen.filter((k) => {
             const [sid] = k.split(':');
             return subjectIds.includes(sid);
           });
@@ -86,7 +88,7 @@ export const useAbiturStore = create<AbiturState>()(
 
       setGrade: (subjectId, semester, points) =>
         set((s) => {
-          const grades = s.profile.grades.map((g) =>
+          const grades = (s.profile.grades ?? []).map((g) =>
             g.subjectId === subjectId && g.semester === semester ? { ...g, points } : g
           );
           const exists = grades.some((g) => g.subjectId === subjectId && g.semester === semester);
@@ -96,11 +98,12 @@ export const useAbiturStore = create<AbiturState>()(
 
       toggleEinbringung: (subjectId, semester) =>
         set((s) => {
+          const current = s.profile.einbringungen ?? [];
           const key = eKey(subjectId, semester);
-          const has = s.profile.einbringungen.includes(key);
+          const has = current.includes(key);
           const einbringungen = has
-            ? s.profile.einbringungen.filter((k) => k !== key)
-            : [...s.profile.einbringungen, key];
+            ? current.filter((k) => k !== key)
+            : [...current, key];
           return { profile: { ...s.profile, einbringungen } };
         }),
 

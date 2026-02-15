@@ -69,6 +69,16 @@ const CAT_LABELS: Record<string, string> = {
 
 const MANDATORY_IDS = ['deu', 'mat', 'wsem', 'psem'];
 
+// Ethik and Religion are mutually exclusive in Bavarian Abitur
+const ETHIK_RELIGION_IDS = ['eth', 'rev', 'rka'];
+
+/** When selecting an Ethik/Religion subject, remove the conflicting ones */
+function applyExclusivity(subjects: string[], adding: string): string[] {
+  if (!ETHIK_RELIGION_IDS.includes(adding)) return subjects;
+  // Remove all other Ethik/Religion subjects
+  return subjects.filter((id) => !ETHIK_RELIGION_IDS.includes(id) || id === adding);
+}
+
 // ═══════════════════════════════════════════════════════════
 // Main Page
 // ═══════════════════════════════════════════════════════════
@@ -85,7 +95,7 @@ export default function AbiturPage() {
 
 /** Count how many grades have been entered (non-null) across all semesters */
 function totalEnteredGrades(profile: AbiturProfile): number {
-  return profile.grades.filter((g) => g.points !== null && g.subjectId !== 'psem').length;
+  return (profile.grades ?? []).filter((g) => g.points !== null && g.subjectId !== 'psem').length;
 }
 
 /** Has the user entered enough data for meaningful calculations? */
@@ -121,9 +131,10 @@ function OnboardingWizard() {
 
   const toggleSubject = (id: string) => {
     if (MANDATORY_IDS.includes(id)) return;
-    setSelectedSubjects((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-    );
+    setSelectedSubjects((prev) => {
+      if (prev.includes(id)) return prev.filter((s) => s !== id);
+      return applyExclusivity([...prev, id], id);
+    });
   };
 
   const finish = () => {
@@ -862,7 +873,7 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
         {subjects.map((subjectId) => {
           const subj = getSubject(subjectId);
           if (!subj) return null;
-          const grade = profile.grades.find((g) => g.subjectId === subjectId && g.semester === semester);
+          const grade = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === semester);
           const pts = grade?.points ?? null;
           const mandatory = isMandatory(subjectId, profile);
           const eingebracht = isEingebracht(subjectId, semester, profile);
@@ -1025,10 +1036,11 @@ function SubjectsView() {
     if (id === profile.leistungsfach) return;
     if (profile.examSubjects.includes(id)) return;
 
-    const next = profile.subjects.includes(id)
-      ? profile.subjects.filter((s) => s !== id)
-      : [...profile.subjects, id];
-    setSubjects(next);
+    if (profile.subjects.includes(id)) {
+      setSubjects(profile.subjects.filter((s) => s !== id));
+    } else {
+      setSubjects(applyExclusivity([...profile.subjects, id], id));
+    }
   };
 
   return (
@@ -1165,7 +1177,7 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                 <span className="text-[11px] truncate">{subj.name}</span>
               </div>
               {SEMESTERS.map((sem) => {
-                const grade = profile.grades.find((g) => g.subjectId === subjectId && g.semester === sem);
+                const grade = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === sem);
                 const pts = grade?.points ?? null;
                 const eingebracht = isEingebracht(subjectId, sem, profile);
 

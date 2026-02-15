@@ -111,7 +111,7 @@ export function isMandatory(subjectId: string, profile: AbiturProfile): boolean 
 /** Is a specific grade eingebracht? Either mandatory or user-selected. */
 export function isEingebracht(subjectId: string, semester: Semester, profile: AbiturProfile): boolean {
   if (isMandatory(subjectId, profile)) return true;
-  return profile.einbringungen.includes(eKey(subjectId, semester));
+  return (profile.einbringungen ?? []).includes(eKey(subjectId, semester));
 }
 
 /** Can the user toggle this einbringung? */
@@ -191,7 +191,7 @@ export interface SemesterStats {
 
 export function calcSemesterStats(semester: Semester, profile: AbiturProfile): SemesterStats {
   const subjects = profile.subjects.filter((s) => s !== 'psem');
-  const allGrades = profile.grades.filter(
+  const allGrades = (profile.grades ?? []).filter(
     (g) => g.semester === semester && g.points !== null && g.subjectId !== 'psem'
   );
   const eingebrachte = allGrades.filter((g) => isEingebracht(g.subjectId, semester, profile));
@@ -231,7 +231,7 @@ export interface BlockIResult {
 }
 
 export function calculateBlockI(profile: AbiturProfile): BlockIResult {
-  const allGrades = profile.grades.filter((g) => g.points !== null && g.subjectId !== 'psem');
+  const allGrades = (profile.grades ?? []).filter((g) => g.points !== null && g.subjectId !== 'psem');
   const contributed: SemesterGrade[] = [];
   const dropped: SemesterGrade[] = [];
 
@@ -335,7 +335,7 @@ export function calculateNeededAverage(
   const targetPoints = Math.ceil((17 / 3 - targetGrade) * 180);
   const bI = calculateBlockI(profile);
   const bII = calculateBlockII(profile);
-  const remG = Math.max(0, 40 - profile.grades.filter((g) => g.points !== null).length);
+  const remG = Math.max(0, 40 - (profile.grades ?? []).filter((g) => g.points !== null).length);
   const remE = Math.max(0, 5 - profile.exams.filter((e) => e.points !== null).length);
   if (remG === 0 && remE === 0) return { neededBlockIAvg: 0, neededExamAvg: 0, achievable: bI.totalPoints + bII.totalPoints >= targetPoints };
   const need = targetPoints - bI.totalPoints - bII.totalPoints;
