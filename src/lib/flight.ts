@@ -111,58 +111,122 @@ export const AIRPORTS: Airport[] = [
   { code: 'JNB', name: 'O.R. Tambo', city: 'Johannesburg', region: 'africa' },
 ];
 
-// ─── Real-ish Route Distances (km) ────────────────────────
+// ─── Real Route Data (distance km + actual flight time min) ──
 
-const ROUTE_DISTANCES: Record<string, number> = {
-  // Short-haul Europe (25-50 min focus = ~300-1500 km)
-  'MUC-ZRH': 240, 'MUC-VIE': 360, 'MUC-FRA': 300, 'MUC-FCO': 690, 'MUC-CDG': 690,
-  'LHR-CDG': 340, 'LHR-AMS': 370, 'LHR-FRA': 660, 'LHR-BCN': 1140,
-  'CDG-BCN': 830, 'CDG-AMS': 400, 'CDG-FCO': 1100, 'CDG-LIS': 1450,
-  'FRA-AMS': 365, 'FRA-VIE': 600, 'FRA-BCN': 1100, 'FRA-ATH': 1800,
-  'AMS-BCN': 1240, 'BCN-LIS': 1000, 'BCN-FCO': 860, 'ATH-IST': 530,
-  'VIE-ATH': 1280, 'ZRH-LHR': 780, 'ZRH-BCN': 840,
-  // Medium-haul (75-90 min focus = ~1500-4500 km)
-  'LHR-IST': 2500, 'LHR-ATH': 2400, 'CDG-IST': 2250, 'FRA-IST': 1860,
-  'LHR-JFK': 5540, 'CDG-JFK': 5840, 'FRA-JFK': 6200,
-  'MUC-DXB': 4600, 'LHR-DXB': 5470, 'CDG-DXB': 5250,
-  'IST-DXB': 3000, 'IST-DOH': 2700,
-  'JFK-MIA': 1760, 'JFK-ORD': 1180, 'JFK-LAX': 3980, 'JFK-SFO': 4150,
-  'LAX-SFO': 540, 'JFK-YYZ': 560,
-  // Long-haul (120 min focus = ~4500+ km)
-  'LHR-SIN': 10870, 'LHR-HKG': 9650, 'LHR-NRT': 9570, 'LHR-LAX': 8760,
-  'CDG-NRT': 9720, 'CDG-SIN': 10730, 'CDG-LAX': 9100,
-  'FRA-NRT': 9350, 'FRA-SIN': 10250, 'FRA-SYD': 16500,
-  'DXB-SIN': 5840, 'DXB-NRT': 7930, 'DXB-SYD': 12050,
-  'JFK-NRT': 10840, 'JFK-SIN': 15340, 'JFK-GRU': 7680,
-  'LAX-NRT': 8800, 'LAX-SYD': 12070, 'LAX-SIN': 14100,
-  'SIN-SYD': 6300, 'SIN-NRT': 5320, 'SIN-HKG': 2580,
-  'NRT-SYD': 7830, 'HKG-SYD': 7400,
-  'ICN-NRT': 1200, 'BKK-SIN': 1420, 'BKK-HKG': 1700,
-  'SYD-AKL': 2160, 'JNB-CPT': 1270, 'JNB-DXB': 6340,
-};
-
-function getRouteDistance(from: string, to: string): number | undefined {
-  return ROUTE_DISTANCES[`${from}-${to}`] || ROUTE_DISTANCES[`${to}-${from}`];
+interface RouteData {
+  distanceKm: number;
+  flightMin: number; // Actual scheduled flight time (gate-to-gate)
 }
 
-/** Approximate real flight time in minutes from distance */
-function estimateFlightMinutes(distanceKm: number): number {
-  // Cruise speed ~850 km/h, plus 30 min for taxi/takeoff/landing
-  return Math.round(distanceKm / 850 * 60 + 30);
+const ROUTES: Record<string, RouteData> = {
+  // ── Short-haul Europe (under 2h) ──
+  'MUC-ZRH': { distanceKm: 240, flightMin: 55 },
+  'MUC-VIE': { distanceKm: 360, flightMin: 65 },
+  'MUC-FRA': { distanceKm: 300, flightMin: 60 },
+  'MUC-FCO': { distanceKm: 690, flightMin: 95 },
+  'MUC-CDG': { distanceKm: 690, flightMin: 95 },
+  'LHR-CDG': { distanceKm: 340, flightMin: 75 },
+  'LHR-AMS': { distanceKm: 370, flightMin: 75 },
+  'LHR-FRA': { distanceKm: 660, flightMin: 100 },
+  'LHR-BCN': { distanceKm: 1140, flightMin: 130 },
+  'CDG-BCN': { distanceKm: 830, flightMin: 110 },
+  'CDG-AMS': { distanceKm: 400, flightMin: 75 },
+  'CDG-FCO': { distanceKm: 1100, flightMin: 125 },
+  'CDG-LIS': { distanceKm: 1450, flightMin: 155 },
+  'FRA-AMS': { distanceKm: 365, flightMin: 75 },
+  'FRA-VIE': { distanceKm: 600, flightMin: 85 },
+  'FRA-BCN': { distanceKm: 1100, flightMin: 125 },
+  'FRA-ATH': { distanceKm: 1800, flightMin: 175 },
+  'AMS-BCN': { distanceKm: 1240, flightMin: 135 },
+  'BCN-LIS': { distanceKm: 1000, flightMin: 130 },
+  'BCN-FCO': { distanceKm: 860, flightMin: 110 },
+  'ATH-IST': { distanceKm: 530, flightMin: 80 },
+  'VIE-ATH': { distanceKm: 1280, flightMin: 145 },
+  'ZRH-LHR': { distanceKm: 780, flightMin: 105 },
+  'ZRH-BCN': { distanceKm: 840, flightMin: 110 },
+  'LIS-LHR': { distanceKm: 1550, flightMin: 155 },
+  'FCO-ATH': { distanceKm: 1050, flightMin: 125 },
+  // ── Medium-haul (2h – 6h) ──
+  'LHR-IST': { distanceKm: 2500, flightMin: 225 },
+  'LHR-ATH': { distanceKm: 2400, flightMin: 215 },
+  'CDG-IST': { distanceKm: 2250, flightMin: 210 },
+  'FRA-IST': { distanceKm: 1860, flightMin: 185 },
+  'LHR-DXB': { distanceKm: 5470, flightMin: 415 },
+  'CDG-DXB': { distanceKm: 5250, flightMin: 395 },
+  'MUC-DXB': { distanceKm: 4600, flightMin: 365 },
+  'IST-DXB': { distanceKm: 3000, flightMin: 255 },
+  'IST-DOH': { distanceKm: 2700, flightMin: 240 },
+  'JFK-MIA': { distanceKm: 1760, flightMin: 185 },
+  'JFK-ORD': { distanceKm: 1180, flightMin: 150 },
+  'JFK-YYZ': { distanceKm: 560, flightMin: 90 },
+  'LAX-SFO': { distanceKm: 540, flightMin: 80 },
+  'JNB-CPT': { distanceKm: 1270, flightMin: 130 },
+  // ── Long-haul (6h – 10h) ──
+  'LHR-JFK': { distanceKm: 5540, flightMin: 450 },
+  'CDG-JFK': { distanceKm: 5840, flightMin: 470 },
+  'FRA-JFK': { distanceKm: 6200, flightMin: 500 },
+  'JFK-LAX': { distanceKm: 3980, flightMin: 330 },
+  'JFK-SFO': { distanceKm: 4150, flightMin: 345 },
+  'JFK-GRU': { distanceKm: 7680, flightMin: 600 },
+  'DXB-SIN': { distanceKm: 5840, flightMin: 430 },
+  'SIN-HKG': { distanceKm: 2580, flightMin: 235 },
+  'SIN-NRT': { distanceKm: 5320, flightMin: 415 },
+  'BKK-SIN': { distanceKm: 1420, flightMin: 145 },
+  'BKK-HKG': { distanceKm: 1700, flightMin: 165 },
+  'ICN-NRT': { distanceKm: 1200, flightMin: 140 },
+  'JNB-DXB': { distanceKm: 6340, flightMin: 490 },
+  'SYD-AKL': { distanceKm: 2160, flightMin: 195 },
+  // ── Ultra long-haul (10h+) ──
+  'LHR-SIN': { distanceKm: 10870, flightMin: 775 },
+  'LHR-HKG': { distanceKm: 9650, flightMin: 720 },
+  'LHR-NRT': { distanceKm: 9570, flightMin: 715 },
+  'LHR-LAX': { distanceKm: 8760, flightMin: 660 },
+  'CDG-NRT': { distanceKm: 9720, flightMin: 720 },
+  'CDG-SIN': { distanceKm: 10730, flightMin: 770 },
+  'CDG-LAX': { distanceKm: 9100, flightMin: 680 },
+  'FRA-NRT': { distanceKm: 9350, flightMin: 700 },
+  'FRA-SIN': { distanceKm: 10250, flightMin: 745 },
+  'FRA-SYD': { distanceKm: 16500, flightMin: 1260 },
+  'DXB-NRT': { distanceKm: 7930, flightMin: 585 },
+  'DXB-SYD': { distanceKm: 12050, flightMin: 860 },
+  'JFK-NRT': { distanceKm: 10840, flightMin: 810 },
+  'JFK-SIN': { distanceKm: 15340, flightMin: 1100 },
+  'LAX-NRT': { distanceKm: 8800, flightMin: 665 },
+  'LAX-SYD': { distanceKm: 12070, flightMin: 895 },
+  'LAX-SIN': { distanceKm: 14100, flightMin: 1070 },
+  'SIN-SYD': { distanceKm: 6300, flightMin: 475 },
+  'NRT-SYD': { distanceKm: 7830, flightMin: 580 },
+  'HKG-SYD': { distanceKm: 7400, flightMin: 555 },
+  'DEL-LHR': { distanceKm: 6700, flightMin: 530 },
+  'DEL-DXB': { distanceKm: 2200, flightMin: 215 },
+  'DEL-SIN': { distanceKm: 4150, flightMin: 345 },
+};
+
+function getRouteData(from: string, to: string): RouteData | undefined {
+  return ROUTES[`${from}-${to}`] || ROUTES[`${to}-${from}`];
+}
+
+/** Format flight time as "Xh Ym" */
+export function formatFlightTime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}min`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 // ─── Route Selection for Duration ──────────────────────────
 
 /** Get a route that makes sense for the selected focus duration */
 export function getRouteForDuration(duration: FlightDuration, seed?: number): FlightRoute {
-  // Map focus duration to rough real-world flight time ranges
+  // Map focus duration to real-world flight time ranges (minutes)
   const rangeMap: Record<FlightDuration, [number, number]> = {
-    25:  [40, 120],      // Short European hops
-    35:  [60, 150],      // Short-haul
-    50:  [90, 210],      // Medium short-haul  
-    75:  [150, 400],     // Medium-haul
-    90:  [200, 600],     // Medium to long
-    120: [400, 1500],    // Long-haul
+    25:  [50, 100],      // Short European hops: MUC-ZRH (55m), MUC-FRA (60m)
+    35:  [60, 120],      // Short-haul: LHR-CDG (75m), ATH-IST (80m)
+    50:  [80, 160],      // Medium short-haul: MUC-FCO (95m), LHR-BCN (130m)
+    75:  [130, 260],     // Medium-haul: FRA-ATH (175m), IST-DXB (255m)
+    90:  [180, 420],     // Medium to long: LHR-IST (225m), MUC-DXB (365m)
+    120: [300, 1300],    // Long-haul: JFK-LAX (330m), LHR-SIN (775m)
   };
 
   const [minMin, maxMin] = rangeMap[duration];
@@ -170,14 +234,13 @@ export function getRouteForDuration(duration: FlightDuration, seed?: number): Fl
   // Find all routes that fit the range
   const candidates: { from: Airport; to: Airport; dist: number; flightMin: number }[] = [];
   
-  for (const [key, dist] of Object.entries(ROUTE_DISTANCES)) {
-    const flightMin = estimateFlightMinutes(dist);
-    if (flightMin >= minMin && flightMin <= maxMin) {
+  for (const [key, data] of Object.entries(ROUTES)) {
+    if (data.flightMin >= minMin && data.flightMin <= maxMin) {
       const [fromCode, toCode] = key.split('-');
       const fromAirport = AIRPORTS.find((a) => a.code === fromCode);
       const toAirport = AIRPORTS.find((a) => a.code === toCode);
       if (fromAirport && toAirport) {
-        candidates.push({ from: fromAirport, to: toAirport, dist, flightMin });
+        candidates.push({ from: fromAirport, to: toAirport, dist: data.distanceKm, flightMin: data.flightMin });
       }
     }
   }

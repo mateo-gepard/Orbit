@@ -8,7 +8,6 @@ import {
   Clock,
   CheckSquare,
   Zap,
-  ArrowRight,
   X,
   Plus,
   Search,
@@ -25,6 +24,7 @@ import {
   getCurrentPhase,
   generateFlightNumber,
   getRouteForDuration,
+  formatFlightTime,
   type Airport,
   type FlightRoute,
   type FlightTask,
@@ -48,6 +48,8 @@ export default function FlightPage() {
   const [tasks, setTasks] = useState<FlightTask[]>([]);
   const [flightNumber] = useState(() => generateFlightNumber());
   const [gateNumber] = useState(() => Math.floor(Math.random() * 40) + 1);
+  const [seatRow] = useState(() => Math.floor(Math.random() * 30) + 1);
+  const [seatLetter] = useState(() => ['A', 'B', 'C', 'D', 'E', 'F'][Math.floor(Math.random() * 6)]);
   const [pickingAirport, setPickingAirport] = useState<'from' | 'to' | null>(null);
   const [addingTasks, setAddingTasks] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
@@ -63,6 +65,25 @@ export default function FlightPage() {
   const [debriefSummary, setDebriefSummary] = useState('');
   const [debriefNextAction, setDebriefNextAction] = useState('');
   const [completedNormally, setCompletedNormally] = useState(true);
+
+  // Compute departure and arrival times from route flight time
+  const departureTime = useMemo(() => {
+    const now = new Date();
+    // Departure is "now" rounded up to next 5 min
+    const mins = now.getMinutes();
+    const roundedMins = Math.ceil(mins / 5) * 5;
+    now.setMinutes(roundedMins, 0, 0);
+    return now;
+  }, []);
+
+  const arrivalTime = useMemo(() => {
+    const arrival = new Date(departureTime.getTime() + route.realFlightMin * 60 * 1000);
+    return arrival;
+  }, [departureTime, route.realFlightMin]);
+
+  const formatClock = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
 
   const activeTasks = useMemo(
     () =>
@@ -288,7 +309,7 @@ export default function FlightPage() {
           </p>
 
           <p className="text-[12px] text-muted-foreground/30 mt-1 tabular-nums">
-            {formatTime(elapsed)} elapsed · {route.from.city} → {route.to.city}
+            {formatTime(elapsed)} elapsed · {route.from.code} → {route.to.code} · {formatFlightTime(route.realFlightMin)} flight
           </p>
 
           {/* Phase Progress Bar */}
@@ -414,7 +435,7 @@ export default function FlightPage() {
             {completedNormally ? 'Flight Complete' : 'Flight Diverted'}
           </h1>
           <p className="text-[12px] text-muted-foreground/50 mt-0.5 font-mono">
-            {flightNumber} · {route.from.code} → {route.to.code} · {formatTime(elapsed)} actual
+            {flightNumber} · {route.from.code} → {route.to.code} · {formatFlightTime(route.realFlightMin)} · {formatTime(elapsed)} focus
           </p>
           {!completedNormally && (
             <p className="text-[12px] text-amber-500/70 mt-1">
@@ -533,62 +554,110 @@ export default function FlightPage() {
 
       {/* ── Boarding Pass ── */}
       <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
-        {/* Top: Route */}
-        <div className="p-5 pb-4 border-b border-dashed border-border/40">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest">
-              Boarding Pass
-            </p>
-            <p className="text-[11px] font-mono text-muted-foreground/50">{flightNumber}</p>
+        {/* Airline header strip */}
+        <div className="bg-sky-600 dark:bg-sky-700 px-5 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Plane className="h-3.5 w-3.5 text-white/90" />
+            <span className="text-[13px] font-bold text-white tracking-wide">ORBIT AIR</span>
           </div>
+          <span className="text-[11px] font-mono text-white/70 tracking-wider">{flightNumber}</span>
+        </div>
 
-          <div className="flex items-center gap-4 mt-4">
-            <button onClick={() => setPickingAirport('from')} className="flex-1 text-left group">
-              <p className="text-[10px] text-muted-foreground/40 uppercase">From</p>
-              <p className="text-2xl font-bold tracking-tight group-hover:text-sky-500 transition-colors">
+        {/* Main boarding pass body */}
+        <div className="p-5 pb-4">
+          {/* Route row: FROM → TO */}
+          <div className="flex items-start gap-3">
+            <button onClick={() => setPickingAirport('from')} className="flex-1 group">
+              <p className="text-[9px] text-muted-foreground/40 uppercase tracking-wider font-medium">
+                Departure
+              </p>
+              <p className="text-3xl font-black tracking-tight group-hover:text-sky-500 transition-colors leading-none mt-1">
                 {route.from.code}
               </p>
-              <p className="text-[11px] text-muted-foreground/50">{route.from.city}</p>
+              <p className="text-[11px] text-muted-foreground/50 mt-0.5">{route.from.city}</p>
+              <p className="text-[18px] font-bold tabular-nums mt-1.5 tracking-tight">
+                {formatClock(departureTime)}
+              </p>
             </button>
 
-            <div className="flex flex-col items-center shrink-0 gap-0.5">
-              <ArrowRight className="h-4 w-4 text-muted-foreground/30" />
-              <span className="text-[9px] text-muted-foreground/25 tabular-nums">
-                ~{route.realFlightMin}m real
+            <div className="flex flex-col items-center pt-5 shrink-0 px-2">
+              <div className="flex items-center gap-1">
+                <div className="h-[1px] w-6 bg-muted-foreground/20" />
+                <Plane className="h-3.5 w-3.5 text-muted-foreground/30 rotate-0" />
+                <div className="h-[1px] w-6 bg-muted-foreground/20" />
+              </div>
+              <span className="text-[9px] text-muted-foreground/30 mt-1 tabular-nums font-medium">
+                {formatFlightTime(route.realFlightMin)}
               </span>
             </div>
 
             <button onClick={() => setPickingAirport('to')} className="flex-1 text-right group">
-              <p className="text-[10px] text-muted-foreground/40 uppercase">To</p>
-              <p className="text-2xl font-bold tracking-tight group-hover:text-sky-500 transition-colors">
+              <p className="text-[9px] text-muted-foreground/40 uppercase tracking-wider font-medium">
+                Arrival
+              </p>
+              <p className="text-3xl font-black tracking-tight group-hover:text-sky-500 transition-colors leading-none mt-1">
                 {route.to.code}
               </p>
-              <p className="text-[11px] text-muted-foreground/50">{route.to.city}</p>
+              <p className="text-[11px] text-muted-foreground/50 mt-0.5">{route.to.city}</p>
+              <p className="text-[18px] font-bold tabular-nums mt-1.5 tracking-tight">
+                {formatClock(arrivalTime)}
+              </p>
             </button>
-          </div>
-
-          <div className="flex items-center gap-6 mt-4 pt-3 border-t border-border/20">
-            <div>
-              <p className="text-[9px] text-muted-foreground/30 uppercase">Passenger</p>
-              <p className="text-[12px] font-medium">{user?.displayName || 'Pilot'}</p>
-            </div>
-            <div>
-              <p className="text-[9px] text-muted-foreground/30 uppercase">Focus Time</p>
-              <p className="text-[12px] font-medium">{duration}m</p>
-            </div>
-            <div>
-              <p className="text-[9px] text-muted-foreground/30 uppercase">Distance</p>
-              <p className="text-[12px] font-medium font-mono">{route.distanceKm.toLocaleString()} km</p>
-            </div>
-            <div>
-              <p className="text-[9px] text-muted-foreground/30 uppercase">Gate</p>
-              <p className="text-[12px] font-medium font-mono">G{gateNumber}</p>
-            </div>
           </div>
         </div>
 
-        {/* Bottom: Task Manifest — user picks tasks */}
-        <div className="p-5 pt-4">
+        {/* Tear line */}
+        <div className="relative mx-0">
+          <div className="border-t border-dashed border-border/40" />
+          <div className="absolute -left-2.5 -top-2.5 h-5 w-5 rounded-full bg-background" />
+          <div className="absolute -right-2.5 -top-2.5 h-5 w-5 rounded-full bg-background" />
+        </div>
+
+        {/* Bottom details row */}
+        <div className="px-5 py-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Passenger</p>
+            <p className="text-[12px] font-semibold truncate mt-0.5">
+              {(user?.displayName || 'Pilot').toUpperCase()}
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Focus</p>
+            <p className="text-[12px] font-semibold mt-0.5">{duration}m</p>
+          </div>
+          <div>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Seat</p>
+            <p className="text-[12px] font-semibold font-mono mt-0.5">{seatRow}{seatLetter}</p>
+          </div>
+          <div>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Gate</p>
+            <p className="text-[12px] font-semibold font-mono mt-0.5">G{gateNumber}</p>
+          </div>
+          <div>
+            <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Distance</p>
+            <p className="text-[12px] font-semibold font-mono mt-0.5">{route.distanceKm.toLocaleString()} km</p>
+          </div>
+        </div>
+
+        {/* Barcode strip */}
+        <div className="px-5 pb-4">
+          <div className="flex items-center justify-center gap-[2px] h-8 overflow-hidden opacity-20">
+            {Array.from({ length: 40 }, (_, i) => (
+              <div
+                key={i}
+                className="bg-foreground rounded-[0.5px]"
+                style={{
+                  width: [1, 2, 3][Math.abs(flightNumber.charCodeAt(i % flightNumber.length) + i) % 3] + 'px',
+                  height: '100%',
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Task Manifest ── */}
+      <div className="rounded-2xl border border-border/50 p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest">
               Task Manifest ({tasks.length})
@@ -643,7 +712,6 @@ export default function FlightPage() {
               ))}
             </div>
           )}
-        </div>
       </div>
 
       {/* ── Duration Selection ── */}
