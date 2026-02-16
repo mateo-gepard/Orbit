@@ -104,8 +104,13 @@ service cloud.firestore {
     // ─────────────────────────────────────────────────────────
 
     match /toolData/{docId} {
+      // Read: allow if doc exists and user owns it,
+      // OR if the docId starts with the user's uid (handles non-existent docs
+      // which onSnapshot listens to — resource.data is null when doc missing)
       allow read: if isSignedIn()
-                  && isOwner(resource.data.userId);
+                  && (resource == null
+                      ? docId[0:request.auth.uid.size()] == request.auth.uid
+                      : isOwner(resource.data.userId));
       allow create: if isSignedIn()
                     && isOwner(request.resource.data.userId);
       allow update: if isSignedIn()

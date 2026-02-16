@@ -6,6 +6,7 @@ import { subscribeToItems, subscribeToUserSettings, subscribeToToolData } from '
 import { useOrbitStore } from '@/lib/store';
 import { useAbiturStore } from '@/lib/abitur-store';
 import { useToolboxStore } from '@/lib/toolbox-store';
+import { subscribeToFlightLogs } from '@/lib/flight';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
 import type { ToolId } from '@/lib/toolbox-store';
@@ -100,6 +101,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       );
       unsubToolDataRefs.current.push(unsubToolbox);
+
+      // Subscribe to Flight Logs — ensures cloud sync even when flight page isn't open
+      const unsubFlightLogs = subscribeToFlightLogs(user.uid, () => {
+        // Data is persisted to localStorage by subscribeToFlightLogs itself;
+        // the flight page reads from there. No extra state needed here.
+      });
+      unsubToolDataRefs.current.push(unsubFlightLogs);
 
       const unsubscribe = subscribeToItems(user.uid, (items) => {
         setItems(items);

@@ -625,6 +625,11 @@ export const TURBULENCE_TYPES: { type: TurbulenceLog['type']; label: string; emo
 
 const FLIGHT_LOGS_KEY = 'orbit-flight-logs';
 
+/** Sanitise a flight log so it only contains Firestore-safe plain values. */
+function sanitiseLog(log: FlightLog): FlightLog {
+  return JSON.parse(JSON.stringify(log)) as FlightLog;
+}
+
 /** Save a completed flight — writes to both localStorage (instant) and Firestore (synced) */
 export function saveFlightLog(log: FlightLog, userId?: string): void {
   // 1. Instant local update
@@ -633,15 +638,21 @@ export function saveFlightLog(log: FlightLog, userId?: string): void {
     existing.unshift(log);
     const trimmed = existing.slice(0, 100);
     localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(trimmed));
-  } catch { /* quota exceeded */ }
+  } catch (e) {
+    console.warn('[ORBIT] Flight log localStorage save failed:', e);
+  }
 
   // 2. Sync to Firestore if we have a real user
   const uid = userId || log.userId;
   if (uid && uid !== 'local' && uid !== 'demo-user') {
     const allLogs = loadFlightLogsLocal();
-    saveToolData(uid, 'flightLogs', { logs: allLogs }).catch(() => {
-      /* silently fail — local copy is the source of truth until next sync */
+    // Sanitise logs to ensure only plain JSON values (no undefined, functions, etc.)
+    const safeLogs = allLogs.map(sanitiseLog);
+    saveToolData(uid, 'flightLogs', { logs: safeLogs }).catch((err) => {
+      console.error('[ORBIT] Flight log Firestore save failed:', err);
     });
+  } else {
+    console.warn('[ORBIT] Flight log NOT synced — no valid userId:', uid);
   }
 }
 
@@ -664,31 +675,64 @@ export function subscribeToFlightLogs(
   userId: string,
   callback: (logs: FlightLog[]) => void
 ): () => void {
+  console.info('[ORBIT] Subscribing to flight logs for user:', userId);
   return subscribeToToolData<{ logs: FlightLog[] }>(
     userId,
     'flightLogs',
     (data) => {
       if (data?.logs && Array.isArray(data.logs)) {
+        console.info(`[ORBIT] Flight logs received from cloud: ${data.logs.length} entries`);
         // Merge cloud logs with any local-only logs (by id)
         const local = loadFlightLogsLocal();
         const cloudIds = new Set(data.logs.map((l) => l.id));
         const localOnly = local.filter((l) => !cloudIds.has(l.id));
-        const merged = [...localOnly, ...data.logs]
-          .sort((a, b) => b.startedAt - a.startedAt)
-          .slice(0, 100);
 
-        // Update localStorage with the merged set
-        try {
-          localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(merged));
-        } catch { /* ignore */ }
+        // If there are local-only logs, push them to cloud too
+        if (localOnly.length > 0) {
+          console.info(`[ORBIT] Syncing ${localOnly.length} local-only flight logs to cloud`);
+          const merged = [...localOnly, ...data.logs]
+            .sort((a, b) => b.startedAt - a.startedAt)
+            .slice(0, 100);
 
-        callback(merged);
+          try {
+            localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(merged));
+          } catch { /* ignore */ }
+
+          // Push merged set back to cloud so local-only logs are persisted
+          const safeLogs = merged.map(sanitiseLog);
+          saveToolData(userId, 'flightLogs', { logs: safeLogs }).catch((err) => {
+            console.error('[ORBIT] Flight log merge-back to Firestore failed:', err);
+          });
+
+          callback(merged);
+        } else {
+          const merged = [...data.logs]
+            .sort((a, b) => b.startedAt - a.startedAt)
+            .slice(0, 100);
+
+          try {
+            localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(merged));
+          } catch { /* ignore */ }
+
+          callback(merged);
+        }
+      } else {
+        console.info('[ORBIT] Flight logs: no cloud data or empty, using local');
+        const local = loadFlightLogsLocal();
+        if (local.length > 0) {
+          callback(local);
+        }
       }
     },
     () => {
       // Seed Firestore with local logs on first connect
       const local = loadFlightLogsLocal();
-      return local.length > 0 ? { logs: local } : null;
+      console.info(`[ORBIT] Flight logs seed check: ${local.length} local logs`);
+      if (local.length > 0) {
+        const safeLogs = local.map(sanitiseLog);
+        return { logs: safeLogs };
+      }
+      return null;
     }
   );
 }
