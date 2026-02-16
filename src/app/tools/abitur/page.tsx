@@ -1607,21 +1607,32 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                 return (
                   <div key={sem} className="flex-1 flex justify-center py-2.5">
                     <button
-                      onClick={() => canToggleThis && toggleEinbringung(subjectId, sem)}
-                      disabled={!canToggleThis}
-                      title={!canToggleThis && !mandatory ? blockReason : undefined}
+                      onClick={() => {
+                        if (mandatory) return; // Can't toggle mandatory
+                        if (eingebracht && !dropCheck.canDrop) return; // Can't drop
+                        if (!eingebracht && !addCheck.canAdd) return; // Can't add
+                        toggleEinbringung(subjectId, sem);
+                      }}
+                      title={
+                        mandatory ? 'Pflichtfach — kann nicht gestrichen werden'
+                        : eingebracht && !dropCheck.canDrop ? dropCheck.reason
+                        : !eingebracht && !addCheck.canAdd ? addCheck.reason
+                        : eingebracht ? 'Klicken zum Streichen'
+                        : 'Klicken zum Einbringen'
+                      }
                       className={cn(
                         'h-7 w-10 rounded-lg flex items-center justify-center text-[11px] font-mono font-bold transition-all',
                         eingebracht
-                          ? (mandatory || (!dropCheck.canDrop && toggleable))
-                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
-                            : 'bg-emerald-500 text-white'
+                          ? mandatory
+                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 cursor-not-allowed'
+                            : !dropCheck.canDrop
+                              ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500 cursor-not-allowed'
+                              : 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
                           : pts !== null
-                            ? !addCheck.canAdd && toggleable
-                              ? 'bg-amber-500/5 border border-amber-500/20 text-muted-foreground/20 cursor-not-allowed'
-                              : 'bg-foreground/[0.03] text-muted-foreground/25 hover:border-emerald-500/30 border border-transparent'
-                            : 'text-muted-foreground/10',
-                        !canToggleThis && 'cursor-not-allowed'
+                            ? !addCheck.canAdd
+                              ? 'bg-muted-foreground/5 border border-border/40 text-muted-foreground/20 cursor-not-allowed'
+                              : 'bg-foreground/[0.03] text-muted-foreground/40 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-600 border border-transparent cursor-pointer'
+                            : 'text-muted-foreground/10 cursor-default'
                       )}
                     >
                       {pts !== null ? pts.toString().padStart(2, '0') : '·'}

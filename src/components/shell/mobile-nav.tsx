@@ -41,7 +41,7 @@ export function MobileNav() {
         style={{
           position: 'fixed',
           right: '16px',
-          bottom: '56px',
+          bottom: '48px',
           zIndex: 50,
         }}
       >
@@ -57,7 +57,7 @@ export function MobileNav() {
           bottom: '0',
           left: '0',
           right: '0',
-          height: '56px',
+          height: '48px',
           zIndex: 40,
         }}
       >
