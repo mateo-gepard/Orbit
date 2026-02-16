@@ -1,4 +1,5 @@
 import type { OrbitItem } from './types';
+import { saveToolData, subscribeToToolData } from './firestore';
 
 // ═══════════════════════════════════════════════════════════
 // ORBIT — Flight Engine
@@ -620,23 +621,32 @@ export const TURBULENCE_TYPES: { type: TurbulenceLog['type']; label: string; emo
   { type: 'other', label: 'Other', emoji: '⚡' },
 ];
 
-// ─── Flight Log Persistence ────────────────────────────────
+// ─── Flight Log Persistence (Firestore + localStorage) ────
 
 const FLIGHT_LOGS_KEY = 'orbit-flight-logs';
 
-/** Save a completed flight to local storage + Firestore */
-export function saveFlightLog(log: FlightLog): void {
+/** Save a completed flight — writes to both localStorage (instant) and Firestore (synced) */
+export function saveFlightLog(log: FlightLog, userId?: string): void {
+  // 1. Instant local update
   try {
-    const existing = loadFlightLogs();
-    existing.unshift(log); // newest first
-    // Keep last 100 flights
+    const existing = loadFlightLogsLocal();
+    existing.unshift(log);
     const trimmed = existing.slice(0, 100);
     localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(trimmed));
   } catch { /* quota exceeded */ }
+
+  // 2. Sync to Firestore if we have a real user
+  const uid = userId || log.userId;
+  if (uid && uid !== 'local' && uid !== 'demo-user') {
+    const allLogs = loadFlightLogsLocal();
+    saveToolData(uid, 'flightLogs', { logs: allLogs }).catch(() => {
+      /* silently fail — local copy is the source of truth until next sync */
+    });
+  }
 }
 
-/** Load flight logs from local storage */
-export function loadFlightLogs(): FlightLog[] {
+/** Load flight logs from localStorage (synchronous, for initial render) */
+export function loadFlightLogsLocal(): FlightLog[] {
   try {
     const stored = localStorage.getItem(FLIGHT_LOGS_KEY);
     if (!stored) return [];
@@ -644,6 +654,43 @@ export function loadFlightLogs(): FlightLog[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Subscribe to flight logs — merges Firestore cloud data with local data.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToFlightLogs(
+  userId: string,
+  callback: (logs: FlightLog[]) => void
+): () => void {
+  return subscribeToToolData<{ logs: FlightLog[] }>(
+    userId,
+    'flightLogs',
+    (data) => {
+      if (data?.logs && Array.isArray(data.logs)) {
+        // Merge cloud logs with any local-only logs (by id)
+        const local = loadFlightLogsLocal();
+        const cloudIds = new Set(data.logs.map((l) => l.id));
+        const localOnly = local.filter((l) => !cloudIds.has(l.id));
+        const merged = [...localOnly, ...data.logs]
+          .sort((a, b) => b.startedAt - a.startedAt)
+          .slice(0, 100);
+
+        // Update localStorage with the merged set
+        try {
+          localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(merged));
+        } catch { /* ignore */ }
+
+        callback(merged);
+      }
+    },
+    () => {
+      // Seed Firestore with local logs on first connect
+      const local = loadFlightLogsLocal();
+      return local.length > 0 ? { logs: local } : null;
+    }
+  );
 }
 
 /** Get total focus stats from all flights */

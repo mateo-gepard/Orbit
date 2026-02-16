@@ -14,8 +14,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {/* Use 100dvh (dynamic viewport height) to avoid address bar overlap on mobile */}
-      <div className="flex h-screen w-full overflow-hidden bg-background" style={{ height: '100dvh' }}>
+      {/* App shell fills viewport height */}
+      <div className="flex h-screen w-full overflow-hidden bg-background">
         <Sidebar />
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">

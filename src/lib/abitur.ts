@@ -462,6 +462,25 @@ export function calculateBlockI(profile: AbiturProfile): BlockIResult {
   };
 }
 
+// ─── Select All Einbringungen ──────────────────────────────
+
+/**
+ * Generates einbringung keys for ALL non-mandatory subjects × all 4 semesters.
+ * Mandatory subjects are implicitly eingebracht via isMandatory(), so we only
+ * need keys for non-mandatory ones. P-Seminar is excluded.
+ */
+export function selectAllEinbringungen(profile: AbiturProfile): string[] {
+  const result: string[] = [];
+  for (const subjectId of profile.subjects) {
+    if (subjectId === 'psem') continue;
+    if (isMandatory(subjectId, profile)) continue; // already implicit
+    for (const sem of SEMESTERS) {
+      result.push(eKey(subjectId, sem));
+    }
+  }
+  return result;
+}
+
 // ─── Block I Auto-Optimizer ────────────────────────────────
 
 /**

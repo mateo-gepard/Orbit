@@ -36,7 +36,8 @@ import {
   nearestValidDuration,
   formatFlightTime,
   saveFlightLog,
-  loadFlightLogs,
+  loadFlightLogsLocal,
+  subscribeToFlightLogs,
   getFlightStats,
   type Airport,
   type FlightRoute,
@@ -92,9 +93,18 @@ export default function FlightPage() {
     setGateNumber(Math.floor(Math.random() * 40) + 1);
     setSeatRow(Math.floor(Math.random() * 30) + 1);
     setSeatLetter(['A', 'B', 'C', 'D', 'E', 'F'][Math.floor(Math.random() * 6)]);
-    setFlightLogs(loadFlightLogs());
+    setFlightLogs(loadFlightLogsLocal());
     setMounted(true);
   }, []);
+
+  // Subscribe to Firestore flight logs for real-time sync
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeToFlightLogs(user.uid, (logs) => {
+      setFlightLogs(logs);
+    });
+    return () => unsub();
+  }, [user?.uid]);
 
   // Departure/arrival times
   const departureTime = useMemo(() => {
@@ -255,8 +265,10 @@ export default function FlightPage() {
       },
       userId: user?.uid || 'local',
     };
-    saveFlightLog(log);
-    setFlightLogs(loadFlightLogs());
+    saveFlightLog(log, user?.uid);
+    // Firestore subscription will update flightLogs automatically;
+    // also update local state immediately for instant feedback
+    setFlightLogs(loadFlightLogsLocal());
 
     // Mark completed tasks as done
     for (const t of tasks.filter((t) => t.completed)) {
@@ -640,7 +652,7 @@ export default function FlightPage() {
   // ═══════════════════════════════════════════════════════════
 
   return (
-    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Plane className="h-5 w-5 text-sky-500" strokeWidth={1.5} />
@@ -657,11 +669,9 @@ export default function FlightPage() {
         )}
       </div>
 
-      {/* Desktop two-column layout for preflight */}
-      <div className="lg:grid lg:grid-cols-[1fr_340px] lg:gap-8 space-y-6 lg:space-y-0">
-        {/* Left column: Boarding Pass + Duration */}
-        <div className="space-y-6">
-          {/* ── Boarding Pass ── */}
+      {/* Single-column layout */}
+      <div className="space-y-6">
+        {/* ── Boarding Pass ── */}
           <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
             {/* Airline header */}
             <div className="bg-sky-600 dark:bg-sky-700 px-5 py-2.5 flex items-center justify-between">
@@ -760,10 +770,7 @@ export default function FlightPage() {
               onChange={handleDurationChange}
             />
           </div>
-        </div>
 
-        {/* Right column: Task Manifest + Start */}
-        <div className="space-y-6">
           {/* ── Task Manifest ── */}
           <div className="rounded-2xl border border-border/50 p-5">
             <div className="flex items-center justify-between mb-3">
@@ -818,7 +825,6 @@ export default function FlightPage() {
             <Play className="h-4 w-4" />
             Start Flight
           </button>
-        </div>
       </div>
 
       {/* ── Airport Picker Modal ── */}

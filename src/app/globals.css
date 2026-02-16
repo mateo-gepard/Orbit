@@ -123,16 +123,14 @@
     @apply border-border outline-ring/50;
   }
   html {
-    height: 100vh;
-    height: 100dvh; /* dynamic viewport height — excludes mobile address bar */
+    height: 100%;
     margin: 0;
     padding: 0;
     overflow: hidden;
     overscroll-behavior: none;
   }
   body {
-    height: 100vh;
-    height: 100dvh;
+    height: 100%;
     margin: 0;
     padding: 0;
     overflow: hidden;

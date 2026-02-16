@@ -850,7 +850,7 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Einbringungen</span>
           <div className="flex items-center gap-2">
-            <span className={cn('text-[13px] font-bold tabular-nums', einCount >= 40 ? 'text-emerald-500' : 'text-amber-500')}>
+            <span className={cn('text-[13px] font-bold tabular-nums', einCount === 40 ? 'text-emerald-500' : 'text-red-400')}>
               {einCount}<span className="text-muted-foreground/30 font-normal"> / 40</span>
             </span>
             <ChevronRight className="h-3 w-3 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors" />
@@ -858,7 +858,7 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
         </div>
         <div className="h-1.5 rounded-full bg-foreground/[0.05] overflow-hidden">
           <div
-            className={cn('h-full rounded-full transition-all duration-700', einCount >= 40 ? 'bg-emerald-500' : 'bg-amber-500')}
+            className={cn('h-full rounded-full transition-all duration-700', einCount === 40 ? 'bg-emerald-500' : 'bg-red-400')}
             style={{ width: `${Math.min(100, (einCount / 40) * 100)}%` }}
           />
         </div>
@@ -1353,7 +1353,7 @@ function SubjectsView() {
 // ═══════════════════════════════════════════════════════════
 
 function EinbringungenView({ profile }: { profile: AbiturProfile }) {
-  const { toggleEinbringung, autoOptimizeEinbringungen } = useAbiturStore();
+  const { toggleEinbringung, autoOptimizeEinbringungen, selectAll } = useAbiturStore();
   const einCount = countAllEinbringungen(profile);
   const subjects = profile.subjects.filter((id) => id !== 'psem');
   const rules = getAllEinbringungRules(profile);
@@ -1371,31 +1371,45 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
       <div className="rounded-2xl border border-border/40 p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Gesamt</span>
-          <span className={cn('text-[13px] font-bold tabular-nums', einCount >= 40 ? 'text-emerald-500' : einCount < 40 ? 'text-amber-500' : 'text-foreground')}>
+          <span className={cn('text-[13px] font-bold tabular-nums', einCount === 40 ? 'text-emerald-500' : 'text-red-400')}>
             {einCount}<span className="text-muted-foreground/30 font-normal"> / 40</span>
           </span>
         </div>
         <div className="h-1.5 rounded-full bg-foreground/[0.05] overflow-hidden">
           <div
-            className={cn('h-full rounded-full transition-all duration-700', einCount >= 40 ? 'bg-emerald-500' : 'bg-amber-500')}
+            className={cn('h-full rounded-full transition-all duration-700', einCount === 40 ? 'bg-emerald-500' : 'bg-red-400')}
             style={{ width: `${Math.min(100, (einCount / 40) * 100)}%` }}
           />
         </div>
         {einCount < 40 && (
-          <p className="text-[10px] text-amber-500/60 mt-2">
-            Noch {40 - einCount} Einbringungen nötig
+          <p className="text-[10px] text-red-400/60 mt-2">
+            Noch {40 - einCount} Einbringungen nötig — zu wenig!
+          </p>
+        )}
+        {einCount > 40 && (
+          <p className="text-[10px] text-red-400/60 mt-2">
+            {einCount - 40} Einbringung{einCount - 40 !== 1 ? 'en' : ''} zu viel — bitte streichen
           </p>
         )}
       </div>
 
-      {/* Auto-optimize button */}
-      <button
-        onClick={autoOptimizeEinbringungen}
-        className="w-full flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3 text-[12px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/[0.08] transition-colors active:scale-[0.98]"
-      >
-        <Wand2 className="h-3.5 w-3.5" />
-        Automatisch optimieren
-      </button>
+      {/* Action buttons */}
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={selectAll}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-border/40 bg-foreground/[0.02] p-3 text-[12px] font-medium text-muted-foreground/60 hover:bg-foreground/[0.05] transition-colors active:scale-[0.98]"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Alle auswählen
+        </button>
+        <button
+          onClick={autoOptimizeEinbringungen}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3 text-[12px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/[0.08] transition-colors active:scale-[0.98]"
+        >
+          <Wand2 className="h-3.5 w-3.5" />
+          Optimieren (40)
+        </button>
+      </div>
 
       {/* Streichung / Einbringung Rules Summary */}
       <div className="rounded-2xl border border-border/40 p-4 space-y-3">

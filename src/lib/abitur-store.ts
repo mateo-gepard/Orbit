@@ -11,6 +11,7 @@ import {
   createDefaultProfile,
   eKey,
   optimizeEinbringungen,
+  selectAllEinbringungen,
 } from './abitur';
 import { saveToolData } from './firestore';
 
@@ -70,6 +71,7 @@ interface AbiturState {
 
   // Auto-optimization
   autoOptimizeEinbringungen: () => void;
+  selectAll: () => void;
 
   // Sync
   _setProfileFromCloud: (profile: AbiturProfile) => void;
@@ -95,7 +97,11 @@ export const useAbiturStore = create<AbiturState>()(
       profile: createDefaultProfile(),
 
       completeOnboarding: () =>
-        set((s) => updateProfile(s, (p) => ({ ...p, onboardingComplete: true }))),
+        set((s) => updateProfile(s, (p) => ({
+          ...p,
+          onboardingComplete: true,
+          einbringungen: selectAllEinbringungen(p),
+        }))),
 
       setStudentName: (name) =>
         set((s) => updateProfile(s, (p) => ({ ...p, studentName: name }))),
@@ -193,6 +199,12 @@ export const useAbiturStore = create<AbiturState>()(
           // Only keep non-mandatory keys in einbringungen (mandatory are implicit)
           return { ...p, einbringungen: optimized };
         })),
+
+      selectAll: () =>
+        set((s) => updateProfile(s, (p) => ({
+          ...p,
+          einbringungen: selectAllEinbringungen(p),
+        }))),
 
       _setProfileFromCloud: (profile) => set({ profile }),
 
