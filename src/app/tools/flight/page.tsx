@@ -17,6 +17,12 @@ import {
   Flame,
   Target,
   TrendingUp,
+  Smartphone,
+  Brain,
+  Bell,
+  UserRound,
+  Shield,
+  Crown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
@@ -26,9 +32,11 @@ import { PlaneAnimation } from '@/components/flight/plane-animation';
 import {
   AIRPORTS,
   DURATION_PRESETS,
+  PRIVATE_DURATION_PRESETS,
   TURBULENCE_TYPES,
   getCurrentPhase,
   generateFlightNumber,
+  generatePrivateFlightNumber,
   getRouteForDuration,
   getRouteForAirports,
   getConnectedAirports,
@@ -46,6 +54,7 @@ import {
   type FlightStatus,
   type FlightLog,
   type TurbulenceLog,
+  type FlightClass,
 } from '@/lib/flight';
 import type { OrbitItem } from '@/lib/types';
 
@@ -59,6 +68,7 @@ export default function FlightPage() {
   const [mounted, setMounted] = useState(false);
 
   // ── Preflight state ──
+  const [flightClass, setFlightClass] = useState<FlightClass>('commercial');
   const [duration, setDuration] = useState<FlightDuration>(50);
   const [route, setRoute] = useState<FlightRoute>(() => getRouteForDuration(50));
   const [tasks, setTasks] = useState<FlightTask[]>([]);
@@ -96,6 +106,8 @@ export default function FlightPage() {
     setFlightLogs(loadFlightLogsLocal());
     setMounted(true);
   }, []);
+
+  const isPrivate = flightClass === 'private';
 
   // Subscribe to Firestore flight logs for real-time sync
   useEffect(() => {
@@ -188,6 +200,10 @@ export default function FlightPage() {
   // ── Actions ──
 
   const handleStartFlight = () => {
+    // Private mode: trim tasks to single primary only
+    if (isPrivate && tasks.length > 1) {
+      setTasks(tasks.slice(0, 1).map(t => ({ ...t, type: 'primary' as const })));
+    }
     setElapsed(0);
     setPausedElapsed(0);
     setTurbulence([]);
@@ -221,6 +237,13 @@ export default function FlightPage() {
   };
 
   const handleAddTask = (item: OrbitItem) => {
+    if (isPrivate) {
+      // Private mode: single mission only, replace existing
+      setTasks([{ id: item.id, title: item.title, type: 'primary', completed: false }]);
+      setAddingTasks(false);
+      setTaskSearch('');
+      return;
+    }
     const type = tasks.length < 3 ? 'primary' : 'carry-on';
     setTasks((prev) => [...prev, { id: item.id, title: item.title, type, completed: false }]);
   };
@@ -264,6 +287,7 @@ export default function FlightPage() {
         nextAction: debriefNextAction || undefined,
       },
       userId: user?.uid || 'local',
+      flightClass,
     };
     saveFlightLog(log, user?.uid);
     // Firestore subscription will update flightLogs automatically;
@@ -285,7 +309,7 @@ export default function FlightPage() {
     setElapsed(0);
     setPausedElapsed(0);
     setTurbulence([]);
-    setFlightNumber(generateFlightNumber());
+    setFlightNumber(isPrivate ? generatePrivateFlightNumber() : generateFlightNumber());
     setRoute(getRouteForDuration(duration));
   };
 
@@ -364,11 +388,20 @@ export default function FlightPage() {
         {/* Flight strip header */}
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Plane className="h-3.5 w-3.5 text-sky-500" strokeWidth={1.5} />
+            {isPrivate ? (
+              <Crown className="h-3.5 w-3.5 text-purple-500" strokeWidth={1.5} />
+            ) : (
+              <Plane className="h-3.5 w-3.5 text-sky-500" strokeWidth={1.5} />
+            )}
             <span className="text-[11px] font-mono text-muted-foreground/50">{flightNumber}</span>
             <span className="text-[11px] text-muted-foreground/30">
               {route.from.code} → {route.to.code}
             </span>
+            {isPrivate && (
+              <span className="text-[9px] font-medium text-purple-500 bg-purple-500/10 px-1.5 py-0.5 rounded-md">
+                PRIVATE
+              </span>
+            )}
             {status === 'paused' && (
               <span className="text-[10px] font-medium text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-md">
                 HOLDING
@@ -376,29 +409,34 @@ export default function FlightPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {status === 'inflight' ? (
-              <button
-                onClick={handlePause}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground/40 hover:text-amber-500 transition-colors"
-              >
-                <Pause className="h-3 w-3" />
-                Hold
-              </button>
-            ) : (
-              <button
-                onClick={handleResume}
-                className="flex items-center gap-1 text-[11px] text-amber-500 hover:text-amber-400 transition-colors font-medium"
-              >
-                <Play className="h-3 w-3" />
-                Resume
-              </button>
+            {/* Private mode: no pause/hold — commitment mode */}
+            {!isPrivate && (
+              <>
+                {status === 'inflight' ? (
+                  <button
+                    onClick={handlePause}
+                    className="flex items-center gap-1 text-[11px] text-muted-foreground/40 hover:text-amber-500 transition-colors"
+                  >
+                    <Pause className="h-3 w-3" />
+                    Hold
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleResume}
+                    className="flex items-center gap-1 text-[11px] text-amber-500 hover:text-amber-400 transition-colors font-medium"
+                  >
+                    <Play className="h-3 w-3" />
+                    Resume
+                  </button>
+                )}
+              </>
             )}
             <button
               onClick={handleDivert}
               className="flex items-center gap-1 text-[11px] text-muted-foreground/20 hover:text-red-400 transition-colors"
             >
               <AlertTriangle className="h-3 w-3" />
-              Divert
+              {isPrivate ? 'Abort' : 'Divert'}
             </button>
           </div>
         </div>
@@ -407,8 +445,11 @@ export default function FlightPage() {
           <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-6">
             {/* Phase label */}
             <div className="text-center">
-              <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">
-                {phaseInfo.label}
+              <p className={cn(
+                'text-[10px] uppercase tracking-widest',
+                isPrivate ? 'text-purple-500/40' : 'text-muted-foreground/30'
+              )}>
+                {isPrivate && status === 'inflight' ? 'Deep Focus' : phaseInfo.label}
               </p>
             </div>
 
@@ -418,6 +459,7 @@ export default function FlightPage() {
               phaseProgress={phaseInfo.phaseProgress}
               progress={phaseInfo.progress}
               isPaused={status === 'paused'}
+              flightClass={flightClass}
             />
 
             {/* Big countdown */}
@@ -428,6 +470,12 @@ export default function FlightPage() {
               <p className="text-[10px] text-muted-foreground/25 mt-2 tabular-nums font-mono">
                 {formatTime(elapsed)} elapsed · {route.from.code} → {route.to.code}
               </p>
+              {isPrivate && (
+                <div className="flex items-center justify-center gap-1.5 mt-3">
+                  <Shield className="h-3 w-3 text-purple-500/40" />
+                  <span className="text-[9px] text-purple-500/30 uppercase tracking-widest font-medium">No Distractions Mode</span>
+                </div>
+              )}
             </div>
 
             {/* Desktop two-column layout */}
@@ -440,15 +488,17 @@ export default function FlightPage() {
                     const phaseIdx = phases.indexOf(phaseInfo.phase);
                     const isCurrent = i === phaseIdx;
                     const isPast = i < phaseIdx;
+                    const accentColor = isPrivate ? 'bg-purple-500' : 'bg-sky-500';
+                    const accentColorDim = isPrivate ? 'bg-purple-500/60' : 'bg-sky-500/60';
                     return (
                       <div key={label} className="flex-1 relative group">
                         <div
                           className={cn(
                             'h-full rounded-full transition-all duration-500',
                             isPast
-                              ? 'bg-sky-500/60'
+                              ? accentColorDim
                               : isCurrent
-                                ? 'bg-sky-500'
+                                ? accentColor
                                 : 'bg-foreground/[0.04]'
                           )}
                           style={isCurrent ? { width: `${phaseInfo.phaseProgress * 100}%`, position: 'absolute', top: 0, left: 0, height: '100%', borderRadius: '9999px' } : undefined}
@@ -469,25 +519,48 @@ export default function FlightPage() {
                   ))}
                 </div>
 
-                {/* Turbulence quick-log */}
-                <div className="rounded-2xl border border-border/30 p-3">
-                  <p className="text-[9px] text-muted-foreground/25 uppercase tracking-widest mb-2">
-                    Log Turbulence ({turbulence.length})
-                  </p>
-                  <div className="flex gap-2">
-                    {TURBULENCE_TYPES.map(({ type, emoji, label }) => (
-                      <button
-                        key={type}
-                        onClick={() => handleLogTurbulence(type)}
-                        title={label}
-                        className="flex-1 flex flex-col items-center gap-0.5 rounded-xl py-2 hover:bg-foreground/[0.03] active:scale-95 transition-all"
-                      >
-                        <span className="text-base">{emoji}</span>
-                        <span className="text-[7px] text-muted-foreground/20 uppercase">{label}</span>
-                      </button>
-                    ))}
+                {/* Turbulence quick-log — commercial only */}
+                {!isPrivate && (
+                  <div className="rounded-2xl border border-border/30 p-3">
+                    <p className="text-[9px] text-muted-foreground/25 uppercase tracking-widest mb-2">
+                      Log Turbulence ({turbulence.length})
+                    </p>
+                    <div className="flex gap-2">
+                      {TURBULENCE_TYPES.map(({ type, icon, label }) => {
+                        const Icon = {
+                          Smartphone,
+                          Brain,
+                          Bell,
+                          UserRound,
+                          Zap,
+                        }[icon] || Zap;
+                        
+                        return (
+                          <button
+                            key={type}
+                            onClick={() => handleLogTurbulence(type)}
+                            title={label}
+                            className="flex-1 flex flex-col items-center gap-1 rounded-xl py-2 hover:bg-foreground/[0.03] active:scale-95 transition-all"
+                          >
+                            <Icon className="h-4 w-4 text-muted-foreground/40" />
+                            <span className="text-[7px] text-muted-foreground/20 uppercase">{label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Private: focus commitment card */}
+                {isPrivate && (
+                  <div className="rounded-2xl border border-purple-500/20 bg-purple-500/[0.02] p-4 text-center">
+                    <Shield className="h-5 w-5 text-purple-500/50 mx-auto mb-2" />
+                    <p className="text-[11px] font-medium text-purple-500/60">Focus Locked</p>
+                    <p className="text-[9px] text-muted-foreground/30 mt-1">
+                      No pauses. No distractions. Stay in the zone.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Task manifest */}
@@ -544,8 +617,13 @@ export default function FlightPage() {
     return (
       <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
         <div className="text-center">
-          <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest mb-2">
-            {completedNormally ? 'Flight Complete' : 'Diverted'}
+          <p className={cn(
+            'text-[10px] uppercase tracking-widest mb-2',
+            isPrivate ? 'text-purple-500/40' : 'text-muted-foreground/30'
+          )}>
+            {completedNormally 
+              ? (isPrivate ? 'Mission Complete' : 'Flight Complete')
+              : (isPrivate ? 'Mission Aborted' : 'Diverted')}
           </p>
           <h2 className="text-xl font-bold tracking-tight">
             {flightNumber} · Debrief
@@ -556,22 +634,28 @@ export default function FlightPage() {
         </div>
 
         {/* Stats grid */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className={cn('grid gap-3', isPrivate ? 'grid-cols-2' : 'grid-cols-3')}>
           <div className="rounded-2xl border border-border/40 p-4 text-center">
-            <Clock className="h-3.5 w-3.5 text-sky-500 mx-auto mb-1.5" />
+            <Clock className={cn('h-3.5 w-3.5 mx-auto mb-1.5', isPrivate ? 'text-purple-500' : 'text-sky-500')} />
             <p className="text-lg font-bold tabular-nums">{formatTime(elapsed)}</p>
-            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Flight Time</p>
+            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">
+              {isPrivate ? 'Focus Time' : 'Flight Time'}
+            </p>
           </div>
-          <div className="rounded-2xl border border-border/40 p-4 text-center">
-            <CheckSquare className="h-3.5 w-3.5 text-emerald-500 mx-auto mb-1.5" />
-            <p className="text-lg font-bold tabular-nums">{completedCount}/{tasks.length}</p>
-            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Tasks Done</p>
-          </div>
-          <div className="rounded-2xl border border-border/40 p-4 text-center">
-            <Zap className="h-3.5 w-3.5 text-amber-500 mx-auto mb-1.5" />
-            <p className="text-lg font-bold tabular-nums">{turbulence.length}</p>
-            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Turbulence</p>
-          </div>
+          {tasks.length > 0 && (
+            <div className="rounded-2xl border border-border/40 p-4 text-center">
+              <CheckSquare className="h-3.5 w-3.5 text-emerald-500 mx-auto mb-1.5" />
+              <p className="text-lg font-bold tabular-nums">{completedCount}/{tasks.length}</p>
+              <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Tasks Done</p>
+            </div>
+          )}
+          {!isPrivate && (
+            <div className="rounded-2xl border border-border/40 p-4 text-center">
+              <Zap className="h-3.5 w-3.5 text-amber-500 mx-auto mb-1.5" />
+              <p className="text-lg font-bold tabular-nums">{turbulence.length}</p>
+              <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Turbulence</p>
+            </div>
+          )}
         </div>
 
         {/* Task Review */}
@@ -638,7 +722,12 @@ export default function FlightPage() {
 
         <button
           onClick={handleFinishDebrief}
-          className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 text-[14px] font-semibold bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98]"
+          className={cn(
+            'w-full flex items-center justify-center gap-2 rounded-2xl py-4 text-[14px] font-semibold transition-all active:scale-[0.98]',
+            isPrivate
+              ? 'bg-purple-600 text-white hover:bg-purple-500 shadow-lg shadow-purple-600/20'
+              : 'bg-foreground text-background hover:opacity-90'
+          )}
         >
           <CheckSquare className="h-4 w-4" />
           Complete Debrief
@@ -655,8 +744,14 @@ export default function FlightPage() {
     <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Plane className="h-5 w-5 text-sky-500" strokeWidth={1.5} />
-          <h1 className="text-xl font-semibold tracking-tight">Cleared for Takeoff</h1>
+          {isPrivate ? (
+            <Crown className="h-5 w-5 text-purple-500" strokeWidth={1.5} />
+          ) : (
+            <Plane className="h-5 w-5 text-sky-500" strokeWidth={1.5} />
+          )}
+          <h1 className="text-xl font-semibold tracking-tight">
+            {isPrivate ? 'Private Charter' : 'Cleared for Takeoff'}
+          </h1>
         </div>
         {flightLogs.length > 0 && (
           <button
@@ -669,9 +764,209 @@ export default function FlightPage() {
         )}
       </div>
 
+      {/* ── Flight Class Selector ── */}
+      <div className="relative">
+        {/* The toggle track */}
+        <div className="relative rounded-2xl border border-border/40 bg-card overflow-hidden">
+          {/* Sliding highlight */}
+          <div
+            className={cn(
+              'absolute top-0 bottom-0 w-1/2 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] z-0',
+              isPrivate ? 'left-1/2' : 'left-0'
+            )}
+          >
+            <div className={cn(
+              'absolute inset-0 transition-colors duration-500',
+              isPrivate
+                ? 'bg-gradient-to-br from-purple-500/[0.08] via-purple-600/[0.04] to-violet-500/[0.06]'
+                : 'bg-gradient-to-br from-sky-500/[0.08] via-sky-600/[0.04] to-blue-500/[0.06]'
+            )} />
+            <div className={cn(
+              'absolute inset-y-0 w-[2px] transition-colors duration-500',
+              isPrivate ? 'right-0 left-auto bg-purple-500/20' : 'left-0 bg-sky-500/20'
+            )} />
+          </div>
+
+          {/* Vertical divider */}
+          <div className="absolute left-1/2 top-3 bottom-3 w-px bg-border/30 z-10" />
+
+          <div className="relative z-10 grid grid-cols-2">
+            {/* Commercial side */}
+            <button
+              onClick={() => {
+                if (flightClass !== 'commercial') {
+                  setFlightClass('commercial');
+                  setFlightNumber(generateFlightNumber());
+                  const maxCommercial = 460 as FlightDuration;
+                  if (duration > maxCommercial) {
+                    setDuration(maxCommercial);
+                    setRoute(getRouteForDuration(maxCommercial));
+                  }
+                }
+              }}
+              className="relative p-4 text-left transition-all group"
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className={cn(
+                  'h-6 w-6 rounded-lg flex items-center justify-center transition-colors duration-500',
+                  !isPrivate ? 'bg-sky-500/15' : 'bg-foreground/[0.04]'
+                )}>
+                  <Plane className={cn('h-3.5 w-3.5 transition-colors duration-500', !isPrivate ? 'text-sky-500' : 'text-muted-foreground/25')} />
+                </div>
+                <span className={cn('text-[13px] font-bold tracking-tight transition-colors duration-500', !isPrivate ? 'text-foreground' : 'text-muted-foreground/30')}>
+                  Commercial
+                </span>
+              </div>
+              <div className={cn('flex items-center gap-2 mt-2 transition-opacity duration-500', !isPrivate ? 'opacity-100' : 'opacity-30')}>
+                <img src="/a380.png" alt="" className="h-8 w-auto object-contain" />
+                <div className="flex flex-col">
+                  <span className="text-[8px] text-muted-foreground/40 uppercase tracking-widest font-medium">A380</span>
+                  <span className="text-[9px] text-muted-foreground/25 mt-0.5">Tasks · Turb. log · Pause</span>
+                </div>
+              </div>
+              <div className={cn('mt-2 flex items-center gap-1 transition-opacity duration-500', !isPrivate ? 'opacity-100' : 'opacity-20')}>
+                <div className="flex gap-0.5">
+                  {[20, 60, 120, 240, 460].map((d) => (
+                    <div key={d} className="h-1 w-1 rounded-full bg-sky-500/40" />
+                  ))}
+                </div>
+                <span className="text-[7px] text-muted-foreground/20 ml-1">20m – 7h+</span>
+              </div>
+            </button>
+
+            {/* Private side */}
+            <button
+              onClick={() => {
+                if (flightClass !== 'private') {
+                  setFlightClass('private');
+                  setFlightNumber(generatePrivateFlightNumber());
+                  if (duration > 90) {
+                    const newDuration = 90 as FlightDuration;
+                    setDuration(newDuration);
+                    setRoute(getRouteForDuration(newDuration));
+                  }
+                  if (tasks.length > 1) {
+                    setTasks(tasks.slice(0, 1).map(t => ({ ...t, type: 'primary' as const })));
+                  }
+                }
+              }}
+              className="relative p-4 text-left transition-all group"
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className={cn(
+                  'h-6 w-6 rounded-lg flex items-center justify-center transition-colors duration-500',
+                  isPrivate ? 'bg-purple-500/15' : 'bg-foreground/[0.04]'
+                )}>
+                  <Crown className={cn('h-3.5 w-3.5 transition-colors duration-500', isPrivate ? 'text-purple-500' : 'text-muted-foreground/25')} />
+                </div>
+                <span className={cn('text-[13px] font-bold tracking-tight transition-colors duration-500', isPrivate ? 'text-foreground' : 'text-muted-foreground/30')}>
+                  Private
+                </span>
+              </div>
+              <div className={cn('flex items-center gap-2 mt-2 transition-opacity duration-500', isPrivate ? 'opacity-100' : 'opacity-30')}>
+                <img src="/lg60sidee.png" alt="" className="h-8 w-auto object-contain" />
+                <div className="flex flex-col">
+                  <span className="text-[8px] text-muted-foreground/40 uppercase tracking-widest font-medium">Charter</span>
+                  <span className="text-[9px] text-muted-foreground/25 mt-0.5">1 mission · No pause · Focus</span>
+                </div>
+              </div>
+              <div className={cn('mt-2 flex items-center gap-1 transition-opacity duration-500', isPrivate ? 'opacity-100' : 'opacity-20')}>
+                <div className="flex gap-0.5">
+                  {[20, 45, 60, 90].map((d) => (
+                    <div key={d} className="h-1 w-1 rounded-full bg-purple-500/40" />
+                  ))}
+                </div>
+                <span className="text-[7px] text-muted-foreground/20 ml-1">20m – 90m</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Single-column layout */}
       <div className="space-y-6">
         {/* ── Boarding Pass ── */}
+        {isPrivate ? (
+          // ── Private Charter Document ──
+          <div className="rounded-2xl overflow-hidden bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800 border border-purple-500/15">
+            {/* Gold accent line */}
+            <div className="h-[2px] bg-gradient-to-r from-transparent via-purple-400/50 to-transparent" />
+
+            {/* Header */}
+            <div className="px-5 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Crown className="h-4 w-4 text-purple-400/80" />
+                <div>
+                  <span className="text-[11px] font-bold text-zinc-300 tracking-[0.15em] uppercase">Orbit Private</span>
+                  <p className="text-[7px] text-zinc-600 tracking-[0.2em] uppercase mt-0.5">Charter Manifest</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[12px] font-mono font-bold text-purple-400/70 tracking-wider">{flightNumber}</span>
+              </div>
+            </div>
+
+            {/* Thin separator */}
+            <div className="mx-5 h-px bg-zinc-800" />
+
+            {/* Route — dramatic, large */}
+            <div className="px-5 py-5">
+              <div className="flex items-start gap-3">
+                <button onClick={() => setPickingAirport('from')} className="flex-1 group">
+                  <p className="text-[8px] text-zinc-600 uppercase tracking-[0.15em] font-medium">Origin</p>
+                  <p className="text-4xl font-black tracking-tight leading-none mt-1 text-zinc-100 group-hover:text-purple-400 transition-colors">{route.from.code}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">{route.from.city}</p>
+                  <p className="text-[16px] font-bold tabular-nums mt-2 tracking-tight text-zinc-300">{departureTime ? formatClock(departureTime) : '--:--'}</p>
+                </button>
+
+                <div className="flex flex-col items-center pt-6 shrink-0 px-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-px w-5 bg-purple-500/20" />
+                    <div className="h-2 w-2 rounded-full border border-purple-500/30" />
+                    <div className="h-px w-3 bg-purple-500/15" />
+                    <Crown className="h-3 w-3 text-purple-400/40" />
+                    <div className="h-px w-3 bg-purple-500/15" />
+                    <div className="h-2 w-2 rounded-full bg-purple-500/30" />
+                    <div className="h-px w-5 bg-purple-500/20" />
+                  </div>
+                  <span className="text-[8px] text-zinc-600 mt-1.5 tabular-nums font-medium">
+                    {formatFlightTime(route.realFlightMin)}
+                  </span>
+                </div>
+
+                <button onClick={() => setPickingAirport('to')} className="flex-1 text-right group">
+                  <p className="text-[8px] text-zinc-600 uppercase tracking-[0.15em] font-medium">Destination</p>
+                  <p className="text-4xl font-black tracking-tight leading-none mt-1 text-zinc-100 group-hover:text-purple-400 transition-colors">{route.to.code}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">{route.to.city}</p>
+                  <p className="text-[16px] font-bold tabular-nums mt-2 tracking-tight text-zinc-300">{arrivalTime ? formatClock(arrivalTime) : '--:--'}</p>
+                </button>
+              </div>
+            </div>
+
+            {/* Thin separator */}
+            <div className="mx-5 h-px bg-zinc-800" />
+
+            {/* Bottom details — minimal, premium */}
+            <div className="px-5 py-3.5 flex items-center justify-between">
+              <div>
+                <p className="text-[7px] text-zinc-600 uppercase tracking-[0.15em]">Pilot</p>
+                <p className="text-[11px] font-semibold text-zinc-300 mt-0.5">{(user?.displayName || 'Pilot').toUpperCase()}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[7px] text-zinc-600 uppercase tracking-[0.15em]">Focus</p>
+                <p className="text-[11px] font-semibold text-purple-400 mt-0.5">{duration}m</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[7px] text-zinc-600 uppercase tracking-[0.15em]">Range</p>
+                <p className="text-[11px] font-semibold text-zinc-300 font-mono mt-0.5">{route.distanceKm.toLocaleString()} km</p>
+              </div>
+            </div>
+
+            {/* Bottom accent */}
+            <div className="h-[1px] bg-gradient-to-r from-transparent via-purple-400/20 to-transparent" />
+          </div>
+        ) : (
+          // ── Commercial Boarding Pass ──
           <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
             {/* Airline header */}
             <div className="bg-sky-600 dark:bg-sky-700 px-5 py-2.5 flex items-center justify-between">
@@ -759,41 +1054,75 @@ export default function FlightPage() {
               </div>
             </div>
           </div>
+        )}
 
           {/* ── Duration Wheel ── */}
           <div>
-            <p className="text-[11px] font-medium text-muted-foreground/50 mb-2.5 uppercase tracking-wider">
-              Flight Duration
+            <p className={cn(
+              'text-[11px] font-medium mb-2.5 uppercase tracking-wider',
+              isPrivate ? 'text-purple-500/40' : 'text-muted-foreground/50'
+            )}>
+              {isPrivate ? 'Focus Duration' : 'Flight Duration'}
             </p>
             <DurationWheel
               value={duration}
               onChange={handleDurationChange}
+              presets={isPrivate ? PRIVATE_DURATION_PRESETS : DURATION_PRESETS}
+              accentColor={isPrivate ? 'purple' : 'sky'}
             />
           </div>
 
           {/* ── Task Manifest ── */}
-          <div className="rounded-2xl border border-border/50 p-5">
+          <div className={cn(
+            'rounded-2xl border p-5',
+            isPrivate ? 'border-purple-500/20' : 'border-border/50'
+          )}>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest">
-                Task Manifest ({tasks.length})
+              <p className={cn(
+                'text-[10px] font-medium uppercase tracking-widest',
+                isPrivate ? 'text-purple-500/30' : 'text-muted-foreground/40'
+              )}>
+                {isPrivate ? `Priority Mission${tasks.length > 0 ? ' ✓' : ''}` : `Task Manifest (${tasks.length})`}
               </p>
-              <button
-                onClick={() => setAddingTasks(true)}
-                className="flex items-center gap-1 text-[11px] text-sky-500 hover:text-sky-400 transition-colors"
-              >
-                <Plus className="h-3 w-3" />
-                Add Task
-              </button>
+              {(!isPrivate || tasks.length === 0) && (
+                <button
+                  onClick={() => setAddingTasks(true)}
+                  className={cn(
+                    'flex items-center gap-1 text-[11px] transition-colors',
+                    isPrivate
+                      ? 'text-purple-500 hover:text-purple-400'
+                      : 'text-sky-500 hover:text-sky-400'
+                  )}
+                >
+                  <Plus className="h-3 w-3" />
+                  {isPrivate ? 'Set Mission' : 'Add Task'}
+                </button>
+              )}
             </div>
 
             {tasks.length === 0 ? (
               <button
                 onClick={() => setAddingTasks(true)}
-                className="w-full rounded-xl border border-dashed border-border/40 py-6 flex flex-col items-center justify-center text-center hover:border-sky-500/30 hover:bg-sky-500/[0.02] transition-all"
+                className={cn(
+                  'w-full rounded-xl border border-dashed py-6 flex flex-col items-center justify-center text-center transition-all',
+                  isPrivate
+                    ? 'border-purple-500/20 hover:border-purple-500/30 hover:bg-purple-500/[0.02]'
+                    : 'border-border/40 hover:border-sky-500/30 hover:bg-sky-500/[0.02]'
+                )}
               >
-                <Plus className="h-5 w-5 text-muted-foreground/20 mb-1.5" />
-                <p className="text-[12px] text-muted-foreground/40">Add tasks to your manifest</p>
-                <p className="text-[10px] text-muted-foreground/25 mt-0.5">First 3 are primary, rest carry-on</p>
+                {isPrivate ? (
+                  <>
+                    <Target className="h-5 w-5 text-purple-500/20 mb-1.5" />
+                    <p className="text-[12px] text-muted-foreground/40">Set your single focus mission</p>
+                    <p className="text-[10px] text-muted-foreground/25 mt-0.5">One task. No distractions. Maximum output.</p>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-5 w-5 text-muted-foreground/20 mb-1.5" />
+                    <p className="text-[12px] text-muted-foreground/40">Add tasks to your manifest</p>
+                    <p className="text-[10px] text-muted-foreground/25 mt-0.5">First 3 are primary, rest carry-on</p>
+                  </>
+                )}
               </button>
             ) : (
               <div className="space-y-1">
@@ -802,12 +1131,21 @@ export default function FlightPage() {
                     key={task.id}
                     className={cn(
                       'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors group',
-                      task.type === 'primary' ? 'font-medium' : 'text-muted-foreground/50'
+                      isPrivate
+                        ? 'font-medium'
+                        : task.type === 'primary' ? 'font-medium' : 'text-muted-foreground/50'
                     )}
                   >
-                    <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', task.type === 'primary' ? 'bg-sky-500' : 'bg-muted-foreground/20')} />
+                    <span className={cn(
+                      'h-1.5 w-1.5 rounded-full shrink-0',
+                      isPrivate
+                        ? 'bg-purple-500'
+                        : task.type === 'primary' ? 'bg-sky-500' : 'bg-muted-foreground/20'
+                    )} />
                     <span className="flex-1 truncate">{task.title}</span>
-                    <span className="text-[9px] text-muted-foreground/25 uppercase">{task.type === 'primary' ? `P${i + 1}` : 'C/O'}</span>
+                    {!isPrivate && (
+                      <span className="text-[9px] text-muted-foreground/25 uppercase">{task.type === 'primary' ? `P${i + 1}` : 'C/O'}</span>
+                    )}
                     <button onClick={() => handleRemoveTask(task.id)} className="text-muted-foreground/20 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
                       <X className="h-3 w-3" />
                     </button>
@@ -820,10 +1158,24 @@ export default function FlightPage() {
           {/* ── Start Flight ── */}
           <button
             onClick={handleStartFlight}
-            className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 text-[14px] font-semibold transition-all active:scale-[0.98] bg-sky-600 text-white hover:bg-sky-500 shadow-lg shadow-sky-600/20"
+            className={cn(
+              'w-full flex items-center justify-center gap-2 rounded-2xl py-4 text-[14px] font-semibold transition-all active:scale-[0.98] text-white shadow-lg',
+              isPrivate
+                ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/20'
+                : 'bg-sky-600 hover:bg-sky-500 shadow-sky-600/20'
+            )}
           >
-            <Play className="h-4 w-4" />
-            Start Flight
+            {isPrivate ? (
+              <>
+                <Shield className="h-4 w-4" />
+                Enter Focus Mode
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4" />
+                Start Flight
+              </>
+            )}
           </button>
       </div>
 
@@ -886,7 +1238,9 @@ export default function FlightPage() {
           <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none p-6">
             <div className="pointer-events-auto rounded-2xl border border-border/60 bg-card p-5 w-full max-w-[400px] shadow-2xl max-h-[70vh] flex flex-col">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-[13px] font-semibold">Add Tasks to Manifest</p>
+                <p className="text-[13px] font-semibold">
+                  {isPrivate ? 'Select Focus Mission' : 'Add Tasks to Manifest'}
+                </p>
                 <button onClick={() => { setAddingTasks(false); setTaskSearch(''); }} className="text-muted-foreground/40 hover:text-foreground transition-colors">
                   <X className="h-4 w-4" />
                 </button>
@@ -952,15 +1306,21 @@ export default function FlightPage() {
 // Duration Wheel — Scrollable disc for time selection
 // ═══════════════════════════════════════════════════════════
 
-function DurationWheel({ value, onChange }: { value: FlightDuration; onChange: (d: FlightDuration) => void }) {
+function DurationWheel({ value, onChange, presets, accentColor = 'sky' }: { 
+  value: FlightDuration; 
+  onChange: (d: FlightDuration) => void;
+  presets?: typeof DURATION_PRESETS;
+  accentColor?: 'sky' | 'purple';
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [allDurations] = useState<FlightDuration[]>(() => {
+  const activePresets = presets || DURATION_PRESETS;
+  const allDurations = useMemo<FlightDuration[]>(() => {
     const set = new Set<FlightDuration>();
-    for (const preset of DURATION_PRESETS) {
+    for (const preset of activePresets) {
       for (const d of preset.durations) set.add(d);
     }
     return [...set].sort((a, b) => a - b);
-  });
+  }, [activePresets]);
 
   // Scroll to selected value on mount
   useEffect(() => {
@@ -977,12 +1337,18 @@ function DurationWheel({ value, onChange }: { value: FlightDuration; onChange: (
   }, []);
 
   // Category label for a duration
-  const getCategory = (d: FlightDuration): string => {
-    for (const preset of DURATION_PRESETS) {
+  const getCategory = useCallback((d: FlightDuration): string => {
+    for (const preset of activePresets) {
       if (preset.durations.includes(d)) return preset.label;
     }
     return '';
-  };
+  }, [activePresets]);
+
+  const selectedBg = accentColor === 'purple' ? 'bg-purple-500/10' : 'bg-sky-500/10';
+  const selectedBorder = accentColor === 'purple' ? 'border-purple-500/30' : 'border-sky-500/30';
+  const selectedText = accentColor === 'purple' ? 'text-purple-600 dark:text-purple-400' : 'text-sky-600 dark:text-sky-400';
+  const selectedNumber = accentColor === 'purple' ? 'text-purple-500' : 'text-sky-500';
+  const indicatorBg = accentColor === 'purple' ? 'bg-purple-500/30' : 'bg-sky-500/30';
 
   return (
     <div className="relative">
@@ -1006,11 +1372,11 @@ function DurationWheel({ value, onChange }: { value: FlightDuration; onChange: (
               className={cn(
                 'shrink-0 snap-center rounded-2xl px-4 py-3 text-center transition-all active:scale-95 border min-w-[72px]',
                 isSelected
-                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-600 dark:text-sky-400 scale-105 shadow-sm'
+                  ? `${selectedBg} ${selectedBorder} ${selectedText} scale-105 shadow-sm`
                   : 'border-border/30 text-muted-foreground/40 hover:border-border/50 hover:text-foreground/60'
               )}
             >
-              <p className={cn('text-[15px] font-bold tabular-nums', isSelected && 'text-sky-500')}>
+              <p className={cn('text-[15px] font-bold tabular-nums', isSelected && selectedNumber)}>
                 {formatFlightTime(d)}
               </p>
               <p className="text-[7px] text-muted-foreground/25 uppercase tracking-wider mt-0.5 truncate max-w-[64px]">
@@ -1023,7 +1389,7 @@ function DurationWheel({ value, onChange }: { value: FlightDuration; onChange: (
 
       {/* Selection indicator */}
       <div className="flex justify-center mt-1">
-        <div className="h-0.5 w-6 rounded-full bg-sky-500/30" />
+        <div className={cn('h-0.5 w-6 rounded-full', indicatorBg)} />
       </div>
     </div>
   );
@@ -1039,67 +1405,173 @@ function LogbookCard({ log }: { log: FlightLog }) {
   const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const actualMin = Math.round(log.actualDuration / 60000);
   const completedTasks = log.tasks.filter((t) => t.completed).length;
+  const logIsPrivate = log.flightClass === 'private';
 
+  // ── Private: Charter manifest style ──
+  if (logIsPrivate) {
+    return (
+      <div className={cn(
+        'rounded-2xl overflow-hidden transition-colors',
+        'bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800',
+        'border',
+        log.completedNormally ? 'border-purple-500/20' : 'border-amber-500/30'
+      )}>
+        {/* Gold accent line */}
+        <div className={cn(
+          'h-[2px]',
+          log.completedNormally
+            ? 'bg-gradient-to-r from-transparent via-purple-400/60 to-transparent'
+            : 'bg-gradient-to-r from-transparent via-amber-400/60 to-transparent'
+        )} />
+
+        {/* Header */}
+        <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Crown className={cn('h-3 w-3', log.completedNormally ? 'text-purple-400' : 'text-amber-400')} />
+            <span className="text-[10px] font-mono font-bold text-zinc-400 tracking-wider">{log.flightNumber}</span>
+          </div>
+          <span className="text-[9px] text-zinc-500 font-mono">{dateStr} · {timeStr}</span>
+        </div>
+
+        {/* Route — larger, more dramatic */}
+        <div className="px-4 py-2 flex items-center gap-3">
+          <div className="flex-1">
+            <p className="text-2xl font-black tracking-tight leading-none text-zinc-100">{log.route.from.code}</p>
+            <p className="text-[8px] text-zinc-500 mt-0.5 uppercase tracking-wider">{log.route.from.city}</p>
+          </div>
+          <div className="flex flex-col items-center gap-0.5 px-1">
+            <div className="flex items-center gap-0.5">
+              <div className="h-px w-4 bg-purple-500/30" />
+              <div className="h-1.5 w-1.5 rounded-full border border-purple-500/40" />
+              <div className="h-px w-3 bg-purple-500/20" />
+              <Crown className="h-2.5 w-2.5 text-purple-400/50" />
+              <div className="h-px w-3 bg-purple-500/20" />
+              <div className="h-1.5 w-1.5 rounded-full bg-purple-500/40" />
+              <div className="h-px w-4 bg-purple-500/30" />
+            </div>
+            <span className="text-[7px] text-zinc-600 tabular-nums">{formatFlightTime(actualMin)}</span>
+          </div>
+          <div className="flex-1 text-right">
+            <p className="text-2xl font-black tracking-tight leading-none text-zinc-100">{log.route.to.code}</p>
+            <p className="text-[8px] text-zinc-500 mt-0.5 uppercase tracking-wider">{log.route.to.city}</p>
+          </div>
+        </div>
+
+        {/* Bottom stats — minimal, elegant */}
+        <div className="px-4 pb-3 pt-1 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {log.tasks.length > 0 && (
+              <span className="flex items-center gap-1 text-[9px] text-zinc-500">
+                <Target className="h-2.5 w-2.5 text-purple-400/50" />
+                {completedTasks}/{log.tasks.length}
+              </span>
+            )}
+            {!log.completedNormally && (
+              <span className="text-[9px] text-amber-400 font-medium uppercase tracking-wider">Aborted</span>
+            )}
+          </div>
+          {log.debrief.summary && (
+            <span className="text-[8px] text-zinc-600 italic truncate max-w-[140px]">
+              &ldquo;{log.debrief.summary}&rdquo;
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Commercial: Boarding pass stub style ──
   return (
     <div className={cn(
-      'rounded-2xl border overflow-hidden transition-colors',
+      'rounded-2xl border overflow-hidden transition-colors bg-card',
       log.completedNormally ? 'border-border/40' : 'border-amber-500/20'
     )}>
-      {/* Header strip */}
+      {/* Airline header strip */}
       <div className={cn(
         'px-4 py-2 flex items-center justify-between',
         log.completedNormally ? 'bg-sky-600/10' : 'bg-amber-500/10'
       )}>
         <div className="flex items-center gap-2">
           <Plane className={cn('h-3 w-3', log.completedNormally ? 'text-sky-500' : 'text-amber-500')} />
-          <span className="text-[11px] font-mono font-bold text-muted-foreground/60">{log.flightNumber}</span>
+          <span className="text-[10px] font-bold text-sky-600/70 dark:text-sky-400/70 tracking-wider">ORBIT AIR</span>
+          <span className="text-[10px] font-mono font-bold text-muted-foreground/50">{log.flightNumber}</span>
         </div>
-        <span className="text-[10px] text-muted-foreground/30">{dateStr} · {timeStr}</span>
+        <span className="text-[9px] text-muted-foreground/30 font-mono">{dateStr}</span>
       </div>
 
-      {/* Route */}
+      {/* Route row — boarding pass style */}
       <div className="px-4 py-3 flex items-center gap-3">
         <div className="flex-1">
-          <p className="text-xl font-black tracking-tight leading-none">{log.route.from.code}</p>
-          <p className="text-[9px] text-muted-foreground/40 mt-0.5">{log.route.from.city}</p>
+          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">From</p>
+          <p className="text-xl font-black tracking-tight leading-none mt-0.5">{log.route.from.code}</p>
+          <p className="text-[8px] text-muted-foreground/30 mt-0.5">{log.route.from.city}</p>
         </div>
-        <div className="flex items-center gap-1 px-2">
-          <div className="h-[1px] w-4 bg-muted-foreground/15" />
-          <Plane className="h-3 w-3 text-muted-foreground/20" />
-          <div className="h-[1px] w-4 bg-muted-foreground/15" />
+        <div className="flex flex-col items-center gap-0.5 px-1 shrink-0">
+          <div className="flex items-center gap-0.5">
+            <div className="h-px w-5 bg-sky-500/20" />
+            <Plane className="h-3 w-3 text-sky-500/30" />
+            <div className="h-px w-5 bg-sky-500/20" />
+          </div>
+          <span className="text-[7px] text-muted-foreground/20 tabular-nums">{formatFlightTime(actualMin)}</span>
         </div>
         <div className="flex-1 text-right">
-          <p className="text-xl font-black tracking-tight leading-none">{log.route.to.code}</p>
-          <p className="text-[9px] text-muted-foreground/40 mt-0.5">{log.route.to.city}</p>
+          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">To</p>
+          <p className="text-xl font-black tracking-tight leading-none mt-0.5">{log.route.to.code}</p>
+          <p className="text-[8px] text-muted-foreground/30 mt-0.5">{log.route.to.city}</p>
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="px-4 pb-3 flex items-center gap-4 text-[10px] text-muted-foreground/35">
-        <span className="flex items-center gap-1">
-          <Clock className="h-3 w-3" />
-          {formatFlightTime(actualMin)}
-        </span>
-        {log.tasks.length > 0 && (
+      {/* Tear line */}
+      <div className="relative mx-0">
+        <div className="border-t border-dashed border-border/25" />
+        <div className="absolute -left-1.5 -top-1.5 h-3 w-3 rounded-full bg-background" />
+        <div className="absolute -right-1.5 -top-1.5 h-3 w-3 rounded-full bg-background" />
+      </div>
+
+      {/* Bottom stub — stats */}
+      <div className="px-4 py-2.5 flex items-center justify-between text-[9px]">
+        <div className="flex items-center gap-3 text-muted-foreground/35">
           <span className="flex items-center gap-1">
-            <CheckSquare className="h-3 w-3" />
-            {completedTasks}/{log.tasks.length}
+            <Clock className="h-2.5 w-2.5" />
+            {timeStr}
           </span>
-        )}
-        {log.turbulence.length > 0 && (
-          <span className="flex items-center gap-1">
-            <Zap className="h-3 w-3" />
-            {log.turbulence.length}
-          </span>
-        )}
-        {!log.completedNormally && (
-          <span className="text-amber-500 font-medium">DIVERTED</span>
-        )}
+          {log.tasks.length > 0 && (
+            <span className="flex items-center gap-1">
+              <CheckSquare className="h-2.5 w-2.5" />
+              {completedTasks}/{log.tasks.length}
+            </span>
+          )}
+          {log.turbulence.length > 0 && (
+            <span className="flex items-center gap-1">
+              <Zap className="h-2.5 w-2.5" />
+              {log.turbulence.length}
+            </span>
+          )}
+          {!log.completedNormally && (
+            <span className="text-amber-500 font-medium uppercase">Diverted</span>
+          )}
+        </div>
         {log.debrief.summary && (
-          <span className="flex-1 truncate text-right italic text-muted-foreground/25">
+          <span className="text-[8px] text-muted-foreground/20 italic truncate max-w-[120px]">
             &ldquo;{log.debrief.summary}&rdquo;
           </span>
         )}
+      </div>
+
+      {/* Mini barcode */}
+      <div className="px-4 pb-2.5">
+        <div className="flex items-center justify-center gap-[1.5px] h-4 overflow-hidden opacity-10">
+          {Array.from({ length: 30 }, (_, i) => (
+            <div
+              key={i}
+              className="bg-foreground rounded-[0.5px]"
+              style={{
+                width: [1, 2, 1.5][Math.abs((log.flightNumber || 'OA').charCodeAt(i % (log.flightNumber.length || 1)) + i) % 3] + 'px',
+                height: '100%',
+              }}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

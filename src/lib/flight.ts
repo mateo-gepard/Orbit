@@ -24,6 +24,8 @@ export type FlightCategory = 'short-haul' | 'medium' | 'long-haul';
 
 export type FlightStatus = 'preflight' | 'inflight' | 'paused' | 'diverted' | 'debrief';
 
+export type FlightClass = 'private' | 'commercial';
+
 export interface Airport {
   code: string;
   name: string;
@@ -67,6 +69,7 @@ export interface FlightLog {
     turbulenceTags?: string[];
   };
   userId: string;
+  flightClass?: FlightClass;  // 'private' | 'commercial'
 }
 
 // ─── Real Airports ─────────────────────────────────────────
@@ -538,6 +541,17 @@ export const DURATION_PRESETS: {
   { category: 'long-haul', label: 'Transatlantic', durations: [400, 405, 410, 420, 425, 430, 435, 440, 445, 450, 460] },
 ];
 
+/** Duration presets for private flights — shorter, focused sprints */
+export const PRIVATE_DURATION_PRESETS: {
+  category: FlightCategory;
+  label: string;
+  durations: FlightDuration[];
+}[] = [
+  { category: 'short-haul', label: 'Sprint', durations: [20, 25, 30, 35, 40, 45] },
+  { category: 'short-haul', label: 'Deep Work', durations: [50, 55, 60, 65, 70, 75] },
+  { category: 'medium', label: 'Extended Focus', durations: [80, 85, 90] },
+];
+
 // ─── Phase Timing ──────────────────────────────────────────
 
 export interface PhaseConfig {
@@ -611,14 +625,19 @@ export function generateFlightNumber(): string {
   return `OF-${flightCounter}`;
 }
 
+export function generatePrivateFlightNumber(): string {
+  flightCounter++;
+  return `OP-${flightCounter}`;
+}
+
 // ─── Turbulence Types ──────────────────────────────────────
 
-export const TURBULENCE_TYPES: { type: TurbulenceLog['type']; label: string; emoji: string }[] = [
-  { type: 'phone', label: 'Phone', emoji: '📱' },
-  { type: 'thought', label: 'Thought', emoji: '💭' },
-  { type: 'notification', label: 'Notification', emoji: '🔔' },
-  { type: 'person', label: 'Person', emoji: '🗣️' },
-  { type: 'other', label: 'Other', emoji: '⚡' },
+export const TURBULENCE_TYPES: { type: TurbulenceLog['type']; label: string; icon: string }[] = [
+  { type: 'phone', label: 'Phone', icon: 'Smartphone' },
+  { type: 'thought', label: 'Thought', icon: 'Brain' },
+  { type: 'notification', label: 'Notification', icon: 'Bell' },
+  { type: 'person', label: 'Person', icon: 'UserRound' },
+  { type: 'other', label: 'Other', icon: 'Zap' },
 ];
 
 // ─── Flight Log Persistence (Firestore + localStorage) ────

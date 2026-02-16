@@ -2,13 +2,14 @@
 
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import type { FlightPhase } from '@/lib/flight';
+import type { FlightPhase, FlightClass } from '@/lib/flight';
 
 interface PlaneAnimationProps {
   phase: FlightPhase;
   phaseProgress: number;
   progress: number; // 0-1 overall flight progress
   isPaused?: boolean;
+  flightClass?: FlightClass;
 }
 
 /**
@@ -17,7 +18,7 @@ interface PlaneAnimationProps {
  *
  * The plane moves horizontally and vertically through each phase.
  */
-export function PlaneAnimation({ phase, phaseProgress, progress, isPaused }: PlaneAnimationProps) {
+export function PlaneAnimation({ phase, phaseProgress, progress, isPaused, flightClass = 'commercial' }: PlaneAnimationProps) {
   // Smooth easing
   const ease = (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
   const p = ease(phaseProgress);
@@ -203,7 +204,7 @@ export function PlaneAnimation({ phase, phaseProgress, progress, isPaused }: Pla
           transform: `translate(-50%, -50%) rotate(${planeStyle.rotate}deg)`,
         }}
       >
-        <SideViewPlane isPaused={isPaused} isFlying={isFlying} phase={phase} />
+        <SideViewPlane isPaused={isPaused} isFlying={isFlying} phase={phase} flightClass={flightClass} />
       </div>
 
       {/* Ground shadow */}
@@ -256,93 +257,62 @@ export function PlaneAnimation({ phase, phaseProgress, progress, isPaused }: Pla
 
 // ─── Side-View Plane SVG ───────────────────────────────────
 
-function SideViewPlane({ isPaused, isFlying, phase }: {
+function SideViewPlane({ isPaused, isFlying, phase, flightClass = 'commercial' }: {
   isPaused?: boolean;
   isFlying?: boolean;
   phase?: FlightPhase;
+  flightClass?: FlightClass;
 }) {
+  const isPrivate = flightClass === 'private';
+  const imageSrc = isPrivate ? '/lg60sidee.png' : '/a380.png';
+  
   return (
-    <svg
-      width="56"
-      height="28"
-      viewBox="0 0 56 28"
-      fill="none"
-      className={cn(
-        'transition-colors duration-500',
-        isPaused
-          ? 'text-amber-500 drop-shadow-[0_0_8px_oklch(0.8_0.15_85/0.3)]'
-          : 'text-sky-500 drop-shadow-[0_0_10px_oklch(0.7_0.15_230/0.2)]'
-      )}
-    >
-      {/* Fuselage */}
-      <path
-        d="M4 14C4 14 8 10 18 10L46 10C50 10 54 12 54 14C54 16 50 18 46 18L18 18C8 18 4 14 4 14Z"
-        fill="currentColor"
-        opacity={0.12}
-        stroke="currentColor"
-        strokeWidth="0.6"
-        strokeLinejoin="round"
+    <div className="relative">
+      {/* Aircraft Image */}
+      <img
+        src={imageSrc}
+        alt={isPrivate ? 'Private Jet' : 'Aircraft'}
+        className={cn(
+          'object-contain transition-all duration-500',
+          isPrivate ? 'w-14 h-14' : 'w-16 h-16',
+          isPaused
+            ? 'drop-shadow-[0_0_12px_oklch(0.8_0.15_85/0.4)] brightness-110 saturate-150'
+            : isPrivate
+              ? 'drop-shadow-[0_0_14px_oklch(0.7_0.15_280/0.3)]'
+              : 'drop-shadow-[0_0_14px_oklch(0.7_0.15_230/0.25)]'
+        )}
+        style={{
+          filter: isPaused 
+            ? 'brightness(1.1) saturate(1.5) drop-shadow(0 0 12px rgba(245, 158, 11, 0.4))'
+            : isPrivate
+              ? 'drop-shadow(0 0 14px rgba(168, 85, 247, 0.3))'
+              : 'drop-shadow(0 0 14px rgba(56, 189, 248, 0.25))'
+        }}
       />
-      <path
-        d="M10 12.5C14 11 20 10.5 40 10.5C46 10.5 50 11.5 52 12.5"
-        stroke="currentColor"
-        strokeWidth="0.4"
-        opacity={0.08}
-        fill="none"
-      />
-
-      {/* Nose */}
-      <path d="M2 14C2 14 4 11.5 6 11L8 10.5" stroke="currentColor" strokeWidth="0.5" opacity={0.15} fill="none" />
-
-      {/* Wing */}
-      <path d="M22 10L18 2L32 2L28 10" fill="currentColor" opacity={0.15} stroke="currentColor" strokeWidth="0.5" strokeLinejoin="round" />
-      <path d="M20 8L19 4L30 4L29 8" fill="currentColor" opacity={0.04} />
-
-      {/* Tail fin */}
-      <path d="M44 10L42 2L48 6L46 10" fill="currentColor" opacity={0.18} stroke="currentColor" strokeWidth="0.5" strokeLinejoin="round" />
-
-      {/* Tail plane */}
-      <path d="M42 13L40 9L48 9L46 13" fill="currentColor" opacity={0.1} stroke="currentColor" strokeWidth="0.4" />
-
-      {/* Engine */}
-      <rect x="23" y="17" width="6" height="3" rx="1.5" fill="currentColor" opacity={0.12} />
-      <ellipse cx="23.5" cy="18.5" rx="1" ry="1.2" fill="currentColor" opacity={0.08} />
-
-      {/* Engine exhaust */}
-      {isFlying && !isPaused && (
-        <>
-          <ellipse cx="30" cy="18.5" rx="3" ry="0.8" fill="currentColor" opacity={0.05} className="animate-pulse" />
-          <ellipse cx="31" cy="18.5" rx="2" ry="0.5" fill="currentColor" opacity={0.08} className="animate-pulse" />
-        </>
-      )}
-
-      {/* Cockpit */}
-      <path d="M6 12.5L10 11.5L10 13L6 13.5Z" fill="currentColor" opacity={0.2} />
-
-      {/* Cabin windows */}
-      {[14, 17, 20, 23, 26, 29, 32, 35, 38].map((x) => (
-        <rect key={x} x={x} y={11.5} width="1.5" height="1" rx="0.4" fill="currentColor" opacity={0.07} />
-      ))}
-
-      {/* Nav lights */}
+      
+      {/* Navigation lights overlay */}
       {isFlying && (
         <>
-          <circle cx="3" cy="14" r="0.6" fill="#22c55e" opacity={0.5} />
-          <circle cx="48" cy="8" r="0.5" fill="white" opacity={0.3} className="animate-pulse" />
-          <circle cx="18" cy="2.5" r="0.5" fill="#ef4444" opacity={0.4} />
+          {/* Green right wingtip light */}
+          <div 
+            className="absolute w-2 h-2 rounded-full bg-green-500/60 blur-sm animate-pulse"
+            style={{ top: '20%', left: '10%' }}
+          />
+          
+          {/* Red left wingtip light */}
+          <div 
+            className="absolute w-2 h-2 rounded-full bg-red-500/60 blur-sm animate-pulse"
+            style={{ top: '20%', right: '10%' }}
+          />
+          
+          {/* White tail beacon */}
+          <div 
+            className="absolute w-1.5 h-1.5 rounded-full bg-white/50 blur-sm animate-pulse"
+            style={{ top: '30%', right: '5%' }}
+          />
         </>
       )}
-
-      {/* Landing gear */}
-      {(phase === 'boarding' || phase === 'taxi' || phase === 'landed') && (
-        <>
-          <line x1="16" y1="18" x2="16" y2="22" stroke="currentColor" strokeWidth="0.6" opacity={0.1} />
-          <circle cx="16" cy="22" r="1" fill="currentColor" opacity={0.1} />
-          <line x1="36" y1="18" x2="36" y2="22" stroke="currentColor" strokeWidth="0.6" opacity={0.1} />
-          <circle cx="36" cy="22" r="1" fill="currentColor" opacity={0.1} />
-        </>
-      )}
-    </svg>
+    </div>
   );
 }
 
