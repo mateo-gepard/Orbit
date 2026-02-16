@@ -41,8 +41,8 @@ export function MobileNav() {
         style={{
           position: 'fixed',
           right: '16px',
+          bottom: '56px',
           zIndex: 50,
-          bottom: 'calc(44px + env(safe-area-inset-bottom, 0px) + 12px)',
         }}
       >
         <Plus className="h-6 w-6" strokeWidth={2.5} />
@@ -54,17 +54,14 @@ export function MobileNav() {
         className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
         style={{
           position: 'fixed',
-          bottom: '0px',
-          left: '0px',
-          right: '0px',
+          bottom: '0',
+          left: '0',
+          right: '0',
+          height: '56px',
           zIndex: 40,
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
-        <div
-          className="flex items-center justify-around"
-          style={{ height: 'var(--bottom-nav-height)' }}
-        >
+        <div className="flex items-center justify-around h-full">
           {TABS.map((tab) => {
             const isActive =
               pathname === tab.href ||
