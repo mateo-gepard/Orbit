@@ -333,6 +333,20 @@ export function pointsToGrade(points: number): string {
   return '6';
 }
 
+/**
+ * Converts average Abitur points (0-15) to precise decimal grade (1.00-6.00)
+ * Using linear interpolation between grade thresholds
+ */
+export function pointsToDecimalGrade(points: number): number {
+  if (points >= 15) return 1.0;
+  if (points >= 13) return 1.0 + (15 - points) / 2 * 1.0; // 15→1.0, 13→2.0
+  if (points >= 10) return 2.0 + (13 - points) / 3 * 1.0; // 13→2.0, 10→3.0
+  if (points >= 7) return 3.0 + (10 - points) / 3 * 1.0;  // 10→3.0, 7→4.0
+  if (points >= 5) return 4.0 + (7 - points) / 2 * 1.0;   // 7→4.0, 5→5.0
+  if (points >= 1) return 5.0 + (5 - points) / 4 * 1.0;   // 5→5.0, 1→6.0
+  return 6.0;
+}
+
 export function pointsToLabel(points: number): string {
   if (points >= 13) return 'Sehr gut';
   if (points >= 10) return 'Gut';
@@ -372,6 +386,7 @@ export interface SemesterStats {
   eingebrachte: SemesterGrade[];
   allAverage: number | null;
   eingebrachteAverage: number | null;
+  eingebrachteGrade: number | null; // Decimal grade (1.00-6.00) from eingebrachte average
   deficits: number;
   enteredCount: number;
   totalSubjects: number;
@@ -391,6 +406,7 @@ export function calcSemesterStats(semester: Semester, profile: AbiturProfile): S
   const einAvg = eingebrachte.length > 0
     ? eingebrachte.reduce((s, g) => s + (g.points ?? 0), 0) / eingebrachte.length
     : null;
+  const einGrade = einAvg !== null ? pointsToDecimalGrade(einAvg) : null;
 
   return {
     semester,
@@ -398,6 +414,7 @@ export function calcSemesterStats(semester: Semester, profile: AbiturProfile): S
     eingebrachte,
     allAverage: allAvg,
     eingebrachteAverage: einAvg,
+    eingebrachteGrade: einGrade,
     deficits: eingebrachte.filter((g) => isDeficit(g.points!)).length,
     enteredCount: allGrades.length,
     totalSubjects: subjects.length,
