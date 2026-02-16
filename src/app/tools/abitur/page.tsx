@@ -18,6 +18,15 @@ import {
   getPointsColor,
   getPointsBg,
   isDeficit,
+  applyExclusivity,
+  EXCLUSIVE_GROUPS,
+  canSubjectBeLF,
+  canSubjectBeOralExam,
+  validateExamCombination,
+  checkFieldCoverage,
+  getEinbringungRule,
+  getAllEinbringungRules,
+  optimizeEinbringungen,
   type AbiturProfile,
   type AbiturResult,
 } from '@/lib/abitur';
@@ -40,6 +49,8 @@ import {
   BookOpen,
   Plus,
   X,
+  Wand2,
+  Replace,
 } from 'lucide-react';
 
 // ─── Field color accents ───────────────────────────────────
@@ -68,16 +79,6 @@ const CAT_LABELS: Record<string, string> = {
 };
 
 const MANDATORY_IDS = ['deu', 'mat', 'wsem', 'psem'];
-
-// Ethik and Religion are mutually exclusive in Bavarian Abitur
-const ETHIK_RELIGION_IDS = ['eth', 'rev', 'rka'];
-
-/** When selecting an Ethik/Religion subject, remove the conflicting ones */
-function applyExclusivity(subjects: string[], adding: string): string[] {
-  if (!ETHIK_RELIGION_IDS.includes(adding)) return subjects;
-  // Remove all other Ethik/Religion subjects
-  return subjects.filter((id) => !ETHIK_RELIGION_IDS.includes(id) || id === adding);
-}
 
 // ═══════════════════════════════════════════════════════════
 // Main Page
@@ -148,8 +149,8 @@ function OnboardingWizard() {
   const canNext =
     step === 0 ||
     (step === 1 && selectedSubjects.length >= 8) ||
-    (step === 2 && lf !== '') ||
-    (step === 3 && exam4 !== '' && exam5 !== '');
+    (step === 2 && lf !== '' && canSubjectBeLF(lf).valid) ||
+    (step === 3 && exam4 !== '' && exam5 !== '' && validateExamCombination(lf, exam4, exam5).valid);
 
   const stepTitles = ['', 'Fächerwahl', 'Leistungsfach', 'Kolloquien'];
 
@@ -227,6 +228,12 @@ function OnboardingWizard() {
                     {subs.map((s) => {
                       const selected = selectedSubjects.includes(s.id);
                       const mandatory = MANDATORY_IDS.includes(s.id);
+                      // Check if this subject is blocked by an exclusive group
+                      const exclusiveGroup = EXCLUSIVE_GROUPS.find((g) => g.includes(s.id));
+                      const blockedBy = exclusiveGroup
+                        ? exclusiveGroup.find((id) => id !== s.id && selectedSubjects.includes(id))
+                        : undefined;
+                      const blockedSubject = blockedBy ? getSubject(blockedBy) : undefined;
                       return (
                         <button
                           key={s.id}
@@ -239,6 +246,7 @@ function OnboardingWizard() {
                               : 'hover:bg-foreground/[0.03] text-muted-foreground/60',
                             mandatory && 'opacity-40 cursor-not-allowed'
                           )}
+                          title={blockedSubject && !selected ? `Wählt automatisch ${blockedSubject.name} ab` : undefined}
                         >
                           <div
                             className={cn(
@@ -255,9 +263,17 @@ function OnboardingWizard() {
                             )}
                           </div>
                           <span className="truncate">{s.name}</span>
-                          <span className={cn('ml-auto text-[9px] font-mono', FIELD_COLOR[s.field])}>
-                            {s.shortName}
-                          </span>
+                          <div className="ml-auto flex items-center gap-1">
+                            {s.lateStart && (
+                              <span className="text-[8px] text-amber-500 bg-amber-500/10 px-1 py-0.5 rounded font-medium">spät</span>
+                            )}
+                            {s.requiresAdditum && (
+                              <span className="text-[8px] text-violet-400 bg-violet-500/10 px-1 py-0.5 rounded font-medium">Add.</span>
+                            )}
+                            <span className={cn('text-[9px] font-mono', FIELD_COLOR[s.field])}>
+                              {s.shortName}
+                            </span>
+                          </div>
                         </button>
                       );
                     })}
@@ -273,45 +289,59 @@ function OnboardingWizard() {
             <div className="text-center">
               <h2 className="text-lg font-semibold tracking-tight">Leistungsfach</h2>
               <p className="text-[11px] text-muted-foreground/40 mt-1">
-                Dein 3. schriftliches Abiturfach
+                Dein 3. schriftliches Abiturfach (erhöhtes Anforderungsniveau)
               </p>
             </div>
             <div className="space-y-1.5 max-h-[55vh] overflow-y-auto pr-1">
               {lfOptions
                 .filter((s) => selectedSubjects.includes(s.id))
-                .map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setLf(s.id)}
-                    className={cn(
-                      'w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left transition-all',
-                      lf === s.id
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
-                        : 'hover:bg-foreground/[0.03] text-muted-foreground/70'
-                    )}
-                  >
-                    <div
+                .map((s) => {
+                  const validation = canSubjectBeLF(s.id);
+                  const isDisabled = !validation.valid;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => !isDisabled && setLf(s.id)}
+                      disabled={isDisabled}
                       className={cn(
-                        'h-8 w-8 rounded-lg flex items-center justify-center text-[11px] font-bold font-mono',
-                        lf === s.id ? 'bg-emerald-500/20 text-emerald-500' : FIELD_BG[s.field],
-                        lf !== s.id && FIELD_COLOR[s.field]
+                        'w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left transition-all',
+                        isDisabled
+                          ? 'opacity-30 cursor-not-allowed'
+                          : lf === s.id
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
+                            : 'hover:bg-foreground/[0.03] text-muted-foreground/70'
                       )}
                     >
-                      {s.shortName}
-                    </div>
-                    <div className="flex-1">
-                      <p>{s.name}</p>
-                      <p className="text-[10px] text-muted-foreground/30">
-                        Aufgabenfeld {s.field || '—'} · {s.hoursPerWeek}h/Woche
-                      </p>
-                    </div>
-                    {lf === s.id && (
-                      <div className="h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                        <Check className="h-3 w-3 text-white" />
+                      <div
+                        className={cn(
+                          'h-8 w-8 rounded-lg flex items-center justify-center text-[11px] font-bold font-mono',
+                          lf === s.id ? 'bg-emerald-500/20 text-emerald-500' : FIELD_BG[s.field],
+                          lf !== s.id && FIELD_COLOR[s.field]
+                        )}
+                      >
+                        {s.shortName}
                       </div>
-                    )}
-                  </button>
-                ))}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p>{s.name}</p>
+                          {s.requiresAdditum && (
+                            <span className="text-[8px] text-violet-400 bg-violet-500/10 px-1 py-0.5 rounded font-medium">Additum</span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/30">
+                          Aufgabenfeld {s.field || '—'} · {s.hoursPerWeek}h/Woche
+                          {validation.reason && !isDisabled ? ` · ${validation.reason}` : ''}
+                          {isDisabled && validation.reason ? ` · ${validation.reason}` : ''}
+                        </p>
+                      </div>
+                      {lf === s.id && (
+                        <div className="h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                          <Check className="h-3 w-3 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
             </div>
           </div>
         )}
@@ -321,12 +351,68 @@ function OnboardingWizard() {
             <div className="text-center">
               <h2 className="text-lg font-semibold tracking-tight">Kolloquiumsfächer</h2>
               <p className="text-[11px] text-muted-foreground/40 mt-1">
-                4. und 5. Prüfungsfach (mündlich)
+                4. und 5. Prüfungsfach (mündlich) · Alle 3 Aufgabenfelder müssen abgedeckt sein
               </p>
             </div>
+
+            {/* Field coverage indicator */}
+            {(() => {
+              const validation = validateExamCombination(lf, exam4, exam5);
+              const coverage = checkFieldCoverage(['deu', 'mat', lf, exam4, exam5].filter(Boolean));
+              const FIELD_NAMES: Record<number, string> = { 1: 'Sprachlich-lit.-künstl.', 2: 'Gesellschaftswiss.', 3: 'Math.-naturwiss.' };
+              return (
+                <div className="space-y-2">
+                  {/* Field coverage badges */}
+                  <div className="flex items-center justify-center gap-2">
+                    {([1, 2, 3] as const).map((f) => {
+                      const covered = f === 1 ? coverage.field1 : f === 2 ? coverage.field2 : coverage.field3;
+                      return (
+                        <div
+                          key={f}
+                          className={cn(
+                            'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-medium transition-all border',
+                            covered
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                              : 'bg-foreground/[0.02] border-border/40 text-muted-foreground/30'
+                          )}
+                        >
+                          {covered ? <Check className="h-2.5 w-2.5" /> : <span className="h-2.5 w-2.5 rounded-full border border-current" />}
+                          <span>AF {f}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Validation errors */}
+                  {validation.errors.length > 0 && (
+                    <div className="rounded-xl bg-red-500/[0.06] border border-red-500/15 px-3 py-2.5 space-y-1">
+                      {validation.errors.map((err, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <AlertTriangle className="h-3 w-3 text-red-400 mt-0.5 shrink-0" />
+                          <p className="text-[11px] text-red-400">{err}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Validation warnings */}
+                  {validation.warnings.length > 0 && validation.errors.length === 0 && (
+                    <div className="rounded-xl bg-amber-500/[0.06] border border-amber-500/15 px-3 py-2.5 space-y-1">
+                      {validation.warnings.map((warn, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 shrink-0" />
+                          <p className="text-[11px] text-amber-500">{warn}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {[
-              { label: '4. Prüfung', val: exam4, setVal: setExam4, other: exam5 },
-              { label: '5. Prüfung', val: exam5, setVal: setExam5, other: exam4 },
+              { label: '4. Prüfung (Kolloquium)', val: exam4, setVal: setExam4, other: exam5 },
+              { label: '5. Prüfung (Kolloquium)', val: exam5, setVal: setExam5, other: exam4 },
             ].map((row) => (
               <div key={row.label}>
                 <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest mb-2">
@@ -338,18 +424,56 @@ function OnboardingWizard() {
                     .map((id) => {
                       const s = getSubject(id);
                       if (!s) return null;
+                      const oralCheck = canSubjectBeOralExam(id);
+                      const isDisabled = !oralCheck.valid;
+
+                      // Check if picking this would create an exclusive conflict
+                      const exclusiveConflict = row.other
+                        ? EXCLUSIVE_GROUPS.some((g) => g.includes(id) && g.includes(row.other))
+                        : false;
+
+                      // Show field coverage hint
+                      const hypothetical = ['deu', 'mat', lf, row.other, id].filter(Boolean);
+                      const coverage = checkFieldCoverage(hypothetical);
+
                       return (
                         <button
                           key={id}
-                          onClick={() => row.setVal(id)}
+                          onClick={() => !isDisabled && !exclusiveConflict && row.setVal(id)}
+                          disabled={isDisabled || exclusiveConflict}
                           className={cn(
-                            'rounded-xl px-3 py-2.5 text-[12px] text-left transition-all',
-                            row.val === id
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
-                              : 'hover:bg-foreground/[0.03] text-muted-foreground/60'
+                            'rounded-xl px-3 py-2.5 text-[12px] text-left transition-all relative',
+                            isDisabled || exclusiveConflict
+                              ? 'opacity-30 cursor-not-allowed'
+                              : row.val === id
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium'
+                                : 'hover:bg-foreground/[0.03] text-muted-foreground/60'
                           )}
+                          title={
+                            isDisabled ? oralCheck.reason
+                            : exclusiveConflict ? `Schließt sich mit dem anderen Kolloquium aus`
+                            : undefined
+                          }
                         >
-                          {s.name}
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate">{s.name}</span>
+                            {s.requiresAdditum && (
+                              <span className="text-[7px] text-violet-400 bg-violet-500/10 px-1 py-0.5 rounded font-medium shrink-0">Add.</span>
+                            )}
+                          </div>
+                          {isDisabled && (
+                            <p className="text-[9px] text-red-400/70 mt-0.5 truncate">{oralCheck.reason}</p>
+                          )}
+                          {exclusiveConflict && (
+                            <p className="text-[9px] text-red-400/70 mt-0.5">Exklusiv-Konflikt</p>
+                          )}
+                          {!isDisabled && !exclusiveConflict && row.val !== id && !coverage.allCovered && (
+                            <p className="text-[9px] text-amber-500/50 mt-0.5">
+                              {!coverage.field1 && 'AF I fehlt'}
+                              {!coverage.field2 && 'AF II fehlt'}
+                              {!coverage.field3 && 'AF III fehlt'}
+                            </p>
+                          )}
                         </button>
                       );
                     })}
@@ -1075,6 +1199,12 @@ function SubjectsView() {
           {subs.map((s) => {
             const active = profile.subjects.includes(s.id);
             const locked = s.id === profile.leistungsfach || profile.examSubjects.includes(s.id);
+            // Show which exclusive subject would be replaced
+            const exclusiveGroup = EXCLUSIVE_GROUPS.find((g) => g.includes(s.id));
+            const wouldReplace = !active && exclusiveGroup
+              ? exclusiveGroup.find((id) => id !== s.id && profile.subjects.includes(id))
+              : undefined;
+            const replaceName = wouldReplace ? getSubject(wouldReplace)?.shortName : undefined;
             return (
               <button
                 key={s.id}
@@ -1089,7 +1219,20 @@ function SubjectsView() {
                 <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center text-[9px] font-bold font-mono shrink-0', FIELD_BG[s.field], FIELD_COLOR[s.field])}>
                   {s.shortName}
                 </div>
-                <span className="text-[12px] font-medium flex-1 truncate">{s.name}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[12px] font-medium truncate">{s.name}</span>
+                    {s.lateStart && (
+                      <span className="text-[7px] text-amber-500 bg-amber-500/10 px-1 py-0.5 rounded font-medium shrink-0">spät</span>
+                    )}
+                    {s.requiresAdditum && (
+                      <span className="text-[7px] text-violet-400 bg-violet-500/10 px-1 py-0.5 rounded font-medium shrink-0">Add.</span>
+                    )}
+                  </div>
+                  {replaceName && (
+                    <span className="text-[9px] text-amber-500/50">Ersetzt {replaceName}</span>
+                  )}
+                </div>
                 {locked ? (
                   <Lock className="h-3 w-3 text-muted-foreground/20" />
                 ) : active ? (
@@ -1113,9 +1256,10 @@ function SubjectsView() {
 // ═══════════════════════════════════════════════════════════
 
 function EinbringungenView({ profile }: { profile: AbiturProfile }) {
-  const { toggleEinbringung } = useAbiturStore();
+  const { toggleEinbringung, autoOptimizeEinbringungen } = useAbiturStore();
   const einCount = countAllEinbringungen(profile);
   const subjects = profile.subjects.filter((id) => id !== 'psem');
+  const rules = getAllEinbringungRules(profile);
 
   return (
     <div className="space-y-6">
@@ -1147,6 +1291,86 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
         )}
       </div>
 
+      {/* Auto-optimize button */}
+      <button
+        onClick={autoOptimizeEinbringungen}
+        className="w-full flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3 text-[12px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/[0.08] transition-colors active:scale-[0.98]"
+      >
+        <Wand2 className="h-3.5 w-3.5" />
+        Automatisch optimieren
+      </button>
+
+      {/* Streichung / Einbringung Rules Summary */}
+      <div className="rounded-2xl border border-border/40 p-4 space-y-3">
+        <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Streichungsregeln</p>
+        
+        {/* Pflicht — cannot drop */}
+        {(() => {
+          const pflicht = rules.filter((r) => r.category === 'pflicht');
+          const wahlpflicht = rules.filter((r) => r.category === 'wahlpflicht');
+          const optional = rules.filter((r) => r.category === 'optional');
+          return (
+            <div className="space-y-3">
+              {pflicht.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Lock className="h-3 w-3 text-red-400" />
+                    <span className="text-[10px] font-medium text-red-400">Pflicht — alle 4 HJ zählen</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {pflicht.map((r) => {
+                      const s = getSubject(r.subjectId);
+                      return (
+                        <span key={r.subjectId} className="text-[10px] bg-red-500/10 text-red-400 px-2 py-0.5 rounded-md font-medium" title={r.reason}>
+                          {s?.shortName || r.subjectId}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {wahlpflicht.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <CircleDot className="h-3 w-3 text-amber-500" />
+                    <span className="text-[10px] font-medium text-amber-500">Wahlpflicht — teilweise streichbar</span>
+                  </div>
+                  <div className="space-y-1">
+                    {wahlpflicht.map((r) => {
+                      const s = getSubject(r.subjectId);
+                      return (
+                        <div key={r.subjectId} className="flex items-center gap-2 text-[10px]">
+                          <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-md font-medium">{s?.shortName || r.subjectId}</span>
+                          <span className="text-muted-foreground/30">{r.reason}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {optional.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Sparkles className="h-3 w-3 text-emerald-500" />
+                    <span className="text-[10px] font-medium text-emerald-500">Optional — nur wenn sie helfen</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {optional.map((r) => {
+                      const s = getSubject(r.subjectId);
+                      return (
+                        <span key={r.subjectId} className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-md font-medium" title={r.reason}>
+                          {s?.shortName || r.subjectId}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+
       {/* Subject × Semester grid */}
       <div className="rounded-2xl border border-border/40 overflow-hidden">
         {/* Header row */}
@@ -1167,6 +1391,7 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
           if (!subj) return null;
           const mandatory = isMandatory(subjectId, profile);
           const toggleable = canToggle(subjectId, profile);
+          const rule = getEinbringungRule(subjectId, profile);
 
           return (
             <div key={subjectId} className="flex items-center gap-0 border-b border-border/30 last:border-b-0">
@@ -1174,7 +1399,15 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                 <div className={cn('h-5 w-5 rounded flex items-center justify-center text-[8px] font-bold font-mono shrink-0', FIELD_BG[subj.field], FIELD_COLOR[subj.field])}>
                   {subj.shortName}
                 </div>
-                <span className="text-[11px] truncate">{subj.name}</span>
+                <div className="min-w-0">
+                  <span className="text-[11px] truncate block">{subj.name}</span>
+                  <span className={cn(
+                    'text-[8px] block',
+                    rule.category === 'pflicht' ? 'text-red-400/50' : rule.category === 'wahlpflicht' ? 'text-amber-500/50' : 'text-emerald-500/50'
+                  )}>
+                    {rule.category === 'pflicht' ? '4/4 Pflicht' : rule.category === 'wahlpflicht' ? `${rule.minSemesters}/4 Pflicht` : 'Optional'}
+                  </span>
+                </div>
               </div>
               {SEMESTERS.map((sem) => {
                 const grade = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === sem);
@@ -1277,7 +1510,7 @@ function SettingsView() {
   const {
     setStudentName, setSchoolYear, setCurrentSemester, setLeistungsfach,
     setExamSubject, setSeminarTopic, setSeminarPaperPoints,
-    setSeminarPresentationPoints, resetProfile,
+    setSeminarPresentationPoints, resetProfile, setSubstitutedWritten,
   } = useAbiturStore();
 
   const [confirmReset, setConfirmReset] = useState(false);
@@ -1351,6 +1584,40 @@ function SettingsView() {
             )}
           </SField>
         ))}
+      </SGroup>
+
+      {/* Joker / Substitution Rule */}
+      <SGroup title="Joker-Regel">
+        <div className="px-4 py-3 space-y-2">
+          <p className="text-[11px] text-muted-foreground/40 leading-relaxed">
+            Ersetze Deutsch oder Mathe als Pflicht-Schriftliche. Voraussetzung: 2 fortgeführte FS (für Deutsch) oder 2 NW (für Mathe).
+          </p>
+          <div className="flex items-center gap-2">
+            {([null, 'deu', 'mat'] as const).map((opt) => (
+              <button
+                key={opt ?? 'none'}
+                onClick={() => setSubstitutedWritten(opt)}
+                className={cn(
+                  'flex-1 rounded-xl py-2 text-[11px] font-medium transition-all border',
+                  (profile.substitutedWritten ?? null) === opt
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                    : 'border-border/40 text-muted-foreground/40 hover:text-foreground/70'
+                )}
+              >
+                {opt === null ? 'Kein Joker' : opt === 'deu' ? 'Deutsch ersetzen' : 'Mathe ersetzen'}
+              </button>
+            ))}
+          </div>
+          {profile.substitutedWritten && (
+            <p className="text-[10px] text-amber-500/60 flex items-center gap-1">
+              <Replace className="h-3 w-3" />
+              {profile.substitutedWritten === 'deu'
+                ? 'Deutsch wird als mündliches Prüfungsfach (Kolloquium) abgelegt'
+                : 'Mathematik wird als mündliches Prüfungsfach (Kolloquium) abgelegt'
+              }
+            </p>
+          )}
+        </div>
       </SGroup>
 
       <SGroup title="W-Seminar">

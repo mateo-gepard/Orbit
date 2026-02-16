@@ -10,6 +10,7 @@ import {
   SEMESTERS,
   createDefaultProfile,
   eKey,
+  optimizeEinbringungen,
 } from './abitur';
 import { saveToolData } from './firestore';
 
@@ -63,6 +64,12 @@ interface AbiturState {
   setSeminarPaperPoints: (points: number | null) => void;
   setSeminarPresentationPoints: (points: number | null) => void;
   setSeminarTopic: (title: string) => void;
+
+  // Substitution (Joker)
+  setSubstitutedWritten: (subject: 'deu' | 'mat' | null) => void;
+
+  // Auto-optimization
+  autoOptimizeEinbringungen: () => void;
 
   // Sync
   _setProfileFromCloud: (profile: AbiturProfile) => void;
@@ -176,6 +183,16 @@ export const useAbiturStore = create<AbiturState>()(
 
       setSeminarTopic: (title) =>
         set((s) => updateProfile(s, (p) => ({ ...p, seminarTopicTitle: title }))),
+
+      setSubstitutedWritten: (subject) =>
+        set((s) => updateProfile(s, (p) => ({ ...p, substitutedWritten: subject }))),
+
+      autoOptimizeEinbringungen: () =>
+        set((s) => updateProfile(s, (p) => {
+          const optimized = optimizeEinbringungen(p);
+          // Only keep non-mandatory keys in einbringungen (mandatory are implicit)
+          return { ...p, einbringungen: optimized };
+        })),
 
       _setProfileFromCloud: (profile) => set({ profile }),
 

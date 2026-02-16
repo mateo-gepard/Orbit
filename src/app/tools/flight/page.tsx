@@ -26,6 +26,9 @@ import {
   generateFlightNumber,
   getRouteForDuration,
   getRouteForAirports,
+  getConnectedAirports,
+  getRoutedAirports,
+  nearestValidDuration,
   formatFlightTime,
   type Airport,
   type FlightRoute,
@@ -220,11 +223,17 @@ export default function FlightPage() {
   };
 
   const handleSelectAirport = (airport: Airport) => {
+    let newRoute: FlightRoute;
     if (pickingAirport === 'from') {
-      setRoute((prev) => getRouteForAirports(airport, prev.to));
+      newRoute = getRouteForAirports(airport, route.to);
     } else if (pickingAirport === 'to') {
-      setRoute((prev) => getRouteForAirports(prev.from, airport));
+      newRoute = getRouteForAirports(route.from, airport);
+    } else {
+      return;
     }
+    setRoute(newRoute);
+    // Snap to nearest valid FlightDuration
+    setDuration(nearestValidDuration(newRoute.realFlightMin));
     setPickingAirport(null);
   };
 
@@ -788,9 +797,18 @@ export default function FlightPage() {
                 Select {pickingAirport === 'from' ? 'Departure' : 'Destination'}
               </p>
               <div className="flex-1 overflow-y-auto space-y-3">
-                {(['europe', 'americas', 'asia', 'middle-east', 'oceania', 'africa'] as const).map(
-                  (region) => {
-                    const regionAirports = AIRPORTS.filter((a) => a.region === region);
+                {(() => {
+                  // Only show airports with known routes
+                  const availableAirports = pickingAirport === 'from'
+                    ? getConnectedAirports(route.to.code)  // Show airports connected to current destination
+                    : getConnectedAirports(route.from.code); // Show airports connected to current departure
+
+                  // If no connection constraints yet (first pick), show all routed airports
+                  const airports = availableAirports.length > 0 ? availableAirports : getRoutedAirports();
+
+                  const regions = ['europe', 'americas', 'asia', 'middle-east', 'oceania', 'africa'] as const;
+                  return regions.map((region) => {
+                    const regionAirports = airports.filter((a) => a.region === region);
                     if (regionAirports.length === 0) return null;
                     return (
                       <div key={region}>
@@ -823,8 +841,8 @@ export default function FlightPage() {
                         </div>
                       </div>
                     );
-                  }
-                )}
+                  });
+                })()}
               </div>
             </div>
           </div>
