@@ -2,7 +2,6 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Inbox,
@@ -23,77 +22,12 @@ const TABS = [
   { href: '/toolbox', icon: Wrench, label: 'Toolbox' },
 ];
 
-function DebugOverlay() {
-  const [info, setInfo] = useState('');
-
-  useEffect(() => {
-    const update = () => {
-      const ih = window.innerHeight;
-      const oh = document.documentElement.offsetHeight;
-      const ch = document.documentElement.clientHeight;
-      const sh = screen.height;
-      const sah = screen.availHeight;
-      const vvh = window.visualViewport?.height ?? 0;
-      const vvo = window.visualViewport?.offsetTop ?? 0;
-      const nav = document.getElementById('mobile-nav');
-      const navRect = nav?.getBoundingClientRect();
-      const navBottom = navRect ? Math.round(navRect.bottom) : '?';
-      const navTop = navRect ? Math.round(navRect.top) : '?';
-      const gap = navRect ? Math.round(ih - navRect.bottom) : '?';
-      const bodyH = document.body.offsetHeight;
-      const cs = getComputedStyle(document.documentElement);
-      const safeBottom = cs.getPropertyValue('--safe-bottom') || 'n/a';
-
-      setInfo(
-        `ih:${ih} oh:${oh} ch:${ch} vvh:${Math.round(vvh)} bodyH:${bodyH}\n` +
-        `scrH:${sh} availH:${sah} vvOff:${Math.round(vvo)}\n` +
-        `navTop:${navTop} navBot:${navBottom} gap:${gap}\n` +
-        `safeBot:${safeBottom} dpr:${window.devicePixelRatio}`
-      );
-    };
-    update();
-    const t = setInterval(update, 1000);
-    window.visualViewport?.addEventListener('resize', update);
-    window.addEventListener('resize', update);
-    return () => {
-      clearInterval(t);
-      window.visualViewport?.removeEventListener('resize', update);
-      window.removeEventListener('resize', update);
-    };
-  }, []);
-
-  return (
-    <div
-      className="lg:hidden"
-      style={{
-        position: 'fixed',
-        top: '50px',
-        left: '8px',
-        right: '8px',
-        zIndex: 9999,
-        background: 'rgba(0,0,0,0.85)',
-        color: '#0f0',
-        fontSize: '10px',
-        fontFamily: 'monospace',
-        padding: '6px 8px',
-        borderRadius: '8px',
-        whiteSpace: 'pre',
-        lineHeight: '1.4',
-        pointerEvents: 'none',
-      }}
-    >
-      {info}
-    </div>
-  );
-}
-
 export function MobileNav() {
   const pathname = usePathname();
   const { setCommandBarOpen } = useOrbitStore();
 
   return (
     <>
-      <DebugOverlay />
       {/* Floating Action Button */}
       <button
         onClick={() => setCommandBarOpen(true)}
@@ -107,7 +41,7 @@ export function MobileNav() {
         style={{
           position: 'fixed',
           right: '16px',
-          bottom: '60px',
+          bottom: 'calc(60px + env(safe-area-inset-bottom, 0px))',
           zIndex: 50,
         }}
       >
@@ -123,11 +57,11 @@ export function MobileNav() {
           bottom: '0',
           left: '0',
           right: '0',
-          height: '44px',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           zIndex: 40,
         }}
       >
-        <div className="flex items-center justify-around h-full">
+        <div className="flex items-center justify-around" style={{ height: '44px' }}>
           {TABS.map((tab) => {
             const isActive =
               pathname === tab.href ||
