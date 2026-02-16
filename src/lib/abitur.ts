@@ -130,11 +130,86 @@ export function isEingebracht(subjectId: string, semester: Semester, profile: Ab
   return (profile.einbringungen ?? []).includes(eKey(subjectId, semester));
 }
 
-/** Can the user toggle this einbringung? */
+/** Can the user toggle this einbringung? (basic subject-level check) */
 export function canToggle(subjectId: string, profile: AbiturProfile): boolean {
   if (isMandatory(subjectId, profile)) return false;
   if (subjectId === 'wsem' || subjectId === 'psem') return false;
   return true;
+}
+
+/**
+ * Can a specific semester grade be dropped (gestrichen)?
+ * Dynamically checks the current state of all Einbringungen for this subject:
+ * - Counts how many semesters are currently eingebracht (non-mandatory + in einbringungen list)
+ * - Compares against the minimum required by the Streichungsregel
+ * - If we're already at the minimum, no more can be dropped
+ *
+ * Returns { canDrop, reason, currentCount, minRequired }
+ */
+export function canDropSemester(
+  subjectId: string,
+  semester: Semester,
+  profile: AbiturProfile,
+): { canDrop: boolean; reason: string; currentEingebracht: number; minRequired: number } {
+  // Mandatory subjects (Deu, Mat, LF, exam subjects) can never be dropped
+  if (isMandatory(subjectId, profile)) {
+    return { canDrop: false, reason: 'Pflichtfach — alle HJ müssen eingebracht werden', currentEingebracht: 4, minRequired: 4 };
+  }
+  if (subjectId === 'wsem' || subjectId === 'psem') {
+    return { canDrop: false, reason: 'Seminar — nicht wählbar', currentEingebracht: 0, minRequired: 0 };
+  }
+
+  const rule = getEinbringungRule(subjectId, profile);
+
+  // If completely optional (minSemesters === 0), can always drop
+  if (rule.minSemesters === 0) {
+    return { canDrop: true, reason: 'Optional — kann jederzeit gestrichen werden', currentEingebracht: 0, minRequired: 0 };
+  }
+
+  // Count how many semesters of this subject are currently eingebracht
+  // (for non-mandatory subjects, only those explicitly in the einbringungen list count)
+  let eingebracht = 0;
+  for (const sem of SEMESTERS) {
+    if (isEingebracht(subjectId, sem, profile)) {
+      eingebracht++;
+    }
+  }
+
+  // Check if this specific semester is currently eingebracht
+  const thisIsEingebracht = isEingebracht(subjectId, semester, profile);
+
+  // If this semester is eingebracht and dropping it would go below minimum → block
+  if (thisIsEingebracht && eingebracht <= rule.minSemesters) {
+    return {
+      canDrop: false,
+      reason: `Mind. ${rule.minSemesters} HJ Pflicht — ${eingebracht - rule.minSemesters === 0 ? 'keine weitere Streichung möglich' : `noch ${eingebracht - rule.minSemesters} streichbar`}`,
+      currentEingebracht: eingebracht,
+      minRequired: rule.minSemesters,
+    };
+  }
+
+  // Global constraint: need at least 40 total Einbringungen
+  // If dropping this would bring us below 40, block it
+  if (thisIsEingebracht) {
+    const totalEin = countAllEinbringungen(profile);
+    if (totalEin <= 40) {
+      return {
+        canDrop: false,
+        reason: `Gesamt nur ${totalEin}/40 Einbringungen — Streichen nicht möglich`,
+        currentEingebracht: eingebracht,
+        minRequired: rule.minSemesters,
+      };
+    }
+  }
+
+  // Can drop — show how many more can be dropped
+  const remaining = thisIsEingebracht ? eingebracht - rule.minSemesters : eingebracht - rule.minSemesters;
+  return {
+    canDrop: true,
+    reason: remaining > 0 ? `Noch ${remaining} HJ streichbar` : 'Kann gestrichen werden',
+    currentEingebracht: eingebracht,
+    minRequired: rule.minSemesters,
+  };
 }
 
 /** Count total einbringungen across all semesters */

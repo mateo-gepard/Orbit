@@ -11,6 +11,7 @@ import {
   getSubject,
   isEingebracht,
   canToggle,
+  canDropSemester,
   isMandatory,
   countAllEinbringungen,
   calculateAbitur,
@@ -742,6 +743,68 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
         )}
       </div>
 
+      {/* Notenschnitt — average grades summary */}
+      {hasData && (
+        <div className="rounded-2xl border border-border/40 p-4">
+          <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest mb-3">Notenschnitt</p>
+          {/* Global averages */}
+          {(() => {
+            const allGrades = (profile.grades ?? []).filter((g) => g.points !== null && g.subjectId !== 'psem');
+            const allAvg = allGrades.length > 0 ? allGrades.reduce((s, g) => s + (g.points ?? 0), 0) / allGrades.length : null;
+            const punkteToNote = (p: number) => Math.max(1.0, Math.min(6.0, Math.round((17 - p) / 3 * 10) / 10));
+            const globalNote = allAvg !== null ? punkteToNote(allAvg) : null;
+            return (
+              <>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="rounded-xl bg-foreground/[0.03] p-3">
+                    <p className="text-xl font-bold tabular-nums leading-none">
+                      {allAvg !== null ? allAvg.toFixed(2) : '—'}
+                    </p>
+                    <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1.5">Ø Punkte</p>
+                  </div>
+                  <div className="rounded-xl bg-foreground/[0.03] p-3">
+                    <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
+                      {result.blockI.einbringungCount > 0 ? result.blockI.average.toFixed(2) : '—'}
+                    </p>
+                    <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1.5">Ø eingeb.</p>
+                  </div>
+                  <div className="rounded-xl bg-foreground/[0.03] p-3">
+                    <p className={cn('text-xl font-bold tabular-nums leading-none', globalNote !== null && globalNote <= 2.5 ? 'text-emerald-500' : globalNote !== null && globalNote <= 3.5 ? 'text-amber-500' : globalNote !== null ? 'text-red-400' : '')}>
+                      {globalNote !== null ? globalNote.toFixed(1) : '—'}
+                    </p>
+                    <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1.5">Schulnote</p>
+                  </div>
+                </div>
+                {/* Per-Halbjahr Schulnoten */}
+                {result.semesterStats.some((ss) => ss.enteredCount > 0) && (
+                  <div className="grid grid-cols-4 gap-2 mt-3">
+                    {result.semesterStats.map((ss) => {
+                      const avg = ss.allAverage;
+                      const note = avg !== null ? punkteToNote(avg) : null;
+                      return (
+                        <div key={ss.semester} className="rounded-lg bg-foreground/[0.02] p-2 text-center">
+                          <p className="text-[9px] text-muted-foreground/30 font-medium mb-1">{SEMESTER_LABELS[ss.semester]}</p>
+                          {note !== null ? (
+                            <>
+                              <p className={cn('text-[15px] font-bold tabular-nums leading-none', note <= 2.5 ? 'text-emerald-500' : note <= 3.5 ? 'text-amber-500' : 'text-red-400')}>
+                                {note.toFixed(1)}
+                              </p>
+                              <p className="text-[7px] text-muted-foreground/20 font-mono mt-0.5">{avg!.toFixed(1)}P</p>
+                            </>
+                          ) : (
+                            <p className="text-[15px] font-bold text-muted-foreground/15 leading-none">—</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Block I + II — only show meaningful values */}
       {hasData && (
         <div className="grid grid-cols-2 gap-3">
@@ -826,15 +889,23 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
                       <p className="text-xl font-bold tabular-nums leading-none">
                         {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
                       </p>
-                      <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø alle</p>
+                      <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø Punkte</p>
                     </div>
                     <div className="h-6 w-px bg-border/40" />
-                    <div>
-                      <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
-                        {ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}
-                      </p>
-                      <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø eingeb.</p>
-                    </div>
+                    {(() => {
+                      const avg = ss.allAverage;
+                      if (avg === null) return null;
+                      const note = Math.round((17 - avg) / 3 * 10) / 10;
+                      const clamped = Math.max(1.0, Math.min(6.0, note));
+                      return (
+                        <div>
+                          <p className={cn('text-xl font-bold tabular-nums leading-none', clamped <= 2.5 ? 'text-emerald-500' : clamped <= 3.5 ? 'text-amber-500' : 'text-red-400')}>
+                            {clamped.toFixed(1)}
+                          </p>
+                          <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Schulnote</p>
+                        </div>
+                      );
+                    })()}
                   </div>
                   {ss.deficits > 0 && (
                     <div className="flex items-center gap-1">
@@ -951,15 +1022,23 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
               <p className="text-xl font-bold tabular-nums leading-none">
                 {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
               </p>
-              <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø alle</p>
+              <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø Punkte</p>
             </div>
             <div className="h-6 w-px bg-border/40" />
-            <div className="text-right">
-              <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
-                {ss.eingebrachteAverage !== null ? ss.eingebrachteAverage.toFixed(1) : '—'}
-              </p>
-              <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Ø eingeb.</p>
-            </div>
+            {(() => {
+              const avg = ss.allAverage;
+              if (avg === null) return null;
+              const note = Math.round((17 - avg) / 3 * 10) / 10;
+              const clamped = Math.max(1.0, Math.min(6.0, note));
+              return (
+                <div className="text-right">
+                  <p className={cn('text-xl font-bold tabular-nums leading-none', clamped <= 2.5 ? 'text-emerald-500' : clamped <= 3.5 ? 'text-amber-500' : 'text-red-400')}>
+                    {clamped.toFixed(1)}
+                  </p>
+                  <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-0.5">Schulnote</p>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -1002,6 +1081,10 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
           const mandatory = isMandatory(subjectId, profile);
           const eingebracht = isEingebracht(subjectId, semester, profile);
           const toggleable = canToggle(subjectId, profile);
+          // Dynamic check: can this specific semester be dropped?
+          const dropCheck = canDropSemester(subjectId, semester, profile);
+          // Can only toggle OFF (drop) if dropCheck allows it; can always toggle ON (add back)
+          const canToggleThis = toggleable && (eingebracht ? dropCheck.canDrop : true);
 
           return (
             <div
@@ -1013,20 +1096,22 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
             >
               {/* Einbringung toggle */}
               <button
-                onClick={() => toggleable && toggleEinbringung(subjectId, semester)}
-                disabled={!toggleable}
+                onClick={() => canToggleThis && toggleEinbringung(subjectId, semester)}
+                disabled={!canToggleThis}
+                title={!canToggleThis && !mandatory ? dropCheck.reason : undefined}
                 className={cn(
                   'h-5 w-5 rounded-[5px] border flex items-center justify-center shrink-0 transition-all',
                   eingebracht
-                    ? mandatory
+                    ? (mandatory || (!dropCheck.canDrop && toggleable))
                       ? 'bg-emerald-500/15 border-emerald-500/30'
                       : 'bg-emerald-500 border-emerald-500'
                     : 'border-border/50 hover:border-emerald-500/40',
-                  !toggleable && 'cursor-not-allowed'
+                  !canToggleThis && 'cursor-not-allowed'
                 )}
               >
                 {eingebracht && mandatory && <Lock className="h-2.5 w-2.5 text-emerald-500" />}
-                {eingebracht && !mandatory && (
+                {eingebracht && !mandatory && !dropCheck.canDrop && <Lock className="h-2.5 w-2.5 text-amber-500" />}
+                {eingebracht && !mandatory && dropCheck.canDrop && (
                   <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 16 16" fill="none">
                     <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
@@ -1068,6 +1153,10 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
         <div className="flex items-center gap-1">
           <Lock className="h-2.5 w-2.5" />
           <span>Pflicht</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Lock className="h-2.5 w-2.5 text-amber-500" />
+          <span>Min. erreicht</span>
         </div>
         <div className="flex items-center gap-1">
           <div className="h-3 w-3 rounded-[3px] bg-emerald-500 flex items-center justify-center">
@@ -1338,10 +1427,19 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                   <div className="space-y-1">
                     {wahlpflicht.map((r) => {
                       const s = getSubject(r.subjectId);
+                      const currentEin = SEMESTERS.filter((sem) => isEingebracht(r.subjectId, sem, profile)).length;
+                      const droppable = Math.max(0, currentEin - r.minSemesters);
                       return (
                         <div key={r.subjectId} className="flex items-center gap-2 text-[10px]">
-                          <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-md font-medium">{s?.shortName || r.subjectId}</span>
-                          <span className="text-muted-foreground/30">{r.reason}</span>
+                          <span className={cn(
+                            'px-2 py-0.5 rounded-md font-medium',
+                            droppable === 0 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-500'
+                          )}>{s?.shortName || r.subjectId}</span>
+                          <span className="text-muted-foreground/30">
+                            {r.reason} — <span className={droppable === 0 ? 'text-red-400/70' : 'text-amber-500/70'}>
+                              {droppable > 0 ? `noch ${droppable} streichbar` : 'keine Streichung mehr möglich'}
+                            </span>
+                          </span>
                         </div>
                       );
                     })}
@@ -1392,6 +1490,9 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
           const mandatory = isMandatory(subjectId, profile);
           const toggleable = canToggle(subjectId, profile);
           const rule = getEinbringungRule(subjectId, profile);
+          // Count current eingebracht semesters for this subject
+          const currentEingebracht = SEMESTERS.filter((s) => isEingebracht(subjectId, s, profile)).length;
+          const droppable = Math.max(0, currentEingebracht - rule.minSemesters);
 
           return (
             <div key={subjectId} className="flex items-center gap-0 border-b border-border/30 last:border-b-0">
@@ -1403,9 +1504,16 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                   <span className="text-[11px] truncate block">{subj.name}</span>
                   <span className={cn(
                     'text-[8px] block',
-                    rule.category === 'pflicht' ? 'text-red-400/50' : rule.category === 'wahlpflicht' ? 'text-amber-500/50' : 'text-emerald-500/50'
+                    rule.category === 'pflicht' ? 'text-red-400/50'
+                      : droppable === 0 && rule.category === 'wahlpflicht' ? 'text-red-400/50'
+                      : rule.category === 'wahlpflicht' ? 'text-amber-500/50'
+                      : 'text-emerald-500/50'
                   )}>
-                    {rule.category === 'pflicht' ? '4/4 Pflicht' : rule.category === 'wahlpflicht' ? `${rule.minSemesters}/4 Pflicht` : 'Optional'}
+                    {rule.category === 'pflicht'
+                      ? '4/4 Pflicht'
+                      : rule.category === 'wahlpflicht'
+                        ? `${currentEingebracht}/${rule.minSemesters} min · ${droppable > 0 ? `${droppable} streichbar` : 'keine Streichung mehr'}`
+                        : 'Optional'}
                   </span>
                 </div>
               </div>
@@ -1413,22 +1521,25 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                 const grade = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === sem);
                 const pts = grade?.points ?? null;
                 const eingebracht = isEingebracht(subjectId, sem, profile);
+                const dropCheck = canDropSemester(subjectId, sem, profile);
+                const canToggleThis = toggleable && (eingebracht ? dropCheck.canDrop : true);
 
                 return (
                   <div key={sem} className="flex-1 flex justify-center py-2.5">
                     <button
-                      onClick={() => toggleable && toggleEinbringung(subjectId, sem)}
-                      disabled={!toggleable}
+                      onClick={() => canToggleThis && toggleEinbringung(subjectId, sem)}
+                      disabled={!canToggleThis}
+                      title={!canToggleThis && !mandatory ? dropCheck.reason : undefined}
                       className={cn(
                         'h-7 w-10 rounded-lg flex items-center justify-center text-[11px] font-mono font-bold transition-all',
                         eingebracht
-                          ? mandatory
+                          ? (mandatory || (!dropCheck.canDrop && toggleable))
                             ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
                             : 'bg-emerald-500 text-white'
                           : pts !== null
                             ? 'bg-foreground/[0.03] text-muted-foreground/25 hover:border-emerald-500/30 border border-transparent'
                             : 'text-muted-foreground/10',
-                        !toggleable && 'cursor-not-allowed'
+                        !canToggleThis && 'cursor-not-allowed'
                       )}
                     >
                       {pts !== null ? pts.toString().padStart(2, '0') : '·'}
