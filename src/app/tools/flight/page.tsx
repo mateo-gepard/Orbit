@@ -284,7 +284,7 @@ export default function FlightPage() {
   if (showLogbook) {
     const stats = getFlightStats(flightLogs);
     return (
-      <div className="flex flex-col h-full min-h-screen bg-background">
+      <div className="flex flex-col h-full bg-background">
         {/* Header */}
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -348,7 +348,7 @@ export default function FlightPage() {
 
   if (status === 'inflight' || status === 'paused') {
     return (
-      <div className="flex flex-col h-full min-h-screen bg-background">
+      <div className="flex flex-col h-full bg-background">
         {/* Flight strip header */}
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
           <div className="flex items-center gap-2">

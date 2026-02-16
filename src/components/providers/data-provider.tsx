@@ -13,6 +13,7 @@ import type { ToolId } from '@/lib/toolbox-store';
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const MIN_LOADING_TIME = 800; // Minimum time to show loading screen (feels better than flash)
+const MAX_LOADING_TIME = 6000; // Safety timeout — never show loading screen longer than this
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -34,6 +35,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setSyncUserId(null);
       useAbiturStore.getState()._setSyncUserId(null);
       useToolboxStore.getState()._setSyncUserId(null);
+      // No user → nothing to load, dismiss loading screen immediately
+      setDataLoaded(true);
+      setIsLoading(false);
       return;
     }
 
@@ -132,7 +136,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     connect();
 
+    // Safety timeout — never stay on loading screen forever
+    const safetyTimer = setTimeout(() => {
+      if (isLoading) {
+        console.warn('[ORBIT] Loading safety timeout reached — dismissing loading screen');
+        setDataLoaded(true);
+        setIsLoading(false);
+      }
+    }, MAX_LOADING_TIME);
+
     return () => {
+      clearTimeout(safetyTimer);
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;

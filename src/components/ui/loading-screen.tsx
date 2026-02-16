@@ -15,18 +15,8 @@ export function LoadingScreen() {
     <div
       className={cn(
         'fixed inset-0 z-[9999] flex items-center justify-center bg-background transition-opacity duration-300',
-        'w-screen h-screen', // Ensure full-screen on mobile
         mounted ? 'opacity-100' : 'opacity-0'
       )}
-      style={{
-        // Force full viewport coverage on mobile
-        width: '100vw',
-        height: '100vh',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-      }}
     >
       <div className="flex flex-col items-center gap-4">
         {/* Orbit logo animation */}
