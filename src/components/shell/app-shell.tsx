@@ -15,7 +15,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       {/* App shell fills viewport height */}
-      <div className="flex h-screen w-full overflow-hidden bg-background">
+      <div 
+        className="flex w-full overflow-hidden bg-background"
+        style={{ height: '100dvh' }}
+      >
         <Sidebar />
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
