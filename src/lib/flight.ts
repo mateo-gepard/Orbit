@@ -619,3 +619,66 @@ export const TURBULENCE_TYPES: { type: TurbulenceLog['type']; label: string; emo
   { type: 'person', label: 'Person', emoji: '🗣️' },
   { type: 'other', label: 'Other', emoji: '⚡' },
 ];
+
+// ─── Flight Log Persistence ────────────────────────────────
+
+const FLIGHT_LOGS_KEY = 'orbit-flight-logs';
+
+/** Save a completed flight to local storage + Firestore */
+export function saveFlightLog(log: FlightLog): void {
+  try {
+    const existing = loadFlightLogs();
+    existing.unshift(log); // newest first
+    // Keep last 100 flights
+    const trimmed = existing.slice(0, 100);
+    localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(trimmed));
+  } catch { /* quota exceeded */ }
+}
+
+/** Load flight logs from local storage */
+export function loadFlightLogs(): FlightLog[] {
+  try {
+    const stored = localStorage.getItem(FLIGHT_LOGS_KEY);
+    if (!stored) return [];
+    return JSON.parse(stored) as FlightLog[];
+  } catch {
+    return [];
+  }
+}
+
+/** Get total focus stats from all flights */
+export function getFlightStats(logs: FlightLog[]): {
+  totalFlights: number;
+  totalMinutes: number;
+  totalTasks: number;
+  completedTasks: number;
+  avgTurbulence: number;
+  longestStreak: number;
+} {
+  const totalFlights = logs.length;
+  const totalMinutes = logs.reduce((s, l) => s + Math.round(l.actualDuration / 60000), 0);
+  const totalTasks = logs.reduce((s, l) => s + l.tasks.length, 0);
+  const completedTasks = logs.reduce((s, l) => s + l.tasks.filter((t) => t.completed).length, 0);
+  const avgTurbulence = totalFlights > 0
+    ? Math.round(logs.reduce((s, l) => s + l.turbulence.length, 0) / totalFlights * 10) / 10
+    : 0;
+
+  // Calculate longest daily streak
+  const dates = [...new Set(logs.map((l) => new Date(l.startedAt).toISOString().slice(0, 10)))].sort();
+  let longestStreak = 0;
+  let currentStreak = 1;
+  for (let i = 1; i < dates.length; i++) {
+    const prev = new Date(dates[i - 1]);
+    const curr = new Date(dates[i]);
+    const diff = (curr.getTime() - prev.getTime()) / 86400000;
+    if (diff === 1) {
+      currentStreak++;
+      longestStreak = Math.max(longestStreak, currentStreak);
+    } else {
+      currentStreak = 1;
+    }
+  }
+  if (dates.length > 0) longestStreak = Math.max(longestStreak, currentStreak);
+
+  return { totalFlights, totalMinutes, totalTasks, completedTasks, avgTurbulence, longestStreak };
+}

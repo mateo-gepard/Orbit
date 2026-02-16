@@ -12,228 +12,210 @@ interface PlaneAnimationProps {
 }
 
 /**
- * Polished plane animation with smooth phase transitions,
- * parallax clouds, contrails, and ground details.
+ * Side-view plane animation with phase-based movement:
+ * Boarding → Taxi → Takeoff → Cruise → Descent → Landing
+ *
+ * The plane moves horizontally and vertically through each phase.
  */
 export function PlaneAnimation({ phase, phaseProgress, progress, isPaused }: PlaneAnimationProps) {
-  const planeStyle = useMemo(() => {
-    const base = {
-      translateX: 0,
-      translateY: 0,
-      rotate: 0,
-      scale: 1,
-      rotateX: 0,
-    };
+  // Smooth easing
+  const ease = (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
+  const p = ease(phaseProgress);
 
-    // Smooth easing for phaseProgress
-    const ease = (t: number) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-    const p = ease(phaseProgress);
+  const planeStyle = useMemo(() => {
+    let x = 0;
+    let y = 0;
+    let rotate = 0;
 
     switch (phase) {
       case 'boarding':
-        base.translateY = 12;
-        base.rotateX = 3;
-        base.scale = 0.85;
+        x = 8;
+        y = 0;
+        rotate = 0;
         break;
       case 'taxi':
-        base.translateX = -30 + p * 60;
-        base.translateY = 12;
-        base.rotateX = 3;
-        base.scale = 0.88;
+        x = 8 + p * 22;
+        y = 0;
+        rotate = 0;
         break;
       case 'takeoff':
-        base.translateX = 30 - p * 30;
-        base.translateY = 12 - p * 36;
-        base.rotate = -20 * p;
-        base.rotateX = 3 + p * 18;
-        base.scale = 0.88 + p * 0.14;
+        x = 30 + p * 25;
+        y = p * 90;
+        rotate = -18 + p * 6;
         break;
       case 'cruise':
-        base.translateX = 0;
-        base.translateY = -24;
-        base.rotate = 0;
-        base.rotateX = 15;
-        base.scale = 1.02;
+        x = 55 + p * 10;
+        y = 90 + Math.sin(p * Math.PI * 4) * 2;
+        rotate = 0;
         break;
       case 'descent':
-        base.translateX = -8 * p;
-        base.translateY = -24 + p * 32;
-        base.rotate = 10 * p;
-        base.rotateX = 15 - p * 12;
-        base.scale = 1.02 - p * 0.12;
+        x = 65 + p * 18;
+        y = 90 - p * 85;
+        rotate = 10 - p * 4;
         break;
       case 'landed':
-        base.translateX = -8 - p * 20;
-        base.translateY = 8;
-        base.rotate = 0;
-        base.rotateX = 3;
-        base.scale = 0.88;
+        x = 83 + p * 10;
+        y = 0;
+        rotate = 0;
         break;
     }
 
-    return base;
-  }, [phase, phaseProgress]);
+    return { x, y, rotate };
+  }, [phase, phaseProgress, p]);
 
   const isFlying = phase === 'cruise' || phase === 'takeoff' || phase === 'descent';
   const isOnGround = phase === 'boarding' || phase === 'taxi' || phase === 'landed';
   const showContrails = phase === 'cruise' && !isPaused;
 
+  const groundY = 82;
+  const planeTop = groundY - (planeStyle.y / 100) * (groundY - 10);
+
   return (
-    <div className="relative w-full max-w-sm h-40 mx-auto my-2" style={{ perspective: '800px' }}>
+    <div className="relative w-full h-36 lg:h-44 mx-auto my-2 overflow-hidden rounded-2xl">
+      {/* Sky gradient */}
+      <div
+        className="absolute inset-0 transition-opacity duration-1000"
+        style={{
+          background: isFlying
+            ? 'linear-gradient(to bottom, oklch(0.75 0.12 230 / 0.06) 0%, oklch(0.85 0.08 220 / 0.03) 60%, transparent 100%)'
+            : 'linear-gradient(to bottom, oklch(0.8 0.04 220 / 0.03) 0%, transparent 60%)',
+        }}
+      />
 
-      {/* Sky gradient background (subtle, only while airborne) */}
-      {isFlying && (
-        <div
-          className="absolute inset-0 rounded-2xl transition-opacity duration-1000"
-          style={{
-            background: isPaused
-              ? 'radial-gradient(ellipse at 50% 80%, oklch(0.85 0.06 85 / 0.04), transparent 70%)'
-              : 'radial-gradient(ellipse at 50% 80%, oklch(0.85 0.12 230 / 0.04), transparent 70%)',
-          }}
-        />
-      )}
-
-      {/* Stars / altitude dots (cruise only) */}
+      {/* Stars (cruise only) */}
       {phase === 'cruise' && !isPaused && (
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {[
-            { x: '15%', y: '20%', delay: '0s', size: 1.5 },
-            { x: '75%', y: '15%', delay: '1.5s', size: 1 },
-            { x: '45%', y: '10%', delay: '3s', size: 1.2 },
-            { x: '85%', y: '30%', delay: '0.8s', size: 0.8 },
-            { x: '25%', y: '35%', delay: '2.2s', size: 1 },
+            { x: '12%', y: '12%', delay: '0s', size: 1.5 },
+            { x: '35%', y: '8%', delay: '1.5s', size: 1 },
+            { x: '58%', y: '14%', delay: '3s', size: 1.2 },
+            { x: '78%', y: '6%', delay: '0.8s', size: 0.8 },
+            { x: '92%', y: '18%', delay: '2.2s', size: 1 },
           ].map((dot, i) => (
             <div
               key={i}
-              className="absolute rounded-full bg-foreground/[0.04] animate-pulse-glow"
+              className="absolute rounded-full bg-foreground/[0.06] animate-pulse"
               style={{
                 left: dot.x,
                 top: dot.y,
                 width: dot.size * 2,
                 height: dot.size * 2,
                 animationDelay: dot.delay,
+                animationDuration: '3s',
               }}
             />
           ))}
         </div>
       )}
 
-      {/* Clouds (parallax layers while airborne) */}
+      {/* Clouds */}
       {isFlying && !isPaused && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none rounded-2xl">
-          <div className="absolute top-6 animate-cloud-1 opacity-[0.06]">
-            <CloudShape size={70} />
-          </div>
-          <div className="absolute top-16 animate-cloud-2 opacity-[0.04]">
-            <CloudShape size={100} />
-          </div>
-          <div className="absolute top-10 animate-cloud-3 opacity-[0.035]">
-            <CloudShape size={55} />
-          </div>
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {[
+            { top: '30%', size: 60, delay: 0, dur: 12 },
+            { top: '45%', size: 80, delay: 4, dur: 16 },
+            { top: '20%', size: 50, delay: 8, dur: 14 },
+          ].map((c, i) => (
+            <div
+              key={i}
+              className="absolute opacity-[0.05]"
+              style={{
+                top: c.top,
+                animation: `cloud-drift ${c.dur}s linear ${c.delay}s infinite`,
+              }}
+            >
+              <CloudShape size={c.size} />
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Ground elements */}
-      {isOnGround && (
-        <div className="absolute bottom-8 left-6 right-6">
-          {/* Runway surface */}
-          <div className="h-[2px] bg-foreground/[0.06] rounded-full" />
-          {/* Center line dashes */}
-          <div className="flex justify-center gap-3 mt-1">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'h-[1px] rounded-full transition-opacity duration-500',
-                  phase === 'taxi'
-                    ? 'w-4 bg-foreground/[0.06]'
-                    : 'w-3 bg-foreground/[0.04]'
-                )}
-              />
-            ))}
-          </div>
-          {/* Runway edge lights */}
-          <div className="flex justify-between mt-1.5 px-1">
-            {Array.from({ length: 6 }).map((_, i) => (
+      {/* Ground line + runway */}
+      <div
+        className="absolute left-0 right-0 transition-all duration-700"
+        style={{ top: `${groundY}%` }}
+      >
+        <div className="h-[2px] bg-foreground/[0.08] mx-4" />
+        <div className="flex justify-center gap-3 mt-1 mx-4">
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div
+              key={i}
+              className={cn(
+                'h-[1px] rounded-full',
+                isOnGround ? 'w-4 bg-foreground/[0.06]' : 'w-3 bg-foreground/[0.03]'
+              )}
+            />
+          ))}
+        </div>
+        {isOnGround && (
+          <div className="flex justify-between mt-1.5 px-6 mx-4">
+            {Array.from({ length: 10 }).map((_, i) => (
               <div
                 key={i}
                 className={cn(
                   'w-1 h-1 rounded-full transition-colors duration-300',
-                  phase === 'taxi' || phase === 'landed'
-                    ? 'bg-amber-500/20'
-                    : 'bg-foreground/[0.03]'
+                  phase === 'taxi' || phase === 'landed' ? 'bg-amber-500/25' : 'bg-foreground/[0.03]'
                 )}
               />
             ))}
           </div>
+        )}
+        <div className="h-8 bg-gradient-to-b from-foreground/[0.02] to-transparent mt-1" />
+      </div>
+
+      {/* Departure marker */}
+      {(phase === 'boarding' || phase === 'taxi') && (
+        <div className="absolute transition-opacity duration-500" style={{ left: '4%', top: `${groundY - 8}%` }}>
+          <div className="h-6 w-[2px] bg-foreground/[0.08] mx-auto" />
+          <div className="h-1 w-1 rounded-full bg-amber-500/40 mx-auto -mt-0.5" />
         </div>
       )}
 
-      {/* Contrails (cruise only) */}
+      {/* Arrival marker */}
+      {(phase === 'descent' || phase === 'landed') && (
+        <div className="absolute transition-opacity duration-500" style={{ right: '4%', top: `${groundY - 8}%` }}>
+          <div className="h-6 w-[2px] bg-foreground/[0.08] mx-auto" />
+          <div className="h-1 w-1 rounded-full bg-emerald-500/40 mx-auto -mt-0.5" />
+        </div>
+      )}
+
+      {/* Contrails */}
       {showContrails && (
         <div
-          className="absolute transition-all duration-1000"
-          style={{
-            left: `calc(50% + ${planeStyle.translateX - 8}px)`,
-            top: `calc(50% + ${planeStyle.translateY + 18}px)`,
-          }}
+          className="absolute transition-all duration-500 pointer-events-none"
+          style={{ left: `${planeStyle.x - 8}%`, top: `${planeTop + 1}%` }}
         >
-          <div className="relative">
-            <div
-              className="absolute w-[60px] h-[1px] rounded-full animate-contrail-fade"
-              style={{
-                background: 'linear-gradient(to left, transparent, var(--foreground))',
-                opacity: 0.06,
-                transform: 'rotate(2deg)',
-                top: -4,
-                right: 20,
-              }}
-            />
-            <div
-              className="absolute w-[50px] h-[1px] rounded-full animate-contrail-fade"
-              style={{
-                background: 'linear-gradient(to left, transparent, var(--foreground))',
-                opacity: 0.04,
-                transform: 'rotate(-2deg)',
-                top: 4,
-                right: 20,
-                animationDelay: '0.3s',
-              }}
-            />
-          </div>
+          <div className="h-[1px] rounded-full" style={{ width: '60px', background: 'linear-gradient(to left, transparent, var(--foreground))', opacity: 0.06, transform: 'translateX(-100%)' }} />
+          <div className="h-[1px] rounded-full mt-[3px]" style={{ width: '50px', background: 'linear-gradient(to left, transparent, var(--foreground))', opacity: 0.04, transform: 'translateX(-100%)' }} />
         </div>
       )}
 
       {/* The plane */}
       <div
         className={cn(
-          'absolute left-1/2 top-1/2 transition-all',
-          isPaused ? 'duration-700 ease-in-out' : 'duration-[1.5s] ease-out',
-          phase === 'cruise' && !isPaused && 'animate-float'
+          'absolute transition-all pointer-events-none',
+          isPaused ? 'duration-700 ease-in-out' : 'duration-[1.2s] ease-out',
+          phase === 'cruise' && !isPaused && 'animate-[gentle-float_4s_ease-in-out_infinite]'
         )}
         style={{
-          transform: `
-            translate(-50%, -50%)
-            translateX(${planeStyle.translateX}px)
-            translateY(${planeStyle.translateY}px)
-            rotateX(${planeStyle.rotateX}deg)
-            rotate(${planeStyle.rotate}deg)
-            scale(${planeStyle.scale})
-          `,
-          transformStyle: 'preserve-3d',
+          left: `${planeStyle.x}%`,
+          top: `${planeTop}%`,
+          transform: `translate(-50%, -50%) rotate(${planeStyle.rotate}deg)`,
         }}
       >
-        <PlaneBody isPaused={isPaused} isFlying={isFlying} phase={phase} />
+        <SideViewPlane isPaused={isPaused} isFlying={isFlying} phase={phase} />
       </div>
 
       {/* Ground shadow */}
       {isOnGround && (
         <div
-          className="absolute left-1/2 bottom-7 transition-all duration-[1.5s] ease-out"
+          className="absolute transition-all duration-1000 ease-out"
           style={{
-            transform: `translateX(calc(-50% + ${planeStyle.translateX}px))`,
-            width: `${48 * planeStyle.scale}px`,
-            height: '6px',
+            left: `${planeStyle.x}%`,
+            top: `${groundY + 0.5}%`,
+            transform: 'translateX(-50%)',
+            width: '40px',
+            height: '4px',
             background: 'radial-gradient(ellipse, var(--foreground) 0%, transparent 70%)',
             opacity: 0.06,
             borderRadius: '50%',
@@ -241,165 +223,139 @@ export function PlaneAnimation({ phase, phaseProgress, progress, isPaused }: Pla
         />
       )}
 
-      {/* Altitude shadow (fades as plane climbs) */}
+      {/* Altitude shadow */}
       {(phase === 'takeoff' || phase === 'descent') && (
         <div
-          className="absolute left-1/2 bottom-7 transition-all duration-1000 ease-out"
+          className="absolute transition-all duration-1000 ease-out"
           style={{
-            transform: `translateX(calc(-50% + ${planeStyle.translateX * 0.8}px)) scaleX(${1 - Math.abs(planeStyle.translateY) / 50})`,
-            width: '32px',
-            height: '4px',
+            left: `${planeStyle.x}%`,
+            top: `${groundY + 0.5}%`,
+            transform: `translateX(-50%) scaleX(${Math.max(0.2, 1 - planeStyle.y / 100)})`,
+            width: '30px',
+            height: '3px',
             background: 'radial-gradient(ellipse, var(--foreground) 0%, transparent 70%)',
-            opacity: Math.max(0, 0.04 - Math.abs(planeStyle.translateY) / 600),
+            opacity: Math.max(0, 0.04 * (1 - planeStyle.y / 100)),
             borderRadius: '50%',
           }}
         />
       )}
+
+      <style jsx>{`
+        @keyframes cloud-drift {
+          0% { transform: translateX(110%); }
+          100% { transform: translateX(-120%); }
+        }
+        @keyframes gentle-float {
+          0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+          50% { transform: translate(-50%, -50%) translateY(-3px); }
+        }
+      `}</style>
     </div>
   );
 }
 
-// ─── SVG Plane Body (improved) ─────────────────────────────
+// ─── Side-View Plane SVG ───────────────────────────────────
 
-function PlaneBody({ isPaused, isFlying, phase }: { isPaused?: boolean; isFlying?: boolean; phase?: FlightPhase }) {
+function SideViewPlane({ isPaused, isFlying, phase }: {
+  isPaused?: boolean;
+  isFlying?: boolean;
+  phase?: FlightPhase;
+}) {
   return (
     <svg
-      width="72"
-      height="72"
-      viewBox="0 0 72 72"
+      width="56"
+      height="28"
+      viewBox="0 0 56 28"
       fill="none"
       className={cn(
         'transition-colors duration-500',
         isPaused
           ? 'text-amber-500 drop-shadow-[0_0_8px_oklch(0.8_0.15_85/0.3)]'
-          : 'text-sky-500 drop-shadow-[0_0_12px_oklch(0.7_0.15_230/0.25)]'
+          : 'text-sky-500 drop-shadow-[0_0_10px_oklch(0.7_0.15_230/0.2)]'
       )}
     >
-      {/* Fuselage body */}
+      {/* Fuselage */}
       <path
-        d="M36 6L43 22L43 50L39 57L36 59L33 57L29 50L29 22L36 6Z"
+        d="M4 14C4 14 8 10 18 10L46 10C50 10 54 12 54 14C54 16 50 18 46 18L18 18C8 18 4 14 4 14Z"
         fill="currentColor"
         opacity={0.12}
         stroke="currentColor"
-        strokeWidth="0.8"
-        strokeLinejoin="round"
-      />
-      {/* Fuselage center highlight */}
-      <path
-        d="M36 8L38.5 22L38.5 48L36 55L33.5 48L33.5 22L36 8Z"
-        fill="currentColor"
-        opacity={0.06}
-      />
-      {/* Fuselage top shine */}
-      <path
-        d="M34.5 10L36 7L37.5 10L37 20L35 20Z"
-        fill="currentColor"
-        opacity={0.15}
-      />
-
-      {/* Wings — swept back */}
-      <path
-        d="M29 30L6 38L6 40L29 35Z"
-        fill="currentColor"
-        opacity={0.18}
-        stroke="currentColor"
         strokeWidth="0.6"
         strokeLinejoin="round"
       />
       <path
-        d="M43 30L66 38L66 40L43 35Z"
-        fill="currentColor"
-        opacity={0.18}
-        stroke="currentColor"
-        strokeWidth="0.6"
-        strokeLinejoin="round"
-      />
-      {/* Wing top highlights */}
-      <path d="M29 31L8 38.2L8 38.8L29 34Z" fill="currentColor" opacity={0.05} />
-      <path d="M43 31L64 38.2L64 38.8L43 34Z" fill="currentColor" opacity={0.05} />
-      {/* Winglets */}
-      <path d="M6 38L4 37.5L5 39.5L6 40Z" fill="currentColor" opacity={0.12} />
-      <path d="M66 38L68 37.5L67 39.5L66 40Z" fill="currentColor" opacity={0.12} />
-
-      {/* Horizontal stabilizer (tail wings) */}
-      <path
-        d="M33 49L22 53L22 54.5L33 51Z"
-        fill="currentColor"
-        opacity={0.15}
+        d="M10 12.5C14 11 20 10.5 40 10.5C46 10.5 50 11.5 52 12.5"
         stroke="currentColor"
         strokeWidth="0.4"
-      />
-      <path
-        d="M39 49L50 53L50 54.5L39 51Z"
-        fill="currentColor"
-        opacity={0.15}
-        stroke="currentColor"
-        strokeWidth="0.4"
+        opacity={0.08}
+        fill="none"
       />
 
-      {/* Vertical stabilizer */}
-      <path
-        d="M34.5 49L36 40L37.5 49Z"
-        fill="currentColor"
-        opacity={0.22}
-        stroke="currentColor"
-        strokeWidth="0.4"
-      />
+      {/* Nose */}
+      <path d="M2 14C2 14 4 11.5 6 11L8 10.5" stroke="currentColor" strokeWidth="0.5" opacity={0.15} fill="none" />
 
-      {/* Engines (under wings) */}
-      <rect x="20" y="33" width="3.5" height="5" rx="1.5" fill="currentColor" opacity={0.15} />
-      <rect x="48.5" y="33" width="3.5" height="5" rx="1.5" fill="currentColor" opacity={0.15} />
+      {/* Wing */}
+      <path d="M22 10L18 2L32 2L28 10" fill="currentColor" opacity={0.15} stroke="currentColor" strokeWidth="0.5" strokeLinejoin="round" />
+      <path d="M20 8L19 4L30 4L29 8" fill="currentColor" opacity={0.04} />
 
-      {/* Engine intake rings */}
-      <ellipse cx="21.75" cy="33" rx="1.5" ry="0.8" fill="currentColor" opacity={0.1} />
-      <ellipse cx="50.25" cy="33" rx="1.5" ry="0.8" fill="currentColor" opacity={0.1} />
+      {/* Tail fin */}
+      <path d="M44 10L42 2L48 6L46 10" fill="currentColor" opacity={0.18} stroke="currentColor" strokeWidth="0.5" strokeLinejoin="round" />
 
-      {/* Engine exhaust glow */}
+      {/* Tail plane */}
+      <path d="M42 13L40 9L48 9L46 13" fill="currentColor" opacity={0.1} stroke="currentColor" strokeWidth="0.4" />
+
+      {/* Engine */}
+      <rect x="23" y="17" width="6" height="3" rx="1.5" fill="currentColor" opacity={0.12} />
+      <ellipse cx="23.5" cy="18.5" rx="1" ry="1.2" fill="currentColor" opacity={0.08} />
+
+      {/* Engine exhaust */}
       {isFlying && !isPaused && (
         <>
-          <ellipse cx="21.75" cy="39" rx="1.2" ry="4" fill="currentColor" opacity={0.06} className="animate-pulse" />
-          <ellipse cx="50.25" cy="39" rx="1.2" ry="4" fill="currentColor" opacity={0.06} className="animate-pulse" />
-          {/* Hot core */}
-          <ellipse cx="21.75" cy="39.5" rx="0.6" ry="2.5" fill="currentColor" opacity={0.1} className="animate-pulse" />
-          <ellipse cx="50.25" cy="39.5" rx="0.6" ry="2.5" fill="currentColor" opacity={0.1} className="animate-pulse" />
+          <ellipse cx="30" cy="18.5" rx="3" ry="0.8" fill="currentColor" opacity={0.05} className="animate-pulse" />
+          <ellipse cx="31" cy="18.5" rx="2" ry="0.5" fill="currentColor" opacity={0.08} className="animate-pulse" />
         </>
       )}
 
-      {/* Cockpit windows */}
-      <path
-        d="M35 12L36 9.5L37 12L37 15L35 15Z"
-        fill="currentColor"
-        opacity={0.2}
-      />
+      {/* Cockpit */}
+      <path d="M6 12.5L10 11.5L10 13L6 13.5Z" fill="currentColor" opacity={0.2} />
 
       {/* Cabin windows */}
-      {[18, 21, 24, 27, 30, 33, 36, 39, 42].map((y) => (
-        <circle key={y} cx="36" cy={y} r="0.4" fill="currentColor" opacity={0.08} />
+      {[14, 17, 20, 23, 26, 29, 32, 35, 38].map((x) => (
+        <rect key={x} x={x} y={11.5} width="1.5" height="1" rx="0.4" fill="currentColor" opacity={0.07} />
       ))}
 
-      {/* Navigation lights */}
+      {/* Nav lights */}
       {isFlying && (
         <>
-          <circle cx="6" cy="39" r="0.8" fill="#ef4444" opacity={0.4} />
-          <circle cx="66" cy="39" r="0.8" fill="#22c55e" opacity={0.4} />
-          {/* Tail strobe */}
-          <circle cx="36" cy="58" r="0.6" fill="white" opacity={0.2} className="animate-pulse" />
+          <circle cx="3" cy="14" r="0.6" fill="#22c55e" opacity={0.5} />
+          <circle cx="48" cy="8" r="0.5" fill="white" opacity={0.3} className="animate-pulse" />
+          <circle cx="18" cy="2.5" r="0.5" fill="#ef4444" opacity={0.4} />
+        </>
+      )}
+
+      {/* Landing gear */}
+      {(phase === 'boarding' || phase === 'taxi' || phase === 'landed') && (
+        <>
+          <line x1="16" y1="18" x2="16" y2="22" stroke="currentColor" strokeWidth="0.6" opacity={0.1} />
+          <circle cx="16" cy="22" r="1" fill="currentColor" opacity={0.1} />
+          <line x1="36" y1="18" x2="36" y2="22" stroke="currentColor" strokeWidth="0.6" opacity={0.1} />
+          <circle cx="36" cy="22" r="1" fill="currentColor" opacity={0.1} />
         </>
       )}
     </svg>
   );
 }
 
-// ─── Cloud Shape (improved) ────────────────────────────────
+// ─── Cloud Shape ───────────────────────────────────────────
 
 function CloudShape({ size }: { size: number }) {
   return (
-    <svg width={size} height={size * 0.45} viewBox="0 0 120 54" className="text-foreground">
-      <ellipse cx="40" cy="34" rx="28" ry="16" fill="currentColor" />
-      <ellipse cx="70" cy="30" rx="24" ry="14" fill="currentColor" />
-      <ellipse cx="55" cy="22" rx="22" ry="16" fill="currentColor" />
-      <ellipse cx="85" cy="36" rx="16" ry="10" fill="currentColor" />
-      <ellipse cx="25" cy="38" rx="14" ry="9" fill="currentColor" />
+    <svg width={size} height={size * 0.4} viewBox="0 0 120 48" className="text-foreground">
+      <ellipse cx="40" cy="30" rx="28" ry="14" fill="currentColor" />
+      <ellipse cx="70" cy="26" rx="24" ry="12" fill="currentColor" />
+      <ellipse cx="55" cy="20" rx="20" ry="14" fill="currentColor" />
+      <ellipse cx="85" cy="32" rx="16" ry="10" fill="currentColor" />
+      <ellipse cx="25" cy="34" rx="14" ry="8" fill="currentColor" />
     </svg>
   );
 }
