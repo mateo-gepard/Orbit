@@ -12,8 +12,6 @@ import {
   eKey,
   isMandatory,
   isEingebracht,
-  canDropSemester,
-  canAddSemester,
   optimizeEinbringungen,
   selectAllEinbringungen,
 } from './abitur';
@@ -25,12 +23,15 @@ import { saveToolData } from './firestore';
 
 let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+let _pendingSave = false;
 
 function scheduleSave(profile: AbiturProfile) {
   if (!_syncUserId) return;
   if (_saveTimer) clearTimeout(_saveTimer);
+  _pendingSave = true;
   _saveTimer = setTimeout(() => {
     if (!_syncUserId) return;
+    _pendingSave = false;
     saveToolData(_syncUserId, 'abitur', { profile }).catch((err) => {
       console.error('[ORBIT] Failed to save Abitur data:', err);
     });
@@ -152,25 +153,14 @@ export const useAbiturStore = create<AbiturState>()(
 
       toggleEinbringung: (subjectId, semester) =>
         set((s) => updateProfile(s, (p) => {
-          // Mandatory subjects can never be toggled
+          // Mandatory subjects (Abiturfächer) can never be toggled
           if (isMandatory(subjectId, p)) return p;
           if (subjectId === 'wsem' || subjectId === 'psem') return p;
 
           const current = p.einbringungen ?? [];
           const key = eKey(subjectId, semester);
-          const currentlyEingebracht = isEingebracht(subjectId, semester, p);
-
-          if (currentlyEingebracht) {
-            // Trying to DROP — validate
-            const check = canDropSemester(subjectId, semester, p);
-            if (!check.canDrop) return p; // Blocked — don't change anything
-            return { ...p, einbringungen: current.filter((k) => k !== key) };
-          } else {
-            // Trying to ADD — validate
-            const check = canAddSemester(subjectId, semester, p);
-            if (!check.canAdd) return p; // Blocked — don't change anything
-            return { ...p, einbringungen: [...current, key] };
-          }
+          const has = current.includes(key);
+          return { ...p, einbringungen: has ? current.filter((k) => k !== key) : [...current, key] };
         })),
 
       setExamSubject: (index, subjectId) =>
@@ -222,7 +212,20 @@ export const useAbiturStore = create<AbiturState>()(
           einbringungen: selectAllEinbringungen(p),
         }))),
 
-      _setProfileFromCloud: (profile) => set({ profile }),
+      _setProfileFromCloud: (cloudProfile) =>
+        set((s) => {
+          // Don't overwrite local changes that are still being saved
+          if (_pendingSave) return s;
+          // Merge: cloud data wins, but fill in any missing fields from local
+          const merged: AbiturProfile = { ...s.profile, ...cloudProfile };
+          // Ensure arrays are never undefined (cloud may have stored null)
+          if (!Array.isArray(merged.einbringungen)) merged.einbringungen = s.profile.einbringungen ?? [];
+          if (!Array.isArray(merged.grades)) merged.grades = s.profile.grades ?? [];
+          if (!Array.isArray(merged.subjects)) merged.subjects = s.profile.subjects ?? [];
+          if (!Array.isArray(merged.examSubjects)) merged.examSubjects = s.profile.examSubjects ?? [];
+          if (!Array.isArray(merged.exams)) merged.exams = s.profile.exams ?? [];
+          return { profile: merged };
+        }),
 
       _setSyncUserId: (userId) => {
         _syncUserId = userId;

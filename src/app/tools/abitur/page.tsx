@@ -10,9 +10,6 @@ import {
   type SubjectDefinition,
   getSubject,
   isEingebracht,
-  canToggle,
-  canDropSemester,
-  canAddSemester,
   canToggleSemester,
   isMandatory,
   countAllEinbringungen,
@@ -27,8 +24,6 @@ import {
   canSubjectBeOralExam,
   validateExamCombination,
   checkFieldCoverage,
-  getEinbringungRule,
-  getAllEinbringungRules,
   optimizeEinbringungen,
   pointsToDecimalGrade,
   type AbiturProfile,
@@ -1121,9 +1116,7 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
                       : 'border-border/30 bg-muted-foreground/5 cursor-not-allowed',
                 )}
               >
-                {eingebracht && mandatory && <Lock className="h-2.5 w-2.5 text-emerald-500" />}
-                {eingebracht && !mandatory && !toggle.canToggle && <Lock className="h-2.5 w-2.5 text-amber-500" />}
-                {eingebracht && !mandatory && toggle.canToggle && (
+                {eingebracht && (
                   <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 16 16" fill="none">
                     <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
@@ -1162,14 +1155,6 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
 
       {/* Legend */}
       <div className="flex items-center gap-3 text-[10px] text-muted-foreground/25">
-        <div className="flex items-center gap-1">
-          <Lock className="h-2.5 w-2.5" />
-          <span>Pflicht</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <Lock className="h-2.5 w-2.5 text-amber-500" />
-          <span>Limit erreicht</span>
-        </div>
         <div className="flex items-center gap-1">
           <div className="h-3 w-3 rounded-[3px] bg-emerald-500 flex items-center justify-center">
             <svg className="h-2 w-2 text-white" viewBox="0 0 16 16" fill="none">
@@ -1360,7 +1345,6 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
   const { toggleEinbringung, autoOptimizeEinbringungen, selectAll } = useAbiturStore();
   const einCount = countAllEinbringungen(profile);
   const subjects = profile.subjects.filter((id) => id !== 'psem');
-  const rules = getAllEinbringungRules(profile);
 
   return (
     <div className="space-y-6">
@@ -1415,142 +1399,6 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
         </button>
       </div>
 
-      {/* Streichung / Einbringung Rules Summary */}
-      <div className="rounded-2xl border border-border/40 p-4 space-y-3">
-        <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Streichungsregeln</p>
-        
-        {/* Pflicht — cannot drop */}
-        {(() => {
-          const pflicht = rules.filter((r) => r.category === 'pflicht');
-          const wahlpflicht = rules.filter((r) => r.category === 'wahlpflicht');
-          const optional = rules.filter((r) => r.category === 'optional');
-          return (
-            <div className="space-y-3">
-              {pflicht.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Lock className="h-3 w-3 text-red-400" />
-                    <span className="text-[10px] font-medium text-red-400">Pflicht — alle 4 HJ zählen</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {pflicht.map((r) => {
-                      const s = getSubject(r.subjectId);
-                      return (
-                        <span key={r.subjectId} className="text-[10px] bg-red-500/10 text-red-400 px-2 py-0.5 rounded-md font-medium" title={r.reason}>
-                          {s?.shortName || r.subjectId}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {wahlpflicht.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <CircleDot className="h-3 w-3 text-amber-500" />
-                    <span className="text-[10px] font-medium text-amber-500">Wahlpflicht — teilweise streichbar</span>
-                  </div>
-                  <div className="space-y-1">
-                    {wahlpflicht.map((r) => {
-                      const s = getSubject(r.subjectId);
-                      const currentEin = SEMESTERS.filter((sem) => isEingebracht(r.subjectId, sem, profile)).length;
-                      const droppable = Math.max(0, currentEin - r.minSemesters);
-                      return (
-                        <div key={r.subjectId} className="flex items-center gap-2 text-[10px]">
-                          <span className={cn(
-                            'px-2 py-0.5 rounded-md font-medium',
-                            droppable === 0 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-500'
-                          )}>{s?.shortName || r.subjectId}</span>
-                          <span className="text-muted-foreground/30">
-                            {r.reason} — <span className={droppable === 0 ? 'text-red-400/70' : 'text-amber-500/70'}>
-                              {droppable > 0 ? `noch ${droppable} streichbar` : 'keine Streichung mehr möglich'}
-                            </span>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {optional.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Sparkles className="h-3 w-3 text-emerald-500" />
-                    <span className="text-[10px] font-medium text-emerald-500">Optional — nur wenn sie helfen</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {optional.map((r) => {
-                      const s = getSubject(r.subjectId);
-                      return (
-                        <span key={r.subjectId} className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-md font-medium" title={r.reason}>
-                          {s?.shortName || r.subjectId}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* Global Constraints Summary */}
-      {(() => {
-        // Count total foreign language einbringungen
-        const allLanguages = profile.subjects.filter((id) => {
-          const s = getSubject(id);
-          return s && s.category === 'language' && id !== 'deu';
-        });
-        let totalFSEinbringungen = 0;
-        for (const langId of allLanguages) {
-          for (const sem of SEMESTERS) {
-            if (isEingebracht(langId, sem, profile)) totalFSEinbringungen++;
-          }
-        }
-
-        // Count total natural science einbringungen
-        const allSciences = profile.subjects.filter((id) => {
-          const s = getSubject(id);
-          return s && s.category === 'stem' && id !== 'mat' && id !== 'inf';
-        });
-        let totalNWEinbringungen = 0;
-        for (const sciId of allSciences) {
-          for (const sem of SEMESTERS) {
-            if (isEingebracht(sciId, sem, profile)) totalNWEinbringungen++;
-          }
-        }
-
-        if (allLanguages.length > 1 || allSciences.length > 1) {
-          return (
-            <div className="rounded-2xl border border-border/40 p-4 space-y-2">
-              <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Globale Mindestanforderungen</p>
-              {allLanguages.length > 1 && (
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-muted-foreground/50">Fremdsprachen gesamt</span>
-                  <span className={cn('font-mono font-bold', totalFSEinbringungen >= 4 ? 'text-emerald-500' : 'text-red-400')}>
-                    {totalFSEinbringungen}/4 HJ
-                  </span>
-                </div>
-              )}
-              {allSciences.length > 1 && (
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-muted-foreground/50">Naturwissenschaften gesamt</span>
-                  <span className={cn('font-mono font-bold', totalNWEinbringungen >= 4 ? 'text-emerald-500' : 'text-red-400')}>
-                    {totalNWEinbringungen}/4 HJ
-                  </span>
-                </div>
-              )}
-              <p className="text-[9px] text-muted-foreground/25 pt-1">
-                {allLanguages.length > 1 && 'Mind. 4 HJ Fremdsprachen insgesamt. '}
-                {allSciences.length > 1 && 'Mind. 4 HJ Naturwissenschaften insgesamt (Phy/Che/Bio).'}
-              </p>
-            </div>
-          );
-        }
-        return null;
-      })()}
-
       {/* Subject × Semester grid */}
       <div className="rounded-2xl border border-border/40 overflow-hidden">
         {/* Header row */}
@@ -1569,10 +1417,8 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
         {subjects.map((subjectId) => {
           const subj = getSubject(subjectId);
           if (!subj) return null;
-          const rule = getEinbringungRule(subjectId, profile);
-          // Count current eingebracht semesters for this subject
+          const mandatory = isMandatory(subjectId, profile);
           const currentEingebracht = SEMESTERS.filter((s) => isEingebracht(subjectId, s, profile)).length;
-          const droppable = Math.max(0, currentEingebracht - rule.minSemesters);
 
           return (
             <div key={subjectId} className="flex items-center gap-0 border-b border-border/30 last:border-b-0">
@@ -1584,16 +1430,9 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                   <span className="text-[11px] truncate block">{subj.name}</span>
                   <span className={cn(
                     'text-[8px] block',
-                    rule.category === 'pflicht' ? 'text-red-400/50'
-                      : droppable === 0 && rule.category === 'wahlpflicht' ? 'text-red-400/50'
-                      : rule.category === 'wahlpflicht' ? 'text-amber-500/50'
-                      : 'text-emerald-500/50'
+                    mandatory ? 'text-muted-foreground/40' : 'text-muted-foreground/30'
                   )}>
-                    {rule.category === 'pflicht'
-                      ? '4/4 Pflicht'
-                      : rule.category === 'wahlpflicht'
-                        ? `${currentEingebracht}/${rule.minSemesters} min · ${droppable > 0 ? `${droppable} streichbar` : 'keine Streichung mehr'}`
-                        : 'Optional'}
+                    {mandatory ? 'Pflicht' : `${currentEingebracht}/4`}
                   </span>
                 </div>
               </div>
@@ -1613,9 +1452,7 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                         eingebracht
                           ? toggle.isMandatory
                             ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 cursor-not-allowed'
-                            : toggle.canToggle
-                              ? 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
-                              : 'bg-amber-500/10 border border-amber-500/20 text-amber-500 cursor-not-allowed'
+                            : 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
                           : pts !== null
                             ? toggle.canToggle
                               ? 'bg-foreground/[0.03] text-muted-foreground/40 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-600 border border-transparent cursor-pointer'
