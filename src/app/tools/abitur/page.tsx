@@ -12,6 +12,7 @@ import {
   isEingebracht,
   canToggle,
   canDropSemester,
+  canAddSemester,
   isMandatory,
   countAllEinbringungen,
   calculateAbitur,
@@ -1081,10 +1082,14 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
           const mandatory = isMandatory(subjectId, profile);
           const eingebracht = isEingebracht(subjectId, semester, profile);
           const toggleable = canToggle(subjectId, profile);
-          // Dynamic check: can this specific semester be dropped?
+          
+          // Dynamic checks: can this specific semester be dropped or added?
           const dropCheck = canDropSemester(subjectId, semester, profile);
-          // Can only toggle OFF (drop) if dropCheck allows it; can always toggle ON (add back)
-          const canToggleThis = toggleable && (eingebracht ? dropCheck.canDrop : true);
+          const addCheck = canAddSemester(subjectId, semester, profile);
+          
+          // Can toggle OFF (drop) if dropCheck allows it; can toggle ON (add) if addCheck allows it
+          const canToggleThis = toggleable && (eingebracht ? dropCheck.canDrop : addCheck.canAdd);
+          const blockReason = eingebracht ? dropCheck.reason : addCheck.reason;
 
           return (
             <div
@@ -1098,14 +1103,16 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
               <button
                 onClick={() => canToggleThis && toggleEinbringung(subjectId, semester)}
                 disabled={!canToggleThis}
-                title={!canToggleThis && !mandatory ? dropCheck.reason : undefined}
+                title={!canToggleThis && !mandatory ? blockReason : undefined}
                 className={cn(
                   'h-5 w-5 rounded-[5px] border flex items-center justify-center shrink-0 transition-all',
                   eingebracht
                     ? (mandatory || (!dropCheck.canDrop && toggleable))
                       ? 'bg-emerald-500/15 border-emerald-500/30'
                       : 'bg-emerald-500 border-emerald-500'
-                    : 'border-border/50 hover:border-emerald-500/40',
+                    : !addCheck.canAdd && toggleable
+                      ? 'border-amber-500/30 bg-amber-500/5 cursor-not-allowed'
+                      : 'border-border/50 hover:border-emerald-500/40',
                   !canToggleThis && 'cursor-not-allowed'
                 )}
               >
@@ -1116,6 +1123,7 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
                     <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
+                {!eingebracht && !addCheck.canAdd && <Lock className="h-2.5 w-2.5 text-amber-500" />}
               </button>
 
               {/* Subject badge */}
@@ -1156,7 +1164,7 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
         </div>
         <div className="flex items-center gap-1">
           <Lock className="h-2.5 w-2.5 text-amber-500" />
-          <span>Min. erreicht</span>
+          <span>Limit erreicht</span>
         </div>
         <div className="flex items-center gap-1">
           <div className="h-3 w-3 rounded-[3px] bg-emerald-500 flex items-center justify-center">
@@ -1469,6 +1477,62 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
         })()}
       </div>
 
+      {/* Global Constraints Summary */}
+      {(() => {
+        // Count total foreign language einbringungen
+        const allLanguages = profile.subjects.filter((id) => {
+          const s = getSubject(id);
+          return s && s.category === 'language' && id !== 'deu';
+        });
+        let totalFSEinbringungen = 0;
+        for (const langId of allLanguages) {
+          for (const sem of SEMESTERS) {
+            if (isEingebracht(langId, sem, profile)) totalFSEinbringungen++;
+          }
+        }
+
+        // Count total natural science einbringungen
+        const allSciences = profile.subjects.filter((id) => {
+          const s = getSubject(id);
+          return s && s.category === 'stem' && id !== 'mat' && id !== 'inf';
+        });
+        let totalNWEinbringungen = 0;
+        for (const sciId of allSciences) {
+          for (const sem of SEMESTERS) {
+            if (isEingebracht(sciId, sem, profile)) totalNWEinbringungen++;
+          }
+        }
+
+        if (allLanguages.length > 1 || allSciences.length > 1) {
+          return (
+            <div className="rounded-2xl border border-border/40 p-4 space-y-2">
+              <p className="text-[10px] text-muted-foreground/30 uppercase tracking-widest">Globale Mindestanforderungen</p>
+              {allLanguages.length > 1 && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-muted-foreground/50">Fremdsprachen gesamt</span>
+                  <span className={cn('font-mono font-bold', totalFSEinbringungen >= 4 ? 'text-emerald-500' : 'text-red-400')}>
+                    {totalFSEinbringungen}/4 HJ
+                  </span>
+                </div>
+              )}
+              {allSciences.length > 1 && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-muted-foreground/50">Naturwissenschaften gesamt</span>
+                  <span className={cn('font-mono font-bold', totalNWEinbringungen >= 4 ? 'text-emerald-500' : 'text-red-400')}>
+                    {totalNWEinbringungen}/4 HJ
+                  </span>
+                </div>
+              )}
+              <p className="text-[9px] text-muted-foreground/25 pt-1">
+                {allLanguages.length > 1 && 'Mind. 4 HJ Fremdsprachen insgesamt. '}
+                {allSciences.length > 1 && 'Mind. 4 HJ Naturwissenschaften insgesamt (Phy/Che/Bio).'}
+              </p>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
       {/* Subject × Semester grid */}
       <div className="rounded-2xl border border-border/40 overflow-hidden">
         {/* Header row */}
@@ -1522,14 +1586,16 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                 const pts = grade?.points ?? null;
                 const eingebracht = isEingebracht(subjectId, sem, profile);
                 const dropCheck = canDropSemester(subjectId, sem, profile);
-                const canToggleThis = toggleable && (eingebracht ? dropCheck.canDrop : true);
+                const addCheck = canAddSemester(subjectId, sem, profile);
+                const canToggleThis = toggleable && (eingebracht ? dropCheck.canDrop : addCheck.canAdd);
+                const blockReason = eingebracht ? dropCheck.reason : addCheck.reason;
 
                 return (
                   <div key={sem} className="flex-1 flex justify-center py-2.5">
                     <button
                       onClick={() => canToggleThis && toggleEinbringung(subjectId, sem)}
                       disabled={!canToggleThis}
-                      title={!canToggleThis && !mandatory ? dropCheck.reason : undefined}
+                      title={!canToggleThis && !mandatory ? blockReason : undefined}
                       className={cn(
                         'h-7 w-10 rounded-lg flex items-center justify-center text-[11px] font-mono font-bold transition-all',
                         eingebracht
@@ -1537,7 +1603,9 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                             ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
                             : 'bg-emerald-500 text-white'
                           : pts !== null
-                            ? 'bg-foreground/[0.03] text-muted-foreground/25 hover:border-emerald-500/30 border border-transparent'
+                            ? !addCheck.canAdd && toggleable
+                              ? 'bg-amber-500/5 border border-amber-500/20 text-muted-foreground/20 cursor-not-allowed'
+                              : 'bg-foreground/[0.03] text-muted-foreground/25 hover:border-emerald-500/30 border border-transparent'
                             : 'text-muted-foreground/10',
                         !canToggleThis && 'cursor-not-allowed'
                       )}

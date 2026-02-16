@@ -142,6 +142,7 @@ export function canToggle(subjectId: string, profile: AbiturProfile): boolean {
  * Dynamically checks the current state of all Einbringungen for this subject:
  * - Counts how many semesters are currently eingebracht (non-mandatory + in einbringungen list)
  * - Compares against the minimum required by the Streichungsregel
+ * - Enforces global constraints (min 4 FS, min 4 NW, max 3 per optional subject)
  * - If we're already at the minimum, no more can be dropped
  *
  * Returns { canDrop, reason, currentCount, minRequired }
@@ -151,6 +152,8 @@ export function canDropSemester(
   semester: Semester,
   profile: AbiturProfile,
 ): { canDrop: boolean; reason: string; currentEingebracht: number; minRequired: number } {
+  const s = getSubject(subjectId);
+  
   // Mandatory subjects (Deu, Mat, LF, exam subjects) can never be dropped
   if (isMandatory(subjectId, profile)) {
     return { canDrop: false, reason: 'Pflichtfach — alle HJ müssen eingebracht werden', currentEingebracht: 4, minRequired: 4 };
@@ -161,13 +164,7 @@ export function canDropSemester(
 
   const rule = getEinbringungRule(subjectId, profile);
 
-  // If completely optional (minSemesters === 0), can always drop
-  if (rule.minSemesters === 0) {
-    return { canDrop: true, reason: 'Optional — kann jederzeit gestrichen werden', currentEingebracht: 0, minRequired: 0 };
-  }
-
   // Count how many semesters of this subject are currently eingebracht
-  // (for non-mandatory subjects, only those explicitly in the einbringungen list count)
   let eingebracht = 0;
   for (const sem of SEMESTERS) {
     if (isEingebracht(subjectId, sem, profile)) {
@@ -182,14 +179,13 @@ export function canDropSemester(
   if (thisIsEingebracht && eingebracht <= rule.minSemesters) {
     return {
       canDrop: false,
-      reason: `Mind. ${rule.minSemesters} HJ Pflicht — ${eingebracht - rule.minSemesters === 0 ? 'keine weitere Streichung möglich' : `noch ${eingebracht - rule.minSemesters} streichbar`}`,
+      reason: `Mind. ${rule.minSemesters} HJ Pflicht — keine weitere Streichung möglich`,
       currentEingebracht: eingebracht,
       minRequired: rule.minSemesters,
     };
   }
 
   // Global constraint: need at least 40 total Einbringungen
-  // If dropping this would bring us below 40, block it
   if (thisIsEingebracht) {
     const totalEin = countAllEinbringungen(profile);
     if (totalEin <= 40) {
@@ -199,6 +195,53 @@ export function canDropSemester(
         currentEingebracht: eingebracht,
         minRequired: rule.minSemesters,
       };
+    }
+
+    // Foreign language constraint: minimum 4 semesters TOTAL across all foreign languages
+    if (s && s.category === 'language' && subjectId !== 'deu') {
+      const allLanguages = profile.subjects.filter((id) => {
+        const sub = getSubject(id);
+        return sub && sub.category === 'language' && id !== 'deu';
+      });
+      // Count total foreign language einbringungen
+      let totalFSEinbringungen = 0;
+      for (const langId of allLanguages) {
+        for (const sem of SEMESTERS) {
+          if (isEingebracht(langId, sem, profile)) totalFSEinbringungen++;
+        }
+      }
+      if (totalFSEinbringungen <= 4) {
+        return {
+          canDrop: false,
+          reason: 'Mind. 4 HJ Fremdsprachen gesamt — weitere Streichung nicht möglich',
+          currentEingebracht: eingebracht,
+          minRequired: rule.minSemesters,
+        };
+      }
+    }
+
+    // Natural science constraint: minimum 4 semesters TOTAL across all natural sciences
+    // (Phy, Che, Bio — NOT Informatik)
+    if (s && s.category === 'stem' && subjectId !== 'mat' && subjectId !== 'inf') {
+      const allSciences = profile.subjects.filter((id) => {
+        const sub = getSubject(id);
+        return sub && sub.category === 'stem' && id !== 'mat' && id !== 'inf';
+      });
+      // Count total natural science einbringungen
+      let totalNWEinbringungen = 0;
+      for (const sciId of allSciences) {
+        for (const sem of SEMESTERS) {
+          if (isEingebracht(sciId, sem, profile)) totalNWEinbringungen++;
+        }
+      }
+      if (totalNWEinbringungen <= 4) {
+        return {
+          canDrop: false,
+          reason: 'Mind. 4 HJ Naturwissenschaften gesamt — weitere Streichung nicht möglich',
+          currentEingebracht: eingebracht,
+          minRequired: rule.minSemesters,
+        };
+      }
     }
   }
 
@@ -210,6 +253,61 @@ export function canDropSemester(
     currentEingebracht: eingebracht,
     minRequired: rule.minSemesters,
   };
+}
+
+/**
+ * Can a specific semester grade be added (eingebracht)?
+ * Enforces maximum limits for optional subjects:
+ * - Sport: max 3 semesters
+ * - Informatik: max 3 semesters
+ * - Other optional subjects: max 3 semesters per subject
+ *
+ * Returns { canAdd, reason }
+ */
+export function canAddSemester(
+  subjectId: string,
+  semester: Semester,
+  profile: AbiturProfile,
+): { canAdd: boolean; reason: string } {
+  const s = getSubject(subjectId);
+  if (!s) return { canAdd: false, reason: 'Fach nicht gefunden' };
+
+  // If already eingebracht, can't add again
+  if (isEingebracht(subjectId, semester, profile)) {
+    return { canAdd: false, reason: 'Bereits eingebracht' };
+  }
+
+  // Count current einbringungen for this subject
+  let eingebracht = 0;
+  for (const sem of SEMESTERS) {
+    if (isEingebracht(subjectId, sem, profile)) {
+      eingebracht++;
+    }
+  }
+
+  // Sport: max 3 semesters (unless it's LF, then handled by mandatory rules)
+  if (subjectId === 'spo' && subjectId !== profile.leistungsfach) {
+    if (eingebracht >= 3) {
+      return { canAdd: false, reason: 'Sport: max. 3 HJ zählbar' };
+    }
+  }
+
+  // Informatik: max 3 semesters (optional subject, not a natural science)
+  if (subjectId === 'inf') {
+    if (eingebracht >= 3) {
+      return { canAdd: false, reason: 'Informatik: max. 3 HJ zählbar' };
+    }
+  }
+
+  // Other optional subjects (Geo, WR if not exam/LF): max 3 semesters per subject
+  const rule = getEinbringungRule(subjectId, profile);
+  if (rule.category === 'optional' && subjectId !== 'spo' && subjectId !== 'inf' && subjectId !== 'psem') {
+    if (eingebracht >= 3) {
+      return { canAdd: false, reason: 'Zusatzfach: max. 3 HJ pro Fach' };
+    }
+  }
+
+  return { canAdd: true, reason: 'Kann eingebracht werden' };
 }
 
 /** Count total einbringungen across all semesters */
@@ -779,19 +877,27 @@ export interface EinbringungRule {
 
 /**
  * Get the Einbringung rules for a specific subject.
- * Based on Bavarian G9 Streichungsregeln:
+ * Based on Bavarian G9 official Einbringungslogik:
  *
- * PFLICHT (all 4 semesters mandatory):
- * - Deutsch, Mathe, Leistungsfach, all exam subjects, primary foreign language, primary science
+ * PFLICHT (all 4 semesters mandatory — cannot use Optionsregel):
+ * - Deutsch, Mathe (always excluded from Optionsregel)
+ * - Leistungsfach, all exam subjects (excluded from Optionsregel)
+ * - If only ONE foreign language: all 4 semesters mandatory
+ * - If only ONE natural science: all 4 semesters mandatory
  *
- * WAHLPFLICHT (3 of 4 semesters required):
- * - Religion/Ethik: 4 taken, only 3 mandatory → drop worst 1
- * - Geschichte + PuG combined: ~4 taken, 3 mandatory → drop worst 1
+ * WAHLPFLICHT:
+ * - Foreign languages (if multiple): at least 4 semesters TOTAL across all languages
+ * - Natural sciences (if multiple): at least 4 semesters TOTAL across all sciences
+ * - Religion/Ethik: 3 of 4 semesters
+ * - Geschichte: at least 2 semesters
+ * - PuG: at least 1 semester
+ * - Kunst/Musik: 3 of 4 semesters
+ * - W-Seminar: 2 of 4 semesters + Seminararbeit
  *
- * OPTIONAL (0-4 semesters, only count if they help):
- * - Sport (if not exam): max 3 semesters counted
- * - Extra sciences, extra languages: can drop all 4
- * - Choir/Orchestra/etc: purely optional
+ * OPTIONAL (max 3 semesters per subject):
+ * - Sport (unless LF): max 3 semesters
+ * - Informatik: max 3 semesters (NOT a natural science)
+ * - Additional subjects (Geo, WR if not exam): max 3 semesters per subject
  */
 export function getEinbringungRule(
   subjectId: string,
@@ -800,82 +906,92 @@ export function getEinbringungRule(
   const s = getSubject(subjectId);
   if (!s) return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Unbekannt', category: 'optional' };
 
-  // Deutsch & Mathe: always 4 semesters mandatory
+  // Deutsch & Mathe: always 4 semesters mandatory (excluded from Optionsregel)
   if (subjectId === 'deu' || subjectId === 'mat') {
     return { subjectId, minSemesters: 4, maxDroppable: 0, reason: 'Pflichtfach — alle 4 HJ', category: 'pflicht' };
   }
 
-  // Leistungsfach: all 4 semesters mandatory
+  // Leistungsfach: all 4 semesters mandatory (excluded from Optionsregel)
   if (subjectId === profile.leistungsfach) {
     return { subjectId, minSemesters: 4, maxDroppable: 0, reason: 'Leistungsfach — alle 4 HJ', category: 'pflicht' };
   }
 
-  // Exam subjects (4th + 5th): all 4 semesters mandatory
+  // Exam subjects (4th + 5th): all 4 semesters mandatory (excluded from Optionsregel)
   if (profile.examSubjects.includes(subjectId)) {
     return { subjectId, minSemesters: 4, maxDroppable: 0, reason: 'Prüfungsfach — alle 4 HJ', category: 'pflicht' };
   }
 
-  // Primary foreign language (first language in selected subjects that isn't LF/exam)
-  // In Bavaria the "fortgeführte Fremdsprache" is always mandatory 4 semesters
-  const primaryLang = profile.subjects.find(
-    (id) => {
+  // Foreign languages: Check if this is the ONLY foreign language
+  if (s.category === 'language' && subjectId !== 'deu') {
+    const allLanguages = profile.subjects.filter((id) => {
       const sub = getSubject(id);
       return sub && sub.category === 'language' && id !== 'deu';
+    });
+    if (allLanguages.length === 1) {
+      // Only one foreign language → all 4 semesters mandatory (excluded from Optionsregel)
+      return { subjectId, minSemesters: 4, maxDroppable: 0, reason: 'Einzige Fremdsprache — alle 4 HJ Pflicht', category: 'pflicht' };
     }
-  );
-  if (subjectId === primaryLang) {
-    return { subjectId, minSemesters: 4, maxDroppable: 0, reason: 'Fortgeführte Fremdsprache — alle 4 HJ', category: 'pflicht' };
+    // Multiple foreign languages → need 4 total semesters ACROSS all, but individual subjects can vary
+    // This is handled by the global validation in canDropSemester
+    return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Fremdsprache — mind. 4 HJ gesamt über alle FS', category: 'wahlpflicht' };
   }
 
-  // Primary natural science (first STEM subject in selection)
-  const primaryScience = profile.subjects.find(
-    (id) => {
+  // Natural sciences (Phy, Che, Bio — NOT Informatik): Check if this is the ONLY natural science
+  if (s.category === 'stem' && subjectId !== 'mat' && subjectId !== 'inf') {
+    const allSciences = profile.subjects.filter((id) => {
       const sub = getSubject(id);
       return sub && sub.category === 'stem' && id !== 'mat' && id !== 'inf';
+    });
+    if (allSciences.length === 1) {
+      // Only one natural science → all 4 semesters mandatory (excluded from Optionsregel)
+      return { subjectId, minSemesters: 4, maxDroppable: 0, reason: 'Einzige Naturwissenschaft — alle 4 HJ Pflicht', category: 'pflicht' };
     }
-  );
-  if (subjectId === primaryScience) {
-    return { subjectId, minSemesters: 4, maxDroppable: 0, reason: 'Naturwissenschaft (Pflicht) — alle 4 HJ', category: 'pflicht' };
+    // Multiple natural sciences → need 4 total semesters ACROSS all, but individual subjects can vary
+    return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Naturwissenschaft — mind. 4 HJ gesamt über alle NW', category: 'wahlpflicht' };
   }
 
-  // Religion/Ethik: 4 taken, 3 mandatory
+  // Religion/Ethik: 3 of 4 semesters
   if (['eth', 'rev', 'rka'].includes(subjectId)) {
     return { subjectId, minSemesters: 3, maxDroppable: 1, reason: 'Rel./Ethik — 3 von 4 HJ Pflicht', category: 'wahlpflicht' };
   }
 
-  // Geschichte: exactly 2 of 4 mandatory (G9: "mind. 2 HJ Geschichte")
+  // Geschichte: at least 2 semesters
   if (subjectId === 'ges') {
     return { subjectId, minSemesters: 2, maxDroppable: 2, reason: 'Geschichte — mind. 2 HJ', category: 'wahlpflicht' };
   }
 
-  // PuG (Politik und Gesellschaft): usually 1-2 semesters required
+  // PuG (Politik und Gesellschaft): at least 1 semester
   if (subjectId === 'pug') {
     return { subjectId, minSemesters: 1, maxDroppable: 3, reason: 'PuG — mind. 1 HJ', category: 'wahlpflicht' };
   }
 
-  // Kunst/Musik: musisches Pflichtfach, 3 semesters mandatory
+  // Kunst/Musik: 3 of 4 semesters
   if (subjectId === 'kun' || subjectId === 'mus') {
     return { subjectId, minSemesters: 3, maxDroppable: 1, reason: 'Musisches Pflichtfach — 3 von 4 HJ', category: 'wahlpflicht' };
   }
 
-  // Sport (not as exam): max 3 semesters, all droppable
+  // Sport: optional, max 3 semesters (unless it's LF, then it's already caught above)
   if (subjectId === 'spo') {
     return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Sport — optional, max. 3 HJ zählbar', category: 'optional' };
   }
 
-  // W-Seminar: special rules (paper + presentation separate)
+  // W-Seminar: 2 of 4 semesters + Seminararbeit
   if (subjectId === 'wsem') {
     return { subjectId, minSemesters: 2, maxDroppable: 2, reason: 'W-Seminar — 2 von 4 HJ + Seminararbeit', category: 'wahlpflicht' };
   }
 
-  // P-Seminar: not counted in Block I (only pass/fail)
+  // P-Seminar: not counted in Block I
   if (subjectId === 'psem') {
     return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'P-Seminar — nicht in Block I', category: 'optional' };
   }
 
-  // Everything else (extra languages, extra sciences, Informatik as 2nd STEM, Geo/WR if not exam):
-  // Completely optional — only count if they boost average
-  return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Wahlfach — optional einbringbar', category: 'optional' };
+  // Informatik: optional, max 3 semesters (NOT a natural science)
+  if (subjectId === 'inf') {
+    return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Informatik — optional, max. 3 HJ', category: 'optional' };
+  }
+
+  // Everything else (Geo, WR if not exam): optional, max 3 semesters per subject
+  return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Zusatzfach — optional, max. 3 HJ', category: 'optional' };
 }
 
 /**
