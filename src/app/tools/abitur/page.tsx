@@ -758,10 +758,10 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
               <>
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div className="rounded-xl bg-foreground/[0.03] p-3">
-                    <p className="text-xl font-bold tabular-nums leading-none">
-                      {allAvg !== null ? allAvg.toFixed(2) : '—'}
+                    <p className={cn('text-xl font-bold tabular-nums leading-none', globalNote !== null && globalNote <= 2.5 ? 'text-emerald-500' : globalNote !== null && globalNote <= 3.5 ? 'text-amber-500' : globalNote !== null ? 'text-red-400' : '')}>
+                      {globalNote !== null ? globalNote.toFixed(2) : '—'}
                     </p>
-                    <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1.5">Ø Punkte</p>
+                    <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1.5">Schulnote</p>
                   </div>
                   <div className="rounded-xl bg-foreground/[0.03] p-3">
                     <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
@@ -770,10 +770,10 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
                     <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1.5">Ø eingeb.</p>
                   </div>
                   <div className="rounded-xl bg-foreground/[0.03] p-3">
-                    <p className={cn('text-xl font-bold tabular-nums leading-none', globalNote !== null && globalNote <= 2.5 ? 'text-emerald-500' : globalNote !== null && globalNote <= 3.5 ? 'text-amber-500' : globalNote !== null ? 'text-red-400' : '')}>
-                      {globalNote !== null ? globalNote.toFixed(1) : '—'}
+                    <p className="text-xl font-bold tabular-nums leading-none">
+                      {allAvg !== null ? allAvg.toFixed(2) : '—'}
                     </p>
-                    <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1.5">Schulnote</p>
+                    <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1.5">Ø Punkte</p>
                   </div>
                 </div>
                 {/* Per-Halbjahr Schulnoten */}
@@ -782,15 +782,17 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
                     {result.semesterStats.map((ss) => {
                       const avg = ss.allAverage;
                       const note = avg !== null ? punkteToNote(avg) : null;
+                      const einbAvg = ss.eingebrachteAverage;
                       return (
                         <div key={ss.semester} className="rounded-lg bg-foreground/[0.02] p-2 text-center">
                           <p className="text-[9px] text-muted-foreground/30 font-medium mb-1">{SEMESTER_LABELS[ss.semester]}</p>
                           {note !== null ? (
                             <>
                               <p className={cn('text-[15px] font-bold tabular-nums leading-none', note <= 2.5 ? 'text-emerald-500' : note <= 3.5 ? 'text-amber-500' : 'text-red-400')}>
-                                {note.toFixed(1)}
+                                {note.toFixed(2)}
                               </p>
-                              <p className="text-[7px] text-muted-foreground/20 font-mono mt-0.5">{avg!.toFixed(1)}P</p>
+                              <p className="text-[7px] text-emerald-500/70 font-mono mt-0.5">{einbAvg !== null ? einbAvg.toFixed(2) : '—'}E</p>
+                              <p className="text-[7px] text-muted-foreground/20 font-mono mt-0.5">{avg!.toFixed(2)}P</p>
                             </>
                           ) : (
                             <p className="text-[15px] font-bold text-muted-foreground/15 leading-none">—</p>
@@ -886,30 +888,36 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
               {ss.enteredCount > 0 ? (
                 <>
                   <div className="flex items-end gap-3">
-                    <div>
-                      <p className="text-xl font-bold tabular-nums leading-none">
-                        {ss.allAverage !== null ? ss.allAverage.toFixed(1) : '—'}
-                      </p>
-                      <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø Punkte</p>
-                    </div>
-                    <div className="h-6 w-px bg-border/40" />
                     {(() => {
                       const avg = ss.allAverage;
+                      const einbAvg = ss.eingebrachteAverage;
                       if (avg === null) return null;
                       const note = Math.round((17 - avg) / 3 * 10) / 10;
                       const clamped = Math.max(1.0, Math.min(6.0, note));
                       return (
-                        <div>
-                          <p className={cn('text-xl font-bold tabular-nums leading-none', clamped <= 2.5 ? 'text-emerald-500' : clamped <= 3.5 ? 'text-amber-500' : 'text-red-400')}>
-                            {clamped.toFixed(1)}
-                          </p>
-                          <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Schulnote</p>
-                        </div>
+                        <>
+                          <div>
+                            <p className={cn('text-xl font-bold tabular-nums leading-none', clamped <= 2.5 ? 'text-emerald-500' : clamped <= 3.5 ? 'text-amber-500' : 'text-red-400')}>
+                              {clamped.toFixed(2)}
+                            </p>
+                            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Schulnote</p>
+                          </div>
+                          <div className="h-6 w-px bg-border/40" />
+                          <div>
+                            <p className="text-xl font-bold tabular-nums leading-none text-emerald-500">
+                              {einbAvg !== null ? einbAvg.toFixed(2) : '—'}
+                            </p>
+                            <p className="text-[8px] text-muted-foreground/25 uppercase tracking-wider mt-1">Ø eingeb.</p>
+                          </div>
+                        </>
                       );
                     })()}
                   </div>
+                  <p className="text-[9px] text-muted-foreground/20 font-mono mt-1">
+                    Ø {ss.allAverage !== null ? ss.allAverage.toFixed(2) : '—'} Punkte
+                  </p>
                   {ss.deficits > 0 && (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 mt-1">
                       <span className="text-[10px] font-mono tabular-nums text-red-400">
                         {ss.deficits} Defizit{ss.deficits !== 1 ? 'e' : ''}
                       </span>
