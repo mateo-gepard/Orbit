@@ -41,7 +41,7 @@ export function MobileNav() {
         style={{
           position: 'fixed',
           right: '16px',
-          bottom: 'calc(60px + env(safe-area-inset-bottom, 0px))',
+          bottom: '60px',
           zIndex: 50,
         }}
       >
@@ -54,11 +54,10 @@ export function MobileNav() {
         className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
         style={{
           position: 'fixed',
-          bottom: 'calc(-1 * env(safe-area-inset-bottom, 0px))',
+          bottom: '0',
           left: '0',
           right: '0',
-          height: 'calc(44px + env(safe-area-inset-bottom, 0px))',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          height: '44px',
           zIndex: 40,
         }}
       >
