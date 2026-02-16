@@ -41,7 +41,7 @@ export function MobileNav() {
         style={{
           position: 'fixed',
           right: '16px',
-          bottom: 'calc(60px + var(--safe-bottom))',
+          bottom: 'calc(44px + env(safe-area-inset-bottom, 0px) + 12px)',
           zIndex: 50,
         }}
       >
@@ -51,12 +51,20 @@ export function MobileNav() {
       {/* Bottom Tab Bar */}
       <nav
         id="mobile-nav"
-        className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150 fixed bottom-0 left-0 right-0 z-40"
+        className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
         style={{
-          paddingBottom: 'var(--safe-bottom)',
+          position: 'fixed',
+          bottom: '0px',
+          left: '0px',
+          right: '0px',
+          zIndex: 40,
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
-        <div className="flex items-center justify-around" style={{ height: '44px' }}>
+        <div
+          className="flex items-center justify-around"
+          style={{ height: 'var(--bottom-nav-height)' }}
+        >
           {TABS.map((tab) => {
             const isActive =
               pathname === tab.href ||
