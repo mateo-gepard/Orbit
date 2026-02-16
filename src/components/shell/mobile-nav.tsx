@@ -48,7 +48,7 @@ export function MobileNav() {
         <Plus className="h-6 w-6" strokeWidth={2.5} />
       </button>
 
-      {/* Bottom Tab Bar */}
+      {/* Bottom Tab Bar - v1.1 */}
       <nav
         id="mobile-nav"
         className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
