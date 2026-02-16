@@ -10,6 +10,10 @@ import {
   SEMESTERS,
   createDefaultProfile,
   eKey,
+  isMandatory,
+  isEingebracht,
+  canDropSemester,
+  canAddSemester,
   optimizeEinbringungen,
   selectAllEinbringungen,
 } from './abitur';
@@ -148,13 +152,25 @@ export const useAbiturStore = create<AbiturState>()(
 
       toggleEinbringung: (subjectId, semester) =>
         set((s) => updateProfile(s, (p) => {
+          // Mandatory subjects can never be toggled
+          if (isMandatory(subjectId, p)) return p;
+          if (subjectId === 'wsem' || subjectId === 'psem') return p;
+
           const current = p.einbringungen ?? [];
           const key = eKey(subjectId, semester);
-          const has = current.includes(key);
-          const einbringungen = has
-            ? current.filter((k) => k !== key)
-            : [...current, key];
-          return { ...p, einbringungen };
+          const currentlyEingebracht = isEingebracht(subjectId, semester, p);
+
+          if (currentlyEingebracht) {
+            // Trying to DROP — validate
+            const check = canDropSemester(subjectId, semester, p);
+            if (!check.canDrop) return p; // Blocked — don't change anything
+            return { ...p, einbringungen: current.filter((k) => k !== key) };
+          } else {
+            // Trying to ADD — validate
+            const check = canAddSemester(subjectId, semester, p);
+            if (!check.canAdd) return p; // Blocked — don't change anything
+            return { ...p, einbringungen: [...current, key] };
+          }
         })),
 
       setExamSubject: (index, subjectId) =>

@@ -13,6 +13,7 @@ import {
   canToggle,
   canDropSemester,
   canAddSemester,
+  canToggleSemester,
   isMandatory,
   countAllEinbringungen,
   calculateAbitur,
@@ -1093,15 +1094,9 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
           const pts = grade?.points ?? null;
           const mandatory = isMandatory(subjectId, profile);
           const eingebracht = isEingebracht(subjectId, semester, profile);
-          const toggleable = canToggle(subjectId, profile);
           
-          // Dynamic checks: can this specific semester be dropped or added?
-          const dropCheck = canDropSemester(subjectId, semester, profile);
-          const addCheck = canAddSemester(subjectId, semester, profile);
-          
-          // Can toggle OFF (drop) if dropCheck allows it; can toggle ON (add) if addCheck allows it
-          const canToggleThis = toggleable && (eingebracht ? dropCheck.canDrop : addCheck.canAdd);
-          const blockReason = eingebracht ? dropCheck.reason : addCheck.reason;
+          // Single source of truth for toggle ability
+          const toggle = canToggleSemester(subjectId, semester, profile);
 
           return (
             <div
@@ -1113,29 +1108,26 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
             >
               {/* Einbringung toggle */}
               <button
-                onClick={() => canToggleThis && toggleEinbringung(subjectId, semester)}
-                disabled={!canToggleThis}
-                title={!canToggleThis && !mandatory ? blockReason : undefined}
+                onClick={() => toggle.canToggle && toggleEinbringung(subjectId, semester)}
+                title={toggle.reason}
                 className={cn(
                   'h-5 w-5 rounded-[5px] border flex items-center justify-center shrink-0 transition-all',
                   eingebracht
-                    ? (mandatory || (!dropCheck.canDrop && toggleable))
-                      ? 'bg-emerald-500/15 border-emerald-500/30'
-                      : 'bg-emerald-500 border-emerald-500'
-                    : !addCheck.canAdd && toggleable
-                      ? 'border-amber-500/30 bg-amber-500/5 cursor-not-allowed'
-                      : 'border-border/50 hover:border-emerald-500/40',
-                  !canToggleThis && 'cursor-not-allowed'
+                    ? toggle.canToggle
+                      ? 'bg-emerald-500 border-emerald-500 cursor-pointer hover:bg-emerald-600'
+                      : 'bg-emerald-500/15 border-emerald-500/30 cursor-not-allowed'
+                    : toggle.canToggle
+                      ? 'border-border/50 hover:border-emerald-500/40 cursor-pointer'
+                      : 'border-border/30 bg-muted-foreground/5 cursor-not-allowed',
                 )}
               >
                 {eingebracht && mandatory && <Lock className="h-2.5 w-2.5 text-emerald-500" />}
-                {eingebracht && !mandatory && !dropCheck.canDrop && <Lock className="h-2.5 w-2.5 text-amber-500" />}
-                {eingebracht && !mandatory && dropCheck.canDrop && (
+                {eingebracht && !mandatory && !toggle.canToggle && <Lock className="h-2.5 w-2.5 text-amber-500" />}
+                {eingebracht && !mandatory && toggle.canToggle && (
                   <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 16 16" fill="none">
                     <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
-                {!eingebracht && !addCheck.canAdd && <Lock className="h-2.5 w-2.5 text-amber-500" />}
               </button>
 
               {/* Subject badge */}
@@ -1577,8 +1569,6 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
         {subjects.map((subjectId) => {
           const subj = getSubject(subjectId);
           if (!subj) return null;
-          const mandatory = isMandatory(subjectId, profile);
-          const toggleable = canToggle(subjectId, profile);
           const rule = getEinbringungRule(subjectId, profile);
           // Count current eingebracht semesters for this subject
           const currentEingebracht = SEMESTERS.filter((s) => isEingebracht(subjectId, s, profile)).length;
@@ -1611,39 +1601,25 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                 const grade = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === sem);
                 const pts = grade?.points ?? null;
                 const eingebracht = isEingebracht(subjectId, sem, profile);
-                const dropCheck = canDropSemester(subjectId, sem, profile);
-                const addCheck = canAddSemester(subjectId, sem, profile);
-                const canToggleThis = toggleable && (eingebracht ? dropCheck.canDrop : addCheck.canAdd);
-                const blockReason = eingebracht ? dropCheck.reason : addCheck.reason;
+                const toggle = canToggleSemester(subjectId, sem, profile);
 
                 return (
                   <div key={sem} className="flex-1 flex justify-center py-2.5">
                     <button
-                      onClick={() => {
-                        if (mandatory) return; // Can't toggle mandatory
-                        if (eingebracht && !dropCheck.canDrop) return; // Can't drop
-                        if (!eingebracht && !addCheck.canAdd) return; // Can't add
-                        toggleEinbringung(subjectId, sem);
-                      }}
-                      title={
-                        mandatory ? 'Pflichtfach — kann nicht gestrichen werden'
-                        : eingebracht && !dropCheck.canDrop ? dropCheck.reason
-                        : !eingebracht && !addCheck.canAdd ? addCheck.reason
-                        : eingebracht ? 'Klicken zum Streichen'
-                        : 'Klicken zum Einbringen'
-                      }
+                      onClick={() => toggle.canToggle && toggleEinbringung(subjectId, sem)}
+                      title={toggle.reason}
                       className={cn(
                         'h-7 w-10 rounded-lg flex items-center justify-center text-[11px] font-mono font-bold transition-all',
                         eingebracht
-                          ? mandatory
+                          ? toggle.isMandatory
                             ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 cursor-not-allowed'
-                            : !dropCheck.canDrop
-                              ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500 cursor-not-allowed'
-                              : 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
+                            : toggle.canToggle
+                              ? 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
+                              : 'bg-amber-500/10 border border-amber-500/20 text-amber-500 cursor-not-allowed'
                           : pts !== null
-                            ? !addCheck.canAdd
-                              ? 'bg-muted-foreground/5 border border-border/40 text-muted-foreground/20 cursor-not-allowed'
-                              : 'bg-foreground/[0.03] text-muted-foreground/40 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-600 border border-transparent cursor-pointer'
+                            ? toggle.canToggle
+                              ? 'bg-foreground/[0.03] text-muted-foreground/40 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-600 border border-transparent cursor-pointer'
+                              : 'bg-muted-foreground/5 border border-border/40 text-muted-foreground/20 cursor-not-allowed'
                             : 'text-muted-foreground/10 cursor-default'
                       )}
                     >

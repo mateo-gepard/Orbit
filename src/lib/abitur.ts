@@ -130,22 +130,27 @@ export function isEingebracht(subjectId: string, semester: Semester, profile: Ab
   return (profile.einbringungen ?? []).includes(eKey(subjectId, semester));
 }
 
-/** Can the user toggle this einbringung? (basic subject-level check) */
+/** Can the user toggle this einbringung at all? (subject-level check) */
 export function canToggle(subjectId: string, profile: AbiturProfile): boolean {
   if (isMandatory(subjectId, profile)) return false;
   if (subjectId === 'wsem' || subjectId === 'psem') return false;
   return true;
 }
 
+// ─── Einbringung Constraint Checks ────────────────────────
+
+/** Count how many semesters of a subject are currently eingebracht */
+function countSubjectEinbringungen(subjectId: string, profile: AbiturProfile): number {
+  let count = 0;
+  for (const sem of SEMESTERS) {
+    if (isEingebracht(subjectId, sem, profile)) count++;
+  }
+  return count;
+}
+
 /**
- * Can a specific semester grade be dropped (gestrichen)?
- * Dynamically checks the current state of all Einbringungen for this subject:
- * - Counts how many semesters are currently eingebracht (non-mandatory + in einbringungen list)
- * - Compares against the minimum required by the Streichungsregel
- * - Enforces global constraints (min 4 FS, min 4 NW, max 3 per optional subject)
- * - If we're already at the minimum, no more can be dropped
- *
- * Returns { canDrop, reason, currentCount, minRequired }
+ * Can a specific semester be DROPPED (removed from einbringungen)?
+ * Returns { canDrop, reason }
  */
 export function canDropSemester(
   subjectId: string,
@@ -153,115 +158,95 @@ export function canDropSemester(
   profile: AbiturProfile,
 ): { canDrop: boolean; reason: string; currentEingebracht: number; minRequired: number } {
   const s = getSubject(subjectId);
-  
-  // Mandatory subjects (Deu, Mat, LF, exam subjects) can never be dropped
+
+  // Mandatory subjects can never be dropped
   if (isMandatory(subjectId, profile)) {
-    return { canDrop: false, reason: 'Pflichtfach — alle HJ müssen eingebracht werden', currentEingebracht: 4, minRequired: 4 };
+    return { canDrop: false, reason: 'Pflichtfach — alle 4 HJ müssen eingebracht werden', currentEingebracht: 4, minRequired: 4 };
   }
+  // Seminars can't be toggled
   if (subjectId === 'wsem' || subjectId === 'psem') {
     return { canDrop: false, reason: 'Seminar — nicht wählbar', currentEingebracht: 0, minRequired: 0 };
   }
-
-  const rule = getEinbringungRule(subjectId, profile);
-
-  // Count how many semesters of this subject are currently eingebracht
-  let eingebracht = 0;
-  for (const sem of SEMESTERS) {
-    if (isEingebracht(subjectId, sem, profile)) {
-      eingebracht++;
-    }
+  // Not currently eingebracht → nothing to drop
+  if (!isEingebracht(subjectId, semester, profile)) {
+    return { canDrop: false, reason: 'Nicht eingebracht', currentEingebracht: 0, minRequired: 0 };
   }
 
-  // Check if this specific semester is currently eingebracht
-  const thisIsEingebracht = isEingebracht(subjectId, semester, profile);
+  const rule = getEinbringungRule(subjectId, profile);
+  const eingebracht = countSubjectEinbringungen(subjectId, profile);
 
-  // If this semester is eingebracht and dropping it would go below minimum → block
-  if (thisIsEingebracht && eingebracht <= rule.minSemesters) {
+  // Check 1: Subject minimum semesters
+  if (eingebracht <= rule.minSemesters) {
     return {
       canDrop: false,
-      reason: `Mind. ${rule.minSemesters} HJ Pflicht — keine weitere Streichung möglich`,
+      reason: `Mind. ${rule.minSemesters} HJ Pflicht`,
       currentEingebracht: eingebracht,
       minRequired: rule.minSemesters,
     };
   }
 
-  // Global constraint: need at least 40 total Einbringungen
-  if (thisIsEingebracht) {
-    const totalEin = countAllEinbringungen(profile);
-    if (totalEin <= 40) {
+  // Check 2: Global minimum 40 einbringungen
+  const totalEin = countAllEinbringungen(profile);
+  if (totalEin <= 40) {
+    return {
+      canDrop: false,
+      reason: `Gesamt nur ${totalEin}/40 — Streichen nicht möglich`,
+      currentEingebracht: eingebracht,
+      minRequired: rule.minSemesters,
+    };
+  }
+
+  // Check 3: Foreign language constraint (min 4 HJ total across all FS)
+  if (s && s.category === 'language' && subjectId !== 'deu') {
+    const allLanguages = profile.subjects.filter((id) => {
+      const sub = getSubject(id);
+      return sub && sub.category === 'language' && id !== 'deu';
+    });
+    let totalFS = 0;
+    for (const langId of allLanguages) {
+      totalFS += countSubjectEinbringungen(langId, profile);
+    }
+    if (totalFS <= 4) {
       return {
         canDrop: false,
-        reason: `Gesamt nur ${totalEin}/40 Einbringungen — Streichen nicht möglich`,
+        reason: 'Mind. 4 HJ Fremdsprachen gesamt',
         currentEingebracht: eingebracht,
         minRequired: rule.minSemesters,
       };
     }
+  }
 
-    // Foreign language constraint: minimum 4 semesters TOTAL across all foreign languages
-    if (s && s.category === 'language' && subjectId !== 'deu') {
-      const allLanguages = profile.subjects.filter((id) => {
-        const sub = getSubject(id);
-        return sub && sub.category === 'language' && id !== 'deu';
-      });
-      // Count total foreign language einbringungen
-      let totalFSEinbringungen = 0;
-      for (const langId of allLanguages) {
-        for (const sem of SEMESTERS) {
-          if (isEingebracht(langId, sem, profile)) totalFSEinbringungen++;
-        }
-      }
-      if (totalFSEinbringungen <= 4) {
-        return {
-          canDrop: false,
-          reason: 'Mind. 4 HJ Fremdsprachen gesamt — weitere Streichung nicht möglich',
-          currentEingebracht: eingebracht,
-          minRequired: rule.minSemesters,
-        };
-      }
+  // Check 4: Natural science constraint (min 4 HJ total across Phy/Che/Bio)
+  if (s && s.category === 'stem' && subjectId !== 'mat' && subjectId !== 'inf') {
+    const allSciences = profile.subjects.filter((id) => {
+      const sub = getSubject(id);
+      return sub && sub.category === 'stem' && id !== 'mat' && id !== 'inf';
+    });
+    let totalNW = 0;
+    for (const sciId of allSciences) {
+      totalNW += countSubjectEinbringungen(sciId, profile);
     }
-
-    // Natural science constraint: minimum 4 semesters TOTAL across all natural sciences
-    // (Phy, Che, Bio — NOT Informatik)
-    if (s && s.category === 'stem' && subjectId !== 'mat' && subjectId !== 'inf') {
-      const allSciences = profile.subjects.filter((id) => {
-        const sub = getSubject(id);
-        return sub && sub.category === 'stem' && id !== 'mat' && id !== 'inf';
-      });
-      // Count total natural science einbringungen
-      let totalNWEinbringungen = 0;
-      for (const sciId of allSciences) {
-        for (const sem of SEMESTERS) {
-          if (isEingebracht(sciId, sem, profile)) totalNWEinbringungen++;
-        }
-      }
-      if (totalNWEinbringungen <= 4) {
-        return {
-          canDrop: false,
-          reason: 'Mind. 4 HJ Naturwissenschaften gesamt — weitere Streichung nicht möglich',
-          currentEingebracht: eingebracht,
-          minRequired: rule.minSemesters,
-        };
-      }
+    if (totalNW <= 4) {
+      return {
+        canDrop: false,
+        reason: 'Mind. 4 HJ Naturwissenschaften gesamt',
+        currentEingebracht: eingebracht,
+        minRequired: rule.minSemesters,
+      };
     }
   }
 
-  // Can drop — show how many more can be dropped
-  const remaining = thisIsEingebracht ? eingebracht - rule.minSemesters : eingebracht - rule.minSemesters;
+  // All checks passed — can drop
   return {
     canDrop: true,
-    reason: remaining > 0 ? `Noch ${remaining} HJ streichbar` : 'Kann gestrichen werden',
+    reason: 'Kann gestrichen werden',
     currentEingebracht: eingebracht,
     minRequired: rule.minSemesters,
   };
 }
 
 /**
- * Can a specific semester grade be added (eingebracht)?
- * Enforces maximum limits for optional subjects:
- * - Sport: max 3 semesters
- * - Informatik: max 3 semesters
- * - Other optional subjects: max 3 semesters per subject
- *
+ * Can a specific semester be ADDED (included in einbringungen)?
  * Returns { canAdd, reason }
  */
 export function canAddSemester(
@@ -272,42 +257,69 @@ export function canAddSemester(
   const s = getSubject(subjectId);
   if (!s) return { canAdd: false, reason: 'Fach nicht gefunden' };
 
-  // If already eingebracht, can't add again
+  // Already eingebracht → nothing to add
   if (isEingebracht(subjectId, semester, profile)) {
     return { canAdd: false, reason: 'Bereits eingebracht' };
   }
 
-  // Count current einbringungen for this subject
-  let eingebracht = 0;
-  for (const sem of SEMESTERS) {
-    if (isEingebracht(subjectId, sem, profile)) {
-      eingebracht++;
-    }
+  // No grade entered → nothing to add
+  const grade = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === semester);
+  if (!grade || grade.points === null) {
+    return { canAdd: false, reason: 'Keine Note eingetragen' };
   }
 
-  // Sport: max 3 semesters (unless it's LF, then handled by mandatory rules)
-  if (subjectId === 'spo' && subjectId !== profile.leistungsfach) {
-    if (eingebracht >= 3) {
-      return { canAdd: false, reason: 'Sport: max. 3 HJ zählbar' };
-    }
+  const eingebracht = countSubjectEinbringungen(subjectId, profile);
+
+  // Sport: max 3 semesters (unless it's LF)
+  if (subjectId === 'spo' && !isMandatory(subjectId, profile) && eingebracht >= 3) {
+    return { canAdd: false, reason: 'Sport: max. 3 HJ' };
   }
 
-  // Informatik: max 3 semesters (optional subject, not a natural science)
-  if (subjectId === 'inf') {
-    if (eingebracht >= 3) {
-      return { canAdd: false, reason: 'Informatik: max. 3 HJ zählbar' };
-    }
+  // Informatik: max 3 semesters
+  if (subjectId === 'inf' && eingebracht >= 3) {
+    return { canAdd: false, reason: 'Informatik: max. 3 HJ' };
   }
 
-  // Other optional subjects (Geo, WR if not exam/LF): max 3 semesters per subject
+  // Other optional subjects: max 3 semesters
   const rule = getEinbringungRule(subjectId, profile);
-  if (rule.category === 'optional' && subjectId !== 'spo' && subjectId !== 'inf' && subjectId !== 'psem') {
-    if (eingebracht >= 3) {
-      return { canAdd: false, reason: 'Zusatzfach: max. 3 HJ pro Fach' };
-    }
+  if (rule.category === 'optional' && subjectId !== 'spo' && subjectId !== 'inf' && eingebracht >= 3) {
+    return { canAdd: false, reason: 'Zusatzfach: max. 3 HJ' };
+  }
+
+  // All 4 semesters max for any subject
+  if (eingebracht >= 4) {
+    return { canAdd: false, reason: 'Alle 4 HJ bereits eingebracht' };
   }
 
   return { canAdd: true, reason: 'Kann eingebracht werden' };
+}
+
+/**
+ * Master check: Can a specific semester be toggled?
+ * Returns the full decision with reason.
+ */
+export function canToggleSemester(
+  subjectId: string,
+  semester: Semester,
+  profile: AbiturProfile,
+): { canToggle: boolean; reason: string; isEingebracht: boolean; isMandatory: boolean } {
+  const mandatory = isMandatory(subjectId, profile);
+  const eingebracht = isEingebracht(subjectId, semester, profile);
+
+  if (mandatory) {
+    return { canToggle: false, reason: 'Pflichtfach', isEingebracht: true, isMandatory: true };
+  }
+  if (subjectId === 'wsem' || subjectId === 'psem') {
+    return { canToggle: false, reason: 'Seminar', isEingebracht: eingebracht, isMandatory: false };
+  }
+
+  if (eingebracht) {
+    const drop = canDropSemester(subjectId, semester, profile);
+    return { canToggle: drop.canDrop, reason: drop.reason, isEingebracht: true, isMandatory: false };
+  } else {
+    const add = canAddSemester(subjectId, semester, profile);
+    return { canToggle: add.canAdd, reason: add.reason, isEingebracht: false, isMandatory: false };
+  }
 }
 
 /** Count total einbringungen across all semesters */
