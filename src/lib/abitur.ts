@@ -611,6 +611,17 @@ export function validateExamCombination(
 
   const filteredAll = allExams.filter(Boolean);
 
+  // Check for duplicate subjects
+  if (exam4 && exam5 && exam4 === exam5) {
+    errors.push('4. und 5. Prüfung dürfen nicht dasselbe Fach sein');
+  }
+  if (exam4 && (exam4 === 'deu' || exam4 === 'mat' || exam4 === leistungsfach)) {
+    errors.push(`${getSubject(exam4)?.name} ist bereits als schriftliche Prüfung belegt`);
+  }
+  if (exam5 && (exam5 === 'deu' || exam5 === 'mat' || exam5 === leistungsfach)) {
+    errors.push(`${getSubject(exam5)?.name} ist bereits als schriftliche Prüfung belegt`);
+  }
+
   // Validate substitution prerequisites
   if (substitution === 'deu') {
     // Need ≥ 2 foreign languages (fortgeführte Fremdsprachen) among ALL exam subjects

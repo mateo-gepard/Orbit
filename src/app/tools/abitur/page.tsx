@@ -1555,35 +1555,82 @@ function SettingsView() {
             onChange={(e) => setLeistungsfach(e.target.value)}
             className="bg-transparent text-[13px] outline-none text-right"
           >
-            {lfOptions.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
+            {lfOptions.map((s) => {
+              const v = canSubjectBeLF(s.id);
+              return (
+                <option key={s.id} value={s.id} disabled={!v.valid}>
+                  {s.name}{!v.valid ? ` (${v.reason})` : s.requiresAdditum ? ' (Additum)' : ''}
+                </option>
+              );
+            })}
           </select>
         </SField>
       </SGroup>
 
       <SGroup title="Prüfungsfächer">
-        {profile.examSubjects.map((sid, i) => (
-          <SField key={i} label={`${i + 1}. ${i < 3 ? 'Schriftl.' : 'Kolloquium'}`}>
-            {i < 3 ? (
-              <span className="text-[13px] text-muted-foreground/50">{getSubject(sid)?.name || '—'}</span>
-            ) : (
-              <select
-                value={sid}
-                onChange={(e) => setExamSubject(i, e.target.value)}
-                className="bg-transparent text-[13px] outline-none text-right"
-              >
-                <option value="">Wählen...</option>
-                {profile.subjects
-                  .filter((id) => id !== 'deu' && id !== 'mat' && id !== profile.leistungsfach && id !== 'wsem' && id !== 'psem')
-                  .map((id) => {
-                    const s = getSubject(id);
-                    return s ? <option key={id} value={id}>{s.name}</option> : null;
-                  })}
-              </select>
-            )}
-          </SField>
-        ))}
+        {profile.examSubjects.map((sid, i) => {
+          // Determine which subjects are unavailable for this slot
+          const otherKolloq = i === 3 ? profile.examSubjects[4] : i === 4 ? profile.examSubjects[3] : '';
+          const usedIds = new Set(['deu', 'mat', profile.leistungsfach, 'wsem', 'psem']);
+          if (otherKolloq) usedIds.add(otherKolloq);
+
+          return (
+            <SField key={i} label={`${i + 1}. ${i < 3 ? 'Schriftl.' : 'Kolloquium'}`}>
+              {i < 3 ? (
+                <span className="text-[13px] text-muted-foreground/50">{getSubject(sid)?.name || '—'}</span>
+              ) : (
+                <select
+                  value={sid}
+                  onChange={(e) => setExamSubject(i, e.target.value)}
+                  className="bg-transparent text-[13px] outline-none text-right"
+                >
+                  <option value="">Wählen...</option>
+                  {profile.subjects
+                    .filter((id) => !usedIds.has(id))
+                    .map((id) => {
+                      const s = getSubject(id);
+                      if (!s) return null;
+                      const oral = canSubjectBeOralExam(id);
+                      // Check exclusive group conflict with the other Kolloquium
+                      const exclusiveConflict = otherKolloq
+                        ? EXCLUSIVE_GROUPS.some((g) => g.includes(id) && g.includes(otherKolloq))
+                        : false;
+                      const disabled = !oral.valid || exclusiveConflict;
+                      return (
+                        <option key={id} value={id} disabled={disabled}>
+                          {s.name}{disabled ? ` (${oral.reason || 'Konflikt'})` : ''}
+                        </option>
+                      );
+                    })}
+                </select>
+              )}
+            </SField>
+          );
+        })}
+        {/* Validation feedback */}
+        {(() => {
+          const exam4 = profile.examSubjects[3] || '';
+          const exam5 = profile.examSubjects[4] || '';
+          if (!exam4 && !exam5) return null;
+          const validation = validateExamCombination(
+            profile.leistungsfach, exam4, exam5, profile.substitutedWritten ?? null
+          );
+          if (validation.valid && validation.warnings.length === 0) return null;
+          return (
+            <div className="px-4 py-3 space-y-1">
+              {validation.errors.map((err, i) => (
+                <p key={i} className="text-[10px] text-red-400 flex items-center gap-1">
+                  <AlertTriangle className="h-2.5 w-2.5 shrink-0" />{err}
+                </p>
+              ))}
+              {validation.warnings.map((w, i) => (
+                <p key={i} className="text-[10px] text-amber-500/70 flex items-center gap-1">
+                  <AlertTriangle className="h-2.5 w-2.5 shrink-0" />{w}
+                </p>
+              ))}
+            </div>
+          );
+        })()}
       </SGroup>
 
       {/* Joker / Substitution Rule */}
