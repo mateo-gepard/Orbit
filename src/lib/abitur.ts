@@ -334,17 +334,13 @@ export function pointsToGrade(points: number): string {
 }
 
 /**
- * Converts average Abitur points (0-15) to precise decimal grade (1.00-6.00)
- * Using linear interpolation between grade thresholds
+ * Converts average Abitur points (0-15) to precise decimal grade (0.67-6.00)
+ * Using Bavarian formula: grade = (17 - points) / 3
+ * Examples: 15P→0.67, 14P→1.0, 13P→1.33, 12P→1.67, 10P→2.33, 5P→4.0, 0P→5.67
  */
 export function pointsToDecimalGrade(points: number): number {
-  if (points >= 15) return 1.0;
-  if (points >= 13) return 1.0 + (15 - points) / 2 * 1.0; // 15→1.0, 13→2.0
-  if (points >= 10) return 2.0 + (13 - points) / 3 * 1.0; // 13→2.0, 10→3.0
-  if (points >= 7) return 3.0 + (10 - points) / 3 * 1.0;  // 10→3.0, 7→4.0
-  if (points >= 5) return 4.0 + (7 - points) / 2 * 1.0;   // 7→4.0, 5→5.0
-  if (points >= 1) return 5.0 + (5 - points) / 4 * 1.0;   // 5→5.0, 1→6.0
-  return 6.0;
+  const grade = (17 - points) / 3;
+  return Math.max(0.67, Math.min(6.0, grade));
 }
 
 export function pointsToLabel(points: number): string {
