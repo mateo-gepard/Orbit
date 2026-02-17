@@ -45,28 +45,10 @@ export function registerServiceWorker() {
 
   window.addEventListener('load', async () => {
     try {
-      // TEMPORARY: Completely disable service worker and clear all caches
-      // This forces a clean slate for the PWA
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (const registration of registrations) {
-        await registration.unregister();
-        console.log('[ORBIT] Unregistered SW');
-      }
-      
-      // Clear all caches
-      const cacheNames = await caches.keys();
-      for (const cacheName of cacheNames) {
-        await caches.delete(cacheName);
-        console.log('[ORBIT] Deleted cache:', cacheName);
-      }
-      
-      console.log('[ORBIT] Service worker disabled - app will reload fresh on each visit');
-      
-      // DO NOT re-register service worker yet - let the app run without SW
-      // This ensures no caching interference
-      
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('[ORBIT] Service worker registered:', registration.scope);
     } catch (err) {
-      console.warn('[ORBIT] SW cleanup failed:', err);
+      console.warn('[ORBIT] SW registration failed:', err);
     }
   });
 }

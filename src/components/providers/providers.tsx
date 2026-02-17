@@ -6,7 +6,6 @@ import { AuthProvider } from './auth-provider';
 import { DataProvider } from './data-provider';
 import { PWAProvider } from './pwa-provider';
 import { AppShell } from '@/components/shell/app-shell';
-import { DebugPanel } from '@/components/debug-panel';
 import { useToolboxStore } from '@/lib/toolbox-store';
 import { useAbiturStore } from '@/lib/abitur-store';
 
@@ -77,7 +76,6 @@ export function Providers({ children }: { children: ReactNode }) {
           <AuthProvider>
             <DataProvider>
               <AppShell>{children}</AppShell>
-              <DebugPanel />
             </DataProvider>
           </AuthProvider>
         </PWAProvider>

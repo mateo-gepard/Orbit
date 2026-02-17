@@ -16,12 +16,6 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const MIN_LOADING_TIME = 800;
 const MAX_LOADING_TIME = 6000;
 
-function debugLog(category: 'data' | 'auth' | 'error', msg: string) {
-  if (typeof window !== 'undefined' && (window as any).__orbitDebug) {
-    (window as any).__orbitDebug(category, msg);
-  }
-}
-
 export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const setItems = useOrbitStore((s) => s.setItems);
@@ -38,7 +32,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(() => {
     if (!user) {
-      debugLog('data', '👤 No user — clearing items, dismissing loader');
       setItems([]);
       setSyncUserId(null);
       useAbiturStore.getState()._setSyncUserId(null);
@@ -50,7 +43,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      debugLog('data', `🔌 Connecting for user: ${user.email} (${user.uid.slice(0, 8)}...)`);
       // Set sync user ID for tag cloud sync
       setSyncUserId(user.uid);
 
@@ -118,7 +110,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       unsubToolDataRefs.current.push(unsubFlightLogs);
 
       const unsubscribe = subscribeToItems(user.uid, (items) => {
-        debugLog('data', `📦 Received ${items.length} items from Firestore`);
         setItems(items);
         setError(null);
         reconnectAttempt.current = 0; // Reset on successful data
@@ -138,7 +129,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       unsubscribeRef.current = unsubscribe;
     } catch (err) {
       console.error('[ORBIT] DataProvider subscription error:', err);
-      debugLog('error', `🔥 DataProvider error: ${err}`);
 
       if (reconnectAttempt.current < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempt.current++;

@@ -12,12 +12,6 @@ import { setInstallPromptEvent, registerServiceWorker, setupViewportHeight, disa
  */
 export function PWAProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    const debugLog = (cat: string, msg: string) => {
-      if ((window as any).__orbitDebug) (window as any).__orbitDebug(cat, msg);
-    };
-
-    debugLog('sw', '🚀 PWAProvider initializing...');
-
     // Register service worker
     registerServiceWorker();
 

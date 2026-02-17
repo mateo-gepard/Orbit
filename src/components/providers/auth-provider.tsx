@@ -44,12 +44,6 @@ function createDemoUser(): User {
   } as unknown as User;
 }
 
-function debugLog(category: 'auth' | 'error', msg: string) {
-  if (typeof window !== 'undefined' && (window as any).__orbitDebug) {
-    (window as any).__orbitDebug(category, msg);
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,7 +53,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) {
       // Firebase not available — auto-enter demo mode
       console.info('[ORBIT Auth] Firebase unavailable — using demo mode');
-      debugLog('auth', '⚠️ Firebase unavailable — using demo mode');
       setUser(createDemoUser());
       setIsDemo(true);
       setLoading(false);
@@ -67,16 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    debugLog('auth', '🔌 Setting up onAuthStateChanged listener...');
     let cancelled = false;
 
     const unsubscribe = onAuthStateChanged(
       auth,
       (firebaseUser) => {
         if (cancelled) return;
-        debugLog('auth', firebaseUser 
-          ? `✅ Auth state: SIGNED IN as ${firebaseUser.email} (${firebaseUser.uid.slice(0, 8)}...)` 
-          : '👤 Auth state: NO USER (signed out)');
         setUser(firebaseUser);
         setLoading(false);
         
@@ -92,7 +81,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       (error) => {
         console.error('[ORBIT Auth] Auth state error:', error);
-        debugLog('error', `🔥 Auth state error: ${error.message}`);
         if (cancelled) return;
         // Fall back to demo mode on auth errors
         setUser(createDemoUser());

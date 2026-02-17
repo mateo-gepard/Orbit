@@ -35,10 +35,6 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "ORBIT",
   },
-  other: {
-    // Force iOS PWA to recognize app version change
-    'build-version': Date.now().toString(),
-  },
 };
 
 export default function RootLayout({
@@ -49,10 +45,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* FORCE iOS PWA cache invalidation */}
-        <meta httpEquiv="cache-control" content="no-cache, no-store, must-revalidate" />
-        <meta httpEquiv="expires" content="0" />
-        <meta httpEquiv="pragma" content="no-cache" />
         {/* Google Identity Services for Calendar OAuth */}
         <script src="https://accounts.google.com/gsi/client" async defer></script>
         {/* PWA: Apple Touch Icon */}

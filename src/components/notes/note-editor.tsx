@@ -128,31 +128,20 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
     }
   };
 
-  // Note editor is a fixed overlay. On mobile it sits below the app header
-  // using safe-area-aware padding. On desktop (lg+) it fills the full screen.
+  // Note editor is a full-screen overlay on top of everything.
 
   return (
-    <>
-      <style>{`
-        .note-editor-fixed {
-          position: fixed;
-          inset: 0;
-          z-index: 50;
-          background: var(--background);
-          overflow: hidden;
-          display: flex;
-          flex-direction: column;
-          padding-top: calc(48px + env(safe-area-inset-top, 0px));
-        }
-        @media (min-width: 1024px) {
-          .note-editor-fixed { padding-top: 0; }
-        }
-      `}</style>
-      <div className="note-editor-fixed">
-      {/* Header */}
-      <div 
-        className="note-editor-header flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14 shrink-0"
-      >
+    <div className="fixed inset-0 z-[100] flex flex-col">
+      {/* Blurred backdrop */}
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-xl" onClick={handleClose} />
+      
+      {/* Editor card — fills screen on mobile, centered card on desktop */}
+      <div className="relative z-10 flex flex-col flex-1 m-0 lg:m-6 lg:mx-auto lg:max-w-4xl lg:w-full bg-background lg:rounded-2xl lg:border lg:border-border/60 lg:shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div 
+          className="flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14 shrink-0"
+          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+        >
         <button
           onClick={handleClose}
           className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
@@ -290,6 +279,6 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
         </div>
       </div>
       </div>
-    </>
+    </div>
   );
 }
