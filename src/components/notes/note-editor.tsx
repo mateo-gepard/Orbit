@@ -128,33 +128,31 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
     }
   };
 
-  // On mobile PWA, the header height = 48px + env(safe-area-inset-top).
-  // We need to position below it. On desktop (lg+), full screen from top.
-  // Using CSS calc so the first render is already correct (no flash).
+  // Note editor is a fixed overlay. On mobile it sits below the app header
+  // using safe-area-aware padding. On desktop (lg+) it fills the full screen.
 
   return (
     <>
       <style>{`
-        .note-editor-overlay {
+        .note-editor-fixed {
           position: fixed;
-          left: 0;
-          right: 0;
-          bottom: 0;
+          inset: 0;
           z-index: 50;
           background: var(--background);
-          top: calc(48px + env(safe-area-inset-top, 0px));
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          padding-top: calc(48px + env(safe-area-inset-top, 0px));
         }
         @media (min-width: 1024px) {
-          .note-editor-overlay {
-            top: 0;
-          }
+          .note-editor-fixed { padding-top: 0; }
         }
       `}</style>
-      <div className="note-editor-overlay">
-        {/* Header */}
-        <div 
-          className="note-editor-header flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
-        >
+      <div className="note-editor-fixed">
+      {/* Header */}
+      <div 
+        className="note-editor-header flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14 shrink-0"
+      >
         <button
           onClick={handleClose}
           className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
@@ -268,7 +266,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       </div>
 
       {/* Content */}
-      <div className="h-[calc(100%-3.5rem)] overflow-y-auto overflow-x-hidden overscroll-contain px-4 lg:px-8 py-6 lg:py-8">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 lg:px-8 py-6 lg:py-8 min-h-0">
         <div className="max-w-3xl mx-auto space-y-4">
           {/* Title */}
           <input
@@ -291,7 +289,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
           />
         </div>
       </div>
-    </div>
+      </div>
     </>
   );
 }
