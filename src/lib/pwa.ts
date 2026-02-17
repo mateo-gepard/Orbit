@@ -52,8 +52,13 @@ export function registerServiceWorker() {
       // Check for updates every time the app loads (especially important for PWA)
       if (registration.waiting) {
         // New SW is waiting, activate it immediately
+        console.log('[ORBIT] Activating waiting service worker...');
         registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-        window.location.reload();
+        // Hard reload to ensure we get fresh content
+        setTimeout(() => {
+          window.location.href = window.location.href;
+        }, 100);
+        return;
       }
       
       // Listen for updates
@@ -62,9 +67,11 @@ export function registerServiceWorker() {
         if (newWorker) {
           newWorker.addEventListener('statechange', () => {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // New SW is installed, reload to activate
-              console.log('[ORBIT] Update available, reloading...');
-              window.location.reload();
+              // New SW is installed, hard reload to activate
+              console.log('[ORBIT] Update installed, reloading...');
+              setTimeout(() => {
+                window.location.href = window.location.href;
+              }, 100);
             }
           });
         }
