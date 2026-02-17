@@ -252,7 +252,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       </div>
 
       {/* Content */}
-      <div className="h-[calc(100vh-3.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] overflow-y-auto overscroll-contain px-4 lg:px-8 py-6 lg:py-8">
+      <div className="h-[calc(100%-3.5rem)] overflow-y-auto overscroll-contain px-4 lg:px-8 py-6 lg:py-8">
         <div className="max-w-3xl mx-auto space-y-4">
           {/* Title */}
           <input
