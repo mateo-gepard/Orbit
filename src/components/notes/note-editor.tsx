@@ -129,7 +129,12 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-background" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+    <div 
+      className="fixed left-0 right-0 bottom-0 z-50 bg-background"
+      style={{ 
+        top: 'env(safe-area-inset-top, 0px)',
+      }}
+    >
       {/* Header */}
       <div 
         className="flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
@@ -247,7 +252,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       </div>
 
       {/* Content */}
-      <div className="h-[calc(100vh-3.5rem-env(safe-area-inset-top,0px))] overflow-y-auto overscroll-contain px-4 lg:px-8 py-6 lg:py-8">
+      <div className="h-[calc(100vh-3.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] overflow-y-auto overscroll-contain px-4 lg:px-8 py-6 lg:py-8">
         <div className="max-w-3xl mx-auto space-y-4">
           {/* Title */}
           <input
