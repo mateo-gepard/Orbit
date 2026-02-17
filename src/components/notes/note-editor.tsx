@@ -129,17 +129,24 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 bg-background lg:!top-0"
-      style={{ 
-        top: '48px',
-        paddingTop: 'env(safe-area-inset-top, 0px)',
-      }}
-    >
-      {/* Header */}
+    <>
+      <style>{`
+        @media (max-width: 1023px) {
+          .note-editor-container {
+            top: max(48px, env(safe-area-inset-top, 0px)) !important;
+          }
+          .note-editor-header {
+            padding-top: max(0px, calc(env(safe-area-inset-top, 0px) - 48px));
+          }
+        }
+      `}</style>
       <div 
-        className="flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
+        className="note-editor-container fixed inset-0 z-50 bg-background"
       >
+        {/* Header */}
+        <div 
+          className="note-editor-header flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
+        >
         <button
           onClick={handleClose}
           className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
@@ -277,5 +284,6 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
         </div>
       </div>
     </div>
+    </>
   );
 }
