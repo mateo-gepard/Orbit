@@ -130,11 +130,18 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
 
   return (
     <div 
-      className="fixed left-0 right-0 bottom-0 z-50 bg-background lg:top-0"
+      className="fixed inset-0 z-50 bg-background"
       style={{ 
         top: 'calc(48px + env(safe-area-inset-top, 0px))',
       }}
     >
+      <style jsx>{`
+        @media (min-width: 1024px) {
+          div {
+            top: 0 !important;
+          }
+        }
+      `}</style>
       {/* Header */}
       <div 
         className="flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
@@ -252,7 +259,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       </div>
 
       {/* Content */}
-      <div className="h-[calc(100%-3.5rem)] overflow-y-auto overscroll-contain px-4 lg:px-8 py-6 lg:py-8">
+      <div className="h-[calc(100%-3.5rem)] overflow-y-auto overflow-x-hidden overscroll-contain px-4 lg:px-8 py-6 lg:py-8">
         <div className="max-w-3xl mx-auto space-y-4">
           {/* Title */}
           <input
