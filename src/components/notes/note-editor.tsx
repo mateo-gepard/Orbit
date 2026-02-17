@@ -128,58 +128,29 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
     }
   };
 
-  // Detect if we're on mobile (inside AppShell with header)
-  const [topOffset, setTopOffset] = useState(0);
-  useEffect(() => {
-    const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
-    if (isDesktop) {
-      setTopOffset(0);
-      return;
-    }
-
-    const measure = () => {
-      const header = document.querySelector('header');
-      if (header) {
-        const bottom = Math.round(header.getBoundingClientRect().bottom);
-        if (bottom > 0) {
-          setTopOffset(bottom);
-          return true;
-        }
-      }
-      return false;
-    };
-
-    // Try measuring immediately
-    if (measure()) return;
-
-    // Header may not be laid out yet — retry a few times
-    let attempts = 0;
-    const interval = setInterval(() => {
-      attempts++;
-      if (measure() || attempts >= 10) {
-        clearInterval(interval);
-        // Final fallback if header never found
-        if (attempts >= 10) {
-          const testEl = document.createElement('div');
-          testEl.style.position = 'fixed';
-          testEl.style.top = 'env(safe-area-inset-top, 0px)';
-          testEl.style.visibility = 'hidden';
-          document.body.appendChild(testEl);
-          const safeArea = parseFloat(getComputedStyle(testEl).top || '0');
-          document.body.removeChild(testEl);
-          setTopOffset(48 + safeArea);
-        }
-      }
-    }, 50);
-
-    return () => clearInterval(interval);
-  }, []);
+  // On mobile PWA, the header height = 48px + env(safe-area-inset-top).
+  // We need to position below it. On desktop (lg+), full screen from top.
+  // Using CSS calc so the first render is already correct (no flash).
 
   return (
-    <div 
-      className="fixed inset-0 z-50 bg-background"
-      style={{ top: topOffset > 0 ? `${topOffset}px` : undefined }}
-    >
+    <>
+      <style>{`
+        .note-editor-overlay {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 50;
+          background: var(--background);
+          top: calc(48px + env(safe-area-inset-top, 0px));
+        }
+        @media (min-width: 1024px) {
+          .note-editor-overlay {
+            top: 0;
+          }
+        }
+      `}</style>
+      <div className="note-editor-overlay">
         {/* Header */}
         <div 
           className="note-editor-header flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
@@ -321,5 +292,6 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
         </div>
       </div>
     </div>
+    </>
   );
 }
