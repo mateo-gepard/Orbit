@@ -136,11 +136,13 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       <div className="absolute inset-0 bg-background/80 backdrop-blur-xl" onClick={handleClose} />
       
       {/* Editor card — fills screen on mobile, centered card on desktop */}
-      <div className="relative z-10 flex flex-col flex-1 m-0 lg:m-6 lg:mx-auto lg:max-w-4xl lg:w-full bg-background lg:rounded-2xl lg:border lg:border-border/60 lg:shadow-2xl overflow-hidden">
+      <div 
+        className="relative z-10 flex flex-col flex-1 m-0 lg:m-6 lg:mx-auto lg:max-w-4xl lg:w-full bg-background lg:rounded-2xl lg:border lg:border-border/60 lg:shadow-2xl overflow-hidden"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
         {/* Header */}
         <div 
           className="flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14 shrink-0"
-          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         >
         <button
           onClick={handleClose}
