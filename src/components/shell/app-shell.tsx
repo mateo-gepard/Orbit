@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
 import { Menu, Search } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -12,23 +11,6 @@ import { CompletionAnimation } from '@/components/ui/completion-animation';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, setCommandBarOpen, completionAnimation, setCompletionAnimation } = useOrbitStore();
-  const headerRef = useRef<HTMLElement>(null);
-  const [headerDebug, setHeaderDebug] = useState('');
-
-  useEffect(() => {
-    const measure = () => {
-      if (headerRef.current) {
-        const rect = headerRef.current.getBoundingClientRect();
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-        setHeaderDebug(
-          `H:${Math.round(rect.height)}px B:${Math.round(rect.bottom)}px T:${Math.round(rect.top)}px PWA:${isStandalone}`
-        );
-      }
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
 
   return (
     <>
@@ -38,7 +20,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           {/* Mobile header */}
           <header 
-            ref={headerRef}
             className="flex shrink-0 items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4 lg:hidden"
             style={{ 
               minHeight: '48px',
@@ -61,12 +42,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Search className="h-4 w-4" />
             </Button>
-            {/* DEBUG: header measurements */}
-            {headerDebug && (
-              <div className="absolute bottom-0 left-0 right-0 bg-red-600 text-white text-[8px] font-mono text-center py-0.5 z-50">
-                {headerDebug}
-              </div>
-            )}
           </header>
 
           {/* Desktop header */}
