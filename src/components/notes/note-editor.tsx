@@ -130,18 +130,12 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
 
   return (
     <div 
-      className="fixed inset-0 z-50 bg-background"
+      className="fixed inset-0 z-50 bg-background lg:!top-0"
       style={{ 
-        top: 'calc(48px + env(safe-area-inset-top, 0px))',
+        top: '48px',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
       }}
     >
-      <style jsx>{`
-        @media (min-width: 1024px) {
-          div {
-            top: 0 !important;
-          }
-        }
-      `}</style>
       {/* Header */}
       <div 
         className="flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
