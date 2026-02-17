@@ -130,9 +130,9 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
 
   return (
     <div 
-      className="fixed left-0 right-0 bottom-0 z-50 bg-background"
+      className="fixed left-0 right-0 bottom-0 z-50 bg-background lg:top-0"
       style={{ 
-        top: 'env(safe-area-inset-top, 0px)',
+        top: 'calc(48px + env(safe-area-inset-top, 0px))',
       }}
     >
       {/* Header */}
