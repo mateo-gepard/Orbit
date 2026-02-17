@@ -3,7 +3,7 @@
 // ORBIT — Minimal Service Worker for PWA
 // Enables "Add to Home Screen" and basic offline caching
 
-const CACHE_NAME = 'orbit-v1';
+const CACHE_NAME = 'orbit-v2-' + Date.now(); // Force cache refresh
 const OFFLINE_URLS = ['/', '/today', '/inbox', '/tasks', '/habits'];
 
 // Install — pre-cache essential routes
