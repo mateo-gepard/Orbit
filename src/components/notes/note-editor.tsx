@@ -130,32 +130,62 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
 
   // Detect if we're on mobile (inside AppShell with header)
   const [topOffset, setTopOffset] = useState(0);
+  const [debugInfo, setDebugInfo] = useState<Record<string, string>>({});
   useEffect(() => {
-    // On mobile, we need to position below the AppShell header
-    // The header height = 48px + safe-area-inset-top
+    const debug: Record<string, string> = {};
+    
+    // Gather all debug info
     const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
-    if (isDesktop) {
-      setTopOffset(0);
-      return;
-    }
-    // Read the actual safe-area-inset-top value from CSS
-    const safeArea = parseInt(
-      getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0',
-      10
-    );
-    // If CSS variable not set, compute it from env()
-    if (!safeArea) {
-      const testEl = document.createElement('div');
-      testEl.style.position = 'fixed';
-      testEl.style.top = 'env(safe-area-inset-top, 0px)';
-      testEl.style.visibility = 'hidden';
-      document.body.appendChild(testEl);
-      const computedTop = parseInt(getComputedStyle(testEl).top || '0', 10);
-      document.body.removeChild(testEl);
-      setTopOffset(48 + computedTop);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    debug['viewport'] = `${window.innerWidth}x${window.innerHeight}`;
+    debug['isDesktop'] = String(isDesktop);
+    debug['isStandalone (PWA)'] = String(isStandalone);
+    debug['navigator.standalone'] = String((navigator as any).standalone);
+    
+    // Read CSS variable --sat
+    const satVar = getComputedStyle(document.documentElement).getPropertyValue('--sat');
+    debug['CSS --sat'] = satVar || '(not set)';
+    
+    // Measure env(safe-area-inset-top) via test element
+    const testEl = document.createElement('div');
+    testEl.style.position = 'fixed';
+    testEl.style.top = 'env(safe-area-inset-top, 0px)';
+    testEl.style.left = '0';
+    testEl.style.width = '1px';
+    testEl.style.height = '1px';
+    testEl.style.visibility = 'hidden';
+    document.body.appendChild(testEl);
+    const envTopPx = parseFloat(getComputedStyle(testEl).top || '0');
+    document.body.removeChild(testEl);
+    debug['env(safe-area-inset-top)'] = `${envTopPx}px`;
+    
+    // Find the actual AppShell header element
+    const header = document.querySelector('header');
+    const headerRect = header?.getBoundingClientRect();
+    debug['header found'] = String(!!header);
+    debug['header height'] = headerRect ? `${headerRect.height}px` : 'N/A';
+    debug['header bottom'] = headerRect ? `${headerRect.bottom}px` : 'N/A';
+    
+    // Calculate offset
+    let offset = 0;
+    if (!isDesktop) {
+      if (headerRect) {
+        // Best approach: use the actual header bottom
+        offset = Math.round(headerRect.bottom);
+        debug['method'] = 'header.getBoundingClientRect().bottom';
+      } else {
+        // Fallback: 48 + env
+        offset = 48 + envTopPx;
+        debug['method'] = '48 + env()';
+      }
     } else {
-      setTopOffset(48 + safeArea);
+      debug['method'] = 'desktop — no offset';
     }
+    
+    debug['final topOffset'] = `${offset}px`;
+    
+    setTopOffset(offset);
+    setDebugInfo(debug);
   }, []);
 
   return (
@@ -163,6 +193,15 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       className="fixed inset-0 z-50 bg-background"
       style={{ top: topOffset > 0 ? `${topOffset}px` : undefined }}
     >
+      {/* ── DEBUG OVERLAY ── remove after fixing */}
+      {Object.keys(debugInfo).length > 0 && (
+        <div className="absolute top-0 left-0 right-0 z-[9999] bg-black/90 text-green-400 text-[10px] font-mono p-2 leading-relaxed max-h-[200px] overflow-y-auto">
+          <p className="text-yellow-400 font-bold mb-1">🔧 NOTE EDITOR DEBUG</p>
+          {Object.entries(debugInfo).map(([key, val]) => (
+            <p key={key}><span className="text-green-300">{key}:</span> {val}</p>
+          ))}
+        </div>
+      )}
         {/* Header */}
         <div 
           className="note-editor-header flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
