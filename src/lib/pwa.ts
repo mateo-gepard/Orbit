@@ -45,7 +45,14 @@ export function registerServiceWorker() {
 
   window.addEventListener('load', async () => {
     try {
-      // Use a minimal SW for now — mainly for PWA installability
+      // First, unregister any existing service workers to clear stale cache
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        await registration.unregister();
+        console.log('[ORBIT] Unregistered old SW');
+      }
+      
+      // Now register the new service worker
       const registration = await navigator.serviceWorker.register('/sw.js');
       console.log('[ORBIT] SW registered:', registration.scope);
       

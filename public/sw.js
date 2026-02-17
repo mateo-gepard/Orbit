@@ -17,7 +17,8 @@ self.addEventListener('install', (event) => {
       });
     })
   );
-  self.skipWaiting(); // Force immediate activation
+  // Force immediate activation, don't wait for old SW to close
+  self.skipWaiting();
 });
 
 // Handle messages from clients
@@ -27,18 +28,25 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Activate — clean old caches
+// Activate — clean old caches and take control immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      )
-    )
+    Promise.all([
+      // Delete ALL old caches
+      caches.keys().then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => {
+              console.log('[SW] Deleting old cache:', key);
+              return caches.delete(key);
+            })
+        )
+      ),
+      // Take control of all clients immediately
+      self.clients.claim()
+    ])
   );
-  self.clients.claim();
 });
 
 // Fetch — network-first with cache fallback
@@ -48,11 +56,17 @@ self.addEventListener('fetch', (event) => {
   if (!event.request.url.startsWith(self.location.origin)) return;
   // Skip API calls and Firebase
   if (event.request.url.includes('/api/') || event.request.url.includes('firestore')) return;
+  
+  // NEVER cache JavaScript files - always fetch fresh to prevent stale code
+  if (event.request.url.match(/\.(js|jsx|ts|tsx)$/) || event.request.url.includes('/_next/')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cache successful responses
+        // Cache successful responses (but not JS - handled above)
         if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
