@@ -16,7 +16,14 @@ self.addEventListener('install', (event) => {
       });
     })
   );
-  self.skipWaiting();
+  self.skipWaiting(); // Force immediate activation
+});
+
+// Handle messages from clients
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // Activate — clean old caches

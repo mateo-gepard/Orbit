@@ -48,6 +48,30 @@ export function registerServiceWorker() {
       // Use a minimal SW for now — mainly for PWA installability
       const registration = await navigator.serviceWorker.register('/sw.js');
       console.log('[ORBIT] SW registered:', registration.scope);
+      
+      // Check for updates every time the app loads (especially important for PWA)
+      if (registration.waiting) {
+        // New SW is waiting, activate it immediately
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        window.location.reload();
+      }
+      
+      // Listen for updates
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // New SW is installed, reload to activate
+              console.log('[ORBIT] Update available, reloading...');
+              window.location.reload();
+            }
+          });
+        }
+      });
+      
+      // Force check for updates on load
+      registration.update();
     } catch (err) {
       console.warn('[ORBIT] SW registration failed:', err);
     }
