@@ -14,10 +14,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <div className="flex h-screen w-full overflow-hidden bg-background">
+      <div className="flex h-screen w-full overflow-hidden bg-background max-w-[100vw]">
         <Sidebar />
 
-        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0 max-w-full">
           {/* Mobile header */}
           <header 
             className="flex shrink-0 items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4 lg:hidden"
@@ -63,10 +63,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex flex-1 overflow-hidden min-h-0">
             {/* Main content */}
             <main 
-              className="flex-1 overflow-y-auto overscroll-contain pb-0 lg:pb-0"
+              className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-0 lg:pb-0"
             >
               {/* Mobile: bottom padding so content isn't hidden behind fixed nav */}
-              <div className="pb-[calc(48px+env(safe-area-inset-bottom,0px)+16px)] lg:pb-0">
+              <div className="pb-[calc(48px+env(safe-area-inset-bottom,0px)+16px)] lg:pb-0 overflow-x-hidden">
                 {children}
               </div>
             </main>

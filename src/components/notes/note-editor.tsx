@@ -136,21 +136,43 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       setTopOffset(0);
       return;
     }
-    // Use the actual header element's bottom edge for pixel-perfect positioning
-    const header = document.querySelector('header');
-    if (header) {
-      setTopOffset(Math.round(header.getBoundingClientRect().bottom));
-    } else {
-      // Fallback: measure env(safe-area-inset-top) + 48px header
-      const testEl = document.createElement('div');
-      testEl.style.position = 'fixed';
-      testEl.style.top = 'env(safe-area-inset-top, 0px)';
-      testEl.style.visibility = 'hidden';
-      document.body.appendChild(testEl);
-      const safeArea = parseFloat(getComputedStyle(testEl).top || '0');
-      document.body.removeChild(testEl);
-      setTopOffset(48 + safeArea);
-    }
+
+    const measure = () => {
+      const header = document.querySelector('header');
+      if (header) {
+        const bottom = Math.round(header.getBoundingClientRect().bottom);
+        if (bottom > 0) {
+          setTopOffset(bottom);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // Try measuring immediately
+    if (measure()) return;
+
+    // Header may not be laid out yet — retry a few times
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if (measure() || attempts >= 10) {
+        clearInterval(interval);
+        // Final fallback if header never found
+        if (attempts >= 10) {
+          const testEl = document.createElement('div');
+          testEl.style.position = 'fixed';
+          testEl.style.top = 'env(safe-area-inset-top, 0px)';
+          testEl.style.visibility = 'hidden';
+          document.body.appendChild(testEl);
+          const safeArea = parseFloat(getComputedStyle(testEl).top || '0');
+          document.body.removeChild(testEl);
+          setTopOffset(48 + safeArea);
+        }
+      }
+    }, 50);
+
+    return () => clearInterval(interval);
   }, []);
 
   return (
