@@ -45,49 +45,28 @@ export function registerServiceWorker() {
 
   window.addEventListener('load', async () => {
     try {
-      // First, unregister any existing service workers to clear stale cache
+      // TEMPORARY: Completely disable service worker and clear all caches
+      // This forces a clean slate for the PWA
       const registrations = await navigator.serviceWorker.getRegistrations();
       for (const registration of registrations) {
         await registration.unregister();
-        console.log('[ORBIT] Unregistered old SW');
+        console.log('[ORBIT] Unregistered SW');
       }
       
-      // Now register the new service worker
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      console.log('[ORBIT] SW registered:', registration.scope);
-      
-      // Check for updates every time the app loads (especially important for PWA)
-      if (registration.waiting) {
-        // New SW is waiting, activate it immediately
-        console.log('[ORBIT] Activating waiting service worker...');
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-        // Hard reload to ensure we get fresh content
-        setTimeout(() => {
-          window.location.href = window.location.href;
-        }, 100);
-        return;
+      // Clear all caches
+      const cacheNames = await caches.keys();
+      for (const cacheName of cacheNames) {
+        await caches.delete(cacheName);
+        console.log('[ORBIT] Deleted cache:', cacheName);
       }
       
-      // Listen for updates
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // New SW is installed, hard reload to activate
-              console.log('[ORBIT] Update installed, reloading...');
-              setTimeout(() => {
-                window.location.href = window.location.href;
-              }, 100);
-            }
-          });
-        }
-      });
+      console.log('[ORBIT] Service worker disabled - app will reload fresh on each visit');
       
-      // Force check for updates on load
-      registration.update();
+      // DO NOT re-register service worker yet - let the app run without SW
+      // This ensures no caching interference
+      
     } catch (err) {
-      console.warn('[ORBIT] SW registration failed:', err);
+      console.warn('[ORBIT] SW cleanup failed:', err);
     }
   });
 }
