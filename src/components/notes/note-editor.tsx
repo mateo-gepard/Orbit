@@ -128,21 +128,41 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
     }
   };
 
+  // Detect if we're on mobile (inside AppShell with header)
+  const [topOffset, setTopOffset] = useState(0);
+  useEffect(() => {
+    // On mobile, we need to position below the AppShell header
+    // The header height = 48px + safe-area-inset-top
+    const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
+    if (isDesktop) {
+      setTopOffset(0);
+      return;
+    }
+    // Read the actual safe-area-inset-top value from CSS
+    const safeArea = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0',
+      10
+    );
+    // If CSS variable not set, compute it from env()
+    if (!safeArea) {
+      const testEl = document.createElement('div');
+      testEl.style.position = 'fixed';
+      testEl.style.top = 'env(safe-area-inset-top, 0px)';
+      testEl.style.visibility = 'hidden';
+      document.body.appendChild(testEl);
+      const computedTop = parseInt(getComputedStyle(testEl).top || '0', 10);
+      document.body.removeChild(testEl);
+      setTopOffset(48 + computedTop);
+    } else {
+      setTopOffset(48 + safeArea);
+    }
+  }, []);
+
   return (
-    <>
-      <style>{`
-        @media (max-width: 1023px) {
-          .note-editor-container {
-            top: max(48px, env(safe-area-inset-top, 0px)) !important;
-          }
-          .note-editor-header {
-            padding-top: max(0px, calc(env(safe-area-inset-top, 0px) - 48px));
-          }
-        }
-      `}</style>
-      <div 
-        className="note-editor-container fixed inset-0 z-50 bg-background"
-      >
+    <div 
+      className="fixed inset-0 z-50 bg-background"
+      style={{ top: topOffset > 0 ? `${topOffset}px` : undefined }}
+    >
         {/* Header */}
         <div 
           className="note-editor-header flex items-center justify-between border-b border-border/40 px-4 lg:px-6 h-14"
@@ -284,6 +304,5 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
         </div>
       </div>
     </div>
-    </>
   );
 }
