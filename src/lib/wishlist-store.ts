@@ -427,10 +427,9 @@ export const useWishlistStore = create<WishlistState>()(
           .sort((a, b) => b.elo - a.elo),
 
       _setFromCloud: (data) => {
-        // Only skip if we have a local save in-flight — the echo-back
-        // from Firestore will carry the same data we just wrote.
-        if (_pendingSave) {
-          dbg('⏭ _setFromCloud skipped — save in flight');
+        // After initial load, skip echo-backs while a local save is in flight
+        if (_cloudReceived && _pendingSave) {
+          dbg('⏭ _setFromCloud skipped — save in flight (echo)');
           return;
         }
         _cloudReceived = true;
@@ -446,7 +445,6 @@ export const useWishlistStore = create<WishlistState>()(
       },
 
       _setSyncUserId: (userId) => {
-        const prev = _syncUserId;
         _syncUserId = userId;
         if (!userId) {
           _cloudReceived = false;
@@ -454,16 +452,10 @@ export const useWishlistStore = create<WishlistState>()(
           return;
         }
         dbg(`🔑 userId set: ${userId.slice(0, 8)}…`);
-        // On first sign-in, push local items to cloud (same pattern as Abitur)
-        if (!prev && !_cloudReceived) {
-          const { items, duels } = get();
-          if (items.length > 0) {
-            dbg(`📤 pushing ${items.length} local items → cloud`);
-            scheduleSave(items, duels);
-          } else {
-            dbg('📭 no local items to push');
-          }
-        }
+        // Don't push local → cloud here.
+        // Cloud snapshot via subscribeToToolData will arrive and _setFromCloud
+        // will accept it (cloud is truth). If no cloud doc exists,
+        // subscribeToToolData's seeding logic pushes local state for us.
       },
     }),
     {
