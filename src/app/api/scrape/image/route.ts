@@ -1,182 +1,361 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Google Custom Search Fallback
-// For items where the scraper couldn't find an image or price,
-// we use Google Custom Search JSON API to find product data.
+// ORBIT — Product Image & Price Search (Multi-source)
 //
-// Requires env vars:
-//   GOOGLE_SEARCH_API_KEY — from Google Cloud Console
-//   GOOGLE_SEARCH_CX      — Custom Search Engine ID
-//
-// Falls back to HTML scraping if API keys aren't configured.
+// Waterfall: Bing Images → DuckDuckGo → Google Images
+// No API key required — works out of the box.
+// If Google Custom Search API env vars are set, tries it first.
 // ═══════════════════════════════════════════════════════════
+
+const BROWSER_HEADERS: Record<string, string> = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  Accept:
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9,de;q=0.8',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+  'Sec-CH-UA': '"Chromium";v="131", "Not_A Brand";v="24"',
+  'Sec-CH-UA-Mobile': '?0',
+  'Sec-CH-UA-Platform': '"macOS"',
+  'Cache-Control': 'no-cache',
+  Pragma: 'no-cache',
+};
 
 const API_KEY = process.env.GOOGLE_SEARCH_API_KEY;
 const CX = process.env.GOOGLE_SEARCH_CX;
 
-/** Use Google Custom Search JSON API (clean, structured) */
-async function searchWithApi(query: string, searchType?: 'image'): Promise<{ image?: string; price?: string; snippet?: string }> {
+function isGoodImage(url: string): boolean {
+  if (!url || !url.startsWith('http')) return false;
+  // Skip search engine / CDN noise
+  const blocked = [
+    'gstatic.com', 'google.com', 'googleapis.com',
+    'bing.com', 'bing.net', 'microsoft.com',
+    'duckduckgo.com', 'wikipedia.org/static',
+    'pixel.gif', '1x1', 'spacer', 'tracking',
+  ];
+  return !blocked.some((b) => url.includes(b));
+}
+
+// ── 1. Google Custom Search API (optional) ───────────────
+async function searchGoogleApi(query: string): Promise<{ image?: string; price?: string }> {
   if (!API_KEY || !CX) return {};
-
-  const params = new URLSearchParams({
-    key: API_KEY,
-    cx: CX,
-    q: query,
-    num: '5',
-    gl: 'de',
-    hl: 'de',
-  });
-  if (searchType === 'image') {
-    params.set('searchType', 'image');
-    params.set('imgSize', 'large');
-  }
-
-  const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`, {
-    signal: AbortSignal.timeout(6000),
-  });
-
-  if (!res.ok) {
-    console.error(`[ORBIT] Google API ${res.status}:`, await res.text().catch(() => ''));
-    return {};
-  }
-
-  const data = await res.json();
-  const result: { image?: string; price?: string; snippet?: string } = {};
-
-  if (searchType === 'image' && data.items?.length) {
-    // Image search — return the first image link
-    result.image = data.items[0].link;
-  } else if (data.items?.length) {
-    // Web search — extract image from pagemap and price from snippets
-    for (const item of data.items) {
-      // Image from pagemap (cse_image, cse_thumbnail, or metatags og:image)
+  try {
+    const params = new URLSearchParams({
+      key: API_KEY, cx: CX, q: query, num: '5', gl: 'de', hl: 'de',
+    });
+    const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      console.error(`[ORBIT] Google API ${res.status}`);
+      return {};
+    }
+    const data = await res.json();
+    const result: { image?: string; price?: string } = {};
+    for (const item of data.items || []) {
       if (!result.image) {
         const pm = item.pagemap;
-        if (pm?.cse_image?.[0]?.src) result.image = pm.cse_image[0].src;
-        else if (pm?.cse_thumbnail?.[0]?.src) result.image = pm.cse_thumbnail[0].src;
-        else if (pm?.metatags?.[0]?.['og:image']) result.image = pm.metatags[0]['og:image'];
+        const img =
+          pm?.cse_image?.[0]?.src ??
+          pm?.cse_thumbnail?.[0]?.src ??
+          pm?.metatags?.[0]?.['og:image'];
+        if (img && isGoodImage(img)) result.image = img;
       }
-
-      // Price from pagemap offer
       if (!result.price) {
-        const offers = item.pagemap?.offer;
-        if (offers?.[0]?.price) result.price = offers[0].price;
-        else if (offers?.[0]?.lowprice) result.price = offers[0].lowprice;
-      }
-
-      // Price from product pagemap
-      if (!result.price) {
-        const products = item.pagemap?.product;
-        if (products?.[0]?.price) result.price = products[0].price;
-      }
-
-      // Price from snippet text (e.g. "ab 199,99 €")
-      if (!result.price && item.snippet) {
-        const priceMatch = item.snippet.match(/(\d{1,6}[.,]\d{2})\s*€|€\s*(\d{1,6}[.,]\d{2})/);
-        if (priceMatch) {
-          result.price = (priceMatch[1] || priceMatch[2]).replace(',', '.');
+        const price =
+          item.pagemap?.offer?.[0]?.price ??
+          item.pagemap?.product?.[0]?.price;
+        if (price) {
+          result.price = price;
+        } else if (item.snippet) {
+          const m = item.snippet.match(/(\d{1,6}[.,]\d{2})\s*€|€\s*(\d{1,6}[.,]\d{2})/);
+          if (m) result.price = (m[1] || m[2]).replace(',', '.');
         }
       }
-
-      if (!result.snippet && item.snippet) {
-        result.snippet = item.snippet;
-      }
-
-      // Stop if we have both
       if (result.image && result.price) break;
     }
+    return result;
+  } catch (e) {
+    console.error('[ORBIT] Google API error:', e);
+    return {};
   }
-
-  return result;
 }
 
-/** Fallback: scrape Google Images HTML (no API key needed) */
-async function searchWithScraping(query: string): Promise<{ image?: string }> {
-  const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query + ' product')}&tbm=isch&hl=en`;
+// ── 2. Bing Images (primary scraping source) ─────────────
+async function searchBingImages(query: string): Promise<string[]> {
+  try {
+    const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&first=1&count=15&qft=+filterui:photo-photo`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(6000),
+      headers: BROWSER_HEADERS,
+    });
+    if (!res.ok) {
+      console.error(`[ORBIT] Bing ${res.status}`);
+      return [];
+    }
+    const html = await res.text();
+    const images: string[] = [];
 
-  const response = await fetch(searchUrl, {
-    signal: AbortSignal.timeout(6000),
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-  });
+    // Bing stores full-res URLs in "murl":"..." inside m= JSON attrs
+    for (const m of html.matchAll(/"murl"\s*:\s*"(https?:\/\/[^"]+)"/gi)) {
+      if (isGoodImage(m[1])) images.push(m[1]);
+    }
 
-  if (!response.ok) return {};
+    // Also try data-m JSON blobs
+    for (const m of html.matchAll(/data-m=["'](\{[^"']*\})["']/gi)) {
+      try {
+        const json = m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+        const parsed = JSON.parse(json);
+        if (parsed.murl && isGoodImage(parsed.murl)) images.push(parsed.murl);
+      } catch { /* skip */ }
+    }
 
-  const html = await response.text();
-  const images: string[] = [];
+    // Fallback: src2/data-src on thumbnails
+    if (images.length === 0) {
+      for (const m of html.matchAll(/(?:src2|data-src)=["'](https?:\/\/[^"']+)["']/gi)) {
+        if (isGoodImage(m[1])) images.push(m[1]);
+      }
+    }
 
-  // Full-res URLs in scripts: ["https://...",width,height]
-  const fullResMatches = html.matchAll(/\["(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)",\s*(\d+),\s*(\d+)\]/gi);
-  for (const m of fullResMatches) {
-    const w = parseInt(m[2]), h = parseInt(m[3]);
-    if (w >= 100 && h >= 100 && !m[1].includes('gstatic.com') && !m[1].includes('google.com')) {
-      images.push(m[1]);
+    return [...new Set(images)];
+  } catch (e) {
+    console.error('[ORBIT] Bing error:', e);
+    return [];
+  }
+}
+
+// ── 3. DuckDuckGo (vqd token → d.js endpoint) ───────────
+async function searchDuckDuckGo(query: string): Promise<string[]> {
+  try {
+    // Step 1: Get vqd token from the search page
+    const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`;
+    const pageRes = await fetch(searchUrl, {
+      signal: AbortSignal.timeout(5000),
+      headers: BROWSER_HEADERS,
+    });
+    if (!pageRes.ok) return [];
+    const pageHtml = await pageRes.text();
+
+    const vqdMatch = pageHtml.match(/vqd=["']([^"']+)["']/i) ?? pageHtml.match(/vqd=([\d-]+)/i);
+    if (!vqdMatch) {
+      console.error('[ORBIT] DDG: no vqd token found');
+      return [];
+    }
+    const vqd = vqdMatch[1];
+
+    // Step 2: Hit the images JSON endpoint
+    const imgUrl = `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}&vqd=${vqd}&f=,,,,,&p=1`;
+    const imgRes = await fetch(imgUrl, {
+      signal: AbortSignal.timeout(5000),
+      headers: {
+        ...BROWSER_HEADERS,
+        Referer: 'https://duckduckgo.com/',
+      },
+    });
+    if (!imgRes.ok) return [];
+    const data = await imgRes.json();
+
+    const images: string[] = [];
+    for (const r of data.results || []) {
+      if (r.image && isGoodImage(r.image)) images.push(r.image);
+      if (images.length >= 10) break;
+    }
+    return images;
+  } catch (e) {
+    console.error('[ORBIT] DDG error:', e);
+    return [];
+  }
+}
+
+// ── 4. Google Images scraping (last resort) ──────────────
+async function searchGoogleImages(query: string): Promise<string[]> {
+  try {
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=isch&hl=en`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(5000),
+      headers: BROWSER_HEADERS,
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const images: string[] = [];
+
+    // Full-res URLs in JS: ["https://...",width,height]
+    for (const m of html.matchAll(
+      /\["(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)",\s*(\d+),\s*(\d+)\]/gi
+    )) {
+      const w = parseInt(m[2]), h = parseInt(m[3]);
+      if (w >= 100 && h >= 100 && isGoodImage(m[1])) images.push(m[1]);
+    }
+
+    // imgurl= proxy URLs
+    for (const m of html.matchAll(/imgurl=(https?(?:%3A|:)(?:%2F|\/){2}[^&"]+)/gi)) {
+      try {
+        const decoded = decodeURIComponent(m[1]);
+        if (isGoodImage(decoded)) images.push(decoded);
+      } catch { /* skip */ }
+    }
+
+    return [...new Set(images)];
+  } catch (e) {
+    console.error('[ORBIT] Google Images error:', e);
+    return [];
+  }
+}
+
+// ── 5. Scrape price from search engine snippets ──────────
+async function scrapePrice(query: string): Promise<string | undefined> {
+  // Headers that force uncompressed response (critical for Bing)
+  const plainHeaders: Record<string, string> = {
+    ...BROWSER_HEADERS,
+    'Accept-Encoding': 'identity',
+  };
+
+  const prices: number[] = [];
+
+  const extractPrices = (html: string) => {
+    // € patterns (German/EU)
+    for (const m of html.matchAll(/(\d{1,6})[.,](\d{2})\s*€/g)) {
+      const val = parseFloat(`${m[1]}.${m[2]}`);
+      if (val > 1 && val < 100000) prices.push(val);
+    }
+    for (const m of html.matchAll(/€\s*(\d{1,6})[.,](\d{2})/g)) {
+      const val = parseFloat(`${m[1]}.${m[2]}`);
+      if (val > 1 && val < 100000) prices.push(val);
+    }
+    for (const m of html.matchAll(/(\d{1,6})[.,](\d{2})\s*EUR/gi)) {
+      const val = parseFloat(`${m[1]}.${m[2]}`);
+      if (val > 1 && val < 100000) prices.push(val);
+    }
+    // $/ £ patterns
+    for (const m of html.matchAll(/[$£]\s*(\d{1,6})\.(\d{2})/g)) {
+      const val = parseFloat(`${m[1]}.${m[2]}`);
+      if (val > 1 && val < 100000) prices.push(val);
+    }
+  };
+
+  // 1. Bing web search (most reliable for snippets)
+  try {
+    const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query + ' Preis €')}`;
+    const bingRes = await fetch(bingUrl, {
+      signal: AbortSignal.timeout(5000),
+      headers: plainHeaders,
+    });
+    if (bingRes.ok) {
+      const html = await bingRes.text();
+      extractPrices(html);
+      console.log(`[ORBIT] Bing price: found ${prices.length} candidates`);
+    }
+  } catch (e) {
+    console.error('[ORBIT] Bing price error:', e);
+  }
+
+  // 2. Bing Shopping tab (has structured price data)
+  if (prices.length === 0) {
+    try {
+      const shopUrl = `https://www.bing.com/shop?q=${encodeURIComponent(query)}&FORM=SHOPTB`;
+      const shopRes = await fetch(shopUrl, {
+        signal: AbortSignal.timeout(5000),
+        headers: plainHeaders,
+      });
+      if (shopRes.ok) {
+        const html = await shopRes.text();
+        extractPrices(html);
+        console.log(`[ORBIT] Bing Shopping: found ${prices.length} candidates`);
+      }
+    } catch (e) {
+      console.error('[ORBIT] Bing Shopping error:', e);
     }
   }
 
-  // data-src / data-iurl attributes
-  const dataSrcMatches = html.matchAll(/(?:data-src|data-iurl)=["'](https?:\/\/[^"']+)["']/gi);
-  for (const m of dataSrcMatches) {
-    if (!m[1].includes('gstatic.com') && !m[1].includes('google.com')) images.push(m[1]);
-  }
-
-  // imgurl= proxy URLs
-  const proxyMatches = html.matchAll(/imgurl=(https?(?:%3A|:)(?:%2F|\/){2}[^&"]+)/gi);
-  for (const m of proxyMatches) {
+  // 3. Google web search (backup)
+  if (prices.length === 0) {
     try {
-      const decoded = decodeURIComponent(m[1]);
-      if (!decoded.includes('gstatic.com')) images.push(decoded);
-    } catch { /* ignore */ }
+      const gUrl = `https://www.google.com/search?q=${encodeURIComponent(query + ' Preis €')}&hl=de&gl=de`;
+      const gRes = await fetch(gUrl, {
+        signal: AbortSignal.timeout(5000),
+        headers: plainHeaders,
+      });
+      if (gRes.ok) {
+        const html = await gRes.text();
+        extractPrices(html);
+        console.log(`[ORBIT] Google price: found ${prices.length} candidates`);
+      }
+    } catch (e) {
+      console.error('[ORBIT] Google price error:', e);
+    }
   }
 
-  const unique = [...new Set(images)];
-  return unique.length > 0 ? { image: unique[0] } : {};
+  if (prices.length === 0) return undefined;
+
+  // Return the median price (avoids shipping costs & outlier noise)
+  prices.sort((a, b) => a - b);
+  const median = prices[Math.floor(prices.length / 2)];
+  return median.toFixed(2);
 }
 
+// ── Main handler ─────────────────────────────────────────
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get('q');
-  const type = request.nextUrl.searchParams.get('type'); // 'image' | 'price' | 'all' (default)
-
   if (!query) {
     return NextResponse.json({ error: 'Missing q parameter' }, { status: 400 });
   }
 
+  console.log(`[ORBIT] Image/price search: "${query}"`);
+
   try {
-    const result: { image?: string; price?: string; images?: string[] } = {};
+    const result: { image?: string; price?: string } = {};
 
+    // 1. Try Google Custom Search API if configured
     if (API_KEY && CX) {
-      // ── Google Custom Search API (preferred) ──
-      if (type === 'image') {
-        // Image-only search
-        const apiResult = await searchWithApi(query, 'image');
-        if (apiResult.image) result.image = apiResult.image;
-      } else {
-        // Web search — gets both image and price from structured data
-        const apiResult = await searchWithApi(query);
-        if (apiResult.image) result.image = apiResult.image;
-        if (apiResult.price) result.price = apiResult.price;
+      const apiResult = await searchGoogleApi(query);
+      if (apiResult.image) result.image = apiResult.image;
+      if (apiResult.price) result.price = apiResult.price;
+    }
 
-        // If still no image, try image-specific search
-        if (!result.image) {
-          const imgResult = await searchWithApi(query, 'image');
-          if (imgResult.image) result.image = imgResult.image;
-        }
+    // 2. Bing Images (primary — most reliable for scraping)
+    if (!result.image) {
+      console.log('[ORBIT] Trying Bing Images...');
+      const bingImages = await searchBingImages(query + ' product');
+      if (bingImages.length > 0) {
+        result.image = bingImages[0];
+        console.log(`[ORBIT] Bing found ${bingImages.length} images`);
       }
-    } else {
-      // ── Fallback: HTML scraping (no API key) ──
-      console.warn('[ORBIT] No GOOGLE_SEARCH_API_KEY/GOOGLE_SEARCH_CX — using HTML scraping fallback');
-      const scraped = await searchWithScraping(query);
-      if (scraped.image) result.image = scraped.image;
+    }
+
+    // 3. DuckDuckGo (solid alternative with JSON endpoint)
+    if (!result.image) {
+      console.log('[ORBIT] Trying DuckDuckGo...');
+      const ddgImages = await searchDuckDuckGo(query + ' product');
+      if (ddgImages.length > 0) {
+        result.image = ddgImages[0];
+        console.log(`[ORBIT] DDG found ${ddgImages.length} images`);
+      }
+    }
+
+    // 4. Google Images scraping (last resort)
+    if (!result.image) {
+      console.log('[ORBIT] Trying Google Images scraping...');
+      const googleImages = await searchGoogleImages(query + ' product');
+      if (googleImages.length > 0) {
+        result.image = googleImages[0];
+        console.log(`[ORBIT] Google found ${googleImages.length} images`);
+      }
+    }
+
+    // 5. Price search (parallel-safe, only if still missing)
+    if (!result.price) {
+      result.price = await scrapePrice(query);
     }
 
     if (!result.image && !result.price) {
       return NextResponse.json({ error: 'No results found' }, { status: 404 });
     }
 
+    console.log(`[ORBIT] Result: image=${!!result.image}, price=${result.price ?? 'none'}`);
     return NextResponse.json(result, {
       headers: { 'Cache-Control': 'public, max-age=86400' },
     });

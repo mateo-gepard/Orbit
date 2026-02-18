@@ -14,6 +14,7 @@ import { useAuth } from '@/components/providers/auth-provider';
 import {
   useWishlistStore, VAULT_CATEGORIES, getItemRarity, getRarityLabel,
   getRarityColor, getVaultStats, formatPrice, pickDuelPair,
+  recommendedRounds, rankingConfidence,
   type VaultItem, type VaultCategory,
 } from '@/lib/wishlist-store';
 
@@ -55,6 +56,7 @@ export default function WishlistPage() {
   const [quickName, setQuickName] = useState('');
   const [quickExpanded, setQuickExpanded] = useState(false);
   const [quickPrice, setQuickPrice] = useState('');
+  const [quickPriceEstimated, setQuickPriceEstimated] = useState(false);
   const [quickCategory, setQuickCategory] = useState<VaultCategory>('tech');
   const [quickUrl, setQuickUrl] = useState('');
   const [quickImageUrl, setQuickImageUrl] = useState('');
@@ -107,6 +109,7 @@ export default function WishlistPage() {
   const scrapeUrl = useCallback(async (url: string) => {
     setQuickScraping(true);
     setQuickScrapedSite('');
+    setQuickPriceEstimated(false);
     try {
       let fullUrl = url.trim();
       if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
@@ -122,14 +125,17 @@ export default function WishlistPage() {
       setQuickCategory(guessCategory(fullUrl, data.siteName));
       setQuickExpanded(true);
 
-      // Fire off Google Search fallback for missing image/price
+      // Fire off search fallback for missing image/price
       if (title && (!data.image || !data.price)) {
         try {
           const searchRes = await fetch(`/api/scrape/image?q=${encodeURIComponent(title)}`);
           if (searchRes.ok) {
             const searchData = await searchRes.json();
             if (!data.image && searchData.image) setQuickImageUrl(searchData.image);
-            if (!data.price && searchData.price) setQuickPrice(searchData.price);
+            if (!data.price && searchData.price) {
+              setQuickPrice(searchData.price);
+              setQuickPriceEstimated(true); // Mark as estimated
+            }
           }
         } catch { /* search fallback failed silently */ }
       }
@@ -189,10 +195,10 @@ export default function WishlistPage() {
     if (!quickName.trim()) return;
     const price = quickPrice ? parseFloat(quickPrice) : undefined;
     addItem({
-      name: quickName.trim(), price, currency: 'EUR', category: quickCategory,
+      name: quickName.trim(), price, priceEstimated: quickPriceEstimated && !!price, currency: 'EUR', category: quickCategory,
       url: quickUrl.trim() || undefined, imageUrl: quickImageUrl.trim() || undefined,
     });
-    setQuickName(''); setQuickPrice(''); setQuickCategory('tech');
+    setQuickName(''); setQuickPrice(''); setQuickPriceEstimated(false); setQuickCategory('tech');
     setQuickExpanded(false); setQuickUrl(''); setQuickImageUrl('');
     setQuickScrapedSite('');
     quickInputRef.current?.focus();
@@ -318,26 +324,71 @@ export default function WishlistPage() {
   // ═══════════════════════════════════════════════════════
   if (view === 'auction') {
     if (!duelPair) startNewDuel();
+    const target = recommendedRounds(activeItems.length);
+    const confidence = rankingConfidence(items);
+    const sessionDone = duelCount >= target && duelCount > 0;
+
     return (
       <div className="min-h-full bg-background">
-        <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => { setView('gallery'); setDuelCount(0); }} className="text-muted-foreground hover:text-foreground transition-colors">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <div>
-              <span className="text-sm font-medium">Auction</span>
-              {duelCount > 0 && <span className="text-xs text-muted-foreground ml-2 tabular-nums">{duelCount} rounds</span>}
+        <div className="px-4 lg:px-8 py-4 border-b border-border/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button onClick={() => { setView('gallery'); setDuelCount(0); }} className="text-muted-foreground hover:text-foreground transition-colors">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div>
+                <span className="text-sm font-medium">Auction</span>
+                <span className="text-xs text-muted-foreground ml-2 tabular-nums">{duelCount}/{target}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {confidence >= 100 && (
+                <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Ranking stable</span>
+              )}
+              {duels.length > 0 && (
+                <button onClick={() => setView('leaderboard')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  Rankings →
+                </button>
+              )}
             </div>
           </div>
-          {duels.length > 0 && (
-            <button onClick={() => setView('leaderboard')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              Rankings →
-            </button>
-          )}
+          {/* Progress bar */}
+          <div className="mt-2.5 h-1 bg-muted/50 rounded-full overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all duration-500',
+                confidence >= 100 ? 'bg-emerald-500' : confidence >= 60 ? 'bg-foreground/60' : 'bg-foreground/30'
+              )}
+              style={{ width: `${Math.min(100, (duelCount / target) * 100)}%` }}
+            />
+          </div>
         </div>
 
-        {!duelPair ? (
+        {sessionDone ? (
+          /* Session complete */
+          <div className="flex items-center justify-center py-24">
+            <div className="text-center space-y-4 max-w-sm">
+              <div className="mx-auto w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Trophy className="h-5 w-5 text-emerald-500" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold tracking-tight">Rankings updated</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {duelCount} rounds completed · {confidence}% confidence
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-2">
+                <button onClick={() => setView('leaderboard')}
+                  className="inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all">
+                  <Crown className="h-3.5 w-3.5" /> View rankings
+                </button>
+                <button onClick={() => { setDuelCount(0); startNewDuel(); }}
+                  className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all">
+                  <Gavel className="h-3.5 w-3.5" /> Keep going
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : !duelPair ? (
           <div className="flex items-center justify-center py-24">
             <div className="text-center space-y-3">
               <p className="text-lg font-medium">Not enough pieces</p>
@@ -349,15 +400,15 @@ export default function WishlistPage() {
             </div>
           </div>
         ) : (
-          <div className="p-4 lg:p-8 max-w-4xl mx-auto">
-            {/* Question */}
-            <div className="text-center mb-8 lg:mb-12">
-              <p className="text-xs text-muted-foreground uppercase tracking-widest mb-2">Lot Comparison</p>
-              <h2 className="text-xl lg:text-2xl font-semibold tracking-tight">Which do you want more?</h2>
+          <div className="flex flex-col h-[calc(100dvh-theme(spacing.28))] lg:h-auto lg:p-8 max-w-4xl mx-auto">
+            {/* Question — compact on mobile */}
+            <div className="text-center py-4 lg:py-0 lg:mb-12 shrink-0">
+              <p className="hidden lg:block text-xs text-muted-foreground uppercase tracking-widest mb-2">Lot Comparison</p>
+              <h2 className="text-base lg:text-2xl font-semibold tracking-tight">Which do you want more?</h2>
             </div>
 
-            {/* Two lots */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+            {/* Two lots — side by side on mobile, stacked on desktop */}
+            <div className="flex-1 grid grid-cols-2 lg:grid-cols-2 gap-2 px-3 lg:px-0 lg:gap-6 min-h-0">
               {duelPair.map((item, idx) => {
                 const isWinner = duelResult?.winnerId === item.id;
                 const isLoser = duelResult && !isWinner;
@@ -367,45 +418,46 @@ export default function WishlistPage() {
                     onClick={() => !duelResult && handleDuelChoice(item.id)}
                     disabled={!!duelResult}
                     className={cn(
-                      'relative text-left rounded-xl border transition-all duration-300 overflow-hidden group',
-                      !duelResult && 'hover:border-foreground/30 hover:shadow-lg active:scale-[0.99] cursor-pointer',
+                      'relative text-left rounded-xl border transition-all duration-300 overflow-hidden group flex flex-col',
+                      !duelResult && 'hover:border-foreground/30 hover:shadow-lg active:scale-[0.98] cursor-pointer',
                       isWinner && 'border-foreground/40 ring-2 ring-foreground/10',
                       isLoser && 'opacity-30 scale-[0.97]',
                       !duelResult && !isWinner && 'border-border'
                     )}>
-                    {/* Image */}
+                    {/* Image — fills available space */}
                     {item.imageUrl ? (
-                      <div className="aspect-[4/3] overflow-hidden bg-muted/20">
+                      <div className="flex-1 min-h-0 overflow-hidden bg-muted/20">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={item.imageUrl} alt={item.name}
-                          className={cn('w-full h-full object-contain p-6 transition-transform duration-500', !duelResult && 'group-hover:scale-105')} />
+                          className={cn('w-full h-full object-contain p-3 lg:p-6 transition-transform duration-500', !duelResult && 'group-hover:scale-105')} />
                       </div>
                     ) : (
-                      <div className="aspect-[4/3] flex items-center justify-center bg-muted/10">
-                        <CatIcon className="h-16 w-16 text-muted-foreground/10" strokeWidth={0.5} />
+                      <div className="flex-1 min-h-0 flex items-center justify-center bg-muted/10">
+                        <CatIcon className="h-10 w-10 lg:h-16 lg:w-16 text-muted-foreground/10" strokeWidth={0.5} />
                       </div>
                     )}
 
-                    {/* Info */}
-                    <div className="p-4 lg:p-5">
-                      <p className="text-xs text-muted-foreground mb-1 font-mono tabular-nums">
-                        Lot {lotNumber(idx)} · {VAULT_CATEGORIES.find(c => c.id === item.category)?.label}
+                    {/* Info — compact on mobile */}
+                    <div className="p-2.5 lg:p-5 shrink-0">
+                      <p className="text-[10px] lg:text-xs text-muted-foreground mb-0.5 lg:mb-1 font-mono tabular-nums truncate">
+                        <span className="hidden lg:inline">Lot {lotNumber(idx)} · </span>{VAULT_CATEGORIES.find(c => c.id === item.category)?.label}
                       </p>
-                      <p className="text-base lg:text-lg font-semibold tracking-tight">{item.name}</p>
-                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
+                      <p className="text-xs lg:text-lg font-semibold tracking-tight line-clamp-2 leading-tight">{item.name}</p>
+                      <div className="flex items-center justify-between mt-1.5 lg:mt-3 pt-1.5 lg:pt-3 border-t border-border/50">
                         {item.price !== undefined ? (
-                          <p className="text-base font-semibold tabular-nums">{formatPrice(item.price, item.currency)}</p>
+                          <p className="text-xs lg:text-base font-semibold tabular-nums">{formatPrice(item.price, item.currency)}</p>
                         ) : (
-                          <p className="text-sm text-muted-foreground/50">No price</p>
+                          <p className="text-[10px] lg:text-sm text-muted-foreground/50">No price</p>
                         )}
-                        <p className="text-xs text-muted-foreground tabular-nums font-mono">{item.elo} pts</p>
+                        <p className="text-[10px] lg:text-xs text-muted-foreground tabular-nums font-mono">{item.elo}</p>
                       </div>
                     </div>
 
                     {/* Winner indicator */}
                     {isWinner && (
-                      <div className="absolute top-3 right-3 bg-foreground text-background rounded-full px-2.5 py-1 text-[10px] font-semibold flex items-center gap-1 animate-scale-in">
-                        <Check className="h-3 w-3" /> Selected
+                      <div className="absolute top-2 right-2 lg:top-3 lg:right-3 bg-foreground text-background rounded-full p-1.5 lg:px-2.5 lg:py-1 text-[10px] font-semibold flex items-center gap-1 animate-scale-in">
+                        <Check className="h-3 w-3" />
+                        <span className="hidden lg:inline">Selected</span>
                       </div>
                     )}
                   </button>
@@ -413,9 +465,9 @@ export default function WishlistPage() {
               })}
             </div>
 
-            {/* Skip */}
+            {/* Skip — bottom of screen on mobile */}
             {!duelResult && (
-              <div className="mt-8 flex justify-center">
+              <div className="py-4 lg:mt-8 flex justify-center shrink-0">
                 <button onClick={startNewDuel} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
                   Skip <ArrowRight className="h-3 w-3" />
                 </button>
@@ -431,19 +483,36 @@ export default function WishlistPage() {
   // LEADERBOARD — Clean Ranked List
   // ═══════════════════════════════════════════════════════
   if (view === 'leaderboard') {
+    const confidence = rankingConfidence(items);
     return (
       <div className="min-h-full bg-background">
-        <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setView('gallery')} className="text-muted-foreground hover:text-foreground transition-colors">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="text-sm font-medium">Rankings</span>
+        <div className="px-4 lg:px-8 py-4 border-b border-border/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setView('gallery')} className="text-muted-foreground hover:text-foreground transition-colors">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-sm font-medium">Rankings</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {confidence > 0 && (
+                <span className={cn('text-[10px] tabular-nums font-medium',
+                  confidence >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}>
+                  {confidence}% confident
+                </span>
+              )}
+              <span className="text-[10px] text-muted-foreground/40 tabular-nums">{duels.length} duels</span>
+            </div>
           </div>
-          <span className="text-xs text-muted-foreground tabular-nums">{duels.length} comparisons</span>
+          {/* Confidence bar */}
+          {confidence > 0 && confidence < 100 && (
+            <div className="mt-2 h-0.5 bg-muted/50 rounded-full overflow-hidden">
+              <div className="h-full bg-foreground/30 rounded-full transition-all duration-500" style={{ width: `${confidence}%` }} />
+            </div>
+          )}
         </div>
 
-        <div className="p-4 lg:p-8 max-w-2xl mx-auto w-full">
+        <div className="p-3 lg:p-8 max-w-2xl mx-auto w-full">
           {rankedItems.length === 0 ? (
             <div className="text-center py-20">
               <p className="text-base font-medium text-muted-foreground/50">No rankings yet</p>
@@ -451,56 +520,97 @@ export default function WishlistPage() {
             </div>
           ) : (
             <div className="space-y-0">
-              {rankedItems.map((item, idx) => {
+              {/* Top 3 — podium style on mobile */}
+              {rankedItems.slice(0, 3).map((item, idx) => {
                 const CatIcon = getCategoryIcon(item.category);
                 const winRate = item.duelsPlayed > 0 ? Math.round((item.duelsWon / item.duelsPlayed) * 100) : 0;
-                const isTop3 = idx < 3;
                 return (
                   <div key={item.id} className={cn(
-                    'flex items-center gap-4 py-3.5 transition-colors border-b border-border/30 last:border-0',
-                    isTop3 && 'py-4'
+                    'flex items-center gap-3 py-3 transition-colors border-b border-border/30',
+                    idx === 0 && 'py-4'
                   )}>
-                    {/* Rank number */}
-                    <div className={cn('w-8 text-right shrink-0',
-                      idx === 0 ? 'text-lg font-bold' : idx < 3 ? 'text-base font-semibold' : 'text-sm text-muted-foreground')}>
-                      {idx + 1}
+                    {/* Rank */}
+                    <div className={cn('w-7 text-center shrink-0 font-mono',
+                      idx === 0 ? 'text-lg font-bold' : 'text-base font-semibold')}>
+                      {idx === 0 ? '👑' : idx + 1}
                     </div>
 
                     {/* Thumb */}
                     {item.imageUrl ? (
                       <div className={cn('rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20',
-                        isTop3 ? 'h-12 w-12' : 'h-9 w-9')}>
+                        idx === 0 ? 'h-14 w-14' : 'h-11 w-11')}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={item.imageUrl} alt="" className="w-full h-full object-contain p-0.5" />
                       </div>
                     ) : (
                       <div className={cn('rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50',
-                        isTop3 ? 'h-12 w-12' : 'h-9 w-9')}>
+                        idx === 0 ? 'h-14 w-14' : 'h-11 w-11')}>
                         <CatIcon className="h-4 w-4 text-muted-foreground/30" strokeWidth={1.5} />
                       </div>
                     )}
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className={cn('font-medium truncate', isTop3 ? 'text-sm' : 'text-[13px]')}>{item.name}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {item.duelsWon}–{item.duelsPlayed - item.duelsWon}
+                      <p className={cn('font-medium truncate', idx === 0 ? 'text-sm' : 'text-[13px]')}>{item.name}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[11px] text-muted-foreground tabular-nums">
+                          {item.duelsWon}W–{item.duelsPlayed - item.duelsWon}L
                         </span>
                         {item.duelsPlayed > 0 && (
-                          <span className={cn('text-xs tabular-nums', winRate >= 60 ? 'text-foreground/60' : 'text-muted-foreground/40')}>
-                            {winRate}%
-                          </span>
+                          <span className="text-[11px] text-muted-foreground/40 tabular-nums">{winRate}%</span>
                         )}
                       </div>
                     </div>
 
+                    {/* Score + price */}
+                    <div className="text-right shrink-0">
+                      <p className="text-xs font-mono tabular-nums font-semibold">{item.elo}</p>
+                      {item.price !== undefined && (
+                        <p className="text-[10px] text-muted-foreground/40 tabular-nums">{formatPrice(item.price, item.currency)}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Separator between podium and rest */}
+              {rankedItems.length > 3 && (
+                <div className="py-2">
+                  <div className="h-px bg-border/60" />
+                </div>
+              )}
+
+              {/* Rest of ranked items — compact */}
+              {rankedItems.slice(3).map((item, idx) => {
+                const CatIcon = getCategoryIcon(item.category);
+                const actualIdx = idx + 3;
+                return (
+                  <div key={item.id} className="flex items-center gap-3 py-2.5 border-b border-border/20 last:border-0">
+                    {/* Rank */}
+                    <div className="w-7 text-center shrink-0 text-xs text-muted-foreground font-mono tabular-nums">
+                      {actualIdx + 1}
+                    </div>
+
+                    {/* Thumb */}
+                    {item.imageUrl ? (
+                      <div className="h-8 w-8 rounded overflow-hidden shrink-0 border border-border/40 bg-muted/20">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.imageUrl} alt="" className="w-full h-full object-contain" />
+                      </div>
+                    ) : (
+                      <div className="h-8 w-8 rounded flex items-center justify-center shrink-0 bg-muted/20">
+                        <CatIcon className="h-3 w-3 text-muted-foreground/30" strokeWidth={1.5} />
+                      </div>
+                    )}
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{item.name}</p>
+                    </div>
+
                     {/* Score */}
                     <div className="text-right shrink-0">
-                      <p className={cn('font-mono tabular-nums font-semibold', isTop3 ? 'text-sm' : 'text-xs text-muted-foreground')}>{item.elo}</p>
-                      {item.price !== undefined && (
-                        <p className="text-[11px] text-muted-foreground/40 tabular-nums">{formatPrice(item.price, item.currency)}</p>
-                      )}
+                      <p className="text-[11px] font-mono tabular-nums text-muted-foreground">{item.elo}</p>
                     </div>
                   </div>
                 );
@@ -510,8 +620,8 @@ export default function WishlistPage() {
 
           {rankedItems.length >= 2 && (
             <button onClick={() => { setView('auction'); startNewDuel(); }}
-              className="w-full mt-6 flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98]">
-              <Gavel className="h-3.5 w-3.5" /> Continue Auction
+              className="w-full mt-4 lg:mt-6 flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98]">
+              <Gavel className="h-3.5 w-3.5" /> {confidence < 100 ? `Improve rankings (${confidence}%)` : 'Continue Auction'}
             </button>
           )}
         </div>
@@ -709,10 +819,22 @@ export default function WishlistPage() {
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <input value={quickPrice} onChange={(e) => setQuickPrice(e.target.value.replace(/[^0-9.]/g, ''))}
-                    placeholder="Price" type="text" inputMode="decimal"
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd(); }}
-                    className="w-20 border border-border bg-background px-2.5 py-1.5 text-xs rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 tabular-nums" />
+                  <div className="relative">
+                    <input value={quickPrice} onChange={(e) => { setQuickPrice(e.target.value.replace(/[^0-9.]/g, '')); if (quickPriceEstimated) setQuickPriceEstimated(false); }}
+                      placeholder="Price" type="text" inputMode="decimal"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd(); }}
+                      className={cn('w-20 border bg-background px-2.5 py-1.5 text-xs rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 tabular-nums',
+                        quickPriceEstimated ? 'border-amber-400/60 bg-amber-50/30 dark:bg-amber-950/20' : 'border-border')} />
+                    {quickPriceEstimated && (
+                      <button
+                        onClick={() => setQuickPriceEstimated(false)}
+                        title="Estimated price from web search — click to confirm"
+                        className="absolute -top-1.5 -right-1.5 flex items-center justify-center h-4 w-4 rounded-full bg-amber-400 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors"
+                      >
+                        <span className="text-[8px] font-bold">~</span>
+                      </button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1 flex-wrap">
                     {VAULT_CATEGORIES.map((cat) => {
                       const Icon = CATEGORY_ICONS[cat.icon] || Package;
@@ -782,7 +904,8 @@ export default function WishlistPage() {
                 onToggleExpand={() => setExpandedCard(expandedCard === item.id ? null : item.id)}
                 onEdit={() => openEdit(item)}
                 onAcquire={() => acquireItem(item.id)}
-                onRemove={() => removeItem(item.id)} />
+                onRemove={() => removeItem(item.id)}
+                onConfirmPrice={() => updateItem(item.id, { priceEstimated: false })} />
             ))}
           </div>
         )}
@@ -808,10 +931,11 @@ export default function WishlistPage() {
 // COLLECTION CARD — Gallery piece
 // ═══════════════════════════════════════════════════════
 
-function CollectionCard({ item, index, rank, isExpanded, onToggleExpand, onEdit, onAcquire, onRemove }: {
+function CollectionCard({ item, index, rank, isExpanded, onToggleExpand, onEdit, onAcquire, onRemove, onConfirmPrice }: {
   item: VaultItem; index: number; rank: number;
   isExpanded: boolean; onToggleExpand: () => void;
   onEdit: () => void; onAcquire: () => void; onRemove: () => void;
+  onConfirmPrice: () => void;
 }) {
   const CatIcon = getCategoryIcon(item.category);
   const catLabel = VAULT_CATEGORIES.find(c => c.id === item.category)?.label || '';
@@ -848,9 +972,21 @@ function CollectionCard({ item, index, rank, isExpanded, onToggleExpand, onEdit,
               </p>
             </div>
             {item.price !== undefined && (
-              <p className={cn('font-medium tabular-nums shrink-0', isExpanded ? 'text-base' : 'text-sm')}>
-                {formatPrice(item.price, item.currency)}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className={cn('font-medium tabular-nums shrink-0', isExpanded ? 'text-base' : 'text-sm',
+                  item.priceEstimated && 'text-amber-600 dark:text-amber-400')}>
+                  {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
+                </p>
+                {item.priceEstimated && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onConfirmPrice(); }}
+                    title="Estimated price — click ✓ to confirm"
+                    className="flex items-center justify-center h-4 w-4 rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors shrink-0"
+                  >
+                    <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
 

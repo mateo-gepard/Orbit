@@ -37,6 +37,7 @@ export interface VaultItem {
   id: string;
   name: string;
   price?: number;
+  priceEstimated?: boolean; // true when price was filled by search fallback
   currency: string;
   url?: string;
   imageUrl?: string;
@@ -117,6 +118,21 @@ export function getRarityColor(rarity: VaultRarity): string {
 }
 
 // ─── Duel Pair Selection ───────────────────────────────────
+
+/** How many rounds are recommended for a good ranking */
+export function recommendedRounds(itemCount: number): number {
+  // ~2× items gives every item ~4 duels on average — enough for solid ranking
+  return Math.max(5, itemCount * 2);
+}
+
+/** Confidence: 0-100 based on how many duels have been played vs needed */
+export function rankingConfidence(items: VaultItem[]): number {
+  const active = items.filter((i) => !i.acquiredAt && !i.removedAt);
+  if (active.length < 2) return 0;
+  const target = recommendedRounds(active.length);
+  const totalDuels = active.reduce((sum, i) => sum + i.duelsPlayed, 0) / 2; // each duel counted twice
+  return Math.min(100, Math.round((totalDuels / target) * 100));
+}
 
 export function pickDuelPair(items: VaultItem[]): [VaultItem, VaultItem] | null {
   const active = items.filter((i) => !i.acquiredAt && !i.removedAt);
