@@ -42,6 +42,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       useToolboxStore.getState()._setSyncUserId(null);
       useWishlistStore.getState()._setSyncUserId(null);
       useSettingsStore.getState()._setSyncUserId(null);
+      // Rehydrate persisted stores from localStorage even in demo mode
+      useToolboxStore.persist.rehydrate();
+      useAbiturStore.persist.rehydrate();
+      useWishlistStore.persist.rehydrate();
+      useSettingsStore.persist.rehydrate();
+      // Start briefing scheduler for demo mode too
+      startBriefingScheduler(() => useOrbitStore.getState().items);
       // No user → nothing to load, dismiss loading screen immediately
       setDataLoaded(true);
       setIsLoading(false);

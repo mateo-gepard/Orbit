@@ -32,6 +32,7 @@ import { useToolboxStore, TOOLS, type ToolId } from '@/lib/toolbox-store';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useSettingsStore } from '@/lib/settings-store';
 // LIFE_AREA_TAGS now managed via store.getAllTags()
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -87,6 +88,21 @@ export function Sidebar() {
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const allTags = getAllTags();
+  const showBadges = useSettingsStore((s) => s.settings.showSidebarBadges);
+  const storeItems = useOrbitStore((s) => s.items);
+
+  // Compute badge counts per route
+  const badgeCounts = useMemo(() => {
+    if (!showBadges) return {} as Record<string, number>;
+    const active = storeItems.filter((i) => i.status !== 'archived' && i.status !== 'done');
+    return {
+      '/tasks': active.filter((i) => i.type === 'task').length,
+      '/projects': active.filter((i) => i.type === 'project').length,
+      '/habits': active.filter((i) => i.type === 'habit').length,
+      '/goals': active.filter((i) => i.type === 'goal').length,
+      '/inbox': active.filter((i) => !i.type || i.status === 'active').length,
+    } as Record<string, number>;
+  }, [showBadges, storeItems]);
 
   const TOOL_ICON_MAP: Record<ToolId, typeof Plane> = {
     flight: Plane,
@@ -219,6 +235,11 @@ export function Sidebar() {
                         strokeWidth={isActive ? 2 : 1.5}
                       />
                       <span className="flex-1">{item.label}</span>
+                      {showBadges && badgeCounts[item.href] > 0 && (
+                        <span className="ml-auto text-[10px] font-medium tabular-nums text-muted-foreground/50">
+                          {badgeCounts[item.href]}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}

@@ -517,3 +517,45 @@
 .animate-turbulence-heavy {
   animation: turbulence-heavy 0.75s ease-in-out;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Settings-driven global styles
+   ═══════════════════════════════════════════════════════════ */
+
+/* Reduce motion — disable ALL transitions and animations */
+.reduce-motion,
+.reduce-motion * {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* High contrast — boost text contrast and borders */
+.high-contrast {
+  --foreground: oklch(0.05 0 0);
+  --muted-foreground: oklch(0.3 0 0);
+  --border: oklch(0.5 0 0);
+}
+.dark.high-contrast {
+  --foreground: oklch(0.98 0 0);
+  --muted-foreground: oklch(0.8 0 0);
+  --border: oklch(0.6 0 0);
+}
+
+/* Compact density — tighter spacing */
+[data-density="compact"] .setting-row,
+[data-density="compact"] [data-slot="item-row"] {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+/* Font size overrides */
+[data-font-size="small"] {
+  font-size: 14px;
+}
+[data-font-size="default"] {
+  font-size: 16px;
+}
+[data-font-size="large"] {
+  font-size: 18px;
+}

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { X, MoreVertical, Archive, Trash2 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem } from '@/lib/firestore';
+import { useSettingsStore } from '@/lib/settings-store';
 import type { OrbitItem, NoteSubtype } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useLinks } from '@/lib/hooks/use-links';
@@ -70,9 +71,17 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
   };
 
   const handleDelete = async () => {
-    if (confirm('Delete this note permanently?')) {
-      await deleteItem(note.id);
+    const { confirmBeforeDelete, archiveInsteadOfDelete } = useSettingsStore.getState().settings;
+    if (confirmBeforeDelete && !confirm('Delete this note permanently?')) return;
+    try {
+      if (archiveInsteadOfDelete) {
+        await updateItem(note.id, { status: 'archived' });
+      } else {
+        await deleteItem(note.id);
+      }
       onClose();
+    } catch {
+      // Delete failed
     }
   };
 

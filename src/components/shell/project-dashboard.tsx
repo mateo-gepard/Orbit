@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
+import { useSettingsStore } from '@/lib/settings-store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { LinkGraph } from '@/components/items/link-graph';
 import type { OrbitItem, ItemStatus } from '@/lib/types';
@@ -70,8 +71,14 @@ export function ProjectDashboard() {
   };
 
   const handleDelete = async () => {
+    const { confirmBeforeDelete, archiveInsteadOfDelete } = useSettingsStore.getState().settings;
+    if (confirmBeforeDelete && !confirm('Delete this item?')) return;
     try {
-      await deleteItem(item.id);
+      if (archiveInsteadOfDelete) {
+        await updateItem(item.id, { status: 'archived' });
+      } else {
+        await deleteItem(item.id);
+      }
       setSelectedItemId(null);
     } catch {
       // Delete failed

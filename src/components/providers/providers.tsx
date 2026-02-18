@@ -5,6 +5,7 @@ import { ThemeProvider } from './theme-provider';
 import { AuthProvider } from './auth-provider';
 import { DataProvider } from './data-provider';
 import { PWAProvider } from './pwa-provider';
+import { SettingsEffects } from './settings-effects';
 import { AppShell } from '@/components/shell/app-shell';
 
 // ── Error Boundary ──
@@ -71,6 +72,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <PWAProvider>
           <AuthProvider>
             <DataProvider>
+              <SettingsEffects />
               <AppShell>{children}</AppShell>
             </DataProvider>
           </AuthProvider>

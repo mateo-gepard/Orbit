@@ -106,8 +106,11 @@ function SettingRow({
   border?: boolean;
 }) {
   return (
-    <div className={cn('flex items-center justify-between gap-4 py-3.5', border && 'border-b border-border/30')}>
-      <div className="min-w-0 flex-1">
+    <div className={cn(
+      'flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4',
+      border && 'border-b border-border/30'
+    )}>
+      <div className="min-w-0">
         <p className="text-[13px] font-medium text-foreground/90">{label}</p>
         {description && <p className="text-[11px] text-muted-foreground/50 mt-0.5 leading-relaxed">{description}</p>}
       </div>
@@ -148,7 +151,7 @@ function SelectDropdown<T extends string>({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      className="appearance-none rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 outline-none focus:ring-1 focus:ring-foreground/20 cursor-pointer pr-7 min-w-[120px]"
+      className="appearance-none rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 outline-none focus:ring-1 focus:ring-foreground/20 cursor-pointer pr-7 w-full sm:w-auto sm:min-w-[120px]"
       style={{
         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
         backgroundRepeat: 'no-repeat',
@@ -251,8 +254,8 @@ function NotificationsSection({
       <SectionHeader icon={Bell} label="Notifications" />
 
       {/* Permission status */}
-      <div className="mb-4 rounded-xl border border-border/30 bg-muted/20 px-4 py-3">
-        <div className="flex items-center justify-between">
+      <div className="mb-4 rounded-xl border border-border/30 bg-muted/20 px-3 sm:px-4 py-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <BellRing className={cn(
               'h-4 w-4',
@@ -549,49 +552,51 @@ export default function SettingsPage() {
         </div>
       </nav>
 
-      {/* ─── Mobile section pills ─── */}
-      <div className="lg:hidden fixed top-[57px] left-0 right-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border/30">
-        <div className="flex overflow-x-auto gap-1 px-3 py-2 no-scrollbar">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setActiveSection(s.id)}
+      {/* ─── Right column: pills + content ─── */}
+      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+        {/* ─── Mobile section pills ─── */}
+        <div className="lg:hidden shrink-0 bg-background/95 backdrop-blur-sm border-b border-border/30">
+          <div className="flex overflow-x-auto gap-1 px-3 py-2 no-scrollbar">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setActiveSection(s.id)}
+                className={cn(
+                  'shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors',
+                  activeSection === s.id
+                    ? 'bg-foreground text-background'
+                    : 'bg-foreground/[0.05] text-muted-foreground/70'
+                )}
+              >
+                <s.icon className="h-3 w-3" strokeWidth={1.5} />
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ─── Content area ─── */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-2xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8 pb-24 lg:pb-8">
+            {/* Saved indicator */}
+            <div
               className={cn(
-                'shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors',
-                activeSection === s.id
-                  ? 'bg-foreground text-background'
-                  : 'bg-foreground/[0.05] text-muted-foreground/70'
+                'fixed top-4 right-4 z-50 flex items-center gap-1.5 rounded-full bg-foreground text-background px-3 py-1.5 text-[11px] font-medium shadow-lg transition-all duration-300',
+                saved ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
               )}
             >
-              <s.icon className="h-3 w-3" strokeWidth={1.5} />
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
+              <Check className="h-3 w-3" />
+              Saved
+            </div>
 
-      {/* ─── Content area ─── */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-4 lg:px-8 py-6 lg:py-8 mt-12 lg:mt-0">
-          {/* Saved indicator */}
-          <div
-            className={cn(
-              'fixed top-4 right-4 z-50 flex items-center gap-1.5 rounded-full bg-foreground text-background px-3 py-1.5 text-[11px] font-medium shadow-lg transition-all duration-300',
-              saved ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
-            )}
-          >
-            <Check className="h-3 w-3" />
-            Saved
-          </div>
-
-          {/* ═════ PROFILE ═════ */}
-          {activeSection === 'profile' && (
-            <div>
+            {/* ═════ PROFILE ═════ */}
+            {activeSection === 'profile' && (
+              <div>
               <SectionHeader icon={User} label="Profile" />
 
               {/* Avatar + name card */}
-              <div className="flex items-center gap-4 p-4 rounded-2xl border border-border/40 bg-card mb-6">
-                <Avatar className="h-16 w-16">
+              <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-2xl border border-border/40 bg-card mb-6">
+                <Avatar className="h-12 w-12 sm:h-16 sm:w-16 shrink-0">
                   <AvatarImage src={user?.photoURL || undefined} />
                   <AvatarFallback className="text-lg bg-foreground/10">
                     {user?.displayName?.charAt(0) || 'U'}
@@ -617,7 +622,7 @@ export default function SettingsPage() {
                   value={settings.displayName || user?.displayName || ''}
                   onChange={(e) => set('displayName', e.target.value)}
                   placeholder={user?.displayName || 'Your name'}
-                  className="w-[180px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20"
+                  className="w-full sm:w-[180px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20"
                 />
               </SettingRow>
 
@@ -632,7 +637,7 @@ export default function SettingsPage() {
                   value={settings.bio}
                   onChange={(e) => set('bio', e.target.value)}
                   placeholder="A few words..."
-                  className="w-[180px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20"
+                  className="w-full sm:w-[180px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20"
                 />
               </SettingRow>
 
@@ -650,7 +655,7 @@ export default function SettingsPage() {
               <SectionHeader icon={Palette} label="Appearance" />
 
               <SettingRow label="Theme" description="Choose how Orbit looks">
-                <div className="flex gap-1 rounded-lg border border-border/40 p-0.5">
+                <div className="flex gap-1 rounded-lg border border-border/40 p-0.5 w-full sm:w-auto">
                   {([
                     { value: 'light' as ThemeMode, icon: Sun, label: 'Light' },
                     { value: 'dark' as ThemeMode, icon: Moon, label: 'Dark' },
@@ -660,7 +665,7 @@ export default function SettingsPage() {
                       key={opt.value}
                       onClick={() => handleThemeChange(opt.value)}
                       className={cn(
-                        'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors',
+                        'flex flex-1 sm:flex-initial items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors',
                         settings.theme === opt.value
                           ? 'bg-foreground text-background'
                           : 'text-muted-foreground/60 hover:text-foreground'
@@ -1042,7 +1047,7 @@ export default function SettingsPage() {
                 </p>
 
                 <div className="rounded-2xl border border-destructive/20 p-4 space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-[13px] font-medium text-foreground/90">Reset All Settings</p>
                       <p className="text-[11px] text-muted-foreground/50">Restore every setting to its default value</p>
@@ -1065,7 +1070,7 @@ export default function SettingsPage() {
                     ) : (
                       <button
                         onClick={() => setShowResetConfirm(true)}
-                        className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-[12px] font-medium text-destructive/80 hover:bg-destructive/5 transition-colors"
+                        className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-[12px] font-medium text-destructive/80 hover:bg-destructive/5 transition-colors w-fit"
                       >
                         <RotateCcw className="h-3 w-3" />
                         Reset
@@ -1086,6 +1091,7 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

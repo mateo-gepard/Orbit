@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem } from '@/lib/firestore';
+import { useSettingsStore } from '@/lib/settings-store';
 import { syncEventToGoogle, requestCalendarPermission, hasCalendarPermission } from '@/lib/google-calendar';
 import { LinkManager } from '@/components/items/link-manager';
 import { LinkGraph } from '@/components/items/link-graph';
@@ -141,8 +142,14 @@ export function DetailPanel() {
 
   const handleDelete = async () => {
     if (!item) return;
+    const { confirmBeforeDelete, archiveInsteadOfDelete } = useSettingsStore.getState().settings;
+    if (confirmBeforeDelete && !confirm('Delete this item?')) return;
     try {
-      await deleteItem(item.id);
+      if (archiveInsteadOfDelete) {
+        await updateItem(item.id, { status: 'archived' });
+      } else {
+        await deleteItem(item.id);
+      }
       setSelectedItemId(null);
     } catch {
       // Delete failed — item may already be gone

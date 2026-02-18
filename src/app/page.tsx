@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useSettingsStore } from '@/lib/settings-store';
 import { ItemRow } from '@/components/items/item-row';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +40,7 @@ import {
 } from '@/lib/habits';
 import { updateItem } from '@/lib/firestore';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 /* ── Login ── */
 function LoginScreen({ onSignIn }: { onSignIn: () => void }) {
@@ -149,6 +151,8 @@ function Section({
 export default function DashboardPage() {
   const { user, loading, signInWithGoogle } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
+  const defaultView = useSettingsStore((s) => s.settings.defaultView);
+  const router = useRouter();
 
   // Hydration-safe: avoid rendering date-dependent text during SSR
   const [mounted, setMounted] = useState(false);
@@ -157,6 +161,18 @@ export default function DashboardPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Redirect to the configured start page if not dashboard
+  useEffect(() => {
+    if (!mounted || loading || !user) return;
+    const viewRoutes: Record<string, string> = {
+      today: '/today',
+      tasks: '/tasks',
+      inbox: '/inbox',
+    };
+    const route = viewRoutes[defaultView];
+    if (route) router.replace(route);
+  }, [mounted, loading, user, defaultView, router]);
 
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
   const isViewingToday = isToday(selectedDate);

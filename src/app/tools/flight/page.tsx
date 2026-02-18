@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useSettingsStore } from '@/lib/settings-store';
 import {
   Plane,
   Play,
@@ -232,7 +233,9 @@ export default function FlightPage() {
 
   const handleLogTurbulence = (type: TurbulenceLog['type']) => {
     setTurbulence((prev) => [...prev, { timestamp: Date.now(), type }]);
-    // Screen shake intensity by distraction type
+    // Screen shake intensity by distraction type (gated by settings)
+    const shakeEnabled = useSettingsStore.getState().settings.focus.turbulenceShakeScreen;
+    if (!shakeEnabled) return;
     const heavy = type === 'person' || type === 'other';
     const cls = heavy ? 'animate-turbulence-heavy' : 'animate-turbulence-light';
     // Reset then re-apply so consecutive taps re-trigger
