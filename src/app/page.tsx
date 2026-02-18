@@ -43,12 +43,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 /* ── Login ── */
-function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp }: {
+function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }: {
   onSignIn: () => void;
   onEmailSignIn: (email: string, password: string) => Promise<void>;
   onEmailSignUp: (email: string, password: string, displayName?: string) => Promise<void>;
+  onSendEmailLink: (email: string) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<'choice' | 'login' | 'signup'>('choice');
+  const [mode, setMode] = useState<'choice' | 'login' | 'signup' | 'email-link' | 'email-link-sent'>('choice');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -86,6 +87,21 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp }: {
     }
   };
 
+  const handleSendLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      await onSendEmailLink(email);
+      setMode('email-link-sent');
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || '';
+      setError(firebaseErrorMessage(code));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="flex min-h-[100dvh] items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-8">
@@ -94,11 +110,18 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp }: {
             O
           </div>
           <h1 className="text-2xl font-bold tracking-tight mt-4">
-            {mode === 'signup' ? 'Create Account' : 'Welcome to ORBIT'}
+            {mode === 'signup' ? 'Create Account'
+              : mode === 'email-link' ? 'Sign in with Email Link'
+              : mode === 'email-link-sent' ? 'Check your Inbox'
+              : 'Welcome to ORBIT'}
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
             {mode === 'signup'
               ? 'Set up your account to sync across devices.'
+              : mode === 'email-link'
+              ? 'We\'ll send a passwordless sign-in link to your email.'
+              : mode === 'email-link-sent'
+              ? `We sent a sign-in link to ${email}. Click the link in the email to sign in.`
               : 'Your personal system for tasks, habits, goals, and ideas.'}
           </p>
         </div>
@@ -134,12 +157,81 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp }: {
               Sign in with Email
             </button>
             <button
+              onClick={() => setMode('email-link')}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-[15px] font-medium text-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
+            >
+              Sign in with Email Link
+            </button>
+            <button
               onClick={onSignIn}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
             >
               Try without account
             </button>
           </div>
+        ) : mode === 'email-link-sent' ? (
+          <div className="space-y-4 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.06]">
+              <svg className="h-5 w-5 text-foreground/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+              </svg>
+            </div>
+            <p className="text-[13px] text-muted-foreground">
+              Open the link in the email to sign in. You can close this tab.
+            </p>
+            <button
+              onClick={() => { setMode('choice'); setEmail(''); setError(''); }}
+              className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
+            >
+              &larr; Back to login
+            </button>
+          </div>
+        ) : mode === 'email-link' ? (
+          <form onSubmit={handleSendLink} className="space-y-3">
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(''); }}
+              required
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
+              autoComplete="email"
+              autoFocus
+            />
+
+            {error && (
+              <p className="text-[12px] text-destructive font-medium px-1">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+            >
+              {submitting ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+              ) : (
+                'Send Sign-in Link'
+              )}
+            </button>
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={() => { setMode('choice'); setError(''); }}
+                className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
+              >
+                &larr; Back
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('login'); setError(''); }}
+                className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
+              >
+                Use password instead
+              </button>
+            </div>
+          </form>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
@@ -213,6 +305,8 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp }: {
         <p className="text-center text-[11px] text-muted-foreground/60">
           {mode === 'choice'
             ? 'Local mode stores everything in your browser. No account needed.'
+            : mode === 'email-link-sent'
+            ? 'The sign-in link expires after a short time.'
             : 'Your data is encrypted and synced securely via Firebase.'}
         </p>
       </div>
@@ -285,7 +379,7 @@ function Section({
 
 /* ── Dashboard ── */
 export default function DashboardPage() {
-  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
+  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const defaultView = useSettingsStore((s) => s.settings.defaultView);
   const router = useRouter();
@@ -369,7 +463,7 @@ export default function DashboardPage() {
   }
 
   if (!user) {
-    return <LoginScreen onSignIn={signInWithGoogle} onEmailSignIn={signInWithEmail} onEmailSignUp={signUpWithEmail} />;
+    return <LoginScreen onSignIn={signInWithGoogle} onEmailSignIn={signInWithEmail} onEmailSignUp={signUpWithEmail} onSendEmailLink={sendEmailLink} />;
   }
 
   // Show onboarding if empty
