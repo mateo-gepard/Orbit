@@ -194,6 +194,11 @@ interface WishlistCloudData {
   duels: AuctionDuel[];
 }
 
+/** Strip `undefined` values from objects — Firestore rejects them */
+function sanitizeForFirestore<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
   if (!_syncUserId) return;
   if (_saveTimer) clearTimeout(_saveTimer);
@@ -201,7 +206,8 @@ function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
   _saveTimer = setTimeout(() => {
     if (!_syncUserId) return;
     _pendingSave = false;
-    saveToolData(_syncUserId, 'wishlist', { items, duels } satisfies WishlistCloudData).catch(
+    const clean = sanitizeForFirestore({ items, duels } satisfies WishlistCloudData);
+    saveToolData(_syncUserId, 'wishlist', clean).catch(
       (err) => {
         console.error('[ORBIT] Failed to save Vault data:', err);
       }

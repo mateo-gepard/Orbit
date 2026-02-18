@@ -116,7 +116,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         },
         () => {
           const { items, duels } = useWishlistStore.getState();
-          return items.length > 0 ? { items, duels } : null;
+          // JSON round-trip strips undefined values (Firestore rejects them)
+          return items.length > 0 ? JSON.parse(JSON.stringify({ items, duels })) : null;
         }
       );
       unsubToolDataRefs.current.push(unsubWishlist);
