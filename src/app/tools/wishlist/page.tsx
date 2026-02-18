@@ -5,10 +5,10 @@ import { createPortal } from 'react-dom';
 import {
   Plus, X, ChevronLeft, Gem, ShoppingBag, ExternalLink,
   Gavel, Trophy, Archive, Undo2, Trash2, Edit3,
-  DollarSign, Crown, ArrowRight,
+  Crown, ArrowRight,
   Cpu, Shirt, Compass, Home, Palette, Heart, BookOpen, Package,
-  Link, Image, StickyNote, Hash, ChevronRight, Loader2, Globe,
-  Check, MoreHorizontal, Tag, Bug,
+  Loader2, Globe,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -16,7 +16,6 @@ import {
   useWishlistStore, VAULT_CATEGORIES, getItemRarity, getRarityLabel,
   getRarityColor, getVaultStats, formatPrice, pickDuelPair,
   recommendedRounds, rankingConfidence,
-  onDebugLog, getDebugLog,
   type VaultItem, type VaultCategory,
 } from '@/lib/wishlist-store';
 
@@ -49,7 +48,6 @@ export default function WishlistPage() {
 
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<VaultView>('gallery');
-  const [selectedCategory, setSelectedCategory] = useState<VaultCategory | 'all'>('all');
   const [editingItem, setEditingItem] = useState<VaultItem | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
 
@@ -157,16 +155,6 @@ export default function WishlistPage() {
   const removedItems = useMemo(() => getRemovedItems(), [items]);
   const rankedItems = useMemo(() => getRankedItems(), [items]);
   const stats = useMemo(() => getVaultStats(items, duels), [items, duels]);
-
-  const filteredItems = useMemo(() => {
-    if (selectedCategory === 'all') return activeItems;
-    return activeItems.filter((i) => i.category === selectedCategory);
-  }, [activeItems, selectedCategory]);
-
-  const sortedGalleryItems = useMemo(
-    () => [...filteredItems].sort((a, b) => b.elo - a.elo),
-    [filteredItems]
-  );
 
   const startNewDuel = useCallback(() => {
     const pair = pickDuelPair(activeItems);
@@ -707,189 +695,305 @@ export default function WishlistPage() {
   }
 
   // ═══════════════════════════════════════════════════════
-  // GALLERY — Modern Gallery Wall, Grouped by Category
+  // GALLERY — Collection Gallery, Grouped by Category
   // ═══════════════════════════════════════════════════════
-  if (view === 'gallery') {
-    // Group items by category
-    const itemsByCategory: Record<VaultCategory, VaultItem[]> = {
-      tech: [], fashion: [], experience: [], home: [], creative: [], wellness: [], education: [], other: []
-    };
-    for (const cat of VAULT_CATEGORIES) itemsByCategory[cat.id] = [];
-    for (const item of activeItems) itemsByCategory[item.category]?.push(item);
 
-    return (
-      <div className="min-h-full bg-background">
-        <div className="px-4 lg:px-8 py-6 border-b border-border/50 flex items-center justify-between">
-          <span className="text-lg font-semibold tracking-tight">Collection Gallery</span>
-          <button
-            onClick={() => setShowQuickAdd(true)}
-            className="inline-flex items-center gap-2 text-xs font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add Piece
+  // Group active items by category (sorted by elo within each group)
+  const itemsByCategory = useMemo(() => {
+    const map: Record<VaultCategory, VaultItem[]> = {
+      tech: [], fashion: [], experience: [], home: [], creative: [], wellness: [], education: [], other: [],
+    };
+    for (const item of activeItems) map[item.category]?.push(item);
+    for (const cat of VAULT_CATEGORIES) map[cat.id].sort((a, b) => b.elo - a.elo);
+    return map;
+  }, [activeItems]);
+
+  const confidence = useMemo(() => rankingConfidence(items), [items]);
+
+  return (
+    <div className="min-h-full bg-background">
+      {/* ── Header ───────────────────────────────────── */}
+      <div className="px-4 lg:px-8 py-4 border-b border-border/50">
+        <div className="flex items-center justify-between">
+          <span className="text-lg font-semibold tracking-tight">The Vault</span>
+          <button onClick={() => setShowQuickAdd(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium bg-foreground text-background px-3 py-1.5 rounded-lg hover:opacity-90 transition-all">
+            <Plus className="h-3.5 w-3.5" /> Add
           </button>
         </div>
-        <div className="p-4 lg:p-8 max-w-6xl mx-auto w-full">
-          {VAULT_CATEGORIES.map((cat) => {
-            const items = itemsByCategory[cat.id];
-            if (!items || items.length === 0) return null;
-            const Icon = CATEGORY_ICONS[cat.icon] || Package;
+        {/* Nav row */}
+        <div className="flex items-center gap-1 mt-3 -mb-px">
+          {([
+            { id: 'gallery' as const, icon: Gem, label: 'Gallery' },
+            { id: 'auction' as const, icon: Gavel, label: 'Auction' },
+            { id: 'leaderboard' as const, icon: Crown, label: 'Rankings' },
+            { id: 'acquired' as const, icon: ShoppingBag, label: 'Acquired' },
+          ] as const).map((tab) => (
+            <button key={tab.id}
+              onClick={() => { if (tab.id === 'auction') startNewDuel(); setView(tab.id); }}
+              className={cn(
+                'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-all',
+                view === tab.id
+                  ? 'bg-foreground/8 text-foreground font-medium'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              )}>
+              <tab.icon className="h-3 w-3" strokeWidth={1.5} />
+              <span className="hidden sm:inline">{tab.label}</span>
+            </button>
+          ))}
+          {/* Stats summary — desktop */}
+          <div className="ml-auto hidden sm:flex items-center gap-3 text-[11px] text-muted-foreground/60 tabular-nums">
+            <span>{stats.totalItems} pieces</span>
+            {stats.totalValue > 0 && <span>{formatPrice(stats.totalValue, 'EUR')}</span>}
+            {confidence > 0 && <span>{confidence}% ranked</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Gallery body ─────────────────────────────── */}
+      <div className="p-3 lg:p-8 max-w-6xl mx-auto w-full">
+        {activeItems.length === 0 ? (
+          <div className="text-center py-24 text-muted-foreground/60">
+            <Gem className="h-10 w-10 mx-auto mb-4 text-muted-foreground/20" strokeWidth={1} />
+            <p className="text-lg font-medium">Your vault is empty</p>
+            <p className="text-sm mt-1 mb-4">Paste a URL or add items to start your collection.</p>
+            <button onClick={() => setShowQuickAdd(true)}
+              className="inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all">
+              <Plus className="h-3.5 w-3.5" /> Add first piece
+            </button>
+          </div>
+        ) : (
+          VAULT_CATEGORIES.map((cat) => {
+            const catItems = itemsByCategory[cat.id];
+            if (!catItems || catItems.length === 0) return null;
+            const CatIcon = CATEGORY_ICONS[cat.icon] || Package;
             return (
-              <section key={cat.id} className="mb-12">
-                <div className="flex items-center gap-2 mb-4">
-                  <Icon className="h-5 w-5 text-muted-foreground/40" />
-                  <h2 className="text-base font-semibold tracking-tight uppercase text-muted-foreground/80">{cat.label}</h2>
-                  <span className="text-xs text-muted-foreground/40">{items.length}</span>
+              <section key={cat.id} className="mb-10 last:mb-0">
+                {/* Category header */}
+                <div className="flex items-center gap-2.5 mb-4">
+                  <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/50 border border-border/50">
+                    <CatIcon className="h-3.5 w-3.5 text-muted-foreground/60" strokeWidth={1.5} />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="text-sm font-semibold tracking-tight">{cat.wing}</h2>
+                    <span className="text-[11px] text-muted-foreground/40 tabular-nums">{catItems.length}</span>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
-                  {items.map((item, idx) => (
-                    <div
-                      key={item.id}
-                      className="relative group rounded-xl border border-border bg-white/80 dark:bg-background/80 shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col"
-                    >
-                      {/* Rank badge — compact on mobile */}
-                      <div className="absolute top-2 left-2 z-10">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-muted text-muted-foreground/80 border border-border"
-                          style={{ minHeight: '1.2em', lineHeight: '1.2em' }}>
-                          #{rankedItems.findIndex(r => r.id === item.id) + 1}
-                        </span>
-                      </div>
-                      {/* Image or icon */}
-                      {item.imageUrl ? (
-                        <div className="flex-1 min-h-0 overflow-hidden bg-muted/20 flex items-center justify-center">
-                          <img src={item.imageUrl} alt={item.name} className="w-full h-32 object-contain p-2 transition-transform duration-500 group-hover:scale-105" />
-                        </div>
-                      ) : (
-                        <div className="flex-1 min-h-0 flex items-center justify-center bg-muted/10">
-                          <Icon className="h-10 w-10 text-muted-foreground/10" strokeWidth={0.5} />
-                        </div>
-                      )}
-                      {/* Info */}
-                      <div className="p-3 flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold truncate flex-1">{item.name}</span>
-                          {item.price !== undefined && (
-                            <span className="text-xs font-mono tabular-nums text-muted-foreground/70">{formatPrice(item.price, item.currency)}</span>
+
+                {/* Cards grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 lg:gap-4">
+                  {catItems.map((item) => {
+                    const rank = rankedItems.findIndex(r => r.id === item.id) + 1;
+                    const isOpen = expandedCard === item.id;
+                    return (
+                      <div key={item.id}
+                        className={cn(
+                          'relative group rounded-xl border overflow-hidden flex flex-col cursor-pointer transition-all duration-200',
+                          isOpen
+                            ? 'border-foreground/20 shadow-lg ring-1 ring-foreground/5 col-span-2 sm:col-span-2 lg:col-span-2'
+                            : 'border-border/60 hover:border-foreground/15 hover:shadow-md bg-background'
+                        )}
+                        onClick={() => setExpandedCard(isOpen ? null : item.id)}
+                      >
+                        {/* Rank pill — very compact on mobile */}
+                        {rank > 0 && item.duelsPlayed > 0 && (
+                          <div className="absolute top-1.5 left-1.5 lg:top-2 lg:left-2 z-10">
+                            <span className="inline-flex items-center justify-center h-4 lg:h-5 min-w-[1.1rem] lg:min-w-[1.4rem] px-1 lg:px-1.5 rounded-full text-[9px] lg:text-[10px] font-mono font-bold bg-background/90 text-foreground/70 border border-border/80 backdrop-blur-sm leading-none">
+                              {rank}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Image area */}
+                        {item.imageUrl ? (
+                          <div className={cn('overflow-hidden bg-muted/10 flex items-center justify-center',
+                            isOpen ? 'h-48 lg:h-56' : 'h-28 lg:h-36')}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={item.imageUrl} alt={item.name}
+                              className={cn('w-full h-full object-contain transition-transform duration-500',
+                                isOpen ? 'p-4 lg:p-6' : 'p-2 lg:p-3 group-hover:scale-105')} />
+                          </div>
+                        ) : (
+                          <div className={cn('flex items-center justify-center bg-muted/5',
+                            isOpen ? 'h-36' : 'h-24 lg:h-32')}>
+                            <CatIcon className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground/8" strokeWidth={0.5} />
+                          </div>
+                        )}
+
+                        {/* Info */}
+                        <div className="p-2.5 lg:p-3 flex-1 flex flex-col">
+                          <p className={cn('font-medium tracking-tight line-clamp-2 leading-snug',
+                            isOpen ? 'text-sm' : 'text-[12px] lg:text-[13px]')}>{item.name}</p>
+                          <div className="flex items-center justify-between mt-auto pt-1.5">
+                            {item.price !== undefined ? (
+                              <span className={cn('text-[11px] lg:text-xs font-medium tabular-nums',
+                                item.priceEstimated ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/70')}>
+                                {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground/30">—</span>
+                            )}
+                            {item.url && (
+                              <a href={item.url} target="_blank" rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-muted-foreground/30 hover:text-muted-foreground transition-colors">
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Expanded detail */}
+                          {isOpen && (
+                            <div className="mt-3 pt-3 border-t border-border/40 space-y-2.5 animate-in fade-in duration-200">
+                              {item.notes && <p className="text-[12px] text-muted-foreground leading-relaxed">{item.notes}</p>}
+                              <div className="flex items-center flex-wrap gap-2 text-[11px] text-muted-foreground/60">
+                                <span>{getRarityLabel(getItemRarity(item))}</span>
+                                {item.duelsPlayed > 0 && (
+                                  <span className="tabular-nums font-mono">{item.elo} · {item.duelsWon}W–{item.duelsPlayed - item.duelsWon}L</span>
+                                )}
+                                <span>{new Date(item.addedAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span>
+                              </div>
+                              {/* Actions */}
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <button onClick={(e) => { e.stopPropagation(); acquireItem(item.id); setExpandedCard(null); }}
+                                  className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium bg-foreground text-background hover:opacity-90 transition-all">
+                                  <ShoppingBag className="h-3 w-3" /> Got it
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); openEdit(item); }}
+                                  className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all border border-border/60">
+                                  <Edit3 className="h-3 w-3" /> Edit
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); removeItem(item.id); setExpandedCard(null); }}
+                                  className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all border border-border/60">
+                                  <Archive className="h-3 w-3" />
+                                </button>
+                                {item.priceEstimated && (
+                                  <button onClick={(e) => { e.stopPropagation(); updateItem(item.id, { priceEstimated: false }); }}
+                                    title="Confirm estimated price"
+                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors ml-auto">
+                                    <Check className="h-3 w-3" strokeWidth={3} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           )}
                         </div>
-                        {item.notes && (
-                          <p className="text-[11px] text-muted-foreground/60 truncate">{item.notes}</p>
-                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             );
-          })}
-          {activeItems.length === 0 && (
-            <div className="text-center py-24 text-muted-foreground/60">
-              <p className="text-lg font-medium">Your gallery is empty</p>
-              <p className="text-sm mt-1">Add your first piece to begin your collection.</p>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-// COLLECTION CARD — Gallery piece
-// ═══════════════════════════════════════════════════════
-
-function CollectionCard({ item, index, rank, isExpanded, onToggleExpand, onEdit, onAcquire, onRemove, onConfirmPrice }: {
-  item: VaultItem; index: number; rank: number;
-  isExpanded: boolean; onToggleExpand: () => void;
-  onEdit: () => void; onAcquire: () => void; onRemove: () => void;
-  onConfirmPrice: () => void;
-}) {
-  const CatIcon = getCategoryIcon(item.category);
-  const catLabel = VAULT_CATEGORIES.find(c => c.id === item.category)?.label || '';
-  const rarity = getItemRarity(item);
-
-  return (
-    <div className={cn('bg-background transition-all duration-200 group relative', isExpanded && 'sm:col-span-2 lg:col-span-3')}>
-      {/* Main clickable area */}
-      <div className="cursor-pointer" onClick={onToggleExpand}>
-        {/* Image */}
-        {item.imageUrl ? (
-          <div className={cn('overflow-hidden bg-muted/10 relative', isExpanded ? 'aspect-[16/7]' : 'aspect-[4/3]')}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={item.imageUrl} alt={item.name}
-              className={cn('w-full h-full object-contain transition-transform duration-500', isExpanded ? 'p-8' : 'p-5 group-hover:scale-[1.03]')} />
-          </div>
-        ) : (
-          <div className={cn('flex items-center justify-center bg-muted/5', isExpanded ? 'aspect-[16/7]' : 'aspect-[4/3]')}>
-            <CatIcon className={cn('text-muted-foreground/8 transition-all duration-500', isExpanded ? 'h-20 w-20' : 'h-12 w-12 group-hover:scale-110')} strokeWidth={0.5} />
-          </div>
+          })
         )}
+      </div>
 
-        {/* Info strip */}
-        <div className={cn('px-4 py-3', isExpanded && 'px-5 py-4')}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              {/* Lot line */}
-              <p className="text-[10px] text-muted-foreground/50 font-mono tabular-nums mb-0.5">
-                {lotNumber(index)} · {catLabel}
-                {rank > 0 && rank <= 5 && item.duelsPlayed > 0 && <span className="ml-1">· #{rank}</span>}
-              </p>
-              <p className={cn('font-medium tracking-tight truncate', isExpanded ? 'text-base' : 'text-sm')}>
-                {item.name}
-              </p>
+      {/* ── Quick-add overlay ────────────────────────── */}
+      {showQuickAdd && mounted && createPortal(
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowQuickAdd(false); setQuickExpanded(false); setQuickName(''); setQuickPrice(''); setQuickUrl(''); setQuickImageUrl(''); setQuickScrapedSite(''); setQuickPriceEstimated(false); } }}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="relative w-full sm:max-w-md bg-background border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl p-4 sm:p-5 animate-in slide-in-from-bottom-4 duration-200 max-h-[85dvh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold">Add to Collection</span>
+              <button onClick={() => { setShowQuickAdd(false); setQuickExpanded(false); setQuickName(''); setQuickPrice(''); setQuickUrl(''); setQuickImageUrl(''); setQuickScrapedSite(''); setQuickPriceEstimated(false); }}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1 -m-1">
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            {item.price !== undefined && (
-              <div className="flex items-center gap-1.5">
-                <p className={cn('font-medium tabular-nums shrink-0', isExpanded ? 'text-base' : 'text-sm',
-                  item.priceEstimated && 'text-amber-600 dark:text-amber-400')}>
-                  {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
-                </p>
-                {item.priceEstimated && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onConfirmPrice(); }}
-                    title="Estimated price — click ✓ to confirm"
-                    className="flex items-center justify-center h-4 w-4 rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors shrink-0"
-                  >
-                    <Check className="h-2.5 w-2.5" strokeWidth={3} />
-                  </button>
+
+            {/* URL / Name input */}
+            <div className="relative">
+              <input ref={quickInputRef} value={quickName} onChange={(e) => {
+                setQuickName(e.target.value);
+                // Auto-scrape if URL pasted
+                if (isUrl(e.target.value)) {
+                  if (scrapeTimeoutRef.current) clearTimeout(scrapeTimeoutRef.current);
+                  scrapeTimeoutRef.current = setTimeout(() => scrapeUrl(e.target.value), 600);
+                }
+              }}
+                placeholder="Paste a link or type a name…"
+                onKeyDown={(e) => { if (e.key === 'Enter' && !quickExpanded) { if (isUrl(quickName)) { scrapeUrl(quickName); } else { setQuickExpanded(true); } } else if (e.key === 'Enter' && quickExpanded) { handleQuickAdd(); } }}
+                className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all pr-10" />
+              {quickScraping && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Loader2 className="h-4 w-4 text-muted-foreground/50 animate-spin" />
+                </div>
+              )}
+            </div>
+
+            {quickScrapedSite && (
+              <p className="text-[11px] text-muted-foreground/50 mt-1.5 flex items-center gap-1">
+                <Globe className="h-3 w-3" /> {quickScrapedSite}
+              </p>
+            )}
+
+            {/* Expanded fields */}
+            {quickExpanded && (
+              <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                {quickImageUrl && (
+                  <div className="rounded-lg border border-border overflow-hidden h-32 bg-muted/10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={quickImageUrl} alt="" className="w-full h-full object-contain p-2"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  </div>
                 )}
+
+                <div className="flex gap-2">
+                  <input value={quickPrice} onChange={(e) => setQuickPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="Price" type="text" inputMode="decimal"
+                    className="flex-1 border border-border bg-transparent px-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 tabular-nums" />
+                  <input value={quickImageUrl} onChange={(e) => setQuickImageUrl(e.target.value)}
+                    placeholder="Image URL" type="text"
+                    className="flex-1 border border-border bg-transparent px-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+                </div>
+
+                {/* Category pills */}
+                <div className="flex flex-wrap gap-1">
+                  {VAULT_CATEGORIES.map((cat) => {
+                    const Icon = CATEGORY_ICONS[cat.icon] || Package;
+                    const sel = quickCategory === cat.id;
+                    return (
+                      <button key={cat.id} onClick={() => setQuickCategory(cat.id)}
+                        className={cn('flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] transition-all border',
+                          sel ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/30')}>
+                        <Icon className="h-2.5 w-2.5" strokeWidth={1.5} />{cat.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
-          </div>
 
-          {/* Expanded detail */}
-          {isExpanded && (
-            <div className="mt-4 pt-4 border-t border-border/40 space-y-3 animate-in fade-in duration-200">
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span>{getRarityLabel(rarity)}</span>
-                {item.duelsPlayed > 0 && <span className="tabular-nums font-mono">{item.elo} pts · {item.duelsWon}W–{item.duelsPlayed - item.duelsWon}L</span>}
-                <span>{new Date(item.addedAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-              </div>
-              {item.notes && <p className="text-sm text-muted-foreground leading-relaxed">{item.notes}</p>}
-              {item.url && (
-                <a href={item.url} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  <ExternalLink className="h-3 w-3" /> Source
-                </a>
+            {/* Actions */}
+            <div className="flex items-center gap-2 mt-4">
+              {!quickExpanded && quickName.trim() && !isUrl(quickName) && (
+                <button onClick={() => setQuickExpanded(true)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  More details
+                </button>
               )}
-              {/* Actions */}
-              <div className="flex items-center gap-2 pt-1">
-                <button onClick={(e) => { e.stopPropagation(); onAcquire(); }}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-foreground text-background hover:opacity-90 transition-all">
-                  <ShoppingBag className="h-3 w-3" /> Acquired
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all border border-border">
-                  <Edit3 className="h-3 w-3" /> Edit
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all border border-border">
-                  <Archive className="h-3 w-3" /> Remove
+              <div className="ml-auto flex items-center gap-2">
+                {quickExpanded && (
+                  <button onClick={() => { setQuickExpanded(false); }}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5">
+                    Less
+                  </button>
+                )}
+                <button onClick={handleQuickAdd} disabled={!quickName.trim() || quickScraping}
+                  className={cn('inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-all',
+                    quickName.trim() && !quickScraping
+                      ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
+                      : 'bg-muted text-muted-foreground cursor-not-allowed')}>
+                  <Plus className="h-3.5 w-3.5" /> Add
                 </button>
               </div>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
