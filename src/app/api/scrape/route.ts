@@ -177,14 +177,31 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Common HTML named entities → character map
+const HTML_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  // German / Latin-1 supplement
+  auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü',
+  szlig: 'ß', euro: '€', pound: '£', yen: '¥', cent: '¢',
+  // Accented
+  aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú',
+  agrave: 'à', egrave: 'è', igrave: 'ì', ograve: 'ò', ugrave: 'ù',
+  acirc: 'â', ecirc: 'ê', icirc: 'î', ocirc: 'ô', ucirc: 'û',
+  atilde: 'ã', ntilde: 'ñ', otilde: 'õ', ccedil: 'ç',
+  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú',
+  Agrave: 'À', Egrave: 'È', Igrave: 'Ì', Ograve: 'Ò', Ugrave: 'Ù',
+  Acirc: 'Â', Ecirc: 'Ê', Icirc: 'Î', Ocirc: 'Ô', Ucirc: 'Û',
+  Atilde: 'Ã', Ntilde: 'Ñ', Otilde: 'Õ', Ccedil: 'Ç',
+  // Misc
+  copy: '©', reg: '®', trade: '™', deg: '°', middot: '·',
+  mdash: '—', ndash: '–', laquo: '«', raquo: '»',
+  lsquo: '\u2018', rsquo: '\u2019', ldquo: '\u201C', rdquo: '\u201D',
+  bull: '•', hellip: '…', times: '×', divide: '÷',
+};
+
 function decodeHtmlEntities(str: string): string {
   return str
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ');
+    .replace(/&([a-zA-Z]+);/g, (full, name) => HTML_ENTITIES[name] ?? full);
 }
