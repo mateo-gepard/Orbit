@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  Plus, X, Crown, Gem, ShoppingBag, ExternalLink, ChevronLeft,
+  Plus, X, ChevronLeft, Gem, ShoppingBag, ExternalLink,
   Gavel, Trophy, Archive, Undo2, Trash2, Edit3,
-  Sparkles, Clock, DollarSign, Star, ArrowRight, Lock,
+  DollarSign, Crown, ArrowRight,
   Cpu, Shirt, Compass, Home, Palette, Heart, BookOpen, Package,
-  Medal, Link, Image, StickyNote, TrendingUp, Shield, Eye,
-  Flame, Target, Zap, Hash, ChevronRight, BarChart3,
+  Link, Image, StickyNote, Hash, ChevronRight, Loader2, Globe,
+  Check, MoreHorizontal, Tag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -28,21 +28,9 @@ function getCategoryIcon(cat: VaultCategory) {
 
 type VaultView = 'gallery' | 'auction' | 'leaderboard' | 'acquired' | 'add' | 'edit';
 
-// ─── Particle burst effect ─────────────────────────────
-function ParticleBurst({ count = 8, color = 'bg-amber-400' }: { count?: number; color?: string }) {
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="absolute left-1/2 top-1/2"
-          style={{
-            animation: `vault-particle 0.8s ease-out ${i * 0.05}s forwards`,
-            transform: `rotate(${(360 / count) * i}deg) translateY(-20px)`,
-          }}>
-          <div className={cn('h-1 w-1 rounded-full', color)} />
-        </div>
-      ))}
-    </div>
-  );
+// ─── Lot number from index ─────────────────────────────
+function lotNumber(idx: number) {
+  return String(idx + 1).padStart(3, '0');
 }
 
 // ═════════════════════════════════════════════════════════
@@ -62,15 +50,20 @@ export default function WishlistPage() {
   const [editingItem, setEditingItem] = useState<VaultItem | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
 
-  // Quick-add state (inline in gallery)
+  // Quick-add state
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [quickExpanded, setQuickExpanded] = useState(false);
   const [quickPrice, setQuickPrice] = useState('');
   const [quickCategory, setQuickCategory] = useState<VaultCategory>('tech');
+  const [quickUrl, setQuickUrl] = useState('');
+  const [quickImageUrl, setQuickImageUrl] = useState('');
+  const [quickScraping, setQuickScraping] = useState(false);
+  const [quickScrapedSite, setQuickScrapedSite] = useState('');
   const quickInputRef = useRef<HTMLInputElement>(null);
+  const scrapeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Form state (full edit form)
+  // Form state (edit)
   const [formName, setFormName] = useState('');
   const [formPrice, setFormPrice] = useState('');
   const [formCurrency, setFormCurrency] = useState('EUR');
@@ -81,23 +74,65 @@ export default function WishlistPage() {
 
   // Auction state
   const [duelPair, setDuelPair] = useState<[VaultItem, VaultItem] | null>(null);
-  const [duelResult, setDuelResult] = useState<{ winnerId: string; animation: boolean } | null>(null);
+  const [duelResult, setDuelResult] = useState<{ winnerId: string } | null>(null);
   const [duelCount, setDuelCount] = useState(0);
-  const [gavelStrike, setGavelStrike] = useState(false);
-  const [showParticles, setShowParticles] = useState(false);
-  const [auctionReady, setAuctionReady] = useState(false);
+
+  // Card expand (gallery detail overlay)
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Auto-focus quick-add input when it opens
   useEffect(() => {
-    if (showQuickAdd) {
-      setTimeout(() => quickInputRef.current?.focus(), 50);
-    }
+    if (showQuickAdd) setTimeout(() => quickInputRef.current?.focus(), 50);
   }, [showQuickAdd]);
 
+  // URL helpers
+  const isUrl = useCallback((text: string) => {
+    const t = text.trim();
+    return /^https?:\/\/.+\..+/i.test(t) || /^www\..+\..+/i.test(t);
+  }, []);
+
+  const guessCategory = useCallback((url: string, siteName?: string): VaultCategory => {
+    const d = (url + ' ' + (siteName || '')).toLowerCase();
+    if (/amazon|ebay|best\s?buy|newegg|mediamarkt|apple\.com|samsung/i.test(d)) return 'tech';
+    if (/zalando|asos|zara|hm\.com|uniqlo|nike|adidas|farfetch|ssense/i.test(d)) return 'fashion';
+    if (/airbnb|booking|eventbrite|ticketmaster|tripadvisor/i.test(d)) return 'experience';
+    if (/ikea|wayfair|westelm|pottery\s?barn|muji/i.test(d)) return 'home';
+    if (/etsy|behance|dribbble/i.test(d)) return 'creative';
+    if (/lululemon|gymshark|peloton|headspace|calm/i.test(d)) return 'wellness';
+    if (/udemy|coursera|masterclass|kindle/i.test(d)) return 'education';
+    return 'other';
+  }, []);
+
+  const scrapeUrl = useCallback(async (url: string) => {
+    setQuickScraping(true);
+    setQuickScrapedSite('');
+    try {
+      let fullUrl = url.trim();
+      if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
+      const res = await fetch(`/api/scrape?url=${encodeURIComponent(fullUrl)}`);
+      if (!res.ok) throw new Error('Scrape failed');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.title) setQuickName(data.title);
+      if (data.price) setQuickPrice(data.price);
+      if (data.image) setQuickImageUrl(data.image);
+      if (data.siteName) setQuickScrapedSite(data.siteName);
+      setQuickUrl(fullUrl);
+      setQuickCategory(guessCategory(fullUrl, data.siteName));
+      setQuickExpanded(true);
+    } catch {
+      let fullUrl = url.trim();
+      if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
+      setQuickUrl(fullUrl);
+      setQuickCategory(guessCategory(fullUrl));
+    } finally {
+      setQuickScraping(false);
+    }
+  }, [guessCategory]);
+
   const activeItems = useMemo(() => getActiveItems(), [items]);
-  const acquiredItems = useMemo(() => getAcquiredItems(), [items]);
+  const acquiredItemsList = useMemo(() => getAcquiredItems(), [items]);
   const removedItems = useMemo(() => getRemovedItems(), [items]);
   const rankedItems = useMemo(() => getRankedItems(), [items]);
   const stats = useMemo(() => getVaultStats(items, duels), [items, duels]);
@@ -116,27 +151,19 @@ export default function WishlistPage() {
     const pair = pickDuelPair(activeItems);
     setDuelPair(pair);
     setDuelResult(null);
-    setAuctionReady(false);
-    setTimeout(() => setAuctionReady(true), 100);
   }, [activeItems]);
 
   const handleDuelChoice = (winnerId: string) => {
     if (!duelPair) return;
     const loserId = duelPair[0].id === winnerId ? duelPair[1].id : duelPair[0].id;
     recordDuel(winnerId, loserId);
-    setGavelStrike(true);
-    setShowParticles(true);
-    setDuelResult({ winnerId, animation: true });
+    setDuelResult({ winnerId });
     setDuelCount((c) => c + 1);
-    setTimeout(() => setGavelStrike(false), 600);
-    setTimeout(() => setShowParticles(false), 1000);
     setTimeout(() => {
       const pair = pickDuelPair(useWishlistStore.getState().getActiveItems());
       setDuelPair(pair);
       setDuelResult(null);
-      setAuctionReady(false);
-      setTimeout(() => setAuctionReady(true), 100);
-    }, 1600);
+    }, 1200);
   };
 
   const resetForm = () => {
@@ -149,16 +176,12 @@ export default function WishlistPage() {
     if (!quickName.trim()) return;
     const price = quickPrice ? parseFloat(quickPrice) : undefined;
     addItem({
-      name: quickName.trim(),
-      price,
-      currency: 'EUR',
-      category: quickCategory,
+      name: quickName.trim(), price, currency: 'EUR', category: quickCategory,
+      url: quickUrl.trim() || undefined, imageUrl: quickImageUrl.trim() || undefined,
     });
-    setQuickName('');
-    setQuickPrice('');
-    setQuickCategory('tech');
-    setQuickExpanded(false);
-    // Keep the bar open so they can add more
+    setQuickName(''); setQuickPrice(''); setQuickCategory('tech');
+    setQuickExpanded(false); setQuickUrl(''); setQuickImageUrl('');
+    setQuickScrapedSite('');
     quickInputRef.current?.focus();
   };
 
@@ -191,174 +214,86 @@ export default function WishlistPage() {
   if (!mounted) return null;
 
   // ═══════════════════════════════════════════════════════
-  // ADD / EDIT — APPRAISAL DOCUMENT
+  // EDIT FORM — Clean editorial
   // ═══════════════════════════════════════════════════════
-
   if (view === 'add' || view === 'edit') {
     return (
       <div className="min-h-full bg-background">
-        {/* Header strip */}
-        <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center gap-2">
-          <button onClick={() => { resetForm(); setView('gallery'); }} className="text-muted-foreground/40 hover:text-foreground transition-colors">
+        <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center gap-3">
+          <button onClick={() => { resetForm(); setView('gallery'); }} className="text-muted-foreground hover:text-foreground transition-colors">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <Gem className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.5} />
-          <span className="text-[11px] font-mono text-muted-foreground/50 uppercase tracking-wider">
-            {editingItem ? 'Appraisal Update' : 'New Acquisition'}
-          </span>
+          <span className="text-sm font-medium">{editingItem ? 'Edit' : 'New'} Piece</span>
         </div>
 
-        <div className="p-4 lg:p-8 max-w-xl mx-auto w-full">
-          {/* Appraisal document — styled like Flight's boarding pass */}
-          <div className="rounded-2xl overflow-hidden border border-amber-500/20 bg-card">
-            {/* Gold header bar */}
-            <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 px-5 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Gem className="h-3.5 w-3.5 text-white/90" />
-                <span className="text-[13px] font-bold text-white tracking-wide">THE VAULT</span>
-              </div>
-              <span className="text-[10px] font-mono text-white/60 tracking-wider uppercase">
-                {editingItem ? 'Reappraisal' : 'Intake Form'}
-              </span>
+        <div className="p-4 lg:p-8 max-w-lg mx-auto w-full space-y-5">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Name</label>
+            <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="What is it?" autoFocus
+              className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1.5 block">Price</label>
+              <input value={formPrice} onChange={(e) => setFormPrice(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="—" type="text" inputMode="decimal"
+                className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all tabular-nums" />
             </div>
-
-            {/* Document body */}
-            <div className="p-5 space-y-4">
-              <div className="text-center pb-3 border-b border-border/30">
-                <p className="text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
-                  {editingItem ? 'Certificate of Reappraisal' : 'Certificate of Acquisition'}
-                </p>
-                <p className="text-[10px] text-muted-foreground/20 mt-0.5">
-                  {new Date().toLocaleDateString([], { day: '2-digit', month: 'long', year: 'numeric' })}
-                </p>
-              </div>
-
-              {/* Name field */}
-              <div>
-                <label className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest flex items-center gap-1.5">
-                  <Hash className="h-2.5 w-2.5" /> Piece Name <span className="text-amber-500">*</span>
-                </label>
-                <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Sony WH-1000XM5" autoFocus
-                  className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-3 text-[14px] font-semibold placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/40 focus:shadow-[0_0_0_3px_rgba(245,158,11,0.05)] transition-all" />
-              </div>
-
-              {/* Price + Currency */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest flex items-center gap-1.5">
-                    <DollarSign className="h-2.5 w-2.5" /> Appraisal Value
-                  </label>
-                  <div className="relative mt-1.5">
-                    <input value={formPrice} onChange={(e) => setFormPrice(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" type="text" inputMode="decimal"
-                      className="w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-3 text-[14px] font-semibold placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/40 focus:shadow-[0_0_0_3px_rgba(245,158,11,0.05)] transition-all tabular-nums" />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest">Currency</label>
-                  <select value={formCurrency} onChange={(e) => setFormCurrency(e.target.value)}
-                    className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3 py-3 text-[14px] font-semibold focus:outline-none focus:border-amber-500/40 transition-all appearance-none text-center">
-                    {['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'].map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {/* Tear line */}
-              <div className="relative mx-0 my-1">
-                <div className="border-t border-dashed border-border/40" />
-                <div className="absolute -left-7 -top-2.5 h-5 w-5 rounded-full bg-background" />
-                <div className="absolute -right-7 -top-2.5 h-5 w-5 rounded-full bg-background" />
-              </div>
-
-              {/* Museum Wing selector */}
-              <div>
-                <label className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest flex items-center gap-1.5">
-                  <Target className="h-2.5 w-2.5" /> Museum Wing
-                </label>
-                <div className="mt-2 grid grid-cols-4 gap-2">
-                  {VAULT_CATEGORIES.map((cat) => {
-                    const Icon = CATEGORY_ICONS[cat.icon] || Package;
-                    const isSelected = formCategory === cat.id;
-                    return (
-                      <button key={cat.id} onClick={() => setFormCategory(cat.id)}
-                        className={cn(
-                          'relative flex flex-col items-center gap-1.5 rounded-xl py-3 px-1 text-center transition-all duration-300 active:scale-95 border overflow-hidden',
-                          isSelected
-                            ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.08)]'
-                            : 'border-border/30 text-muted-foreground/35 hover:border-border/50 hover:text-muted-foreground/50'
-                        )}>
-                        {isSelected && (
-                          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-400/10 to-transparent animate-vault-shimmer" />
-                          </div>
-                        )}
-                        <Icon className={cn('h-4 w-4 transition-transform duration-300', isSelected && 'scale-110')} strokeWidth={1.5} />
-                        <span className="text-[7px] uppercase tracking-wider font-semibold leading-none">{cat.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Source Link */}
-              <div>
-                <label className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest flex items-center gap-1.5">
-                  <Link className="h-2.5 w-2.5" /> Source
-                </label>
-                <input value={formUrl} onChange={(e) => setFormUrl(e.target.value)} placeholder="https://..."
-                  className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/40 focus:shadow-[0_0_0_3px_rgba(245,158,11,0.05)] transition-all" />
-              </div>
-
-              {/* Image URL with preview */}
-              <div>
-                <label className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest flex items-center gap-1.5">
-                  <Image className="h-2.5 w-2.5" /> Image
-                </label>
-                <input value={formImageUrl} onChange={(e) => setFormImageUrl(e.target.value)} placeholder="https://...image.jpg"
-                  className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/40 focus:shadow-[0_0_0_3px_rgba(245,158,11,0.05)] transition-all" />
-                {formImageUrl && (
-                  <div className="mt-2.5 rounded-xl border border-border/30 overflow-hidden h-36 bg-foreground/[0.02] relative group">
-                    <div className="absolute inset-0 bg-gradient-to-b from-amber-500/[0.02] to-transparent pointer-events-none" />
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={formImageUrl} alt="Preview" className="w-full h-full object-contain p-3 transition-transform duration-500 group-hover:scale-105"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  </div>
-                )}
-              </div>
-
-              {/* Curator Notes */}
-              <div>
-                <label className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest flex items-center gap-1.5">
-                  <StickyNote className="h-2.5 w-2.5" /> Curator&apos;s Notes
-                </label>
-                <textarea value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="Why does this piece belong in the collection?" rows={3}
-                  className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/40 focus:shadow-[0_0_0_3px_rgba(245,158,11,0.05)] transition-all resize-none italic" />
-              </div>
-            </div>
-
-            {/* Barcode at bottom — like Flight boarding pass */}
-            <div className="px-5 pb-4 pt-2">
-              <div className="flex items-center justify-center gap-[2px] h-6 overflow-hidden opacity-15">
-                {Array.from({ length: 35 }, (_, i) => (
-                  <div key={i} className="bg-foreground rounded-[0.5px]"
-                    style={{ width: [1, 2, 3][Math.abs((formName || 'VAULT').charCodeAt(i % Math.max(formName.length, 1)) + i) % 3] + 'px', height: '100%' }} />
-                ))}
-              </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">Currency</label>
+              <select value={formCurrency} onChange={(e) => setFormCurrency(e.target.value)}
+                className="w-full border border-border bg-transparent px-2 py-2.5 text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all appearance-none text-center">
+                {['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'].map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
           </div>
 
-          {/* Submit CTA */}
-          <button onClick={handleSubmit} disabled={!formName.trim()}
-            className={cn(
-              'mt-6 w-full relative flex items-center justify-center gap-2 rounded-2xl py-4 text-[14px] font-bold transition-all active:scale-[0.98] text-white shadow-lg overflow-hidden',
-              formName.trim()
-                ? 'bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 hover:from-amber-500 hover:via-amber-400 hover:to-yellow-400 shadow-amber-600/25'
-                : 'bg-muted-foreground/20 cursor-not-allowed shadow-none'
-            )}>
-            {formName.trim() && (
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-vault-shimmer" />
+          <div>
+            <label className="text-xs text-muted-foreground mb-2 block">Category</label>
+            <div className="flex flex-wrap gap-1.5">
+              {VAULT_CATEGORIES.map((cat) => {
+                const Icon = CATEGORY_ICONS[cat.icon] || Package;
+                const sel = formCategory === cat.id;
+                return (
+                  <button key={cat.id} onClick={() => setFormCategory(cat.id)}
+                    className={cn('flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-all border',
+                      sel ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/30')}>
+                    <Icon className="h-3 w-3" strokeWidth={1.5} />{cat.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Link</label>
+            <input value={formUrl} onChange={(e) => setFormUrl(e.target.value)} placeholder="https://..."
+              className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Image URL</label>
+            <input value={formImageUrl} onChange={(e) => setFormImageUrl(e.target.value)} placeholder="https://..."
+              className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
+            {formImageUrl && (
+              <div className="mt-3 rounded-lg border border-border overflow-hidden h-40 bg-muted/30">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={formImageUrl} alt="" className="w-full h-full object-contain p-3"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              </div>
             )}
-            <Gem className="h-4 w-4 relative z-10" />
-            <span className="relative z-10">{editingItem ? 'Update Piece' : 'Induct into Vault'}</span>
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Notes</label>
+            <textarea value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="Why do you want this?" rows={3}
+              className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all resize-none" />
+          </div>
+
+          <button onClick={handleSubmit} disabled={!formName.trim()}
+            className={cn('w-full flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium transition-all',
+              formName.trim() ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]' : 'bg-muted text-muted-foreground cursor-not-allowed')}>
+            {editingItem ? 'Save Changes' : 'Add to Collection'}
           </button>
         </div>
       </div>
@@ -366,338 +301,193 @@ export default function WishlistPage() {
   }
 
   // ═══════════════════════════════════════════════════════
-  // AUCTION RING — THE DRAMATIC DUEL
+  // AUCTION — Editorial Comparison
   // ═══════════════════════════════════════════════════════
-
   if (view === 'auction') {
     if (!duelPair) startNewDuel();
     return (
-      <div className="relative min-h-full bg-background">
-        {/* Ambient background glow */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-0 left-1/4 w-64 h-64 bg-amber-500/[0.03] rounded-full blur-[100px]" />
-          <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-amber-500/[0.02] rounded-full blur-[100px]" />
-        </div>
-
-        {/* Header */}
-        <div className="relative z-10 px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <button onClick={() => { setView('gallery'); setDuelCount(0); }} className="text-muted-foreground/40 hover:text-foreground transition-colors">
+      <div className="min-h-full bg-background">
+        <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => { setView('gallery'); setDuelCount(0); }} className="text-muted-foreground hover:text-foreground transition-colors">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <div className="relative">
-              <Gavel className={cn('h-4 w-4 text-amber-500 transition-transform', gavelStrike && 'animate-[gavel-strike_0.4s_ease-out]')} strokeWidth={1.5} />
-              {gavelStrike && <div className="absolute inset-0 rounded-full animate-[vault-pulse-ring_0.6s_ease-out]" style={{ boxShadow: '0 0 0 2px rgba(245,158,11,0.3)' }} />}
-            </div>
             <div>
-              <span className="text-[12px] font-bold tracking-tight">Auction Ring</span>
-              <span className="text-[9px] text-muted-foreground/30 ml-2 tabular-nums">{duelCount} duels</span>
+              <span className="text-sm font-medium">Auction</span>
+              {duelCount > 0 && <span className="text-xs text-muted-foreground ml-2 tabular-nums">{duelCount} rounds</span>}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {duels.length > 0 && (
-              <button onClick={() => setView('leaderboard')} className="flex items-center gap-1 text-[10px] text-amber-500/50 hover:text-amber-400 transition-colors">
-                <Trophy className="h-3 w-3" /> Rankings
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="relative z-10">
-          {!duelPair ? (
-            /* Not enough pieces */
-            <div className="flex items-center justify-center py-20">
-              <div className="text-center px-6">
-                <div className="relative mx-auto w-20 h-20 mb-4">
-                  <div className="absolute inset-0 rounded-full bg-amber-500/5 animate-pulse" />
-                  <div className="absolute inset-3 rounded-full bg-amber-500/10 flex items-center justify-center">
-                    <Gavel className="h-7 w-7 text-amber-500/20" />
-                  </div>
-                </div>
-                <p className="text-[16px] font-bold">Not Enough Pieces</p>
-                <p className="text-[12px] text-muted-foreground/30 mt-1 max-w-[280px]">Add at least 2 items to start the auction</p>
-                <button onClick={() => { setView('gallery'); setShowQuickAdd(true); }} className="mt-4 inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber-500 hover:text-amber-400 transition-colors bg-amber-500/10 px-4 py-2 rounded-xl">
-                  <Plus className="h-3.5 w-3.5" /> Add Piece
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 lg:p-8 max-w-3xl mx-auto w-full">
-              {/* Auction header */}
-              <div className="text-center mb-6 lg:mb-8">
-                <div className="inline-flex items-center gap-2 bg-amber-500/10 rounded-full px-4 py-1.5 mb-3">
-                  <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                  <span className="text-[9px] text-amber-500 uppercase tracking-[0.2em] font-bold">Live Auction</span>
-                </div>
-                <h2 className="text-[20px] lg:text-[24px] font-black tracking-tight">Which do you desire more?</h2>
-                <p className="text-[11px] text-muted-foreground/25 mt-1">Tap the piece you want most. The gavel decides.</p>
-              </div>
-
-              {/* Duel arena */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8 items-start relative">
-                {/* Center VS badge */}
-                <div className="hidden lg:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
-                  <div className="relative">
-                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-amber-500 to-yellow-500 flex items-center justify-center shadow-xl shadow-amber-500/30">
-                      <span className="text-[11px] font-black text-white">VS</span>
-                    </div>
-                    <div className="absolute inset-0 rounded-full animate-[vault-pulse-ring_2s_ease-out_infinite]" style={{ boxShadow: '0 0 0 4px rgba(245,158,11,0.15)' }} />
-                  </div>
-                </div>
-
-                {duelPair.map((item, idx) => {
-                  const isWinner = duelResult?.winnerId === item.id;
-                  const isLoser = duelResult && !isWinner;
-                  const rarity = getItemRarity(item);
-                  const CatIcon = getCategoryIcon(item.category);
-                  return (
-                    <button key={item.id} onClick={() => !duelResult && handleDuelChoice(item.id)} disabled={!!duelResult}
-                      className={cn(
-                        'relative rounded-2xl overflow-hidden border transition-all duration-500 text-left group',
-                        auctionReady ? 'animate-vault-card-enter' : 'opacity-0',
-                        !duelResult && 'hover:border-amber-500/50 hover:-translate-y-1 active:scale-[0.98] cursor-pointer',
-                        isWinner && 'border-amber-400/60 -translate-y-2 shadow-2xl shadow-amber-500/20',
-                        isLoser && 'border-border/15 opacity-30 scale-[0.96] blur-[1px]',
-                        !duelResult && !isWinner && 'border-border/40'
-                      )}
-                      style={{ animationDelay: `${idx * 0.15}s`, animationFillMode: 'forwards' }}>
-                      
-                      {/* Top accent */}
-                      <div className={cn('h-[3px] transition-all duration-500',
-                        isWinner ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500' 
-                        : 'bg-gradient-to-r from-transparent via-amber-400/20 to-transparent')} />
-
-                      {/* Spotlight overlay on hover */}
-                      {!duelResult && (
-                        <div className="absolute inset-0 bg-gradient-to-b from-amber-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-                      )}
-
-                      {/* Image or placeholder */}
-                      {item.imageUrl ? (
-                        <div className="h-40 lg:h-52 overflow-hidden bg-foreground/[0.02] relative">
-                          <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent z-10 pointer-events-none" />
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={item.imageUrl} alt={item.name}
-                            className={cn('w-full h-full object-contain p-4 transition-all duration-700', !duelResult && 'group-hover:scale-110')} />
-                        </div>
-                      ) : (
-                        <div className="h-32 lg:h-40 flex items-center justify-center relative">
-                          <div className="absolute inset-0 bg-gradient-to-t from-background/50 via-transparent to-transparent pointer-events-none" />
-                          <div className="relative">
-                            <CatIcon className={cn('h-16 w-16 text-muted-foreground/10 transition-all duration-500', !duelResult && 'group-hover:text-amber-500/20 group-hover:scale-110')} strokeWidth={0.5} />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Info */}
-                      <div className="px-5 pb-5 pt-3 relative z-10">
-                        <p className="text-[16px] lg:text-[18px] font-black tracking-tight truncate">{item.name}</p>
-                        <div className="flex items-center gap-2.5 mt-1.5">
-                          <span className={cn('text-[8px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-md',
-                            rarity === 'heirloom' ? 'bg-purple-500/10 text-purple-400' : rarity === 'vintage' ? 'bg-amber-500/10 text-amber-400' : rarity === 'seasoned' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'
-                          )}>{getRarityLabel(rarity)}</span>
-                          <span className="text-[9px] text-muted-foreground/30">{VAULT_CATEGORIES.find(c => c.id === item.category)?.wing}</span>
-                        </div>
-
-                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/20">
-                          {item.price !== undefined ? (
-                            <p className="text-[20px] font-black text-amber-400 tabular-nums">{formatPrice(item.price, item.currency)}</p>
-                          ) : (
-                            <p className="text-[13px] text-muted-foreground/20 italic">Priceless</p>
-                          )}
-                          <div className="flex items-center gap-1.5 bg-foreground/[0.03] rounded-lg px-2 py-1">
-                            <Trophy className="h-3 w-3 text-amber-500/40" />
-                            <span className="text-[11px] text-muted-foreground/40 font-mono tabular-nums font-bold">{item.elo}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Winner crown overlay */}
-                      {isWinner && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-                          <div className="relative">
-                            <div className="bg-gradient-to-br from-amber-400 to-yellow-500 rounded-full p-4 shadow-2xl shadow-amber-500/40 animate-vault-crown-drop">
-                              <Crown className="h-8 w-8 text-white" />
-                            </div>
-                            {showParticles && <ParticleBurst count={12} />}
-                          </div>
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-
-                {/* Mobile VS badge */}
-                <div className="lg:hidden flex justify-center -my-3 relative z-20 order-first" style={{ order: 1 }}>
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-amber-500 to-yellow-500 flex items-center justify-center shadow-lg shadow-amber-500/30 -mt-5">
-                    <span className="text-[10px] font-black text-white">VS</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Skip / session info */}
-              {!duelResult && (
-                <div className="mt-6 flex items-center justify-center">
-                  <button onClick={startNewDuel}
-                    className="flex items-center gap-1.5 text-[11px] text-muted-foreground/25 hover:text-muted-foreground/50 transition-colors bg-foreground/[0.02] hover:bg-foreground/[0.04] px-4 py-2 rounded-xl">
-                    Skip this duel <ArrowRight className="h-3 w-3" />
-                  </button>
-                </div>
-              )}
-            </div>
+          {duels.length > 0 && (
+            <button onClick={() => setView('leaderboard')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+              Rankings →
+            </button>
           )}
         </div>
+
+        {!duelPair ? (
+          <div className="flex items-center justify-center py-24">
+            <div className="text-center space-y-3">
+              <p className="text-lg font-medium">Not enough pieces</p>
+              <p className="text-sm text-muted-foreground">Add at least two items to start comparing.</p>
+              <button onClick={() => { setView('gallery'); setShowQuickAdd(true); }}
+                className="inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all mt-2">
+                <Plus className="h-3.5 w-3.5" /> Add items
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 lg:p-8 max-w-4xl mx-auto">
+            {/* Question */}
+            <div className="text-center mb-8 lg:mb-12">
+              <p className="text-xs text-muted-foreground uppercase tracking-widest mb-2">Lot Comparison</p>
+              <h2 className="text-xl lg:text-2xl font-semibold tracking-tight">Which do you want more?</h2>
+            </div>
+
+            {/* Two lots */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+              {duelPair.map((item, idx) => {
+                const isWinner = duelResult?.winnerId === item.id;
+                const isLoser = duelResult && !isWinner;
+                const CatIcon = getCategoryIcon(item.category);
+                return (
+                  <button key={item.id}
+                    onClick={() => !duelResult && handleDuelChoice(item.id)}
+                    disabled={!!duelResult}
+                    className={cn(
+                      'relative text-left rounded-xl border transition-all duration-300 overflow-hidden group',
+                      !duelResult && 'hover:border-foreground/30 hover:shadow-lg active:scale-[0.99] cursor-pointer',
+                      isWinner && 'border-foreground/40 ring-2 ring-foreground/10',
+                      isLoser && 'opacity-30 scale-[0.97]',
+                      !duelResult && !isWinner && 'border-border'
+                    )}>
+                    {/* Image */}
+                    {item.imageUrl ? (
+                      <div className="aspect-[4/3] overflow-hidden bg-muted/20">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.imageUrl} alt={item.name}
+                          className={cn('w-full h-full object-contain p-6 transition-transform duration-500', !duelResult && 'group-hover:scale-105')} />
+                      </div>
+                    ) : (
+                      <div className="aspect-[4/3] flex items-center justify-center bg-muted/10">
+                        <CatIcon className="h-16 w-16 text-muted-foreground/10" strokeWidth={0.5} />
+                      </div>
+                    )}
+
+                    {/* Info */}
+                    <div className="p-4 lg:p-5">
+                      <p className="text-xs text-muted-foreground mb-1 font-mono tabular-nums">
+                        Lot {lotNumber(idx)} · {VAULT_CATEGORIES.find(c => c.id === item.category)?.label}
+                      </p>
+                      <p className="text-base lg:text-lg font-semibold tracking-tight">{item.name}</p>
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
+                        {item.price !== undefined ? (
+                          <p className="text-base font-semibold tabular-nums">{formatPrice(item.price, item.currency)}</p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground/50">No price</p>
+                        )}
+                        <p className="text-xs text-muted-foreground tabular-nums font-mono">{item.elo} pts</p>
+                      </div>
+                    </div>
+
+                    {/* Winner indicator */}
+                    {isWinner && (
+                      <div className="absolute top-3 right-3 bg-foreground text-background rounded-full px-2.5 py-1 text-[10px] font-semibold flex items-center gap-1 animate-scale-in">
+                        <Check className="h-3 w-3" /> Selected
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Skip */}
+            {!duelResult && (
+              <div className="mt-8 flex justify-center">
+                <button onClick={startNewDuel} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                  Skip <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
 
   // ═══════════════════════════════════════════════════════
-  // LEADERBOARD — RANKINGS PODIUM
+  // LEADERBOARD — Clean Ranked List
   // ═══════════════════════════════════════════════════════
-
   if (view === 'leaderboard') {
-    const topThree = rankedItems.slice(0, 3);
     return (
-      <div className="relative min-h-full bg-background">
-        {/* Ambient glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 bg-amber-500/[0.03] rounded-full blur-[120px] pointer-events-none" />
-
-        <div className="relative z-10 px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setView('gallery')} className="text-muted-foreground/40 hover:text-foreground transition-colors">
+      <div className="min-h-full bg-background">
+        <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView('gallery')} className="text-muted-foreground hover:text-foreground transition-colors">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <Trophy className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.5} />
-            <span className="text-[12px] font-bold tracking-tight">Auction Rankings</span>
+            <span className="text-sm font-medium">Rankings</span>
           </div>
-          <span className="text-[10px] text-muted-foreground/30 tabular-nums">{duels.length} duels total</span>
+          <span className="text-xs text-muted-foreground tabular-nums">{duels.length} comparisons</span>
         </div>
 
-        <div className="relative z-10 p-4 lg:p-8 max-w-2xl mx-auto w-full space-y-8">
-          {/* Podium — only show with 3+ items */}
-          {topThree.length >= 3 && (
-            <div className="pt-4">
-              {/* Podium header */}
-              <div className="text-center mb-6">
-                <p className="text-[8px] text-amber-500/40 uppercase tracking-[0.25em] font-bold">Most Desired</p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 items-end">
-                {[1, 0, 2].map((rank) => {
-                  const item = topThree[rank];
-                  if (!item) return null;
-                  const isFirst = rank === 0;
-                  const CatIcon = getCategoryIcon(item.category);
-                  const podiumHeight = isFirst ? 'pb-6' : rank === 1 ? 'pb-4' : 'pb-3';
-                  const medalColors = isFirst ? 'from-amber-400 to-yellow-500' : rank === 1 ? 'from-zinc-300 to-zinc-400' : 'from-orange-600 to-orange-700';
-                  return (
-                    <div key={item.id} className={cn(
-                      'rounded-2xl overflow-hidden border text-center transition-all relative group',
-                      isFirst ? 'border-amber-500/30 order-2' : 'border-border/30',
-                      rank === 1 && 'order-1', rank === 2 && 'order-3', podiumHeight
-                    )}>
-                      {/* Top accent */}
-                      <div className={cn('h-[3px] bg-gradient-to-r from-transparent to-transparent',
-                        isFirst ? 'via-amber-400/80' : rank === 1 ? 'via-zinc-400/40' : 'via-orange-600/40')} />
-                      
-                      {/* Glow for #1 */}
-                      {isFirst && <div className="absolute inset-0 bg-amber-500/[0.03] pointer-events-none" />}
-
-                      <div className={cn('py-4', isFirst ? 'pt-5' : '')}>
-                        {/* Medal */}
-                        <div className={cn('mx-auto rounded-full flex items-center justify-center mb-3 shadow-lg',
-                          isFirst ? 'h-11 w-11' : 'h-8 w-8',
-                          `bg-gradient-to-br ${medalColors}`
-                        )}>
-                          {isFirst ? <Crown className="h-5 w-5 text-white" /> : <span className="text-[11px] font-black text-white">{rank + 1}</span>}
-                        </div>
-
-                        {/* Image or icon */}
-                        {item.imageUrl ? (
-                          <div className={cn('mx-auto overflow-hidden rounded-xl mb-3 border border-border/20', isFirst ? 'h-24 w-24' : 'h-16 w-16')}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain p-1" />
-                          </div>
-                        ) : (
-                          <CatIcon className={cn('mx-auto mb-3', isFirst ? 'h-12 w-12 text-muted-foreground/15' : 'h-8 w-8 text-muted-foreground/10')} strokeWidth={0.6} />
-                        )}
-
-                        <p className={cn('font-bold truncate px-3', isFirst ? 'text-[14px]' : 'text-[11px]')}>{item.name}</p>
-                        <div className="flex items-center justify-center gap-1 mt-1">
-                          <Trophy className={cn('text-amber-500/50', isFirst ? 'h-3 w-3' : 'h-2.5 w-2.5')} />
-                          <p className={cn('text-amber-500 font-mono tabular-nums font-bold', isFirst ? 'text-[13px]' : 'text-[10px]')}>{item.elo}</p>
-                        </div>
-                        {item.price !== undefined && <p className={cn('text-muted-foreground/30 mt-0.5', isFirst ? 'text-[11px]' : 'text-[9px]')}>{formatPrice(item.price, item.currency)}</p>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Full ranking list */}
+        <div className="p-4 lg:p-8 max-w-2xl mx-auto w-full">
           {rankedItems.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="relative mx-auto w-16 h-16 mb-4">
-                <div className="absolute inset-0 rounded-full bg-amber-500/5 animate-pulse" />
-                <div className="absolute inset-2 rounded-full bg-foreground/[0.02] flex items-center justify-center">
-                  <Trophy className="h-6 w-6 text-muted-foreground/10" />
-                </div>
-              </div>
-              <p className="text-[15px] font-bold text-muted-foreground/30">No rankings yet</p>
-              <p className="text-[12px] text-muted-foreground/20 mt-1">Run some auctions to rank your collection</p>
+            <div className="text-center py-20">
+              <p className="text-base font-medium text-muted-foreground/50">No rankings yet</p>
+              <p className="text-sm text-muted-foreground/30 mt-1">Run some auctions first.</p>
             </div>
           ) : (
-            <div className="space-y-1">
-              <p className="text-[9px] text-muted-foreground/25 uppercase tracking-widest font-medium mb-3 px-1">Full Rankings</p>
+            <div className="space-y-0">
               {rankedItems.map((item, idx) => {
-                const rarity = getItemRarity(item);
                 const CatIcon = getCategoryIcon(item.category);
                 const winRate = item.duelsPlayed > 0 ? Math.round((item.duelsWon / item.duelsPlayed) * 100) : 0;
+                const isTop3 = idx < 3;
                 return (
                   <div key={item.id} className={cn(
-                    'flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all group',
-                    idx < 3 ? 'bg-foreground/[0.03]' : 'hover:bg-foreground/[0.02]'
+                    'flex items-center gap-4 py-3.5 transition-colors border-b border-border/30 last:border-0',
+                    isTop3 && 'py-4'
                   )}>
-                    {/* Rank */}
-                    <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center shrink-0 text-[12px] font-black',
-                      idx === 0 ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white' : idx === 1 ? 'bg-gradient-to-br from-zinc-300 to-zinc-400 text-white' : idx === 2 ? 'bg-gradient-to-br from-orange-600 to-orange-700 text-white' : 'bg-foreground/[0.03] text-muted-foreground/25')}>
+                    {/* Rank number */}
+                    <div className={cn('w-8 text-right shrink-0',
+                      idx === 0 ? 'text-lg font-bold' : idx < 3 ? 'text-base font-semibold' : 'text-sm text-muted-foreground')}>
                       {idx + 1}
                     </div>
-                    
+
                     {/* Thumb */}
                     {item.imageUrl ? (
-                      <div className="h-9 w-9 rounded-lg overflow-hidden shrink-0 border border-border/20">
+                      <div className={cn('rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20',
+                        isTop3 ? 'h-12 w-12' : 'h-9 w-9')}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt="" className="w-full h-full object-contain" />
+                        <img src={item.imageUrl} alt="" className="w-full h-full object-contain p-0.5" />
                       </div>
                     ) : (
-                      <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 bg-foreground/[0.03] border border-border/20">
-                        <CatIcon className="h-4 w-4 text-muted-foreground/20" strokeWidth={1.5} />
+                      <div className={cn('rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50',
+                        isTop3 ? 'h-12 w-12' : 'h-9 w-9')}>
+                        <CatIcon className="h-4 w-4 text-muted-foreground/30" strokeWidth={1.5} />
                       </div>
                     )}
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-bold truncate">{item.name}</p>
+                      <p className={cn('font-medium truncate', isTop3 ? 'text-sm' : 'text-[13px]')}>{item.name}</p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className={cn('text-[8px] uppercase tracking-wider font-semibold', getRarityColor(rarity))}>{getRarityLabel(rarity)}</span>
-                        <span className="text-[8px] text-muted-foreground/15">•</span>
-                        <span className="text-[9px] text-muted-foreground/25 tabular-nums">{item.duelsWon}W/{item.duelsPlayed}D</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {item.duelsWon}–{item.duelsPlayed - item.duelsWon}
+                        </span>
                         {item.duelsPlayed > 0 && (
-                          <>
-                            <span className="text-[8px] text-muted-foreground/15">•</span>
-                            <span className={cn('text-[9px] tabular-nums font-medium', winRate >= 60 ? 'text-emerald-400/60' : winRate >= 40 ? 'text-muted-foreground/30' : 'text-red-400/40')}>{winRate}%</span>
-                          </>
+                          <span className={cn('text-xs tabular-nums', winRate >= 60 ? 'text-foreground/60' : 'text-muted-foreground/40')}>
+                            {winRate}%
+                          </span>
                         )}
                       </div>
                     </div>
 
-                    {/* Elo */}
+                    {/* Score */}
                     <div className="text-right shrink-0">
-                      <p className="text-[13px] font-mono font-black text-amber-500 tabular-nums">{item.elo}</p>
-                      {item.price !== undefined && <p className="text-[9px] text-muted-foreground/25 tabular-nums">{formatPrice(item.price, item.currency)}</p>}
+                      <p className={cn('font-mono tabular-nums font-semibold', isTop3 ? 'text-sm' : 'text-xs text-muted-foreground')}>{item.elo}</p>
+                      {item.price !== undefined && (
+                        <p className="text-[11px] text-muted-foreground/40 tabular-nums">{formatPrice(item.price, item.currency)}</p>
+                      )}
                     </div>
                   </div>
                 );
@@ -705,12 +495,10 @@ export default function WishlistPage() {
             </div>
           )}
 
-          {/* Continue CTA */}
           {rankedItems.length >= 2 && (
             <button onClick={() => { setView('auction'); startNewDuel(); }}
-              className="w-full relative flex items-center justify-center gap-2 rounded-2xl py-3.5 text-[13px] font-bold bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-white hover:from-amber-500 hover:via-amber-400 hover:to-yellow-400 transition-all active:scale-[0.98] shadow-lg shadow-amber-600/20 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-vault-shimmer" />
-              <Gavel className="h-4 w-4 relative z-10" /> <span className="relative z-10">Continue Auction</span>
+              className="w-full mt-6 flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98]">
+              <Gavel className="h-3.5 w-3.5" /> Continue Auction
             </button>
           )}
         </div>
@@ -719,84 +507,68 @@ export default function WishlistPage() {
   }
 
   // ═══════════════════════════════════════════════════════
-  // ACQUIRED / PROVENANCE SHELF
+  // ACQUIRED / REMOVED
   // ═══════════════════════════════════════════════════════
-
   if (view === 'acquired') {
-    const displayItems = showRemoved ? removedItems : acquiredItems;
+    const displayItems = showRemoved ? removedItems : acquiredItemsList;
     return (
       <div className="min-h-full bg-background">
-        <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={() => { setView('gallery'); setShowRemoved(false); }} className="text-muted-foreground/40 hover:text-foreground transition-colors">
+        <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => { setView('gallery'); setShowRemoved(false); }} className="text-muted-foreground hover:text-foreground transition-colors">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            {showRemoved ? <Archive className="h-3.5 w-3.5 text-muted-foreground/40" strokeWidth={1.5} /> : <ShoppingBag className="h-3.5 w-3.5 text-emerald-500" strokeWidth={1.5} />}
-            <span className="text-[12px] font-bold tracking-tight">
-              {showRemoved ? 'Deaccessioned' : 'Provenance Shelf'}
-            </span>
+            <span className="text-sm font-medium">{showRemoved ? 'Removed' : 'Acquired'}</span>
           </div>
-          <button onClick={() => setShowRemoved(!showRemoved)} className="text-[10px] px-2.5 py-1 rounded-lg text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors border border-border/30 hover:border-border/50">
+          <button onClick={() => setShowRemoved(!showRemoved)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded-lg px-2.5 py-1">
             {showRemoved ? 'Show Acquired' : 'Show Removed'}
           </button>
         </div>
 
-        <div className="p-4 lg:p-8 max-w-2xl mx-auto w-full space-y-4">
-          {/* Total spend banner */}
-          {!showRemoved && acquiredItems.length > 0 && (
-            <div className="rounded-2xl overflow-hidden border border-emerald-500/20 bg-card">
-              <div className="h-[3px] bg-gradient-to-r from-transparent via-emerald-400/60 to-transparent" />
-              <div className="px-5 py-4 text-center">
-                <p className="text-[8px] text-emerald-500/50 uppercase tracking-[0.2em] font-bold">Collection Acquired</p>
-                <p className="text-3xl font-black tabular-nums mt-1 text-emerald-400">{formatPrice(stats.acquiredValue, acquiredItems[0]?.currency || 'EUR')}</p>
-                <p className="text-[9px] text-muted-foreground/25 mt-1">{acquiredItems.length} pieces · total investment</p>
-              </div>
+        <div className="p-4 lg:p-8 max-w-2xl mx-auto w-full">
+          {/* Spend summary */}
+          {!showRemoved && acquiredItemsList.length > 0 && (
+            <div className="mb-6 pb-6 border-b border-border/50 text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Total Spent</p>
+              <p className="text-3xl font-semibold tabular-nums">{formatPrice(stats.acquiredValue, acquiredItemsList[0]?.currency || 'EUR')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{acquiredItemsList.length} items acquired</p>
             </div>
           )}
 
-          {/* Items */}
           {displayItems.length === 0 ? (
-            <div className="text-center py-16">
-              {showRemoved ? (
-                <><Archive className="h-8 w-8 text-muted-foreground/10 mx-auto mb-3" /><p className="text-[14px] font-bold text-muted-foreground/30">No deaccessioned pieces</p></>
-              ) : (
-                <><ShoppingBag className="h-8 w-8 text-muted-foreground/10 mx-auto mb-3" /><p className="text-[14px] font-bold text-muted-foreground/30">No acquisitions yet</p>
-                  <p className="text-[12px] text-muted-foreground/20 mt-1">Mark items as acquired to track your spending</p></>
-              )}
+            <div className="text-center py-20">
+              <p className="text-base font-medium text-muted-foreground/50">Nothing here yet</p>
             </div>
           ) : displayItems.map((item) => {
             const date = new Date(showRemoved ? (item.removedAt || 0) : (item.acquiredAt || 0));
-            const dateStr = date.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+            const dateStr = date.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
             const CatIcon = getCategoryIcon(item.category);
             return (
-              <div key={item.id} className="rounded-2xl overflow-hidden border border-border/30 bg-card group transition-all hover:border-border/50">
-                <div className={cn('h-[2px]', showRemoved ? 'bg-gradient-to-r from-transparent via-zinc-500/30 to-transparent' : 'bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent')} />
-                <div className="px-4 py-3.5 flex items-center gap-3.5">
-                  {item.imageUrl ? (
-                    <div className="h-14 w-14 rounded-xl overflow-hidden shrink-0 border border-border/20">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={item.imageUrl} alt="" className="w-full h-full object-contain p-1" />
-                    </div>
-                  ) : (
-                    <div className="h-14 w-14 rounded-xl flex items-center justify-center shrink-0 bg-foreground/[0.02] border border-border/20">
-                      <CatIcon className="h-6 w-6 text-muted-foreground/15" strokeWidth={1} />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-bold truncate">{item.name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[9px] text-muted-foreground/30">{dateStr}</span>
-                      {item.price !== undefined && (
-                        <><span className="text-[8px] text-muted-foreground/15">•</span>
-                          <span className={cn('text-[10px] font-mono tabular-nums font-semibold', showRemoved ? 'text-muted-foreground/30' : 'text-emerald-400/70')}>{formatPrice(item.price, item.currency)}</span></>
-                      )}
-                    </div>
+              <div key={item.id} className="flex items-center gap-3.5 py-3 border-b border-border/30 last:border-0 group">
+                {item.imageUrl ? (
+                  <div className="h-11 w-11 rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.imageUrl} alt="" className="w-full h-full object-contain p-0.5" />
                   </div>
-                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => restoreItem(item.id)} className="text-muted-foreground/30 hover:text-amber-500 transition-colors p-2 rounded-lg hover:bg-foreground/[0.03]" title="Return to Vault">
+                ) : (
+                  <div className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50">
+                    <CatIcon className="h-4 w-4 text-muted-foreground/25" strokeWidth={1.5} />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{item.name}</p>
+                  <p className="text-xs text-muted-foreground">{dateStr}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {item.price !== undefined && (
+                    <p className="text-sm font-medium tabular-nums">{formatPrice(item.price, item.currency)}</p>
+                  )}
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => restoreItem(item.id)} className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-md hover:bg-muted/50" title="Restore">
                       <Undo2 className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => deleteItem(item.id)} className="text-muted-foreground/20 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-foreground/[0.03]" title="Delete permanently">
+                    <button onClick={() => deleteItem(item.id)} className="text-muted-foreground hover:text-destructive transition-colors p-1.5 rounded-md hover:bg-muted/50" title="Delete">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -810,142 +582,137 @@ export default function WishlistPage() {
   }
 
   // ═══════════════════════════════════════════════════════
-  // MAIN GALLERY — THE GRAND HALL
+  // GALLERY — The Collection
   // ═══════════════════════════════════════════════════════
-
   return (
     <div className="relative min-h-full bg-background">
-      {/* Ambient glow */}
-      <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/[0.02] rounded-full blur-[100px] pointer-events-none" />
 
-      {/* Header — museum style */}
-      <div className="relative z-10 px-4 lg:px-8 py-3 border-b border-border/30">
+      {/* Header */}
+      <div className="relative z-10 px-4 lg:px-8 py-4 border-b border-border/50">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="relative">
-              <Gem className="h-5 w-5 text-amber-500 animate-vault-float" strokeWidth={1.5} />
-              <div className="absolute inset-0 animate-vault-glow rounded-full" style={{ boxShadow: '0 0 12px 2px rgba(245,158,11,0.15)' }} />
-            </div>
-            <div>
-              <h1 className="text-lg font-black tracking-tight leading-none">The Vault</h1>
-              <p className="text-[8px] text-muted-foreground/25 uppercase tracking-[0.2em] font-medium mt-0.5">Personal Collection</p>
-            </div>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">Collection</h1>
+            {activeItems.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                {activeItems.length} {activeItems.length === 1 ? 'piece' : 'pieces'}
+                {stats.totalValue > 0 && <span> · {formatPrice(stats.totalValue, activeItems[0]?.currency || 'EUR')}</span>}
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-1">
-            {acquiredItems.length > 0 && (
-              <button onClick={() => setView('acquired')} className="flex items-center gap-1 text-[10px] text-muted-foreground/35 hover:text-emerald-500 transition-colors px-2 py-1.5 rounded-lg hover:bg-emerald-500/5">
+          <div className="flex items-center gap-1.5">
+            {acquiredItemsList.length > 0 && (
+              <button onClick={() => setView('acquired')} className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-md hover:bg-muted/50">
                 <ShoppingBag className="h-3.5 w-3.5" />
-                <span className="hidden lg:inline">{acquiredItems.length}</span>
               </button>
             )}
             {rankedItems.length >= 2 && (
-              <button onClick={() => setView('leaderboard')} className="flex items-center gap-1 text-[10px] text-muted-foreground/35 hover:text-amber-500 transition-colors px-2 py-1.5 rounded-lg hover:bg-amber-500/5">
+              <button onClick={() => setView('leaderboard')} className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-md hover:bg-muted/50">
                 <Trophy className="h-3.5 w-3.5" />
-                <span className="hidden lg:inline">Rankings</span>
               </button>
             )}
             {activeItems.length >= 2 && (
               <button onClick={() => { setView('auction'); startNewDuel(); }}
-                className="relative flex items-center gap-1.5 text-[10px] font-bold text-amber-500 transition-colors px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/15 overflow-hidden">
-                <Gavel className="h-3.5 w-3.5" /> Auction
+                className="text-xs font-medium text-foreground bg-muted/50 hover:bg-muted transition-colors px-3 py-1.5 rounded-md flex items-center gap-1.5">
+                <Gavel className="h-3 w-3" /> Rank
               </button>
             )}
             <button onClick={() => setShowQuickAdd(!showQuickAdd)}
-              className={cn(
-                'flex items-center gap-1.5 text-[11px] font-bold transition-all active:scale-95 px-3 py-1.5 rounded-xl ml-1',
-                showQuickAdd
-                  ? 'bg-amber-500/15 text-amber-500 border border-amber-500/25'
-                  : 'bg-foreground text-background hover:opacity-90'
-              )}>
+              className={cn('flex items-center gap-1.5 text-xs font-medium transition-all px-3 py-1.5 rounded-md',
+                showQuickAdd ? 'bg-muted text-foreground' : 'bg-foreground text-background hover:opacity-90')}>
               {showQuickAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-              {showQuickAdd ? '' : 'Add'}
+              {!showQuickAdd && 'Add'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* ─── Quick-Add Bar — frictionless inline input ─── */}
+      {/* Quick-Add */}
       {showQuickAdd && (
-        <div className="relative z-10 border-b border-border/30 bg-card/50 backdrop-blur-sm">
+        <div className="relative z-10 border-b border-border/50 bg-muted/20">
           <div className="px-4 lg:px-8 py-3 max-w-5xl mx-auto">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
-                <Gem className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-amber-500/40" />
-                <input
-                  ref={quickInputRef}
-                  value={quickName}
-                  onChange={(e) => setQuickName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleQuickAdd();
-                    if (e.key === 'Escape') { setShowQuickAdd(false); setQuickName(''); setQuickExpanded(false); }
+                {quickScraping ? (
+                  <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground animate-spin" />
+                ) : (
+                  <Plus className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
+                )}
+                <input ref={quickInputRef} value={quickName}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setQuickName(val);
+                    if (scrapeTimeoutRef.current) clearTimeout(scrapeTimeoutRef.current);
+                    if (isUrl(val) && !quickScraping) {
+                      scrapeTimeoutRef.current = setTimeout(() => scrapeUrl(val), 600);
+                    }
                   }}
-                  placeholder="What do you desire? Type a name and press Enter..."
-                  className="w-full rounded-xl border border-border/40 bg-transparent pl-9 pr-3 py-2.5 text-[14px] font-semibold placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/40 focus:shadow-[0_0_0_3px_rgba(245,158,11,0.05)] transition-all"
-                />
+                  onPaste={(e) => {
+                    setTimeout(() => {
+                      const pasted = e.currentTarget?.value || quickName;
+                      if (isUrl(pasted)) {
+                        if (scrapeTimeoutRef.current) clearTimeout(scrapeTimeoutRef.current);
+                        scrapeUrl(pasted);
+                      }
+                    }, 0);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !quickScraping) handleQuickAdd();
+                    if (e.key === 'Escape') { setShowQuickAdd(false); setQuickName(''); setQuickExpanded(false); setQuickUrl(''); setQuickImageUrl(''); setQuickScrapedSite(''); }
+                  }}
+                  placeholder={quickScraping ? 'Fetching...' : 'Name or paste a URL, then Enter'}
+                  disabled={quickScraping}
+                  className={cn('w-full border border-border bg-background pl-9 pr-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all', quickScraping && 'opacity-60')} />
               </div>
-              <button
-                onClick={() => setQuickExpanded(!quickExpanded)}
-                className={cn(
-                  'shrink-0 flex items-center gap-1 text-[10px] font-medium px-2.5 py-2.5 rounded-xl transition-all border',
-                  quickExpanded
-                    ? 'border-amber-500/25 text-amber-500 bg-amber-500/5'
-                    : 'border-border/30 text-muted-foreground/30 hover:text-muted-foreground/50 hover:border-border/50'
-                )}
-                title="More details"
-              >
-                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform duration-200', quickExpanded && 'rotate-90')} />
+              <button onClick={() => setQuickExpanded(!quickExpanded)}
+                className={cn('shrink-0 p-2 rounded-lg transition-all border', quickExpanded ? 'border-foreground/20 bg-muted' : 'border-border text-muted-foreground hover:text-foreground')}>
+                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', quickExpanded && 'rotate-90')} />
               </button>
-              <button
-                onClick={handleQuickAdd}
-                disabled={!quickName.trim()}
-                className={cn(
-                  'shrink-0 flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[12px] font-bold transition-all active:scale-95',
-                  quickName.trim()
-                    ? 'bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-white shadow-lg shadow-amber-600/15 hover:from-amber-500 hover:via-amber-400 hover:to-yellow-400'
-                    : 'bg-muted-foreground/10 text-muted-foreground/20 cursor-not-allowed'
-                )}
-              >
-                <Plus className="h-3.5 w-3.5" /> Add
+              <button onClick={handleQuickAdd} disabled={!quickName.trim() || quickScraping}
+                className={cn('shrink-0 px-3.5 py-2 rounded-lg text-xs font-medium transition-all',
+                  quickName.trim() && !quickScraping ? 'bg-foreground text-background hover:opacity-90' : 'bg-muted text-muted-foreground cursor-not-allowed')}>
+                {quickScraping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Add'}
               </button>
             </div>
 
-            {/* Expanded options — still lightweight */}
             {quickExpanded && (
-              <div className="mt-3 flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
-                {/* Price */}
-                <div className="flex items-center gap-1.5">
-                  <DollarSign className="h-3 w-3 text-muted-foreground/25" />
-                  <input
-                    value={quickPrice}
-                    onChange={(e) => setQuickPrice(e.target.value.replace(/[^0-9.]/g, ''))}
-                    placeholder="Price"
-                    type="text"
-                    inputMode="decimal"
+              <div className="mt-3 space-y-3">
+                {(quickImageUrl || quickScrapedSite) && (
+                  <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
+                    {quickImageUrl && (
+                      <div className="h-10 w-10 rounded overflow-hidden shrink-0 border border-border/50 bg-muted/20">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={quickImageUrl} alt="" className="w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      {quickScrapedSite && <p className="text-[11px] text-muted-foreground font-medium">{quickScrapedSite}</p>}
+                      {quickUrl && <p className="text-[11px] text-muted-foreground/50 truncate">{quickUrl}</p>}
+                    </div>
+                    {quickUrl && (
+                      <a href={quickUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors p-1 shrink-0">
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <input value={quickPrice} onChange={(e) => setQuickPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="Price" type="text" inputMode="decimal"
                     onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd(); }}
-                    className="w-24 rounded-lg border border-border/30 bg-transparent px-2.5 py-1.5 text-[12px] font-semibold placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/30 transition-all tabular-nums"
-                  />
-                </div>
-                {/* Category pills */}
-                <div className="flex items-center gap-1 flex-wrap">
-                  {VAULT_CATEGORIES.map((cat) => {
-                    const Icon = CATEGORY_ICONS[cat.icon] || Package;
-                    const isSelected = quickCategory === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        onClick={() => setQuickCategory(cat.id)}
-                        className={cn(
-                          'flex items-center gap-1 rounded-lg px-2 py-1 text-[9px] font-bold uppercase tracking-wider transition-all active:scale-95 border',
-                          isSelected
-                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-500'
-                            : 'border-border/20 text-muted-foreground/25 hover:text-muted-foreground/40 hover:border-border/40'
-                        )}
-                      >
-                        <Icon className="h-2.5 w-2.5" strokeWidth={1.5} />
-                        {cat.label}
-                      </button>
-                    );
-                  })}
+                    className="w-20 border border-border bg-background px-2.5 py-1.5 text-xs rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 tabular-nums" />
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {VAULT_CATEGORIES.map((cat) => {
+                      const Icon = CATEGORY_ICONS[cat.icon] || Package;
+                      const sel = quickCategory === cat.id;
+                      return (
+                        <button key={cat.id} onClick={() => setQuickCategory(cat.id)}
+                          className={cn('flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-all border',
+                            sel ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/30')}>
+                          <Icon className="h-2.5 w-2.5" strokeWidth={1.5} />{cat.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -954,296 +721,159 @@ export default function WishlistPage() {
       )}
 
       <div className="relative z-10 p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
-
-          {/* ─── Stats Dashboard — Museum Security Panel ─── */}
-          {activeItems.length > 0 && (
-            <div className="rounded-2xl overflow-hidden border border-amber-500/15 bg-card">
-              <div className="h-[3px] bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-500" />
-              <div className="p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="h-6 w-6 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                    <Lock className="h-3 w-3 text-amber-500/60" />
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/50">Vault Appraisal</span>
-                    <p className="text-[7px] text-muted-foreground/20 tracking-[0.2em] uppercase">Real-time Collection Status</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-                  <div className="relative">
-                    <div className="flex items-end gap-1">
-                      <p className="text-3xl font-black tabular-nums leading-none">{stats.totalItems}</p>
-                      <Sparkles className="h-3 w-3 text-amber-500/30 mb-1" />
-                    </div>
-                    <p className="text-[8px] text-muted-foreground/30 uppercase tracking-[0.15em] mt-1.5 font-medium">Pieces in Vault</p>
-                  </div>
-                  <div>
-                    <p className="text-3xl font-black text-amber-400 tabular-nums leading-none">{formatPrice(stats.totalValue, activeItems[0]?.currency || 'EUR')}</p>
-                    <p className="text-[8px] text-muted-foreground/30 uppercase tracking-[0.15em] mt-1.5 font-medium">Collection Value</p>
-                  </div>
-                  <div>
-                    <div className="flex items-end gap-1">
-                      <p className="text-3xl font-black tabular-nums leading-none">{stats.duelCount}</p>
-                      <Gavel className="h-3 w-3 text-muted-foreground/15 mb-1" />
-                    </div>
-                    <p className="text-[8px] text-muted-foreground/30 uppercase tracking-[0.15em] mt-1.5 font-medium">Auctions Held</p>
-                  </div>
-                  <div>
-                    {stats.topRated ? (
-                      <>
-                        <p className="text-[15px] font-black truncate leading-tight">{stats.topRated.name}</p>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <Crown className="h-2.5 w-2.5 text-amber-500/50" />
-                          <p className="text-[8px] text-muted-foreground/30 uppercase tracking-[0.15em] font-medium">
-                            Top Rated · <span className="text-amber-500 font-bold">{stats.topRated.elo}</span>
-                          </p>
-                        </div>
-                      </>
-                    ) : (
-                      <><p className="text-[15px] text-muted-foreground/15">—</p><p className="text-[8px] text-muted-foreground/30 uppercase tracking-[0.15em] mt-1.5 font-medium">Top Rated</p></>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ─── Wing Filters — Museum Gallery Navigation ─── */}
-          {activeItems.length > 0 && (
-            <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-              <button onClick={() => setSelectedCategory('all')}
-                className={cn('shrink-0 text-[10px] font-bold px-3.5 py-2 rounded-xl transition-all uppercase tracking-wider',
-                  selectedCategory === 'all' ? 'bg-foreground text-background shadow-lg' : 'text-muted-foreground/30 hover:text-muted-foreground/50 hover:bg-foreground/[0.03]')}>
-                All ({activeItems.length})
-              </button>
-              {VAULT_CATEGORIES.map((cat) => {
-                const count = stats.categoryBreakdown[cat.id];
-                if (count === 0) return null;
-                const Icon = CATEGORY_ICONS[cat.icon] || Package;
-                return (
-                  <button key={cat.id} onClick={() => setSelectedCategory(cat.id)}
-                    className={cn('shrink-0 flex items-center gap-1.5 text-[10px] font-bold px-3.5 py-2 rounded-xl transition-all uppercase tracking-wider',
-                      selectedCategory === cat.id
-                        ? 'bg-amber-500/15 text-amber-500 border border-amber-500/25 shadow-lg shadow-amber-500/5'
-                        : 'text-muted-foreground/30 hover:text-muted-foreground/50 hover:bg-foreground/[0.03] border border-transparent')}>
-                    <Icon className="h-3 w-3" strokeWidth={1.5} /> {cat.label} ({count})
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* ─── Empty State — Grand Opening ─── */}
-          {activeItems.length === 0 && (
-            <div className="text-center py-20 relative">
-              <div className="relative mx-auto w-28 h-28 mb-8">
-                {/* Pulsing rings */}
-                <div className="absolute inset-0 rounded-full border border-amber-500/10 animate-[vault-pulse-ring_3s_ease-out_infinite]" />
-                <div className="absolute inset-2 rounded-full border border-amber-500/10 animate-[vault-pulse-ring_3s_ease-out_0.5s_infinite]" />
-                <div className="absolute inset-4 rounded-full bg-amber-500/5 flex items-center justify-center">
-                  <Gem className="h-10 w-10 text-amber-500/30 animate-vault-float" />
-                </div>
-              </div>
-              <h2 className="text-[22px] font-black tracking-tight">Your Vault Awaits</h2>
-              <p className="text-[13px] text-muted-foreground/35 mt-2 max-w-[320px] mx-auto leading-relaxed">
-                Every great collection begins with a single piece. What will be your first acquisition?
-              </p>
-              <button onClick={() => setShowQuickAdd(true)}
-                className="mt-8 relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-white px-8 py-4 text-[14px] font-bold hover:from-amber-500 hover:via-amber-400 hover:to-yellow-400 transition-all active:scale-[0.98] shadow-xl shadow-amber-600/25 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-vault-shimmer" />
-                <Plus className="h-4 w-4 relative z-10" /> <span className="relative z-10">First Acquisition</span>
-              </button>
-            </div>
-          )}
-
-          {/* ─── Collection Grid ─── */}
-          {sortedGalleryItems.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
-              {sortedGalleryItems.map((item, idx) => (
-                <VaultCard key={item.id} item={item} rank={rankedItems.indexOf(item) + 1} index={idx}
-                  onEdit={() => openEdit(item)} onAcquire={() => acquireItem(item.id)} onRemove={() => removeItem(item.id)} />
-              ))}
-            </div>
-          )}
-
-          {/* ─── Auction CTA Banner ─── */}
-          {activeItems.length >= 2 && duels.length === 0 && (
-            <div className="rounded-2xl overflow-hidden border border-amber-500/20 bg-card relative group">
-              <div className="h-[3px] bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-500" />
-              <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.02] to-transparent pointer-events-none" />
-              <div className="p-6 text-center relative z-10">
-                <div className="inline-flex items-center gap-2 bg-amber-500/10 rounded-full px-3 py-1 mb-3">
-                  <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                  <span className="text-[8px] text-amber-500 uppercase tracking-[0.2em] font-bold">New Feature</span>
-                </div>
-                <h3 className="text-[16px] font-black tracking-tight">Ready for Your First Auction?</h3>
-                <p className="text-[12px] text-muted-foreground/35 mt-1.5 max-w-[320px] mx-auto leading-relaxed">
-                  Pit your wishes head-to-head. The auction ring reveals what you truly desire most.
-                </p>
-                <button onClick={() => { setView('auction'); startNewDuel(); }}
-                  className="mt-5 relative inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-white px-6 py-3 text-[12px] font-bold hover:from-amber-500 hover:via-amber-400 hover:to-yellow-400 transition-all active:scale-[0.98] shadow-lg shadow-amber-600/20 overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-vault-shimmer" />
-                  <Gavel className="h-3.5 w-3.5 relative z-10" /> <span className="relative z-10">Open Auction Ring</span>
+        {/* Category filters */}
+        {activeItems.length > 0 && (
+          <div className="flex gap-1 overflow-x-auto pb-0.5 no-scrollbar">
+            <button onClick={() => setSelectedCategory('all')}
+              className={cn('shrink-0 text-xs font-medium px-3 py-1.5 rounded-md transition-all',
+                selectedCategory === 'all' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
+              All
+            </button>
+            {VAULT_CATEGORIES.map((cat) => {
+              const count = stats.categoryBreakdown[cat.id];
+              if (count === 0) return null;
+              const Icon = CATEGORY_ICONS[cat.icon] || Package;
+              return (
+                <button key={cat.id} onClick={() => setSelectedCategory(cat.id)}
+                  className={cn('shrink-0 flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-md transition-all',
+                    selectedCategory === cat.id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
+                  <Icon className="h-3 w-3" strokeWidth={1.5} />{cat.label}
                 </button>
-              </div>
-            </div>
-          )}
-        </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {activeItems.length === 0 && (
+          <div className="text-center py-24">
+            <Gem className="h-8 w-8 text-muted-foreground/15 mx-auto mb-4" strokeWidth={1} />
+            <h2 className="text-lg font-semibold tracking-tight">Start your collection</h2>
+            <p className="text-sm text-muted-foreground mt-1.5 max-w-xs mx-auto">
+              Add the things you want. Compare them. Know what matters most.
+            </p>
+            <button onClick={() => setShowQuickAdd(true)}
+              className="mt-6 inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-5 py-2.5 rounded-lg hover:opacity-90 transition-all active:scale-[0.98]">
+              <Plus className="h-3.5 w-3.5" /> Add first piece
+            </button>
+          </div>
+        )}
+
+        {/* Collection Grid — Exhibition layout */}
+        {sortedGalleryItems.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-border/50 rounded-xl overflow-hidden border border-border/50">
+            {sortedGalleryItems.map((item, idx) => (
+              <CollectionCard key={item.id} item={item} index={idx}
+                rank={rankedItems.findIndex(r => r.id === item.id) + 1}
+                isExpanded={expandedCard === item.id}
+                onToggleExpand={() => setExpandedCard(expandedCard === item.id ? null : item.id)}
+                onEdit={() => openEdit(item)}
+                onAcquire={() => acquireItem(item.id)}
+                onRemove={() => removeItem(item.id)} />
+            ))}
+          </div>
+        )}
+
+        {/* Auction prompt */}
+        {activeItems.length >= 2 && duels.length === 0 && (
+          <div className="text-center py-6 border-t border-border/50">
+            <p className="text-sm text-muted-foreground">
+              Want to know what you actually want most?
+            </p>
+            <button onClick={() => { setView('auction'); startNewDuel(); }}
+              className="mt-3 inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-5 py-2.5 rounded-lg hover:opacity-90 transition-all active:scale-[0.98]">
+              <Gavel className="h-3.5 w-3.5" /> Start ranking
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════
-// VAULT CARD — Museum Exhibition Piece
+// COLLECTION CARD — Gallery piece
 // ═══════════════════════════════════════════════════════
 
-function VaultCard({ item, rank, index, onEdit, onAcquire, onRemove }: {
-  item: VaultItem; rank: number; index: number;
+function CollectionCard({ item, index, rank, isExpanded, onToggleExpand, onEdit, onAcquire, onRemove }: {
+  item: VaultItem; index: number; rank: number;
+  isExpanded: boolean; onToggleExpand: () => void;
   onEdit: () => void; onAcquire: () => void; onRemove: () => void;
 }) {
-  const [showActions, setShowActions] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const rarity = getItemRarity(item);
   const CatIcon = getCategoryIcon(item.category);
-  const catLabel = VAULT_CATEGORIES.find(c => c.id === item.category)?.wing || '';
-
-  // Spotlight follow mouse effect
-  const [spotlightPos, setSpotlightPos] = useState({ x: 50, y: 50 });
-  const handleMouse = (e: React.MouseEvent) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    setSpotlightPos({
-      x: ((e.clientX - rect.left) / rect.width) * 100,
-      y: ((e.clientY - rect.top) / rect.height) * 100,
-    });
-  };
-
-  const rarityBorderColor = rarity === 'heirloom' ? 'hover:border-purple-500/30' : rarity === 'vintage' ? 'hover:border-amber-500/30' : rarity === 'seasoned' ? 'hover:border-blue-500/20' : 'hover:border-emerald-500/20';
+  const catLabel = VAULT_CATEGORIES.find(c => c.id === item.category)?.label || '';
+  const rarity = getItemRarity(item);
 
   return (
-    <div ref={cardRef}
-      className={cn(
-        'group relative rounded-2xl overflow-hidden border transition-all duration-500',
-        'border-border/30', rarityBorderColor,
-        'hover:shadow-xl hover:-translate-y-1',
-        rarity === 'heirloom' && 'hover:shadow-purple-500/5',
-        rarity === 'vintage' && 'hover:shadow-amber-500/5',
-      )}
-      style={{ animationDelay: `${index * 0.05}s` }}
-      onMouseEnter={() => { setShowActions(true); setIsHovered(true); }}
-      onMouseLeave={() => { setShowActions(false); setIsHovered(false); }}
-      onMouseMove={handleMouse}
-    >
-      {/* Top accent line — color coded by rarity */}
-      <div className={cn('h-[3px] bg-gradient-to-r from-transparent to-transparent transition-all duration-500',
-        rarity === 'heirloom' ? 'via-purple-400/50 group-hover:via-purple-400/80' 
-        : rarity === 'vintage' ? 'via-amber-400/40 group-hover:via-amber-400/70' 
-        : rarity === 'seasoned' ? 'via-blue-400/30 group-hover:via-blue-400/60' 
-        : 'via-emerald-400/20 group-hover:via-emerald-400/50'
-      )} />
-
-      {/* Spotlight effect following mouse */}
-      {isHovered && (
-        <div className="absolute inset-0 pointer-events-none z-[1] opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-          style={{ background: `radial-gradient(circle at ${spotlightPos.x}% ${spotlightPos.y}%, rgba(245,158,11,0.06) 0%, transparent 60%)` }} />
-      )}
-
-      {/* Rank badge */}
-      {rank > 0 && rank <= 3 && item.duelsPlayed > 0 && (
-        <div className="absolute top-3 left-3 z-10">
-          <div className={cn('h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg',
-            rank === 1 ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-amber-500/30' 
-            : rank === 2 ? 'bg-gradient-to-br from-zinc-300 to-zinc-400 text-white shadow-zinc-400/20' 
-            : 'bg-gradient-to-br from-orange-600 to-orange-700 text-white shadow-orange-600/20')}>
-            {rank === 1 ? <Crown className="h-3.5 w-3.5" /> : rank}
+    <div className={cn('bg-background transition-all duration-200 group relative', isExpanded && 'sm:col-span-2 lg:col-span-3')}>
+      {/* Main clickable area */}
+      <div className="cursor-pointer" onClick={onToggleExpand}>
+        {/* Image */}
+        {item.imageUrl ? (
+          <div className={cn('overflow-hidden bg-muted/10 relative', isExpanded ? 'aspect-[16/7]' : 'aspect-[4/3]')}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={item.imageUrl} alt={item.name}
+              className={cn('w-full h-full object-contain transition-transform duration-500', isExpanded ? 'p-8' : 'p-5 group-hover:scale-[1.03]')} />
           </div>
-        </div>
-      )}
-
-      {/* Rarity badge — top right */}
-      <div className="absolute top-3 right-3 z-10">
-        <span className={cn('text-[7px] uppercase tracking-widest font-bold px-2 py-1 rounded-lg backdrop-blur-sm',
-          rarity === 'heirloom' ? 'bg-purple-500/15 text-purple-400 border border-purple-500/20' 
-          : rarity === 'vintage' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' 
-          : rarity === 'seasoned' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/15' 
-          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15'
-        )}>{getRarityLabel(rarity)}</span>
-      </div>
-
-      {/* Image section */}
-      {item.imageUrl ? (
-        <div className="h-44 overflow-hidden relative bg-foreground/[0.01]">
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent z-[2] pointer-events-none" />
-          {/* Shimmer overlay */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none z-[3] opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent animate-vault-shimmer" />
+        ) : (
+          <div className={cn('flex items-center justify-center bg-muted/5', isExpanded ? 'aspect-[16/7]' : 'aspect-[4/3]')}>
+            <CatIcon className={cn('text-muted-foreground/8 transition-all duration-500', isExpanded ? 'h-20 w-20' : 'h-12 w-12 group-hover:scale-110')} strokeWidth={0.5} />
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain p-5 transition-all duration-700 group-hover:scale-110" />
-        </div>
-      ) : (
-        <div className="h-32 flex items-center justify-center relative">
-          <div className="absolute inset-0 bg-gradient-to-t from-background/30 via-transparent to-transparent pointer-events-none" />
-          <CatIcon className="h-14 w-14 text-muted-foreground/[0.06] transition-all duration-700 group-hover:text-muted-foreground/[0.12] group-hover:scale-110" strokeWidth={0.5} />
-        </div>
-      )}
+        )}
 
-      {/* Info section */}
-      <div className="px-4 py-3.5 relative z-10">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-[14px] font-black tracking-tight truncate">{item.name}</p>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[8px] text-muted-foreground/25 uppercase tracking-wider font-medium">{catLabel}</span>
-              {item.url && (
-                <a href={item.url} target="_blank" rel="noopener noreferrer"
-                  className="text-muted-foreground/15 hover:text-amber-500 transition-colors" onClick={(e) => e.stopPropagation()}>
-                  <ExternalLink className="h-2.5 w-2.5" />
-                </a>
-              )}
+        {/* Info strip */}
+        <div className={cn('px-4 py-3', isExpanded && 'px-5 py-4')}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              {/* Lot line */}
+              <p className="text-[10px] text-muted-foreground/50 font-mono tabular-nums mb-0.5">
+                {lotNumber(index)} · {catLabel}
+                {rank > 0 && rank <= 5 && item.duelsPlayed > 0 && <span className="ml-1">· #{rank}</span>}
+              </p>
+              <p className={cn('font-medium tracking-tight truncate', isExpanded ? 'text-base' : 'text-sm')}>
+                {item.name}
+              </p>
             </div>
-          </div>
-        </div>
-
-        {/* Price & Elo row */}
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/20">
-          <div>
-            {item.price !== undefined ? (
-              <p className="text-[17px] font-black text-amber-400 tabular-nums tracking-tight">{formatPrice(item.price, item.currency)}</p>
-            ) : (
-              <p className="text-[11px] text-muted-foreground/15 italic font-medium">Priceless</p>
+            {item.price !== undefined && (
+              <p className={cn('font-medium tabular-nums shrink-0', isExpanded ? 'text-base' : 'text-sm')}>
+                {formatPrice(item.price, item.currency)}
+              </p>
             )}
           </div>
-          {item.duelsPlayed > 0 && (
-            <div className="flex items-center gap-1.5 bg-foreground/[0.03] rounded-lg px-2 py-1 border border-border/10">
-              <Trophy className="h-2.5 w-2.5 text-amber-500/40" />
-              <span className="text-[10px] text-muted-foreground/35 font-mono tabular-nums font-bold">{item.elo}</span>
+
+          {/* Expanded detail */}
+          {isExpanded && (
+            <div className="mt-4 pt-4 border-t border-border/40 space-y-3 animate-in fade-in duration-200">
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>{getRarityLabel(rarity)}</span>
+                {item.duelsPlayed > 0 && <span className="tabular-nums font-mono">{item.elo} pts · {item.duelsWon}W–{item.duelsPlayed - item.duelsWon}L</span>}
+                <span>{new Date(item.addedAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              </div>
+              {item.notes && <p className="text-sm text-muted-foreground leading-relaxed">{item.notes}</p>}
+              {item.url && (
+                <a href={item.url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <ExternalLink className="h-3 w-3" /> Source
+                </a>
+              )}
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-1">
+                <button onClick={(e) => { e.stopPropagation(); onAcquire(); }}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-foreground text-background hover:opacity-90 transition-all">
+                  <ShoppingBag className="h-3 w-3" /> Acquired
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all border border-border">
+                  <Edit3 className="h-3 w-3" /> Edit
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all border border-border">
+                  <Archive className="h-3 w-3" /> Remove
+                </button>
+              </div>
             </div>
           )}
         </div>
-
-        {/* Notes */}
-        {item.notes && (
-          <p className="text-[10px] text-muted-foreground/25 mt-2.5 italic line-clamp-2 leading-relaxed">&ldquo;{item.notes}&rdquo;</p>
-        )}
-      </div>
-
-      {/* Action buttons — slide up on hover */}
-      <div className={cn('px-3.5 pb-3.5 flex items-center gap-1.5 transition-all duration-500', showActions ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none')}>
-        <button onClick={(e) => { e.stopPropagation(); onAcquire(); }}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all active:scale-95 border border-emerald-500/15">
-          <ShoppingBag className="h-3 w-3" /> Acquire
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          className="flex items-center justify-center rounded-xl p-2 text-muted-foreground/25 hover:text-foreground hover:bg-foreground/[0.04] transition-all active:scale-95 border border-border/20">
-          <Edit3 className="h-3 w-3" />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="flex items-center justify-center rounded-xl p-2 text-muted-foreground/15 hover:text-red-400 hover:bg-red-500/5 transition-all active:scale-95 border border-border/20">
-          <Archive className="h-3 w-3" />
-        </button>
       </div>
     </div>
   );
