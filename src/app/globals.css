@@ -287,6 +287,77 @@
   }
 }
 
+/* ─── Vault Gallery 3D Room ─── */
+@layer utilities {
+  /* Wall texture — subtle noise grain */
+  .vault-wall {
+    background-image:
+      radial-gradient(ellipse at 50% 0%, oklch(0.97 0.003 75 / 0.6) 0%, transparent 70%),
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.015'/%3E%3C/svg%3E");
+    background-size: 100% 600px, 200px 200px;
+    background-repeat: no-repeat, repeat;
+  }
+  .dark .vault-wall {
+    background-image:
+      radial-gradient(ellipse at 50% 0%, oklch(0.18 0.005 60 / 0.5) 0%, transparent 70%),
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  }
+  /* Picture rail line */
+  .vault-rail {
+    position: relative;
+  }
+  .vault-rail::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--border) 15%, var(--border) 85%, transparent 100%);
+    opacity: 0.5;
+  }
+  /* Frame with depth — inset shadow + raised border */
+  .vault-frame {
+    box-shadow:
+      0 2px 8px -2px rgba(0,0,0,0.06),
+      0 6px 20px -4px rgba(0,0,0,0.05),
+      inset 0 1px 0 rgba(255,255,255,0.08);
+    border: 1px solid var(--border);
+  }
+  .vault-frame:hover {
+    box-shadow:
+      0 8px 30px -4px rgba(0,0,0,0.1),
+      0 2px 8px -2px rgba(0,0,0,0.06),
+      inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .dark .vault-frame {
+    box-shadow:
+      0 2px 8px -2px rgba(0,0,0,0.3),
+      0 6px 20px -4px rgba(0,0,0,0.2),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .dark .vault-frame:hover {
+    box-shadow:
+      0 8px 30px -4px rgba(0,0,0,0.4),
+      0 2px 8px -2px rgba(0,0,0,0.3),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  /* Spotlight cone on image mat */
+  .vault-spotlight {
+    background: radial-gradient(ellipse at 50% 20%, oklch(1 0 0 / 0.06) 0%, transparent 65%);
+  }
+  .dark .vault-spotlight {
+    background: radial-gradient(ellipse at 50% 20%, oklch(1 0 0 / 0.04) 0%, transparent 65%);
+  }
+  /* Floor reflection / fade at bottom */
+  .vault-floor {
+    background: linear-gradient(to bottom, transparent 0%, oklch(0.96 0.003 75 / 0.4) 100%);
+  }
+  .dark .vault-floor {
+    background: linear-gradient(to bottom, transparent 0%, oklch(0.10 0.005 60 / 0.4) 100%);
+  }
+}
+
 /* ─── Pull to refresh indicator ─── */
 @keyframes ptr-spin {
   to { transform: rotate(360deg); }

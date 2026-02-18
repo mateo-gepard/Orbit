@@ -748,8 +748,8 @@ export default function WishlistPage() {
         </div>
       </div>
 
-      {/* ── Gallery body ─────────────────────────────── */}
-      <div className="max-w-6xl mx-auto w-full">
+      {/* ── Gallery body — 3D room ────────────────── */}
+      <div className="max-w-6xl mx-auto w-full vault-wall min-h-[60vh]">
         {activeItems.length === 0 ? (
           <div className="text-center py-24 px-4 text-muted-foreground/60">
             <Gem className="h-10 w-10 mx-auto mb-4 text-muted-foreground/20" strokeWidth={1} />
@@ -764,22 +764,24 @@ export default function WishlistPage() {
           <>
             {/* ── Hero / Featured Piece ──────────────── */}
             {heroItem && (
-              <div className="px-4 lg:px-8 pt-6 lg:pt-10 pb-2">
+              <div className="px-4 lg:px-8 pt-8 lg:pt-12 pb-2">
                 <button
                   onClick={() => setExpandedCard(expandedCard === heroItem.id ? null : heroItem.id)}
                   className="w-full text-left group"
                 >
-                  <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-b from-muted/20 to-transparent">
-                    <div className="flex flex-col sm:flex-row items-center">
-                      {/* Hero image — large, generous whitespace */}
+                  <div className="relative overflow-hidden rounded-2xl vault-frame bg-background">
+                    {/* Ambient ceiling light */}
+                    <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-black/[0.02] dark:from-white/[0.02] dark:to-black/5 pointer-events-none" />
+                    <div className="flex flex-col sm:flex-row items-center relative">
+                      {/* Hero image — spotlit */}
                       {heroItem.imageUrl ? (
-                        <div className="w-full sm:w-1/2 aspect-square sm:aspect-auto sm:h-64 lg:h-80 flex items-center justify-center p-6 lg:p-12">
+                        <div className="w-full sm:w-1/2 aspect-square sm:aspect-auto sm:h-64 lg:h-80 flex items-center justify-center p-6 lg:p-12 vault-spotlight">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={heroItem.imageUrl} alt={heroItem.name}
-                            className="max-w-full max-h-full object-contain drop-shadow-lg transition-transform duration-700 group-hover:scale-[1.03]" />
+                            className="max-w-full max-h-full object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-transform duration-700 group-hover:scale-[1.03]" />
                         </div>
                       ) : (
-                        <div className="w-full sm:w-1/2 h-48 sm:h-64 lg:h-80 flex items-center justify-center">
+                        <div className="w-full sm:w-1/2 h-48 sm:h-64 lg:h-80 flex items-center justify-center vault-spotlight">
                           {(() => { const I = getCategoryIcon(heroItem.category); return <I className="h-20 w-20 text-muted-foreground/6" strokeWidth={0.3} />; })()}
                         </div>
                       )}
@@ -809,7 +811,7 @@ export default function WishlistPage() {
             )}
 
             {/* ── Category Wings ─────────────────────── */}
-            <div className="px-4 lg:px-8 pb-8 lg:pb-12">
+            <div className="px-4 lg:px-8 pb-8 lg:pb-16" style={{ perspective: '1200px' }}>
               {VAULT_CATEGORIES.map((cat) => {
                 const catItems = itemsByCategory[cat.id];
                 if (!catItems || catItems.length === 0) return null;
@@ -820,69 +822,79 @@ export default function WishlistPage() {
                   : catItems;
                 if (displayItems.length === 0) return null;
                 return (
-                  <section key={cat.id} className="mt-8 lg:mt-12 first:mt-6 first:lg:mt-8">
-                    {/* Wing header — museum style divider */}
-                    <div className="flex items-center gap-4 mb-5 lg:mb-6">
-                      <div className="flex items-center gap-2.5">
-                        <CatIcon className="h-4 w-4 text-muted-foreground/40" strokeWidth={1.5} />
-                        <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground/60">{cat.wing}</h2>
-                        <span className="text-[10px] text-muted-foreground/25 tabular-nums">{displayItems.length}</span>
+                  <section key={cat.id} className="mt-10 lg:mt-14 first:mt-6 first:lg:mt-10">
+                    {/* Picture rail + wing label */}
+                    <div className="vault-rail pt-4 mb-6 lg:mb-8">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2.5">
+                          <CatIcon className="h-4 w-4 text-muted-foreground/35" strokeWidth={1.5} />
+                          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/50">{cat.wing}</h2>
+                          <span className="text-[10px] text-muted-foreground/20 tabular-nums">{displayItems.length}</span>
+                        </div>
+                        <div className="flex-1" />
                       </div>
-                      <div className="flex-1 h-px bg-border/40" />
                     </div>
 
-                    {/* Pieces — staggered museum grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-5 lg:gap-x-5 lg:gap-y-8">
+                    {/* Pieces on the wall — perspective grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-6 lg:gap-x-6 lg:gap-y-10">
                       {displayItems.map((item, idx) => {
                         const rank = rankedItems.findIndex(r => r.id === item.id) + 1;
                         const hasImage = !!item.imageUrl;
-                        // Vary heights for visual rhythm
+                        // Vary heights for visual rhythm — like a real gallery hang
                         const tallCard = idx % 5 === 0 || idx % 7 === 2;
                         return (
                           <div key={item.id}
                             className="group cursor-pointer"
+                            style={{ transformStyle: 'preserve-3d' }}
                             onClick={() => setExpandedCard(item.id)}
                           >
-                            {/* Frame — shadow gives depth like a real frame */}
+                            {/* The frame — hangs on wall with depth */}
                             <div className={cn(
-                              'relative overflow-hidden rounded-lg transition-all duration-300',
-                              'shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]',
-                              'group-hover:shadow-[0_4px_20px_rgba(0,0,0,0.08),0_1px_4px_rgba(0,0,0,0.04)]',
-                              'group-hover:-translate-y-0.5',
-                              'border border-border/40 group-hover:border-border/60',
-                              'bg-background'
-                            )}>
-                              {/* Mat / Image area — generous padding like gallery matting */}
+                              'relative overflow-hidden rounded-lg vault-frame bg-background transition-all duration-300',
+                              'group-hover:-translate-y-1 group-hover:rotate-0',
+                            )}
+                              style={{
+                                transform: `rotateX(1deg)`,
+                                transformOrigin: 'top center',
+                                transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.transform = 'rotateX(0deg) translateY(-4px)'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.transform = 'rotateX(1deg)'; }}
+                            >
+                              {/* Mat — the white/cream border around art */}
                               <div className={cn(
-                                'relative bg-gradient-to-b from-muted/15 via-muted/5 to-transparent flex items-center justify-center overflow-hidden',
-                                tallCard && hasImage ? 'h-40 lg:h-52' : 'h-28 lg:h-36'
+                                'relative flex items-center justify-center overflow-hidden vault-spotlight',
+                                tallCard && hasImage ? 'h-44 lg:h-56' : 'h-30 lg:h-38',
+                                'p-3 lg:p-4'
                               )}>
+                                {/* Inner mat border */}
+                                <div className="absolute inset-2 lg:inset-3 border border-border/20 rounded-sm pointer-events-none" />
                                 {hasImage ? (
                                   <>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={item.imageUrl} alt={item.name}
-                                      className="max-w-[85%] max-h-[85%] object-contain drop-shadow-sm transition-transform duration-500 group-hover:scale-[1.04]" />
+                                      className="max-w-[80%] max-h-[80%] object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-transform duration-500 group-hover:scale-[1.04]" />
                                   </>
                                 ) : (
-                                  <CatIcon className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground/6" strokeWidth={0.4} />
+                                  <CatIcon className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground/5" strokeWidth={0.4} />
                                 )}
-                                {/* Rank — subtle top-right corner */}
+                                {/* Rank — engraved corner */}
                                 {rank > 0 && item.duelsPlayed > 0 && (
-                                  <div className="absolute top-1.5 right-1.5 lg:top-2 lg:right-2">
-                                    <span className="text-[8px] lg:text-[9px] font-mono font-semibold text-muted-foreground/30 tabular-nums">
+                                  <div className="absolute top-2 right-2 lg:top-2.5 lg:right-2.5">
+                                    <span className="text-[8px] lg:text-[9px] font-mono font-semibold text-muted-foreground/25 tabular-nums">
                                       #{rank}
                                     </span>
                                   </div>
                                 )}
                               </div>
 
-                              {/* Placard — like a museum name plate */}
-                              <div className="px-3 py-2.5 lg:px-4 lg:py-3">
-                                <p className="text-[11px] lg:text-[12.5px] font-medium tracking-tight leading-snug line-clamp-2">{item.name}</p>
-                                <div className="flex items-baseline justify-between mt-1 gap-2">
+                              {/* Name placard — small brass-style plate */}
+                              <div className="px-3 py-2 lg:px-4 lg:py-2.5 border-t border-border/30">
+                                <p className="text-[10.5px] lg:text-[12px] font-medium tracking-tight leading-snug line-clamp-2">{item.name}</p>
+                                <div className="flex items-baseline justify-between mt-0.5 gap-2">
                                   {item.price !== undefined ? (
-                                    <span className={cn('text-[10px] lg:text-[11px] tabular-nums',
-                                      item.priceEstimated ? 'text-amber-600/70 dark:text-amber-400/70' : 'text-muted-foreground/50')}>
+                                    <span className={cn('text-[9px] lg:text-[10px] tabular-nums',
+                                      item.priceEstimated ? 'text-amber-600/60 dark:text-amber-400/60' : 'text-muted-foreground/40')}>
                                       {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
                                     </span>
                                   ) : (
@@ -891,7 +903,7 @@ export default function WishlistPage() {
                                   {item.url && (
                                     <a href={item.url} target="_blank" rel="noopener noreferrer"
                                       onClick={(e) => e.stopPropagation()}
-                                      className="text-muted-foreground/20 hover:text-muted-foreground/60 transition-colors shrink-0">
+                                      className="text-muted-foreground/15 hover:text-muted-foreground/50 transition-colors shrink-0">
                                       <ExternalLink className="h-2.5 w-2.5 lg:h-3 lg:w-3" />
                                     </a>
                                   )}
@@ -906,11 +918,14 @@ export default function WishlistPage() {
                 );
               })}
             </div>
+
+            {/* Floor gradient — grounds the room */}
+            <div className="h-12 lg:h-20 vault-floor" />
           </>
         )}
       </div>
 
-      {/* ── Detail lightbox overlay ──────────────────── */}
+      {/* ── Detail lightbox — walk up to the piece ── */}
       {expandedCard && mounted && (() => {
         const item = activeItems.find(i => i.id === expandedCard);
         if (!item) return null;
@@ -919,46 +934,52 @@ export default function WishlistPage() {
         const CatIcon = getCategoryIcon(item.category);
         const catLabel = VAULT_CATEGORIES.find(c => c.id === item.category);
         return createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8"
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-8"
             onClick={() => setExpandedCard(null)}>
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <div className="relative w-full max-w-2xl bg-background rounded-2xl shadow-2xl border border-border/50 overflow-hidden animate-in zoom-in-95 fade-in duration-200 max-h-[90dvh] flex flex-col"
+            {/* Dark gallery room backdrop */}
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" />
+            {/* Spotlight cone from above */}
+            <div className="absolute inset-0 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse 50% 60% at 50% 25%, rgba(255,255,255,0.06) 0%, transparent 100%)' }} />
+            
+            <div className="relative w-full max-w-2xl bg-background rounded-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200 max-h-[90dvh] flex flex-col vault-frame"
+              style={{ boxShadow: '0 0 80px -20px rgba(0,0,0,0.3), 0 12px 40px -10px rgba(0,0,0,0.2)' }}
               onClick={(e) => e.stopPropagation()}>
-              {/* Close button */}
+              {/* Close */}
               <button onClick={() => setExpandedCard(null)}
-                className="absolute top-3 right-3 z-10 text-muted-foreground/50 hover:text-foreground transition-colors p-1.5 rounded-full hover:bg-muted/50">
+                className="absolute top-3 right-3 z-10 text-muted-foreground/40 hover:text-foreground transition-colors p-1.5 rounded-full hover:bg-muted/50">
                 <X className="h-4 w-4" />
               </button>
 
-              {/* Image — large, museum wall feel */}
-              <div className="bg-gradient-to-b from-muted/20 to-muted/5 flex items-center justify-center min-h-[200px] sm:min-h-[280px] p-8 sm:p-12 shrink-0">
+              {/* Image — spotlit on the wall */}
+              <div className="vault-spotlight flex items-center justify-center min-h-[220px] sm:min-h-[300px] p-8 sm:p-14 shrink-0 relative">
+                {/* Inner mat line */}
+                <div className="absolute inset-4 sm:inset-6 border border-border/15 rounded-md pointer-events-none" />
                 {item.imageUrl ? (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={item.imageUrl} alt={item.name}
-                      className="max-w-full max-h-[40vh] object-contain drop-shadow-lg" />
+                      className="max-w-full max-h-[40vh] object-contain drop-shadow-[0_12px_32px_rgba(0,0,0,0.15)]" />
                   </>
                 ) : (
                   <CatIcon className="h-20 w-20 text-muted-foreground/8" strokeWidth={0.3} />
                 )}
               </div>
 
-              {/* Exhibition placard */}
-              <div className="p-5 sm:p-7 border-t border-border/30 overflow-y-auto">
-                {/* Category & rank line */}
+              {/* Exhibition placard — brass plate feel */}
+              <div className="p-5 sm:p-7 border-t border-border/30 overflow-y-auto bg-gradient-to-b from-background to-muted/10">
+                {/* Category & rank */}
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40">
                     {catLabel?.wing || catLabel?.label}
                   </span>
                   {rank > 0 && item.duelsPlayed > 0 && (
-                    <span className="text-[10px] text-muted-foreground/30 tabular-nums font-mono">Rank #{rank}</span>
+                    <span className="text-[10px] text-muted-foreground/25 tabular-nums font-mono">Rank #{rank}</span>
                   )}
                 </div>
 
-                {/* Title */}
                 <h2 className="text-lg sm:text-xl font-semibold tracking-tight leading-snug mb-3">{item.name}</h2>
 
-                {/* Price & meta */}
                 <div className="flex items-baseline flex-wrap gap-x-4 gap-y-1 mb-4 text-sm text-muted-foreground/70">
                   {item.price !== undefined && (
                     <span className={cn('font-medium tabular-nums', item.priceEstimated && 'text-amber-600 dark:text-amber-400')}>
@@ -979,12 +1000,10 @@ export default function WishlistPage() {
                   <span className="text-xs">{new Date(item.addedAt).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}</span>
                 </div>
 
-                {/* Notes */}
                 {item.notes && (
                   <p className="text-sm text-muted-foreground/60 leading-relaxed mb-4 italic">&ldquo;{item.notes}&rdquo;</p>
                 )}
 
-                {/* Source link */}
                 {item.url && (
                   <a href={item.url} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-foreground transition-colors mb-5">
@@ -992,7 +1011,6 @@ export default function WishlistPage() {
                   </a>
                 )}
 
-                {/* Actions — museum buttons */}
                 <div className="flex items-center gap-2 pt-4 border-t border-border/30">
                   <button onClick={() => { acquireItem(item.id); setExpandedCard(null); }}
                     className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium bg-foreground text-background hover:opacity-90 transition-all">
