@@ -204,6 +204,7 @@ export function formatPrice(amount: number | undefined, currency: string): strin
 let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 let _pendingSave = false;
+let _cloudReceived = false; // true once we've received data from Firestore
 
 interface WishlistCloudData {
   items: VaultItem[];
@@ -405,6 +406,7 @@ export const useWishlistStore = create<WishlistState>()(
           console.log('[ORBIT] Vault _setFromCloud skipped — pending save in flight');
           return;
         }
+        _cloudReceived = true;
         const rawItems = Array.isArray(data.items) ? data.items : [];
         const duels = Array.isArray(data.duels) ? data.duels : [];
         const items = cleanItems(rawItems);
@@ -417,7 +419,21 @@ export const useWishlistStore = create<WishlistState>()(
       },
 
       _setSyncUserId: (userId) => {
+        const prev = _syncUserId;
         _syncUserId = userId;
+        if (!userId) {
+          _cloudReceived = false; // reset on sign-out
+          return;
+        }
+        // When user signs in (null → uid), push any un-synced local items to cloud.
+        // Skip if we already received cloud data (items are already in Firestore).
+        if (!prev && !_cloudReceived) {
+          const { items, duels } = get();
+          if (items.length > 0) {
+            console.log('[ORBIT] Vault: user signed in — pushing local items to cloud');
+            scheduleSave(items, duels);
+          }
+        }
       },
     }),
     {

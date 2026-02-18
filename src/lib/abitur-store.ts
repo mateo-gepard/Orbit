@@ -26,6 +26,7 @@ import { saveToolData } from './firestore';
 let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 let _pendingSave = false;
+let _cloudReceived = false;
 
 function scheduleSave(profile: AbiturProfile) {
   if (!_syncUserId) return;
@@ -109,7 +110,7 @@ function updateProfile(
 
 export const useAbiturStore = create<AbiturState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       profile: createDefaultProfile(),
 
       completeOnboarding: () =>
@@ -279,6 +280,7 @@ export const useAbiturStore = create<AbiturState>()(
           // Only skip if we have a local save in-flight — the echo-back
           // from Firestore will carry the same data we just wrote.
           if (_pendingSave) return s;
+          _cloudReceived = true;
           // Cloud wins — merge cloud over local (fills missing fields from local defaults)
           const merged: AbiturProfile = { ...s.profile, ...cloudProfile };
           // Ensure arrays are never undefined (cloud may have stored null)
@@ -292,7 +294,16 @@ export const useAbiturStore = create<AbiturState>()(
         }),
 
       _setSyncUserId: (userId) => {
+        const prev = _syncUserId;
         _syncUserId = userId;
+        if (!userId) { _cloudReceived = false; return; }
+        if (!prev && !_cloudReceived) {
+          const { profile } = get();
+          if (profile.onboardingComplete) {
+            console.log('[ORBIT] Abitur: user signed in — pushing local profile to cloud');
+            scheduleSave(profile);
+          }
+        }
       },
 
       resetProfile: () => {
