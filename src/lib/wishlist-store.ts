@@ -242,7 +242,8 @@ function sanitizeForFirestore<T>(obj: T): T {
 }
 
 /** Decode HTML entities that may come from scraped metadata */
-function decodeEntities(str: string): string {
+function decodeEntities(str: string | undefined | null): string {
+  if (!str) return str ?? '';
   return str
     .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
@@ -265,7 +266,7 @@ function decodeEntities(str: string): string {
 
 /** Clean HTML entities from item text fields */
 function cleanItem(item: VaultItem): VaultItem {
-  const name = decodeEntities(item.name);
+  const name = decodeEntities(item.name) || 'Untitled';
   const notes = item.notes ? decodeEntities(item.notes) : item.notes;
   if (name === item.name && notes === item.notes) return item; // no change
   return { ...item, name, notes };
