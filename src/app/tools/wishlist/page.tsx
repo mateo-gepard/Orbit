@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus, X, ChevronLeft, Gem, ShoppingBag, ExternalLink,
@@ -87,12 +87,17 @@ export default function WishlistPage() {
   // ─── Debug overlay (imperative DOM — works across all view returns) ──
   const [showDebug, setShowDebug] = useState(false);
   const debugRef = useRef<HTMLDivElement | null>(null);
-  const debugLogVersion = useRef(0);
-  const debugLines = useSyncExternalStore(
-    (cb) => onDebugLog(() => { debugLogVersion.current++; cb(); }),
-    () => getDebugLog(),
-    () => [] as string[],
-  );
+  const [debugLines, setDebugLines] = useState<string[]>([]);
+
+  // Subscribe to debug log — only refresh when panel is visible
+  useEffect(() => {
+    if (!showDebug) return;
+    // Immediate read
+    setDebugLines(getDebugLog());
+    // Listen for new entries
+    const unsub = onDebugLog(() => setDebugLines(getDebugLog()));
+    return unsub;
+  }, [showDebug]);
 
   // Create persistent debug container in DOM
   useEffect(() => {
