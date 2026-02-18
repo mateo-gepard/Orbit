@@ -111,10 +111,9 @@ export default function WishlistPage() {
       let fullUrl = url.trim();
       if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
       const res = await fetch(`/api/scrape?url=${encodeURIComponent(fullUrl)}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error('Scrape failed');
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      if (data.title) setQuickName(data.title);
+      // Use whatever fields came back (even from fallback responses)
+      if (data.title && data.title !== 'Product') setQuickName(data.title);
       if (data.price) setQuickPrice(data.price);
       if (data.image) setQuickImageUrl(data.image);
       if (data.siteName) setQuickScrapedSite(data.siteName);
@@ -126,6 +125,7 @@ export default function WishlistPage() {
       if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
       setQuickUrl(fullUrl);
       setQuickCategory(guessCategory(fullUrl));
+      setQuickExpanded(true);
     } finally {
       setQuickScraping(false);
     }

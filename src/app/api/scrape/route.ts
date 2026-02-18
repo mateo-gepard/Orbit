@@ -109,6 +109,25 @@ function extractMeta(html: string, url: string): ScrapeResult {
   return { title, image, price, currency, description, siteName };
 }
 
+/** Extract a human-readable title from a URL path as fallback */
+function titleFromUrl(parsed: URL): string | null {
+  // Try the last meaningful path segment: /product/ball-star-sneaker → "ball star sneaker"
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  // Skip numeric-only segments (IDs like /product/337100077)
+  const meaningful = segments.filter((s) => !/^\d+$/.test(s) && s.length > 2);
+  const last = meaningful.pop();
+  if (!last) return null;
+  // Remove file extensions, decode URI, replace hyphens/underscores
+  const cleaned = decodeURIComponent(last)
+    .replace(/\.\w{2,5}$/, '')        // .html, .php, etc.
+    .replace(/[-_]+/g, ' ')           // hyphens/underscores → spaces
+    .replace(/cod\s*\d+/gi, '')       // remove "cod 8050235..." product codes
+    .trim();
+  if (cleaned.length < 3) return null;
+  // Title-case
+  return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get('url');
 
@@ -118,17 +137,25 @@ export async function GET(request: NextRequest) {
 
   try {
     // Validate URL
-    new URL(url);
+    const parsedUrl = new URL(url);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
+    // Use realistic browser headers — many sites block bot-like User-Agents
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.app)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'identity',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Cache-Control': 'max-age=0',
       },
       redirect: 'follow',
     });
@@ -136,6 +163,13 @@ export async function GET(request: NextRequest) {
     clearTimeout(timeout);
 
     if (!response.ok) {
+      // Fallback: try to extract a title from the URL path
+      const fallback = titleFromUrl(parsedUrl);
+      if (fallback) {
+        return NextResponse.json({ title: fallback, siteName: parsedUrl.hostname.replace('www.', '') }, {
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+        });
+      }
       return NextResponse.json({ error: `HTTP ${response.status}` }, { status: 502 });
     }
 
@@ -173,6 +207,16 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[ORBIT] Scrape error:', message);
+    // Fallback: try to extract a title from the URL path
+    try {
+      const parsed = new URL(url);
+      const fallback = titleFromUrl(parsed);
+      if (fallback) {
+        return NextResponse.json({ title: fallback, siteName: parsed.hostname.replace('www.', '') }, {
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+        });
+      }
+    } catch { /* ignore */ }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
