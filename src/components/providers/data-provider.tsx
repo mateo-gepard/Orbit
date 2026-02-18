@@ -7,10 +7,12 @@ import { useOrbitStore } from '@/lib/store';
 import { useAbiturStore } from '@/lib/abitur-store';
 import { useToolboxStore } from '@/lib/toolbox-store';
 import { useWishlistStore } from '@/lib/wishlist-store';
+import { useSettingsStore } from '@/lib/settings-store';
 import { subscribeToFlightLogs } from '@/lib/flight';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
 import type { ToolId } from '@/lib/toolbox-store';
+import type { UserSettings } from '@/lib/settings-store';
 
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -38,6 +40,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       useAbiturStore.getState()._setSyncUserId(null);
       useToolboxStore.getState()._setSyncUserId(null);
       useWishlistStore.getState()._setSyncUserId(null);
+      useSettingsStore.getState()._setSyncUserId(null);
       // No user → nothing to load, dismiss loading screen immediately
       setDataLoaded(true);
       setIsLoading(false);
@@ -51,6 +54,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       useToolboxStore.persist.rehydrate();
       useAbiturStore.persist.rehydrate();
       useWishlistStore.persist.rehydrate();
+      useSettingsStore.persist.rehydrate();
 
       // Set sync user ID for tag cloud sync
       setSyncUserId(user.uid);
@@ -59,6 +63,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       useAbiturStore.getState()._setSyncUserId(user.uid);
       useToolboxStore.getState()._setSyncUserId(user.uid);
       useWishlistStore.getState()._setSyncUserId(user.uid);
+      useSettingsStore.getState()._setSyncUserId(user.uid);
 
       // Cleanup previous subscriptions
       if (unsubscribeRef.current) {
@@ -136,6 +141,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // the flight page reads from there. No extra state needed here.
       });
       unsubToolDataRefs.current.push(unsubFlightLogs);
+
+      // Subscribe to Settings
+      const unsubSettings2 = subscribeToToolData<{ settings: UserSettings }>(
+        user.uid,
+        'settings',
+        (data) => {
+          if (data?.settings) {
+            useSettingsStore.getState()._setFromCloud(data.settings);
+          }
+        },
+        () => {
+          const { settings } = useSettingsStore.getState();
+          return settings.updatedAt !== 0 ? { settings } : null;
+        }
+      );
+      unsubToolDataRefs.current.push(unsubSettings2);
 
       const unsubscribe = subscribeToItems(user.uid, (items) => {
         setItems(items);

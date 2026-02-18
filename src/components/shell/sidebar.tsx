@@ -26,6 +26,7 @@ import {
   GraduationCap,
   Heart,
   Gem,
+  Settings,
 } from 'lucide-react';
 import { useToolboxStore, TOOLS, type ToolId } from '@/lib/toolbox-store';
 import { cn } from '@/lib/utils';
@@ -412,6 +413,24 @@ export function Sidebar() {
         <div className="border-t border-sidebar-border px-3 py-3">
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href="/settings"
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200',
+                    'hover:bg-foreground/[0.05] active:scale-95',
+                    pathname === '/settings'
+                      ? 'text-foreground'
+                      : 'text-muted-foreground/60 hover:text-foreground'
+                  )}
+                >
+                  <Settings className="h-4 w-4" strokeWidth={1.5} />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="top">Settings</TooltipContent>
+            </Tooltip>
 
             {user && (
               <>
