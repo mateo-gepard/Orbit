@@ -59,54 +59,22 @@ interface ScrapedMeta {
 
 async function scrapeUrl(url: string): Promise<ScrapedMeta> {
   try {
-    // Use a CORS proxy or allorigins to fetch page HTML
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch('/api/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(15000),
+    });
     if (!res.ok) return {};
-    const html = await res.text();
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-
-    const getMeta = (names: string[]): string | undefined => {
-      for (const name of names) {
-        const el = doc.querySelector(
-          `meta[property="${name}"], meta[name="${name}"]`
-        );
-        if (el?.getAttribute('content')) return el.getAttribute('content')!;
-      }
-      return undefined;
+    const data = await res.json();
+    return {
+      title: data.title || undefined,
+      description: data.description || undefined,
+      imageUrl: data.imageUrl || undefined,
+      price: data.price != null ? data.price : undefined,
+      currency: data.currency || undefined,
+      siteName: data.siteName || undefined,
     };
-
-    const title = getMeta(['og:title', 'twitter:title']) || doc.querySelector('title')?.textContent?.trim();
-    const description = getMeta(['og:description', 'twitter:description', 'description']);
-    const imageUrl = getMeta(['og:image', 'twitter:image', 'twitter:image:src']);
-    const siteName = getMeta(['og:site_name']);
-
-    // Try to find price from common patterns
-    let price: number | undefined;
-    let currency: string | undefined;
-    const priceStr = getMeta(['product:price:amount', 'og:price:amount']);
-    const currStr = getMeta(['product:price:currency', 'og:price:currency']);
-    if (priceStr) {
-      price = parseFloat(priceStr);
-      currency = currStr || '€';
-    }
-    if (!price) {
-      // Search for JSON-LD product data
-      const ldScripts = doc.querySelectorAll('script[type="application/ld+json"]');
-      for (const script of ldScripts) {
-        try {
-          const data = JSON.parse(script.textContent || '');
-          const offer = data?.offers || data?.offers?.[0];
-          if (offer?.price) {
-            price = parseFloat(offer.price);
-            currency = offer.priceCurrency || '€';
-            break;
-          }
-        } catch { /* ignore */ }
-      }
-    }
-
-    return { title, description, imageUrl, price, currency, siteName };
   } catch {
     return {};
   }
