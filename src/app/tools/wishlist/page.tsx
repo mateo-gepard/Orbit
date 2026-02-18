@@ -84,33 +84,6 @@ export default function WishlistPage() {
   // Card expand (gallery detail overlay)
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
-  // ─── Debug overlay (imperative DOM — works across all view returns) ──
-  const [showDebug, setShowDebug] = useState(false);
-  const debugRef = useRef<HTMLDivElement | null>(null);
-  const [debugLines, setDebugLines] = useState<string[]>([]);
-
-  // Subscribe to debug log — only refresh when panel is visible
-  useEffect(() => {
-    if (!showDebug) return;
-    // Immediate read
-    setDebugLines(getDebugLog());
-    // Listen for new entries
-    const unsub = onDebugLog(() => setDebugLines(getDebugLog()));
-    return unsub;
-  }, [showDebug]);
-
-  // Create persistent debug container in DOM
-  useEffect(() => {
-    let container = document.getElementById('vault-debug-root');
-    if (!container) {
-      container = document.createElement('div');
-      container.id = 'vault-debug-root';
-      document.body.appendChild(container);
-    }
-    debugRef.current = container as HTMLDivElement;
-    return () => { container?.remove(); debugRef.current = null; };
-  }, []);
-
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
@@ -261,53 +234,11 @@ export default function WishlistPage() {
 
   if (!mounted) return null;
 
-  // ─── Debug overlay — portal into persistent DOM container ──
-  const debugPortal = debugRef.current ? createPortal(
-    <>
-      <button
-        onClick={() => setShowDebug((p) => !p)}
-        className="fixed bottom-4 left-4 z-[9999] flex h-8 w-8 items-center justify-center rounded-full bg-foreground/10 backdrop-blur-sm border border-border/50 text-muted-foreground hover:text-foreground transition-colors"
-        aria-label="Toggle sync debug"
-      >
-        <Bug className="h-3.5 w-3.5" />
-      </button>
-      {showDebug && (
-        <div className="fixed bottom-14 left-4 right-4 z-[9999] max-w-md rounded-lg border border-border bg-background/95 backdrop-blur-md shadow-xl overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-            <span className="text-[11px] font-mono font-semibold text-foreground">Vault Sync Debug</span>
-            <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
-              <span>uid: {user?.uid?.slice(0, 8) ?? 'none'}…</span>
-              <span>items: {items.length}</span>
-              <span>duels: {duels.length}</span>
-            </div>
-          </div>
-          <div className="max-h-[40vh] overflow-y-auto p-2 space-y-0.5">
-            {debugLines.length === 0 ? (
-              <p className="text-[10px] text-muted-foreground font-mono p-2">No sync activity yet. Try adding an item.</p>
-            ) : (
-              debugLines.map((line, i) => (
-                <p key={i} className="text-[10px] font-mono leading-relaxed text-muted-foreground whitespace-pre-wrap break-all">
-                  {line}
-                </p>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </>,
-    debugRef.current,
-  ) : null;
-
-  // Always render the portal — it's fixed-position and works across all views
-  // by attaching to the persistent DOM container outside React's tree.
-  // We need it in every return, so we use a helper:
-  const withDebug = (content: React.ReactNode) => <>{debugPortal}{content}</>;
-
   // ═══════════════════════════════════════════════════════
   // EDIT FORM — Clean editorial
   // ═══════════════════════════════════════════════════════
   if (view === 'add' || view === 'edit') {
-    return withDebug(
+    return (
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center gap-3">
           <button onClick={() => { resetForm(); setView('gallery'); }} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -399,7 +330,7 @@ export default function WishlistPage() {
     const confidence = rankingConfidence(items);
     const sessionDone = duelCount >= target && duelCount > 0;
 
-    return withDebug(
+    return (
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50">
           <div className="flex items-center justify-between">
@@ -555,7 +486,7 @@ export default function WishlistPage() {
   // ═══════════════════════════════════════════════════════
   if (view === 'leaderboard') {
     const confidence = rankingConfidence(items);
-    return withDebug(
+    return (
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50">
           <div className="flex items-center justify-between">
@@ -705,7 +636,7 @@ export default function WishlistPage() {
   // ═══════════════════════════════════════════════════════
   if (view === 'acquired') {
     const displayItems = showRemoved ? removedItems : acquiredItemsList;
-    return withDebug(
+    return (
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -776,226 +707,90 @@ export default function WishlistPage() {
   }
 
   // ═══════════════════════════════════════════════════════
-  // GALLERY — The Collection
+  // GALLERY — Modern Gallery Wall, Grouped by Category
   // ═══════════════════════════════════════════════════════
-  return withDebug(
-    <div className="relative min-h-full bg-background">
+  if (view === 'gallery') {
+    // Group items by category
+    const itemsByCategory: Record<VaultCategory, VaultItem[]> = {
+      tech: [], fashion: [], experience: [], home: [], creative: [], wellness: [], education: [], other: []
+    };
+    for (const cat of VAULT_CATEGORIES) itemsByCategory[cat.id] = [];
+    for (const item of activeItems) itemsByCategory[item.category]?.push(item);
 
-      {/* Header */}
-      <div className="relative z-10 px-4 lg:px-8 py-4 border-b border-border/50">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">Collection</h1>
-            {activeItems.length > 0 && (
-              <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">
-                {activeItems.length} {activeItems.length === 1 ? 'piece' : 'pieces'}
-                {stats.totalValue > 0 && <span> · {formatPrice(stats.totalValue, activeItems[0]?.currency || 'EUR')}</span>}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            {acquiredItemsList.length > 0 && (
-              <button onClick={() => setView('acquired')} className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-md hover:bg-muted/50">
-                <ShoppingBag className="h-3.5 w-3.5" />
-              </button>
-            )}
-            {rankedItems.length >= 2 && (
-              <button onClick={() => setView('leaderboard')} className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-md hover:bg-muted/50">
-                <Trophy className="h-3.5 w-3.5" />
-              </button>
-            )}
-            {activeItems.length >= 2 && (
-              <button onClick={() => { setView('auction'); startNewDuel(); }}
-                className="text-xs font-medium text-foreground bg-muted/50 hover:bg-muted transition-colors px-3 py-1.5 rounded-md flex items-center gap-1.5">
-                <Gavel className="h-3 w-3" /> Rank
-              </button>
-            )}
-            <button onClick={() => setShowQuickAdd(!showQuickAdd)}
-              className={cn('flex items-center gap-1.5 text-xs font-medium transition-all px-3 py-1.5 rounded-md',
-                showQuickAdd ? 'bg-muted text-foreground' : 'bg-foreground text-background hover:opacity-90')}>
-              {showQuickAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-              {!showQuickAdd && 'Add'}
-            </button>
-          </div>
+    return (
+      <div className="min-h-full bg-background">
+        <div className="px-4 lg:px-8 py-6 border-b border-border/50 flex items-center justify-between">
+          <span className="text-lg font-semibold tracking-tight">Collection Gallery</span>
+          <button
+            onClick={() => setShowQuickAdd(true)}
+            className="inline-flex items-center gap-2 text-xs font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add Piece
+          </button>
         </div>
-      </div>
-
-      {/* Quick-Add */}
-      {showQuickAdd && (
-        <div className="relative z-10 border-b border-border/50 bg-muted/20">
-          <div className="px-4 lg:px-8 py-3 max-w-5xl mx-auto">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                {quickScraping ? (
-                  <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground animate-spin" />
-                ) : (
-                  <Plus className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
-                )}
-                <input ref={quickInputRef} value={quickName}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setQuickName(val);
-                    if (scrapeTimeoutRef.current) clearTimeout(scrapeTimeoutRef.current);
-                    if (isUrl(val) && !quickScraping) {
-                      scrapeTimeoutRef.current = setTimeout(() => scrapeUrl(val), 600);
-                    }
-                  }}
-                  onPaste={(e) => {
-                    setTimeout(() => {
-                      const pasted = e.currentTarget?.value || quickName;
-                      if (isUrl(pasted)) {
-                        if (scrapeTimeoutRef.current) clearTimeout(scrapeTimeoutRef.current);
-                        scrapeUrl(pasted);
-                      }
-                    }, 0);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !quickScraping) handleQuickAdd();
-                    if (e.key === 'Escape') { setShowQuickAdd(false); setQuickName(''); setQuickExpanded(false); setQuickUrl(''); setQuickImageUrl(''); setQuickScrapedSite(''); }
-                  }}
-                  placeholder={quickScraping ? 'Fetching...' : 'Name or paste a URL, then Enter'}
-                  disabled={quickScraping}
-                  className={cn('w-full border border-border bg-background pl-9 pr-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all', quickScraping && 'opacity-60')} />
-              </div>
-              <button onClick={() => setQuickExpanded(!quickExpanded)}
-                className={cn('shrink-0 p-2 rounded-lg transition-all border', quickExpanded ? 'border-foreground/20 bg-muted' : 'border-border text-muted-foreground hover:text-foreground')}>
-                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', quickExpanded && 'rotate-90')} />
-              </button>
-              <button onClick={handleQuickAdd} disabled={!quickName.trim() || quickScraping}
-                className={cn('shrink-0 px-3.5 py-2 rounded-lg text-xs font-medium transition-all',
-                  quickName.trim() && !quickScraping ? 'bg-foreground text-background hover:opacity-90' : 'bg-muted text-muted-foreground cursor-not-allowed')}>
-                {quickScraping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Add'}
-              </button>
-            </div>
-
-            {quickExpanded && (
-              <div className="mt-3 space-y-3">
-                {(quickImageUrl || quickScrapedSite) && (
-                  <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
-                    {quickImageUrl && (
-                      <div className="h-10 w-10 rounded overflow-hidden shrink-0 border border-border/50 bg-muted/20">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={quickImageUrl} alt="" className="w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      {quickScrapedSite && <p className="text-[11px] text-muted-foreground font-medium">{quickScrapedSite}</p>}
-                      {quickUrl && <p className="text-[11px] text-muted-foreground/50 truncate">{quickUrl}</p>}
-                    </div>
-                    {quickUrl && (
-                      <a href={quickUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors p-1 shrink-0">
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-                  </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="relative">
-                    <input value={quickPrice} onChange={(e) => { setQuickPrice(e.target.value.replace(/[^0-9.]/g, '')); if (quickPriceEstimated) setQuickPriceEstimated(false); }}
-                      placeholder="Price" type="text" inputMode="decimal"
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd(); }}
-                      className={cn('w-20 border bg-background px-2.5 py-1.5 text-xs rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 tabular-nums',
-                        quickPriceEstimated ? 'border-amber-400/60 bg-amber-50/30 dark:bg-amber-950/20' : 'border-border')} />
-                    {quickPriceEstimated && (
-                      <button
-                        onClick={() => setQuickPriceEstimated(false)}
-                        title="Estimated price from web search — click to confirm"
-                        className="absolute -top-1.5 -right-1.5 flex items-center justify-center h-4 w-4 rounded-full bg-amber-400 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors"
-                      >
-                        <span className="text-[8px] font-bold">~</span>
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 flex-wrap">
-                    {VAULT_CATEGORIES.map((cat) => {
-                      const Icon = CATEGORY_ICONS[cat.icon] || Package;
-                      const sel = quickCategory === cat.id;
-                      return (
-                        <button key={cat.id} onClick={() => setQuickCategory(cat.id)}
-                          className={cn('flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-all border',
-                            sel ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/30')}>
-                          <Icon className="h-2.5 w-2.5" strokeWidth={1.5} />{cat.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+        <div className="p-4 lg:p-8 max-w-6xl mx-auto w-full">
+          {VAULT_CATEGORIES.map((cat) => {
+            const items = itemsByCategory[cat.id];
+            if (!items || items.length === 0) return null;
+            const Icon = CATEGORY_ICONS[cat.icon] || Package;
+            return (
+              <section key={cat.id} className="mb-12">
+                <div className="flex items-center gap-2 mb-4">
+                  <Icon className="h-5 w-5 text-muted-foreground/40" />
+                  <h2 className="text-base font-semibold tracking-tight uppercase text-muted-foreground/80">{cat.label}</h2>
+                  <span className="text-xs text-muted-foreground/40">{items.length}</span>
                 </div>
-              </div>
-            )}
-          </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+                  {items.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className="relative group rounded-xl border border-border bg-white/80 dark:bg-background/80 shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col"
+                    >
+                      {/* Rank badge — compact on mobile */}
+                      <div className="absolute top-2 left-2 z-10">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-muted text-muted-foreground/80 border border-border"
+                          style={{ minHeight: '1.2em', lineHeight: '1.2em' }}>
+                          #{rankedItems.findIndex(r => r.id === item.id) + 1}
+                        </span>
+                      </div>
+                      {/* Image or icon */}
+                      {item.imageUrl ? (
+                        <div className="flex-1 min-h-0 overflow-hidden bg-muted/20 flex items-center justify-center">
+                          <img src={item.imageUrl} alt={item.name} className="w-full h-32 object-contain p-2 transition-transform duration-500 group-hover:scale-105" />
+                        </div>
+                      ) : (
+                        <div className="flex-1 min-h-0 flex items-center justify-center bg-muted/10">
+                          <Icon className="h-10 w-10 text-muted-foreground/10" strokeWidth={0.5} />
+                        </div>
+                      )}
+                      {/* Info */}
+                      <div className="p-3 flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold truncate flex-1">{item.name}</span>
+                          {item.price !== undefined && (
+                            <span className="text-xs font-mono tabular-nums text-muted-foreground/70">{formatPrice(item.price, item.currency)}</span>
+                          )}
+                        </div>
+                        {item.notes && (
+                          <p className="text-[11px] text-muted-foreground/60 truncate">{item.notes}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+          {activeItems.length === 0 && (
+            <div className="text-center py-24 text-muted-foreground/60">
+              <p className="text-lg font-medium">Your gallery is empty</p>
+              <p className="text-sm mt-1">Add your first piece to begin your collection.</p>
+            </div>
+          )}
         </div>
-      )}
-
-      <div className="relative z-10 p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
-        {/* Category filters */}
-        {activeItems.length > 0 && (
-          <div className="flex gap-1 overflow-x-auto pb-0.5 no-scrollbar">
-            <button onClick={() => setSelectedCategory('all')}
-              className={cn('shrink-0 text-xs font-medium px-3 py-1.5 rounded-md transition-all',
-                selectedCategory === 'all' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
-              All
-            </button>
-            {VAULT_CATEGORIES.map((cat) => {
-              const count = stats.categoryBreakdown[cat.id];
-              if (count === 0) return null;
-              const Icon = CATEGORY_ICONS[cat.icon] || Package;
-              return (
-                <button key={cat.id} onClick={() => setSelectedCategory(cat.id)}
-                  className={cn('shrink-0 flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-md transition-all',
-                    selectedCategory === cat.id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50')}>
-                  <Icon className="h-3 w-3" strokeWidth={1.5} />{cat.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {activeItems.length === 0 && (
-          <div className="text-center py-24">
-            <Gem className="h-8 w-8 text-muted-foreground/15 mx-auto mb-4" strokeWidth={1} />
-            <h2 className="text-lg font-semibold tracking-tight">Start your collection</h2>
-            <p className="text-sm text-muted-foreground mt-1.5 max-w-xs mx-auto">
-              Add the things you want. Compare them. Know what matters most.
-            </p>
-            <button onClick={() => setShowQuickAdd(true)}
-              className="mt-6 inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-5 py-2.5 rounded-lg hover:opacity-90 transition-all active:scale-[0.98]">
-              <Plus className="h-3.5 w-3.5" /> Add first piece
-            </button>
-          </div>
-        )}
-
-        {/* Collection Grid — Exhibition layout */}
-        {sortedGalleryItems.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-border/50 rounded-xl overflow-hidden border border-border/50">
-            {sortedGalleryItems.map((item, idx) => (
-              <CollectionCard key={item.id} item={item} index={idx}
-                rank={rankedItems.findIndex(r => r.id === item.id) + 1}
-                isExpanded={expandedCard === item.id}
-                onToggleExpand={() => setExpandedCard(expandedCard === item.id ? null : item.id)}
-                onEdit={() => openEdit(item)}
-                onAcquire={() => acquireItem(item.id)}
-                onRemove={() => removeItem(item.id)}
-                onConfirmPrice={() => updateItem(item.id, { priceEstimated: false })} />
-            ))}
-          </div>
-        )}
-
-        {/* Auction prompt */}
-        {activeItems.length >= 2 && duels.length === 0 && (
-          <div className="text-center py-6 border-t border-border/50">
-            <p className="text-sm text-muted-foreground">
-              Want to know what you actually want most?
-            </p>
-            <button onClick={() => { setView('auction'); startNewDuel(); }}
-              className="mt-3 inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-5 py-2.5 rounded-lg hover:opacity-90 transition-all active:scale-[0.98]">
-              <Gavel className="h-3.5 w-3.5" /> Start ranking
-            </button>
-          </div>
-        )}
       </div>
-    </div>
-  );
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════

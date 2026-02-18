@@ -201,31 +201,6 @@ export function formatPrice(amount: number | undefined, currency: string): strin
 // Zustand Store with Firestore Sync
 // ═══════════════════════════════════════════════════════════
 
-// ─── On-screen debug log (visible on mobile) ──────────────
-const MAX_DEBUG_LINES = 30;
-const _debugLog: string[] = [];
-const _debugListeners = new Set<() => void>();
-
-function dbg(msg: string) {
-  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
-  const line = `${ts} ${msg}`;
-  _debugLog.push(line);
-  if (_debugLog.length > MAX_DEBUG_LINES) _debugLog.shift();
-  console.log(`[ORBIT] ${msg}`);
-  _debugListeners.forEach((fn) => fn());
-}
-
-/** Subscribe to debug log changes (for React component) */
-export function onDebugLog(fn: () => void): () => void {
-  _debugListeners.add(fn);
-  return () => { _debugListeners.delete(fn); };
-}
-
-/** Get the current debug log lines */
-export function getDebugLog(): string[] {
-  return [..._debugLog];
-}
-
 let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 let _pendingSave = false;
@@ -278,26 +253,20 @@ function cleanItems(items: VaultItem[]): VaultItem[] {
 
 function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
   if (!_syncUserId) {
-    dbg('⏭ scheduleSave skipped — no userId');
     return;
   }
   if (_saveTimer) clearTimeout(_saveTimer);
   _pendingSave = true;
-  dbg(`⏳ scheduleSave queued (${items.length} items, ${duels.length} duels)`);
   _saveTimer = setTimeout(async () => {
     if (!_syncUserId) {
-      dbg('⏭ save aborted — signed out during debounce');
       _pendingSave = false;
       return;
     }
     const userId = _syncUserId;
     const clean = sanitizeForFirestore({ items, duels } satisfies WishlistCloudData);
-    dbg(`🔄 saving → Firestore (${clean.items.length} items, ${clean.duels.length} duels)`);
     try {
       await saveToolData(userId, 'wishlist', clean);
-      dbg('✅ save success');
     } catch (err) {
-      dbg(`❌ save FAILED: ${err}`);
     } finally {
       _pendingSave = false;
     }
@@ -347,7 +316,6 @@ export const useWishlistStore = create<WishlistState>()(
         });
         const items = [...get().items, item];
         set({ items });
-        dbg(`➕ addItem "${item.name}" (total: ${items.length})`);
         scheduleSave(items, get().duels);
       },
 
@@ -429,25 +397,20 @@ export const useWishlistStore = create<WishlistState>()(
 
       _setFromCloud: (data) => {
         try {
-          dbg(`📥 _setFromCloud called — keys: ${Object.keys(data || {}).join(',')} cloudReceived=${_cloudReceived} pendingSave=${_pendingSave}`);
           // After initial load, skip echo-backs while a local save is in flight
           if (_cloudReceived && _pendingSave) {
-            dbg('⏭ _setFromCloud skipped — save in flight (echo)');
             return;
           }
           _cloudReceived = true;
           const rawItems = Array.isArray(data.items) ? data.items : [];
           const duels = Array.isArray(data.duels) ? data.duels : [];
-          dbg(`📦 rawItems=${rawItems.length} duels=${duels.length} firstItem=${rawItems[0] ? JSON.stringify(rawItems[0]).slice(0, 80) : 'none'}`);
           const items = cleanItems(rawItems);
-          dbg(`☁️ cloud → store (${items.length} items, ${duels.length} duels)`);
           set({ items, duels });
           // If entity-cleaning changed any names, write back
           if (items.some((c, i) => c !== rawItems[i])) {
             scheduleSave(items, duels);
           }
         } catch (err) {
-          dbg(`💥 _setFromCloud CRASHED: ${err}`);
         }
       },
 
@@ -455,14 +418,8 @@ export const useWishlistStore = create<WishlistState>()(
         _syncUserId = userId;
         if (!userId) {
           _cloudReceived = false;
-          dbg('🔓 userId cleared (signed out)');
           return;
         }
-        dbg(`🔑 userId set: ${userId.slice(0, 8)}…`);
-        // Don't push local → cloud here.
-        // Cloud snapshot via subscribeToToolData will arrive and _setFromCloud
-        // will accept it (cloud is truth). If no cloud doc exists,
-        // subscribeToToolData's seeding logic pushes local state for us.
       },
     }),
     {
@@ -470,7 +427,6 @@ export const useWishlistStore = create<WishlistState>()(
       partialize: (state) => ({ items: state.items, duels: state.duels }),
       skipHydration: true,
       onRehydrateStorage: () => (state) => {
-        dbg(`💾 rehydrated from localStorage (${state?.items?.length ?? 0} items)`);
         // Clean HTML entities from any previously saved items
         if (state && state.items.length > 0) {
           const cleaned = cleanItems(state.items);
