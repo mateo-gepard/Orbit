@@ -25,13 +25,50 @@ function extractMeta(html: string, url: string): ScrapeResult {
   const decode = (str: string | undefined) => {
     if (!str) return str;
     return str
+      // Numeric entities: &#123; and &#x1A;
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+      // Named entities — common ones
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
       .replace(/&#39;/g, "'")
-      .replace(/&#x27;/g, "'")
-      .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&ndash;/g, '–')
+      .replace(/&mdash;/g, '—')
+      .replace(/&lsquo;/g, '\u2018')
+      .replace(/&rsquo;/g, '\u2019')
+      .replace(/&ldquo;/g, '\u201C')
+      .replace(/&rdquo;/g, '\u201D')
+      .replace(/&bull;/g, '•')
+      .replace(/&hellip;/g, '…')
+      .replace(/&trade;/g, '™')
+      .replace(/&copy;/g, '©')
+      .replace(/&reg;/g, '®')
+      .replace(/&euro;/g, '€')
+      .replace(/&pound;/g, '£')
+      .replace(/&yen;/g, '¥')
+      .replace(/&cent;/g, '¢')
+      // German / accented
+      .replace(/&auml;/g, 'ä').replace(/&Auml;/g, 'Ä')
+      .replace(/&ouml;/g, 'ö').replace(/&Ouml;/g, 'Ö')
+      .replace(/&uuml;/g, 'ü').replace(/&Uuml;/g, 'Ü')
+      .replace(/&szlig;/g, 'ß')
+      // French / Spanish / etc.
+      .replace(/&eacute;/g, 'é').replace(/&Eacute;/g, 'É')
+      .replace(/&egrave;/g, 'è').replace(/&Egrave;/g, 'È')
+      .replace(/&ecirc;/g, 'ê').replace(/&Ecirc;/g, 'Ê')
+      .replace(/&agrave;/g, 'à').replace(/&Agrave;/g, 'À')
+      .replace(/&acirc;/g, 'â').replace(/&Acirc;/g, 'Â')
+      .replace(/&ocirc;/g, 'ô').replace(/&Ocirc;/g, 'Ô')
+      .replace(/&ccedil;/g, 'ç').replace(/&Ccedil;/g, 'Ç')
+      .replace(/&ntilde;/g, 'ñ').replace(/&Ntilde;/g, 'Ñ')
+      .replace(/&iacute;/g, 'í').replace(/&Iacute;/g, 'Í')
+      .replace(/&uacute;/g, 'ú').replace(/&Uacute;/g, 'Ú')
+      .replace(/&oacute;/g, 'ó').replace(/&Oacute;/g, 'Ó')
+      .replace(/&aacute;/g, 'á').replace(/&Aacute;/g, 'Á');
   };
 
   // Title: og:title > twitter:title > <title>
