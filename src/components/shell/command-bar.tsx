@@ -144,7 +144,7 @@ export function CommandBar() {
         .slice(0, 6)
     : [];
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (resolvedLinkItem?: OrbitItem) => {
     if (!input.trim() || !user) return;
 
     const parsed = parseCommand(input);
@@ -180,7 +180,10 @@ export function CommandBar() {
     // Use parentId for ALL @ links (unified linking - no distinction between types)
     let parentItemId: string | undefined;
     
-    if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
+    // If a resolved link item was passed directly (from autocomplete), use it
+    if (resolvedLinkItem) {
+      parentItemId = resolvedLinkItem.id;
+    } else if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
       // Only use the FIRST @ link as the parent
       const firstLinkTitle = parsed.linkedItemTitles[0];
       const linkTitleLower = firstLinkTitle.toLowerCase();
@@ -344,6 +347,9 @@ export function CommandBar() {
                     handleSelectTag(suggestedTags[Math.min(selectedIndex, suggestedTags.length - 1)]);
                   } else if (suggestedPriorities.length > 0) {
                     handleSelectPriority(suggestedPriorities[Math.min(selectedIndex, suggestedPriorities.length - 1)]);
+                  } else if (suggestedLinks.length > 0 && isCreateMode) {
+                    // In create mode: submit immediately, resolving the highlighted @link
+                    handleSubmit(suggestedLinks[Math.min(selectedIndex, suggestedLinks.length - 1)]);
                   } else if (suggestedLinks.length > 0) {
                     handleSelectLink(suggestedLinks[Math.min(selectedIndex, suggestedLinks.length - 1)]);
                   } else if (filteredItems.length > 0 && !input.startsWith('/')) {
