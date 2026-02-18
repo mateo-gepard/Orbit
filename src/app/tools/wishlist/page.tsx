@@ -439,7 +439,7 @@ export default function WishlistPage() {
                 <div className="flex items-start gap-4">
                   {activeItems[0].imageUrl && (
                     <div className="h-20 w-20 rounded-xl overflow-hidden bg-foreground/[0.04] shrink-0">
-                      <img src={activeItems[0].imageUrl} alt="" className="h-full w-full object-cover" />
+                      <img src={activeItems[0].imageUrl} alt="" className="h-full w-full object-contain" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
@@ -489,7 +489,7 @@ export default function WishlistPage() {
                     <RankBadge rank={rank} />
                   ) : item.imageUrl ? (
                     <div className="h-10 w-10 rounded-lg overflow-hidden bg-foreground/[0.04] shrink-0">
-                      <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                      <img src={item.imageUrl} alt="" className="h-full w-full object-contain" />
                     </div>
                   ) : (
                     <div className="h-10 w-10 rounded-lg bg-foreground/[0.04] flex items-center justify-center shrink-0">
@@ -833,7 +833,7 @@ function AddItemView({
               <div className="flex items-center gap-3">
                 {imageUrl && (
                   <div className="h-12 w-12 rounded-lg overflow-hidden bg-foreground/[0.04] shrink-0">
-                    <img src={imageUrl} alt="" className="h-full w-full object-cover" onError={() => setImageUrl('')} />
+                    <img src={imageUrl} alt="" className="h-full w-full object-contain" onError={() => setImageUrl('')} />
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
@@ -967,7 +967,7 @@ function DuelView({
               {/* Image */}
               {item.imageUrl ? (
                 <div className="h-28 w-full rounded-xl overflow-hidden bg-foreground/[0.04] mb-3 mx-auto">
-                  <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                  <img src={item.imageUrl} alt="" className="h-full w-full object-contain" />
                 </div>
               ) : (
                 <div className="h-28 w-full rounded-xl bg-foreground/[0.02] flex items-center justify-center mb-3">
@@ -1103,8 +1103,8 @@ function DetailView({
       <div className="flex-1 overflow-y-auto p-4 lg:p-8 max-w-lg mx-auto w-full space-y-6">
         {/* Hero image */}
         {item.imageUrl && (
-          <div className="rounded-2xl overflow-hidden bg-foreground/[0.04] aspect-video">
-            <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+          <div className="rounded-2xl overflow-hidden bg-foreground/[0.04] aspect-video flex items-center justify-center">
+            <img src={item.imageUrl} alt="" className="max-h-full max-w-full object-contain" />
           </div>
         )}
 
