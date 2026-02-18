@@ -155,6 +155,15 @@ export default function WishlistPage() {
   const removedItems = useMemo(() => getRemovedItems(), [items]);
   const rankedItems = useMemo(() => getRankedItems(), [items]);
   const stats = useMemo(() => getVaultStats(items, duels), [items, duels]);
+  const confidence = useMemo(() => rankingConfidence(items), [items]);
+  const itemsByCategory = useMemo(() => {
+    const map: Record<VaultCategory, VaultItem[]> = {
+      tech: [], fashion: [], experience: [], home: [], creative: [], wellness: [], education: [], other: [],
+    };
+    for (const item of activeItems) map[item.category]?.push(item);
+    for (const cat of VAULT_CATEGORIES) map[cat.id].sort((a, b) => b.elo - a.elo);
+    return map;
+  }, [activeItems]);
 
   const startNewDuel = useCallback(() => {
     const pair = pickDuelPair(activeItems);
@@ -315,7 +324,6 @@ export default function WishlistPage() {
   if (view === 'auction') {
     if (!duelPair) startNewDuel();
     const target = recommendedRounds(activeItems.length);
-    const confidence = rankingConfidence(items);
     const sessionDone = duelCount >= target && duelCount > 0;
 
     return (
@@ -473,7 +481,6 @@ export default function WishlistPage() {
   // LEADERBOARD — Clean Ranked List
   // ═══════════════════════════════════════════════════════
   if (view === 'leaderboard') {
-    const confidence = rankingConfidence(items);
     return (
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50">
@@ -697,18 +704,6 @@ export default function WishlistPage() {
   // ═══════════════════════════════════════════════════════
   // GALLERY — Collection Gallery, Grouped by Category
   // ═══════════════════════════════════════════════════════
-
-  // Group active items by category (sorted by elo within each group)
-  const itemsByCategory = useMemo(() => {
-    const map: Record<VaultCategory, VaultItem[]> = {
-      tech: [], fashion: [], experience: [], home: [], creative: [], wellness: [], education: [], other: [],
-    };
-    for (const item of activeItems) map[item.category]?.push(item);
-    for (const cat of VAULT_CATEGORIES) map[cat.id].sort((a, b) => b.elo - a.elo);
-    return map;
-  }, [activeItems]);
-
-  const confidence = useMemo(() => rankingConfidence(items), [items]);
 
   return (
     <div className="min-h-full bg-background">
