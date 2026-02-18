@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, MoreVertical, Archive, Trash2 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem } from '@/lib/firestore';
@@ -129,16 +130,23 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
   };
 
   // Note editor is a full-screen overlay on top of everything.
+  // Portal to document.body so it's outside AppShell's overflow-hidden container.
 
-  return (
+  return createPortal(
+    <>
+    {/* CSS env() doesn't work in inline styles on iOS PWA — use a real stylesheet */}
+    <style>{`
+      .note-editor-card {
+        padding-top: env(safe-area-inset-top, 0px);
+      }
+    `}</style>
     <div className="fixed inset-0 z-[100] flex flex-col">
       {/* Blurred backdrop */}
       <div className="absolute inset-0 bg-background/80 backdrop-blur-xl" onClick={handleClose} />
       
       {/* Editor card — fills screen on mobile, centered card on desktop */}
       <div 
-        className="relative z-10 flex flex-col flex-1 m-0 lg:m-6 lg:mx-auto lg:max-w-4xl lg:w-full bg-background lg:rounded-2xl lg:border lg:border-border/60 lg:shadow-2xl overflow-hidden"
-        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+        className="note-editor-card relative z-10 flex flex-col flex-1 m-0 lg:m-6 lg:mx-auto lg:max-w-4xl lg:w-full bg-background lg:rounded-2xl lg:border lg:border-border/60 lg:shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div 
@@ -282,5 +290,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
       </div>
       </div>
     </div>
+    </>,
+    document.body
   );
 }
