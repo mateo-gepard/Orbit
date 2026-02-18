@@ -7,7 +7,7 @@ import { saveToolData } from './firestore';
 // Tools are high-quality extensions that behave like native tabs.
 // ═══════════════════════════════════════════════════════════
 
-export type ToolId = 'flight' | 'dispatch' | 'briefing' | 'abitur' | 'wishlist';
+export type ToolId = 'flight' | 'dispatch' | 'briefing' | 'abitur';
 
 export interface ToolDefinition {
   id: ToolId;
@@ -64,17 +64,6 @@ export const TOOLS: ToolDefinition[] = [
     href: '/tools/abitur',
     color: 'text-violet-600 dark:text-violet-400',
     bgColor: 'bg-violet-500/10 dark:bg-violet-400/10',
-  },
-  {
-    id: 'wishlist',
-    name: 'The Vault',
-    tagline: 'Curate your desires. Settle it in the Arena.',
-    description:
-      'Every want becomes a lot in your personal collection. Rank everything with "This or That" duels — ELO-powered rankings, desire meters, provenance tracking, and a collector\'s portfolio.',
-    icon: 'Gem',
-    href: '/tools/wishlist',
-    color: 'text-amber-600 dark:text-amber-400',
-    bgColor: 'bg-amber-500/10 dark:bg-amber-400/10',
   },
 ];
 

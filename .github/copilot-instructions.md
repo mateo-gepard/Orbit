@@ -8,7 +8,7 @@ Next.js 16 App Router · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui 
 
 - **Universal Item**: Core entity is `OrbitItem` in `src/lib/types.ts` — one interface with a `type` field (`task | project | habit | event | goal | note`). All CRUD goes through `src/lib/firestore.ts` (`createItem`, `updateItem`, `deleteItem`, `subscribeToItems`).
 - **Dual-mode persistence**: Firebase Firestore when authenticated, `localStorage` in demo mode. The app checks `isFirebaseAvailable()` — never assume one or the other.
-- **Zustand stores**: Main store (`src/lib/store.ts`) holds items + UI state. Each tool has its own store (`wishlist-store.ts`, `abitur-store.ts`, `toolbox-store.ts`) using `persist` middleware with `localStorage` and cloud sync via `saveToolData`/`subscribeToToolData`.
+- **Zustand stores**: Main store (`src/lib/store.ts`) holds items + UI state. Each tool has its own store (`abitur-store.ts`, `toolbox-store.ts`) using `persist` middleware with `localStorage` and cloud sync via `saveToolData`/`subscribeToToolData`.
 - **Provider chain**: `layout.tsx` → `<Providers>` → `ThemeProvider` → `AuthProvider` → `DataProvider` → `AppShell`. The `DataProvider` (`src/components/providers/data-provider.tsx`) wires all Firestore subscriptions and sets `_setSyncUserId` on each store.
 - **Toolbox pattern**: Tools live at `src/app/tools/{toolId}/page.tsx` as self-contained pages. They are registered in `TOOLS` array in `toolbox-store.ts`. Each tool has its own Zustand store with `_syncToCloud()` that calls `saveToolData(userId, toolId, data)`.
 
@@ -23,7 +23,7 @@ Next.js 16 App Router · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui 
 | App shell (sidebar, detail panel, command bar) | `src/components/shell/` |
 | Shared item components | `src/components/items/` |
 | shadcn/ui primitives | `src/components/ui/` |
-| Tool pages | `src/app/tools/{flight,dispatch,briefing,abitur,wishlist}/` |
+| Tool pages | `src/app/tools/{flight,dispatch,briefing,abitur}/` |
 | API routes (server-side) | `src/app/api/` |
 
 ## Conventions

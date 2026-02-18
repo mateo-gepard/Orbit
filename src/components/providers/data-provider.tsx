@@ -6,7 +6,6 @@ import { subscribeToItems, subscribeToUserSettings, subscribeToToolData } from '
 import { useOrbitStore } from '@/lib/store';
 import { useAbiturStore } from '@/lib/abitur-store';
 import { useToolboxStore } from '@/lib/toolbox-store';
-import { useWishlistStore } from '@/lib/wishlist-store';
 import { subscribeToFlightLogs } from '@/lib/flight';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
@@ -37,7 +36,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setSyncUserId(null);
       useAbiturStore.getState()._setSyncUserId(null);
       useToolboxStore.getState()._setSyncUserId(null);
-      useWishlistStore.getState()._setSyncUserId(null);
       // No user → nothing to load, dismiss loading screen immediately
       setDataLoaded(true);
       setIsLoading(false);
@@ -51,7 +49,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // Set sync user IDs for tool stores
       useAbiturStore.getState()._setSyncUserId(user.uid);
       useToolboxStore.getState()._setSyncUserId(user.uid);
-      useWishlistStore.getState()._setSyncUserId(user.uid);
 
       // Cleanup previous subscriptions
       if (unsubscribeRef.current) {
@@ -104,26 +101,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       );
       unsubToolDataRefs.current.push(unsubToolbox);
-
-      // Subscribe to Wishlist tool data
-      const unsubWishlist = subscribeToToolData<{
-        items: import('@/lib/wishlist-store').WishlistItem[];
-        duelHistory: { winnerId: string; loserId: string; timestamp: number }[];
-        categories: string[];
-      }>(
-        user.uid,
-        'wishlist',
-        (data) => {
-          if (data) {
-            useWishlistStore.getState()._setFromCloud(data);
-          }
-        },
-        () => {
-          const { items: wItems, duelHistory, categories } = useWishlistStore.getState();
-          return wItems.length > 0 ? { items: wItems, duelHistory, categories } : null;
-        }
-      );
-      unsubToolDataRefs.current.push(unsubWishlist);
 
       // Subscribe to Flight Logs — ensures cloud sync even when flight page isn't open
       const unsubFlightLogs = subscribeToFlightLogs(user.uid, () => {
