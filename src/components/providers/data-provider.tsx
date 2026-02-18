@@ -45,12 +45,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      // ── Rehydrate persisted stores FIRST ──
-      // Must happen synchronously before subscriptions so that:
-      // 1. On the SAME device — localStorage state is restored before cloud
-      //    snapshots can overwrite it.
-      // 2. On a NEW device — localStorage is empty, so rehydrate is a no-op,
-      //    and the cloud snapshot correctly populates the store.
+      // ── Rehydrate persisted stores ──
+      // Provides instant UI from localStorage while Firestore loads.
+      // Cloud snapshots always overwrite this — cloud is the source of truth.
       useToolboxStore.persist.rehydrate();
       useAbiturStore.persist.rehydrate();
       useWishlistStore.persist.rehydrate();

@@ -276,10 +276,10 @@ export const useAbiturStore = create<AbiturState>()(
 
       _setProfileFromCloud: (cloudProfile) =>
         set((s) => {
-          // Don't overwrite local changes that are still being saved,
-          // UNLESS local has no onboarding (new device — cloud wins)
-          if (_pendingSave && s.profile.onboardingComplete) return s;
-          // Merge: cloud data wins, but fill in any missing fields from local
+          // Only skip if we have a local save in-flight — the echo-back
+          // from Firestore will carry the same data we just wrote.
+          if (_pendingSave) return s;
+          // Cloud wins — merge cloud over local (fills missing fields from local defaults)
           const merged: AbiturProfile = { ...s.profile, ...cloudProfile };
           // Ensure arrays are never undefined (cloud may have stored null)
           if (!Array.isArray(merged.einbringungen)) merged.einbringungen = s.profile.einbringungen ?? [];

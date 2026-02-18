@@ -760,14 +760,16 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
     docRef,
     (snapshot) => {
       if (snapshot.exists()) {
+        // Cloud document exists — always push to store (cloud first)
+        console.log(`[ORBIT] Tool data received from cloud (${toolId})`);
         callback(snapshot.data() as T);
       } else if (isFirstSnapshot) {
-        // No cloud data yet — seed from local state if available
+        // No cloud document yet — seed from local state so it syncs up
+        console.log(`[ORBIT] No cloud data for ${toolId} — seeding from local`);
         const local = getLocalState?.();
         if (local) {
           saveToolData(userId, toolId, local).catch(() => { /* ignore seed error */ });
         }
-        // Don't call callback — keep current local state
       }
       isFirstSnapshot = false;
     },

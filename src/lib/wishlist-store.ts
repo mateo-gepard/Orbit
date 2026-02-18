@@ -399,19 +399,14 @@ export const useWishlistStore = create<WishlistState>()(
           .sort((a, b) => b.elo - a.elo),
 
       _setFromCloud: (data) => {
-        const localEmpty = get().items.length === 0;
-        // Skip cloud overwrites while a local save is in flight,
-        // UNLESS the local store is empty (new device — cloud should win)
-        if (_pendingSave && !localEmpty) {
+        // Only skip if we have a local save in-flight — the echo-back
+        // from Firestore will carry the same data we just wrote.
+        if (_pendingSave) {
           console.log('[ORBIT] Vault _setFromCloud skipped — pending save in flight');
           return;
         }
         const rawItems = Array.isArray(data.items) ? data.items : [];
         const duels = Array.isArray(data.duels) ? data.duels : [];
-        if (rawItems.length === 0 && !localEmpty) {
-          console.log('[ORBIT] Vault _setFromCloud skipped — cloud empty, local has data');
-          return;
-        }
         const items = cleanItems(rawItems);
         console.log('[ORBIT] Vault _setFromCloud applied:', { items: items.length, duels: duels.length });
         set({ items, duels });
