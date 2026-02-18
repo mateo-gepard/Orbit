@@ -113,13 +113,25 @@ export default function WishlistPage() {
       const res = await fetch(`/api/scrape?url=${encodeURIComponent(fullUrl)}`, { cache: 'no-store' });
       const data = await res.json();
       // Use whatever fields came back (even from fallback responses)
-      if (data.title && data.title !== 'Product') setQuickName(data.title);
+      const title = (data.title && data.title !== 'Product') ? data.title : '';
+      if (title) setQuickName(title);
       if (data.price) setQuickPrice(data.price);
       if (data.image) setQuickImageUrl(data.image);
       if (data.siteName) setQuickScrapedSite(data.siteName);
       setQuickUrl(fullUrl);
       setQuickCategory(guessCategory(fullUrl, data.siteName));
       setQuickExpanded(true);
+
+      // If no image was found, try Google Image Search as fallback
+      if (!data.image && title) {
+        try {
+          const imgRes = await fetch(`/api/scrape/image?q=${encodeURIComponent(title)}`);
+          if (imgRes.ok) {
+            const imgData = await imgRes.json();
+            if (imgData.image) setQuickImageUrl(imgData.image);
+          }
+        } catch { /* image search failed silently */ }
+      }
     } catch {
       let fullUrl = url.trim();
       if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;

@@ -56,11 +56,41 @@ function extractMeta(html: string, url: string): ScrapeResult {
     get(/<title[^>]*>([^<]+)<\/title>/i)
   );
 
-  // Image: og:image > twitter:image
+  // Image: og:image > twitter:image > JSON-LD image > inline product images
   let image =
     get(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ??
     get(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i) ??
     get(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i);
+
+  // JSON-LD image fallback
+  if (!image) {
+    image = get(/"image"\s*:\s*\[?\s*"(https?:\/\/[^"]+\.(jpg|jpeg|png|webp)[^"]*)"/i);
+    if (!image) image = get(/"image"\s*:\s*\{[^}]*"url"\s*:\s*"(https?:\/\/[^"]+)"/i);
+  }
+
+  // Amazon-specific: data-a-dynamic-image contains product images
+  if (!image) {
+    const dynamicImg = get(/data-a-dynamic-image=["']\{["']([^"']+)["']/i);
+    if (dynamicImg) image = dynamicImg;
+  }
+
+  // Amazon media URLs — find the largest product image (full-size, no resize suffix)
+  if (!image) {
+    const amazonImgs = html.match(/https:\/\/m\.media-amazon\.com\/images\/I\/[^"'\s]+\.(?:jpg|jpeg|png|webp)/gi);
+    if (amazonImgs) {
+      // Prefer full-size images (no _AC_US40_ etc. suffixes) and longest ID
+      const fullSize = amazonImgs.find((u) => !/_AC_|_SY\d|_SX\d|_US\d|_SS\d|_FMwebp|_QL\d/i.test(u) && u.length > 60);
+      if (fullSize) image = fullSize;
+      else image = amazonImgs[0]; // first available
+    }
+  }
+
+  // Generic: first large product <img> in the body
+  if (!image) {
+    // Look for img tags with "product" or "hero" or "main" in class/id/src
+    const productImg = get(/<img[^>]*(?:class|id)=["'][^"']*(?:product|hero|main|primary|gallery)[^"']*["'][^>]*src=["'](https?:\/\/[^"']+)["']/i);
+    if (productImg) image = productImg;
+  }
 
   // Make relative image URLs absolute
   if (image && !image.startsWith('http')) {
@@ -68,6 +98,12 @@ function extractMeta(html: string, url: string): ScrapeResult {
       const base = new URL(url);
       image = new URL(image, base.origin).href;
     } catch { /* ignore */ }
+  }
+
+  // Amazon: upgrade thumbnail URLs to full-size
+  // e.g. ...71cV46ErjjL._AC_PT0_BL0_SY110_FMwebp_QL25_.jpg → ...71cV46ErjjL.jpg
+  if (image && image.includes('media-amazon.com/images/I/')) {
+    image = image.replace(/(\/[A-Za-z0-9+_-]+L)\._[^.]+_\.(jpg|jpeg|png|webp)/i, '$1.$2');
   }
 
   // Price: og:price:amount > product:price:amount > schema.org price patterns
@@ -178,7 +214,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Not an HTML page' }, { status: 400 });
     }
 
-    // Only read first 100KB to avoid huge pages
+    // Read first 300KB — some sites (Amazon) have images deep in the page
     const reader = response.body?.getReader();
     if (!reader) {
       return NextResponse.json({ error: 'No response body' }, { status: 502 });
@@ -186,7 +222,7 @@ export async function GET(request: NextRequest) {
 
     let html = '';
     const decoder = new TextDecoder();
-    const maxBytes = 100_000;
+    const maxBytes = 300_000;
     let bytesRead = 0;
 
     while (bytesRead < maxBytes) {
