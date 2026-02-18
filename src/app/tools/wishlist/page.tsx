@@ -702,15 +702,24 @@ export default function WishlistPage() {
   }
 
   // ═══════════════════════════════════════════════════════
-  // GALLERY — Collection Gallery, Grouped by Category
+  // GALLERY — Museum-style Collection Gallery
   // ═══════════════════════════════════════════════════════
+
+  // The #1 ranked item becomes the hero / featured piece
+  const heroItem = rankedItems.length > 0 && rankedItems[0].duelsPlayed > 0 ? rankedItems[0] : null;
 
   return (
     <div className="min-h-full bg-background">
       {/* ── Header ───────────────────────────────────── */}
       <div className="px-4 lg:px-8 py-4 border-b border-border/50">
         <div className="flex items-center justify-between">
-          <span className="text-lg font-semibold tracking-tight">The Vault</span>
+          <div>
+            <span className="text-lg font-semibold tracking-tight">The Vault</span>
+            <span className="text-[11px] text-muted-foreground/40 ml-2 hidden sm:inline tabular-nums">
+              {stats.totalItems} piece{stats.totalItems !== 1 && 's'}
+              {stats.totalValue > 0 && <> · {formatPrice(stats.totalValue, 'EUR')}</>}
+            </span>
+          </div>
           <button onClick={() => setShowQuickAdd(true)}
             className="inline-flex items-center gap-1.5 text-xs font-medium bg-foreground text-background px-3 py-1.5 rounded-lg hover:opacity-90 transition-all">
             <Plus className="h-3.5 w-3.5" /> Add
@@ -736,19 +745,13 @@ export default function WishlistPage() {
               <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
-          {/* Stats summary — desktop */}
-          <div className="ml-auto hidden sm:flex items-center gap-3 text-[11px] text-muted-foreground/60 tabular-nums">
-            <span>{stats.totalItems} pieces</span>
-            {stats.totalValue > 0 && <span>{formatPrice(stats.totalValue, 'EUR')}</span>}
-            {confidence > 0 && <span>{confidence}% ranked</span>}
-          </div>
         </div>
       </div>
 
       {/* ── Gallery body ─────────────────────────────── */}
-      <div className="p-3 lg:p-8 max-w-6xl mx-auto w-full">
+      <div className="max-w-6xl mx-auto w-full">
         {activeItems.length === 0 ? (
-          <div className="text-center py-24 text-muted-foreground/60">
+          <div className="text-center py-24 px-4 text-muted-foreground/60">
             <Gem className="h-10 w-10 mx-auto mb-4 text-muted-foreground/20" strokeWidth={1} />
             <p className="text-lg font-medium">Your vault is empty</p>
             <p className="text-sm mt-1 mb-4">Paste a URL or add items to start your collection.</p>
@@ -758,130 +761,258 @@ export default function WishlistPage() {
             </button>
           </div>
         ) : (
-          VAULT_CATEGORIES.map((cat) => {
-            const catItems = itemsByCategory[cat.id];
-            if (!catItems || catItems.length === 0) return null;
-            const CatIcon = CATEGORY_ICONS[cat.icon] || Package;
-            return (
-              <section key={cat.id} className="mb-10 last:mb-0">
-                {/* Category header */}
-                <div className="flex items-center gap-2.5 mb-4">
-                  <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/50 border border-border/50">
-                    <CatIcon className="h-3.5 w-3.5 text-muted-foreground/60" strokeWidth={1.5} />
+          <>
+            {/* ── Hero / Featured Piece ──────────────── */}
+            {heroItem && (
+              <div className="px-4 lg:px-8 pt-6 lg:pt-10 pb-2">
+                <button
+                  onClick={() => setExpandedCard(expandedCard === heroItem.id ? null : heroItem.id)}
+                  className="w-full text-left group"
+                >
+                  <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-b from-muted/20 to-transparent">
+                    <div className="flex flex-col sm:flex-row items-center">
+                      {/* Hero image — large, generous whitespace */}
+                      {heroItem.imageUrl ? (
+                        <div className="w-full sm:w-1/2 aspect-square sm:aspect-auto sm:h-64 lg:h-80 flex items-center justify-center p-6 lg:p-12">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={heroItem.imageUrl} alt={heroItem.name}
+                            className="max-w-full max-h-full object-contain drop-shadow-lg transition-transform duration-700 group-hover:scale-[1.03]" />
+                        </div>
+                      ) : (
+                        <div className="w-full sm:w-1/2 h-48 sm:h-64 lg:h-80 flex items-center justify-center">
+                          {(() => { const I = getCategoryIcon(heroItem.category); return <I className="h-20 w-20 text-muted-foreground/6" strokeWidth={0.3} />; })()}
+                        </div>
+                      )}
+                      {/* Hero placard */}
+                      <div className="flex-1 p-5 sm:p-8 lg:p-10 sm:border-l border-border/30">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40 mb-2">Featured Piece</p>
+                        <h2 className="text-lg lg:text-2xl font-semibold tracking-tight leading-snug mb-3">{heroItem.name}</h2>
+                        {heroItem.price !== undefined && (
+                          <p className="text-sm lg:text-base font-medium tabular-nums text-muted-foreground/80 mb-3">
+                            {heroItem.priceEstimated && '~'}{formatPrice(heroItem.price, heroItem.currency)}
+                            {heroItem.priceEstimated && <span className="text-[10px] ml-1 text-amber-500">est.</span>}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground/50">
+                          <span className="uppercase tracking-wider">{VAULT_CATEGORIES.find(c => c.id === heroItem.category)?.label}</span>
+                          {heroItem.duelsPlayed > 0 && <span className="tabular-nums font-mono">{heroItem.elo} pts</span>}
+                          <span>#{rankedItems.findIndex(r => r.id === heroItem.id) + 1} Ranked</span>
+                        </div>
+                        {heroItem.notes && (
+                          <p className="text-xs text-muted-foreground/50 mt-3 line-clamp-2 leading-relaxed italic">&ldquo;{heroItem.notes}&rdquo;</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <h2 className="text-sm font-semibold tracking-tight">{cat.wing}</h2>
-                    <span className="text-[11px] text-muted-foreground/40 tabular-nums">{catItems.length}</span>
-                  </div>
-                </div>
+                </button>
+              </div>
+            )}
 
-                {/* Cards grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 lg:gap-4">
-                  {catItems.map((item) => {
-                    const rank = rankedItems.findIndex(r => r.id === item.id) + 1;
-                    const isOpen = expandedCard === item.id;
-                    return (
-                      <div key={item.id}
-                        className={cn(
-                          'relative group rounded-xl border overflow-hidden flex flex-col cursor-pointer transition-all duration-200',
-                          isOpen
-                            ? 'border-foreground/20 shadow-lg ring-1 ring-foreground/5 col-span-2 sm:col-span-2 lg:col-span-2'
-                            : 'border-border/60 hover:border-foreground/15 hover:shadow-md bg-background'
-                        )}
-                        onClick={() => setExpandedCard(isOpen ? null : item.id)}
-                      >
-                        {/* Rank pill — very compact on mobile */}
-                        {rank > 0 && item.duelsPlayed > 0 && (
-                          <div className="absolute top-1.5 left-1.5 lg:top-2 lg:left-2 z-10">
-                            <span className="inline-flex items-center justify-center h-4 lg:h-5 min-w-[1.1rem] lg:min-w-[1.4rem] px-1 lg:px-1.5 rounded-full text-[9px] lg:text-[10px] font-mono font-bold bg-background/90 text-foreground/70 border border-border/80 backdrop-blur-sm leading-none">
-                              {rank}
-                            </span>
-                          </div>
-                        )}
+            {/* ── Category Wings ─────────────────────── */}
+            <div className="px-4 lg:px-8 pb-8 lg:pb-12">
+              {VAULT_CATEGORIES.map((cat) => {
+                const catItems = itemsByCategory[cat.id];
+                if (!catItems || catItems.length === 0) return null;
+                const CatIcon = CATEGORY_ICONS[cat.icon] || Package;
+                // Skip the hero item in its category to avoid duplicate
+                const displayItems = heroItem
+                  ? catItems.filter(i => i.id !== heroItem.id)
+                  : catItems;
+                if (displayItems.length === 0) return null;
+                return (
+                  <section key={cat.id} className="mt-8 lg:mt-12 first:mt-6 first:lg:mt-8">
+                    {/* Wing header — museum style divider */}
+                    <div className="flex items-center gap-4 mb-5 lg:mb-6">
+                      <div className="flex items-center gap-2.5">
+                        <CatIcon className="h-4 w-4 text-muted-foreground/40" strokeWidth={1.5} />
+                        <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground/60">{cat.wing}</h2>
+                        <span className="text-[10px] text-muted-foreground/25 tabular-nums">{displayItems.length}</span>
+                      </div>
+                      <div className="flex-1 h-px bg-border/40" />
+                    </div>
 
-                        {/* Image area */}
-                        {item.imageUrl ? (
-                          <div className={cn('overflow-hidden bg-muted/10 flex items-center justify-center',
-                            isOpen ? 'h-48 lg:h-56' : 'h-28 lg:h-36')}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={item.imageUrl} alt={item.name}
-                              className={cn('w-full h-full object-contain transition-transform duration-500',
-                                isOpen ? 'p-4 lg:p-6' : 'p-2 lg:p-3 group-hover:scale-105')} />
-                          </div>
-                        ) : (
-                          <div className={cn('flex items-center justify-center bg-muted/5',
-                            isOpen ? 'h-36' : 'h-24 lg:h-32')}>
-                            <CatIcon className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground/8" strokeWidth={0.5} />
-                          </div>
-                        )}
-
-                        {/* Info */}
-                        <div className="p-2.5 lg:p-3 flex-1 flex flex-col">
-                          <p className={cn('font-medium tracking-tight line-clamp-2 leading-snug',
-                            isOpen ? 'text-sm' : 'text-[12px] lg:text-[13px]')}>{item.name}</p>
-                          <div className="flex items-center justify-between mt-auto pt-1.5">
-                            {item.price !== undefined ? (
-                              <span className={cn('text-[11px] lg:text-xs font-medium tabular-nums',
-                                item.priceEstimated ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/70')}>
-                                {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-muted-foreground/30">—</span>
-                            )}
-                            {item.url && (
-                              <a href={item.url} target="_blank" rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-muted-foreground/30 hover:text-muted-foreground transition-colors">
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            )}
-                          </div>
-
-                          {/* Expanded detail */}
-                          {isOpen && (
-                            <div className="mt-3 pt-3 border-t border-border/40 space-y-2.5 animate-in fade-in duration-200">
-                              {item.notes && <p className="text-[12px] text-muted-foreground leading-relaxed">{item.notes}</p>}
-                              <div className="flex items-center flex-wrap gap-2 text-[11px] text-muted-foreground/60">
-                                <span>{getRarityLabel(getItemRarity(item))}</span>
-                                {item.duelsPlayed > 0 && (
-                                  <span className="tabular-nums font-mono">{item.elo} · {item.duelsWon}W–{item.duelsPlayed - item.duelsWon}L</span>
+                    {/* Pieces — staggered museum grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-5 lg:gap-x-5 lg:gap-y-8">
+                      {displayItems.map((item, idx) => {
+                        const rank = rankedItems.findIndex(r => r.id === item.id) + 1;
+                        const hasImage = !!item.imageUrl;
+                        // Vary heights for visual rhythm
+                        const tallCard = idx % 5 === 0 || idx % 7 === 2;
+                        return (
+                          <div key={item.id}
+                            className="group cursor-pointer"
+                            onClick={() => setExpandedCard(item.id)}
+                          >
+                            {/* Frame — shadow gives depth like a real frame */}
+                            <div className={cn(
+                              'relative overflow-hidden rounded-lg transition-all duration-300',
+                              'shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]',
+                              'group-hover:shadow-[0_4px_20px_rgba(0,0,0,0.08),0_1px_4px_rgba(0,0,0,0.04)]',
+                              'group-hover:-translate-y-0.5',
+                              'border border-border/40 group-hover:border-border/60',
+                              'bg-background'
+                            )}>
+                              {/* Mat / Image area — generous padding like gallery matting */}
+                              <div className={cn(
+                                'relative bg-gradient-to-b from-muted/15 via-muted/5 to-transparent flex items-center justify-center overflow-hidden',
+                                tallCard && hasImage ? 'h-40 lg:h-52' : 'h-28 lg:h-36'
+                              )}>
+                                {hasImage ? (
+                                  <>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={item.imageUrl} alt={item.name}
+                                      className="max-w-[85%] max-h-[85%] object-contain drop-shadow-sm transition-transform duration-500 group-hover:scale-[1.04]" />
+                                  </>
+                                ) : (
+                                  <CatIcon className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground/6" strokeWidth={0.4} />
                                 )}
-                                <span>{new Date(item.addedAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span>
+                                {/* Rank — subtle top-right corner */}
+                                {rank > 0 && item.duelsPlayed > 0 && (
+                                  <div className="absolute top-1.5 right-1.5 lg:top-2 lg:right-2">
+                                    <span className="text-[8px] lg:text-[9px] font-mono font-semibold text-muted-foreground/30 tabular-nums">
+                                      #{rank}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
-                              {/* Actions */}
-                              <div className="flex items-center gap-1.5 pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); acquireItem(item.id); setExpandedCard(null); }}
-                                  className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium bg-foreground text-background hover:opacity-90 transition-all">
-                                  <ShoppingBag className="h-3 w-3" /> Got it
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); openEdit(item); }}
-                                  className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all border border-border/60">
-                                  <Edit3 className="h-3 w-3" /> Edit
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); removeItem(item.id); setExpandedCard(null); }}
-                                  className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all border border-border/60">
-                                  <Archive className="h-3 w-3" />
-                                </button>
-                                {item.priceEstimated && (
-                                  <button onClick={(e) => { e.stopPropagation(); updateItem(item.id, { priceEstimated: false }); }}
-                                    title="Confirm estimated price"
-                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors ml-auto">
-                                    <Check className="h-3 w-3" strokeWidth={3} />
-                                  </button>
-                                )}
+
+                              {/* Placard — like a museum name plate */}
+                              <div className="px-3 py-2.5 lg:px-4 lg:py-3">
+                                <p className="text-[11px] lg:text-[12.5px] font-medium tracking-tight leading-snug line-clamp-2">{item.name}</p>
+                                <div className="flex items-baseline justify-between mt-1 gap-2">
+                                  {item.price !== undefined ? (
+                                    <span className={cn('text-[10px] lg:text-[11px] tabular-nums',
+                                      item.priceEstimated ? 'text-amber-600/70 dark:text-amber-400/70' : 'text-muted-foreground/50')}>
+                                      {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
+                                    </span>
+                                  ) : (
+                                    <span />
+                                  )}
+                                  {item.url && (
+                                    <a href={item.url} target="_blank" rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="text-muted-foreground/20 hover:text-muted-foreground/60 transition-colors shrink-0">
+                                      <ExternalLink className="h-2.5 w-2.5 lg:h-3 lg:w-3" />
+                                    </a>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
+
+      {/* ── Detail lightbox overlay ──────────────────── */}
+      {expandedCard && mounted && (() => {
+        const item = activeItems.find(i => i.id === expandedCard);
+        if (!item) return null;
+        const rank = rankedItems.findIndex(r => r.id === item.id) + 1;
+        const rarity = getItemRarity(item);
+        const CatIcon = getCategoryIcon(item.category);
+        const catLabel = VAULT_CATEGORIES.find(c => c.id === item.category);
+        return createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8"
+            onClick={() => setExpandedCard(null)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div className="relative w-full max-w-2xl bg-background rounded-2xl shadow-2xl border border-border/50 overflow-hidden animate-in zoom-in-95 fade-in duration-200 max-h-[90dvh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}>
+              {/* Close button */}
+              <button onClick={() => setExpandedCard(null)}
+                className="absolute top-3 right-3 z-10 text-muted-foreground/50 hover:text-foreground transition-colors p-1.5 rounded-full hover:bg-muted/50">
+                <X className="h-4 w-4" />
+              </button>
+
+              {/* Image — large, museum wall feel */}
+              <div className="bg-gradient-to-b from-muted/20 to-muted/5 flex items-center justify-center min-h-[200px] sm:min-h-[280px] p-8 sm:p-12 shrink-0">
+                {item.imageUrl ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.imageUrl} alt={item.name}
+                      className="max-w-full max-h-[40vh] object-contain drop-shadow-lg" />
+                  </>
+                ) : (
+                  <CatIcon className="h-20 w-20 text-muted-foreground/8" strokeWidth={0.3} />
+                )}
+              </div>
+
+              {/* Exhibition placard */}
+              <div className="p-5 sm:p-7 border-t border-border/30 overflow-y-auto">
+                {/* Category & rank line */}
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40">
+                    {catLabel?.wing || catLabel?.label}
+                  </span>
+                  {rank > 0 && item.duelsPlayed > 0 && (
+                    <span className="text-[10px] text-muted-foreground/30 tabular-nums font-mono">Rank #{rank}</span>
+                  )}
+                </div>
+
+                {/* Title */}
+                <h2 className="text-lg sm:text-xl font-semibold tracking-tight leading-snug mb-3">{item.name}</h2>
+
+                {/* Price & meta */}
+                <div className="flex items-baseline flex-wrap gap-x-4 gap-y-1 mb-4 text-sm text-muted-foreground/70">
+                  {item.price !== undefined && (
+                    <span className={cn('font-medium tabular-nums', item.priceEstimated && 'text-amber-600 dark:text-amber-400')}>
+                      {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
+                      {item.priceEstimated && (
+                        <button onClick={() => updateItem(item.id, { priceEstimated: false })}
+                          className="ml-1.5 inline-flex items-center justify-center h-4 w-4 rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors align-middle"
+                          title="Confirm price">
+                          <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                        </button>
+                      )}
+                    </span>
+                  )}
+                  <span className="text-xs">{getRarityLabel(rarity)}</span>
+                  {item.duelsPlayed > 0 && (
+                    <span className="text-xs tabular-nums font-mono">{item.elo} pts · {item.duelsWon}W–{item.duelsPlayed - item.duelsWon}L</span>
+                  )}
+                  <span className="text-xs">{new Date(item.addedAt).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                </div>
+
+                {/* Notes */}
+                {item.notes && (
+                  <p className="text-sm text-muted-foreground/60 leading-relaxed mb-4 italic">&ldquo;{item.notes}&rdquo;</p>
+                )}
+
+                {/* Source link */}
+                {item.url && (
+                  <a href={item.url} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-foreground transition-colors mb-5">
+                    <ExternalLink className="h-3 w-3" /> View source
+                  </a>
+                )}
+
+                {/* Actions — museum buttons */}
+                <div className="flex items-center gap-2 pt-4 border-t border-border/30">
+                  <button onClick={() => { acquireItem(item.id); setExpandedCard(null); }}
+                    className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium bg-foreground text-background hover:opacity-90 transition-all">
+                    <ShoppingBag className="h-3.5 w-3.5" /> Acquired
+                  </button>
+                  <button onClick={() => { openEdit(item); setExpandedCard(null); }}
+                    className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all border border-border/60">
+                    <Edit3 className="h-3.5 w-3.5" /> Edit
+                  </button>
+                  <button onClick={() => { removeItem(item.id); setExpandedCard(null); }}
+                    className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all border border-border/60 ml-auto">
+                    <Archive className="h-3.5 w-3.5" /> Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
 
       {/* ── Quick-add overlay ────────────────────────── */}
       {showQuickAdd && mounted && createPortal(
