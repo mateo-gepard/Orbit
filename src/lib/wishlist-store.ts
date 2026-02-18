@@ -229,8 +229,7 @@ export function getDebugLog(): string[] {
 let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 let _pendingSave = false;
-let _cloudReceived = false; // true once we've received data from Firestore
-let _hasLocalData = false;  // true when rehydrated local items exist pre-cloud
+let _cloudReceived = false;
 
 interface WishlistCloudData {
   items: VaultItem[];
@@ -428,64 +427,21 @@ export const useWishlistStore = create<WishlistState>()(
           .sort((a, b) => b.elo - a.elo),
 
       _setFromCloud: (data) => {
+        // Only skip if we have a local save in-flight — the echo-back
+        // from Firestore will carry the same data we just wrote.
         if (_pendingSave) {
           dbg('⏭ _setFromCloud skipped — save in flight');
           return;
         }
-
-        const rawItems = Array.isArray(data.items) ? data.items : [];
-        const cloudDuels = Array.isArray(data.duels) ? data.duels : [];
-        const cloudItems = cleanItems(rawItems);
-
-        // ── Merge strategy on first cloud snapshot when local data exists ──
-        if (!_cloudReceived && _hasLocalData) {
-          const { items: localItems, duels: localDuels } = get();
-          _cloudReceived = true;
-          _hasLocalData = false;
-
-          if (localItems.length === 0) {
-            // Nothing local to merge — just accept cloud
-            dbg(`☁️ cloud → store (${cloudItems.length} items, no local merge needed)`);
-            set({ items: cloudItems, duels: cloudDuels });
-            return;
-          }
-
-          // Build merged items: cloud wins on conflicts, add local-only items
-          const cloudMap = new Map(cloudItems.map((i) => [i.id, i]));
-          const localOnlyItems: VaultItem[] = [];
-
-          for (const local of localItems) {
-            if (!cloudMap.has(local.id)) {
-              localOnlyItems.push(local);
-            }
-            // If cloud has same ID, cloud version wins (it's the source of truth)
-          }
-
-          const mergedItems = [...cloudItems, ...localOnlyItems];
-
-          // Merge duels by ID too
-          const cloudDuelIds = new Set(cloudDuels.map((d) => d.id));
-          const localOnlyDuels = localDuels.filter((d) => !cloudDuelIds.has(d.id));
-          const mergedDuels = [...cloudDuels, ...localOnlyDuels];
-
-          dbg(`🔀 merge: ${cloudItems.length} cloud + ${localOnlyItems.length} local-only = ${mergedItems.length} items`);
-          dbg(`🔀 merge: ${cloudDuels.length} cloud + ${localOnlyDuels.length} local-only = ${mergedDuels.length} duels`);
-
-          set({ items: mergedItems, duels: mergedDuels });
-
-          // Save merged result back to cloud if we added local-only items
-          if (localOnlyItems.length > 0 || localOnlyDuels.length > 0) {
-            scheduleSave(mergedItems, mergedDuels);
-          }
-          return;
-        }
-
-        // ── Normal cloud update (not first snapshot) ──
         _cloudReceived = true;
-        dbg(`☁️ cloud → store (${cloudItems.length} items, ${cloudDuels.length} duels)`);
-        set({ items: cloudItems, duels: cloudDuels });
-        if (cloudItems.some((c, i) => c !== rawItems[i])) {
-          scheduleSave(cloudItems, cloudDuels);
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const duels = Array.isArray(data.duels) ? data.duels : [];
+        const items = cleanItems(rawItems);
+        dbg(`☁️ cloud → store (${items.length} items, ${duels.length} duels)`);
+        set({ items, duels });
+        // If entity-cleaning changed any names, write back
+        if (items.some((c, i) => c !== rawItems[i])) {
+          scheduleSave(items, duels);
         }
       },
 
@@ -494,19 +450,18 @@ export const useWishlistStore = create<WishlistState>()(
         _syncUserId = userId;
         if (!userId) {
           _cloudReceived = false;
-          _hasLocalData = false;
           dbg('🔓 userId cleared (signed out)');
           return;
         }
         dbg(`🔑 userId set: ${userId.slice(0, 8)}…`);
-        // Mark that we have local data — _setFromCloud will merge on first snapshot
-        if (!prev) {
-          const { items } = get();
+        // On first sign-in, push local items to cloud (same pattern as Abitur)
+        if (!prev && !_cloudReceived) {
+          const { items, duels } = get();
           if (items.length > 0) {
-            _hasLocalData = true;
-            dbg(`� ${items.length} local items flagged for merge`);
+            dbg(`📤 pushing ${items.length} local items → cloud`);
+            scheduleSave(items, duels);
           } else {
-            dbg('📭 no local items — will accept cloud as-is');
+            dbg('📭 no local items to push');
           }
         }
       },
