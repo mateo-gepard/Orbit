@@ -787,7 +787,7 @@ export default function WishlistPage() {
                       )}
                       {/* Hero placard */}
                       <div className="flex-1 p-5 sm:p-8 lg:p-10 sm:border-l border-border/30">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40 mb-2">Featured Piece</p>
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/50 mb-2">Featured Piece</p>
                         <h2 className="text-lg lg:text-2xl font-semibold tracking-tight leading-snug mb-3">{heroItem.name}</h2>
                         {heroItem.price !== undefined && (
                           <p className="text-sm lg:text-base font-medium tabular-nums text-muted-foreground/80 mb-3">
@@ -795,13 +795,13 @@ export default function WishlistPage() {
                             {heroItem.priceEstimated && <span className="text-[10px] ml-1 text-amber-500">est.</span>}
                           </p>
                         )}
-                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground/50">
+                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
                           <span className="uppercase tracking-wider">{VAULT_CATEGORIES.find(c => c.id === heroItem.category)?.label}</span>
                           {heroItem.duelsPlayed > 0 && <span className="tabular-nums font-mono">{heroItem.elo} pts</span>}
                           <span>#{rankedItems.findIndex(r => r.id === heroItem.id) + 1} Ranked</span>
                         </div>
                         {heroItem.notes && (
-                          <p className="text-xs text-muted-foreground/50 mt-3 line-clamp-2 leading-relaxed italic">&ldquo;{heroItem.notes}&rdquo;</p>
+                          <p className="text-xs text-muted-foreground/60 mt-3 line-clamp-2 leading-relaxed italic">&ldquo;{heroItem.notes}&rdquo;</p>
                         )}
                       </div>
                     </div>
@@ -827,9 +827,9 @@ export default function WishlistPage() {
                     <div className="vault-rail pt-4 mb-6 lg:mb-8">
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2.5">
-                          <CatIcon className="h-4 w-4 text-muted-foreground/35" strokeWidth={1.5} />
-                          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/50">{cat.wing}</h2>
-                          <span className="text-[10px] text-muted-foreground/20 tabular-nums">{displayItems.length}</span>
+                          <CatIcon className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.5} />
+                          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">{cat.wing}</h2>
+                          <span className="text-[10px] text-muted-foreground/35 tabular-nums">{displayItems.length}</span>
                         </div>
                         <div className="flex-1" />
                       </div>
@@ -837,11 +837,9 @@ export default function WishlistPage() {
 
                     {/* Pieces on the wall — perspective grid */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-6 lg:gap-x-6 lg:gap-y-10">
-                      {displayItems.map((item, idx) => {
+                      {displayItems.map((item) => {
                         const rank = rankedItems.findIndex(r => r.id === item.id) + 1;
                         const hasImage = !!item.imageUrl;
-                        // Vary heights for visual rhythm — like a real gallery hang
-                        const tallCard = idx % 5 === 0 || idx % 7 === 2;
                         return (
                           <div key={item.id}
                             className="group cursor-pointer"
@@ -862,13 +860,9 @@ export default function WishlistPage() {
                               onMouseLeave={(e) => { e.currentTarget.style.transform = 'rotateX(1deg)'; }}
                             >
                               {/* Mat — the white/cream border around art */}
-                              <div className={cn(
-                                'relative flex items-center justify-center overflow-hidden vault-spotlight',
-                                tallCard && hasImage ? 'h-44 lg:h-56' : 'h-30 lg:h-38',
-                                'p-3 lg:p-4'
-                              )}>
+                              <div className="relative flex items-center justify-center overflow-hidden vault-spotlight aspect-[4/3] p-3 lg:p-4">
                                 {/* Inner mat border */}
-                                <div className="absolute inset-2 lg:inset-3 border border-border/20 rounded-sm pointer-events-none" />
+                                <div className="absolute inset-2 lg:inset-3 border border-border/30 rounded-sm pointer-events-none" />
                                 {hasImage ? (
                                   <>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -876,12 +870,12 @@ export default function WishlistPage() {
                                       className="max-w-[80%] max-h-[80%] object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-transform duration-500 group-hover:scale-[1.04]" />
                                   </>
                                 ) : (
-                                  <CatIcon className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground/5" strokeWidth={0.4} />
+                                  <CatIcon className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground/10" strokeWidth={0.5} />
                                 )}
                                 {/* Rank — engraved corner */}
                                 {rank > 0 && item.duelsPlayed > 0 && (
                                   <div className="absolute top-2 right-2 lg:top-2.5 lg:right-2.5">
-                                    <span className="text-[8px] lg:text-[9px] font-mono font-semibold text-muted-foreground/25 tabular-nums">
+                                    <span className="text-[8px] lg:text-[9px] font-mono font-semibold text-muted-foreground/40 tabular-nums">
                                       #{rank}
                                     </span>
                                   </div>
@@ -889,12 +883,12 @@ export default function WishlistPage() {
                               </div>
 
                               {/* Name placard — small brass-style plate */}
-                              <div className="px-3 py-2 lg:px-4 lg:py-2.5 border-t border-border/30">
-                                <p className="text-[10.5px] lg:text-[12px] font-medium tracking-tight leading-snug line-clamp-2">{item.name}</p>
-                                <div className="flex items-baseline justify-between mt-0.5 gap-2">
+                              <div className="px-3 py-2.5 lg:px-4 lg:py-3 border-t border-border/40">
+                                <p className="text-[11px] lg:text-[12.5px] font-medium tracking-tight leading-snug line-clamp-2">{item.name}</p>
+                                <div className="flex items-baseline justify-between mt-1 gap-2">
                                   {item.price !== undefined ? (
-                                    <span className={cn('text-[9px] lg:text-[10px] tabular-nums',
-                                      item.priceEstimated ? 'text-amber-600/60 dark:text-amber-400/60' : 'text-muted-foreground/40')}>
+                                    <span className={cn('text-[10px] lg:text-[11px] tabular-nums font-medium',
+                                      item.priceEstimated ? 'text-amber-700/70 dark:text-amber-400/60' : 'text-muted-foreground/60')}>
                                       {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
                                     </span>
                                   ) : (
@@ -903,7 +897,7 @@ export default function WishlistPage() {
                                   {item.url && (
                                     <a href={item.url} target="_blank" rel="noopener noreferrer"
                                       onClick={(e) => e.stopPropagation()}
-                                      className="text-muted-foreground/15 hover:text-muted-foreground/50 transition-colors shrink-0">
+                                      className="text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors shrink-0">
                                       <ExternalLink className="h-2.5 w-2.5 lg:h-3 lg:w-3" />
                                     </a>
                                   )}
@@ -970,11 +964,11 @@ export default function WishlistPage() {
               <div className="p-5 sm:p-7 border-t border-border/30 overflow-y-auto bg-gradient-to-b from-background to-muted/10">
                 {/* Category & rank */}
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/50">
                     {catLabel?.wing || catLabel?.label}
                   </span>
                   {rank > 0 && item.duelsPlayed > 0 && (
-                    <span className="text-[10px] text-muted-foreground/25 tabular-nums font-mono">Rank #{rank}</span>
+                    <span className="text-[10px] text-muted-foreground/35 tabular-nums font-mono">Rank #{rank}</span>
                   )}
                 </div>
 
