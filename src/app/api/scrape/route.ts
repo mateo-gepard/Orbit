@@ -21,54 +21,31 @@ function extractMeta(html: string, url: string): ScrapeResult {
     return match?.[1]?.trim();
   };
 
-  // Decode HTML entities
-  const decode = (str: string | undefined) => {
+  // Decode ALL HTML entities — full map + numeric
+  const ENTITY_MAP: Record<string, string> = {
+    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+    ndash: '–', mdash: '—', lsquo: '\u2018', rsquo: '\u2019',
+    ldquo: '\u201C', rdquo: '\u201D', bull: '•', hellip: '…',
+    trade: '™', copy: '©', reg: '®', euro: '€', pound: '£',
+    yen: '¥', cent: '¢', auml: 'ä', Auml: 'Ä', ouml: 'ö',
+    Ouml: 'Ö', uuml: 'ü', Uuml: 'Ü', szlig: 'ß', eacute: 'é',
+    Eacute: 'É', egrave: 'è', Egrave: 'È', ecirc: 'ê', Ecirc: 'Ê',
+    agrave: 'à', Agrave: 'À', acirc: 'â', Acirc: 'Â', ocirc: 'ô',
+    Ocirc: 'Ô', ccedil: 'ç', Ccedil: 'Ç', ntilde: 'ñ', Ntilde: 'Ñ',
+    iacute: 'í', Iacute: 'Í', uacute: 'ú', Uacute: 'Ú', oacute: 'ó',
+    Oacute: 'Ó', aacute: 'á', Aacute: 'Á', atilde: 'ã', Atilde: 'Ã',
+    otilde: 'õ', Otilde: 'Õ', aring: 'å', Aring: 'Å', aelig: 'æ',
+    AElig: 'Æ', oslash: 'ø', Oslash: 'Ø', thorn: 'þ', ETH: 'Ð',
+    times: '×', divide: '÷', micro: 'µ', para: '¶', sect: '§',
+    middot: '·', laquo: '«', raquo: '»', iexcl: '¡', iquest: '¿',
+  };
+
+  const decode = (str: string | undefined): string | undefined => {
     if (!str) return str;
     return str
-      // Numeric entities: &#123; and &#x1A;
       .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
       .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
-      // Named entities — common ones
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&apos;/g, "'")
-      .replace(/&#39;/g, "'")
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&ndash;/g, '–')
-      .replace(/&mdash;/g, '—')
-      .replace(/&lsquo;/g, '\u2018')
-      .replace(/&rsquo;/g, '\u2019')
-      .replace(/&ldquo;/g, '\u201C')
-      .replace(/&rdquo;/g, '\u201D')
-      .replace(/&bull;/g, '•')
-      .replace(/&hellip;/g, '…')
-      .replace(/&trade;/g, '™')
-      .replace(/&copy;/g, '©')
-      .replace(/&reg;/g, '®')
-      .replace(/&euro;/g, '€')
-      .replace(/&pound;/g, '£')
-      .replace(/&yen;/g, '¥')
-      .replace(/&cent;/g, '¢')
-      // German / accented
-      .replace(/&auml;/g, 'ä').replace(/&Auml;/g, 'Ä')
-      .replace(/&ouml;/g, 'ö').replace(/&Ouml;/g, 'Ö')
-      .replace(/&uuml;/g, 'ü').replace(/&Uuml;/g, 'Ü')
-      .replace(/&szlig;/g, 'ß')
-      // French / Spanish / etc.
-      .replace(/&eacute;/g, 'é').replace(/&Eacute;/g, 'É')
-      .replace(/&egrave;/g, 'è').replace(/&Egrave;/g, 'È')
-      .replace(/&ecirc;/g, 'ê').replace(/&Ecirc;/g, 'Ê')
-      .replace(/&agrave;/g, 'à').replace(/&Agrave;/g, 'À')
-      .replace(/&acirc;/g, 'â').replace(/&Acirc;/g, 'Â')
-      .replace(/&ocirc;/g, 'ô').replace(/&Ocirc;/g, 'Ô')
-      .replace(/&ccedil;/g, 'ç').replace(/&Ccedil;/g, 'Ç')
-      .replace(/&ntilde;/g, 'ñ').replace(/&Ntilde;/g, 'Ñ')
-      .replace(/&iacute;/g, 'í').replace(/&Iacute;/g, 'Í')
-      .replace(/&uacute;/g, 'ú').replace(/&Uacute;/g, 'Ú')
-      .replace(/&oacute;/g, 'ó').replace(/&Oacute;/g, 'Ó')
-      .replace(/&aacute;/g, 'á').replace(/&Aacute;/g, 'Á');
+      .replace(/&([a-zA-Z]+);/g, (full, name) => ENTITY_MAP[name] ?? full);
   };
 
   // Title: og:title > twitter:title > <title>
@@ -190,7 +167,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result, {
       headers: {
-        'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
   } catch (err) {

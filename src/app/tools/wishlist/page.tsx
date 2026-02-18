@@ -110,7 +110,7 @@ export default function WishlistPage() {
     try {
       let fullUrl = url.trim();
       if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
-      const res = await fetch(`/api/scrape?url=${encodeURIComponent(fullUrl)}`);
+      const res = await fetch(`/api/scrape?url=${encodeURIComponent(fullUrl)}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('Scrape failed');
       const data = await res.json();
       if (data.error) throw new Error(data.error);
