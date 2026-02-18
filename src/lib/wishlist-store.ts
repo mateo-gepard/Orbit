@@ -199,6 +199,40 @@ function sanitizeForFirestore<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }
 
+/** Decode HTML entities that may come from scraped metadata */
+function decodeEntities(str: string): string {
+  return str
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ').replace(/&ndash;/g, '–').replace(/&mdash;/g, '—')
+    .replace(/&auml;/g, 'ä').replace(/&Auml;/g, 'Ä')
+    .replace(/&ouml;/g, 'ö').replace(/&Ouml;/g, 'Ö')
+    .replace(/&uuml;/g, 'ü').replace(/&Uuml;/g, 'Ü')
+    .replace(/&szlig;/g, 'ß')
+    .replace(/&eacute;/g, 'é').replace(/&Eacute;/g, 'É')
+    .replace(/&egrave;/g, 'è').replace(/&agrave;/g, 'à')
+    .replace(/&acirc;/g, 'â').replace(/&ecirc;/g, 'ê').replace(/&ocirc;/g, 'ô')
+    .replace(/&ccedil;/g, 'ç').replace(/&ntilde;/g, 'ñ')
+    .replace(/&iacute;/g, 'í').replace(/&oacute;/g, 'ó')
+    .replace(/&uacute;/g, 'ú').replace(/&aacute;/g, 'á')
+    .replace(/&euro;/g, '€').replace(/&pound;/g, '£').replace(/&yen;/g, '¥')
+    .replace(/&trade;/g, '™').replace(/&copy;/g, '©').replace(/&reg;/g, '®');
+}
+
+/** Clean HTML entities from item text fields */
+function cleanItem(item: VaultItem): VaultItem {
+  const name = decodeEntities(item.name);
+  const notes = item.notes ? decodeEntities(item.notes) : item.notes;
+  if (name === item.name && notes === item.notes) return item; // no change
+  return { ...item, name, notes };
+}
+
+function cleanItems(items: VaultItem[]): VaultItem[] {
+  return items.map(cleanItem);
+}
+
 function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
   if (!_syncUserId) return;
   if (_saveTimer) clearTimeout(_saveTimer);
@@ -248,14 +282,14 @@ export const useWishlistStore = create<WishlistState>()(
       duels: [],
 
       addItem: (itemData) => {
-        const item: VaultItem = {
+        const item: VaultItem = cleanItem({
           ...itemData,
           id: crypto.randomUUID(),
           elo: ELO_DEFAULT,
           duelsPlayed: 0,
           duelsWon: 0,
           addedAt: Date.now(),
-        };
+        });
         const items = [...get().items, item];
         set({ items });
         scheduleSave(items, get().duels);
@@ -339,8 +373,9 @@ export const useWishlistStore = create<WishlistState>()(
 
       _setFromCloud: (data) => {
         if (_pendingSave) return;
+        const items = cleanItems(Array.isArray(data.items) ? data.items : []);
         set({
-          items: Array.isArray(data.items) ? data.items : [],
+          items,
           duels: Array.isArray(data.duels) ? data.duels : [],
         });
       },
@@ -353,6 +388,15 @@ export const useWishlistStore = create<WishlistState>()(
       name: 'orbit-wishlist',
       partialize: (state) => ({ items: state.items, duels: state.duels }),
       skipHydration: true,
+      onRehydrateStorage: () => (state) => {
+        // Clean HTML entities from any previously saved items
+        if (state && state.items.length > 0) {
+          const cleaned = cleanItems(state.items);
+          if (cleaned.some((c, i) => c !== state.items[i])) {
+            state.items = cleaned;
+          }
+        }
+      },
     }
   )
 );
