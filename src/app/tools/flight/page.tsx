@@ -85,6 +85,8 @@ export default function FlightPage() {
   const [elapsed, setElapsed] = useState(0);
   const [pausedElapsed, setPausedElapsed] = useState(0);
   const [turbulence, setTurbulence] = useState<TurbulenceLog[]>([]);
+  const [shakeClass, setShakeClass] = useState<string | null>(null);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [startTimestamp, setStartTimestamp] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -230,6 +232,16 @@ export default function FlightPage() {
 
   const handleLogTurbulence = (type: TurbulenceLog['type']) => {
     setTurbulence((prev) => [...prev, { timestamp: Date.now(), type }]);
+    // Screen shake intensity by distraction type
+    const heavy = type === 'person' || type === 'other';
+    const cls = heavy ? 'animate-turbulence-heavy' : 'animate-turbulence-light';
+    // Reset then re-apply so consecutive taps re-trigger
+    setShakeClass(null);
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    requestAnimationFrame(() => {
+      setShakeClass(cls);
+      shakeTimerRef.current = setTimeout(() => setShakeClass(null), heavy ? 800 : 500);
+    });
   };
 
   const handleToggleTask = (taskId: string) => {
@@ -384,7 +396,7 @@ export default function FlightPage() {
 
   if (status === 'inflight' || status === 'paused') {
     return (
-      <div className="flex flex-col h-full bg-background">
+      <div className={cn('flex flex-col h-full bg-background', shakeClass)}>
         {/* Flight strip header */}
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
