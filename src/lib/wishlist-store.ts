@@ -373,11 +373,14 @@ export const useWishlistStore = create<WishlistState>()(
 
       _setFromCloud: (data) => {
         if (_pendingSave) return;
-        const items = cleanItems(Array.isArray(data.items) ? data.items : []);
-        set({
-          items,
-          duels: Array.isArray(data.duels) ? data.duels : [],
-        });
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const duels = Array.isArray(data.duels) ? data.duels : [];
+        const items = cleanItems(rawItems);
+        set({ items, duels });
+        // If cleaning changed any names, persist the fix back to cloud
+        if (items.some((c, i) => c !== rawItems[i])) {
+          scheduleSave(items, duels);
+        }
       },
 
       _setSyncUserId: (userId) => {
