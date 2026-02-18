@@ -1782,13 +1782,12 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                           ? toggle.isMandatory
                             ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 cursor-not-allowed'
                             : 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
-                          : pts !== null
-                            ? toggle.canToggle
+                          : toggle.canToggle
+                            ? pts !== null
                               ? 'bg-foreground/[0.03] text-muted-foreground/40 border border-dashed border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/40 hover:text-emerald-600 cursor-pointer'
-                              : 'bg-muted-foreground/5 border border-border/40 text-muted-foreground/20 cursor-not-allowed'
+                              : 'text-muted-foreground/20 border border-dashed border-border/30 hover:border-emerald-500/30 hover:text-emerald-600/40 cursor-pointer'
                             : 'text-muted-foreground/10 cursor-default'
-                      )}
-                    >
+                      )}>
                       {pts !== null ? pts.toString().padStart(2, '0') : '·'}
                     </button>
                   </div>

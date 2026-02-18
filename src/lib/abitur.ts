@@ -199,14 +199,6 @@ export function canToggleSemester(
     return { canToggle: false, reason: 'P-Seminar — nicht in Block I', isEingebracht: false, isMandatory: false };
   }
 
-  // No grade entered → can't add
-  if (!eingebracht) {
-    const grade = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === semester);
-    if (!grade || grade.points === null) {
-      return { canToggle: false, reason: 'Keine Note eingetragen', isEingebracht: false, isMandatory: false };
-    }
-  }
-
   return { canToggle: true, reason: eingebracht ? 'Klicken zum Streichen' : 'Klicken zum Einbringen', isEingebracht: eingebracht, isMandatory: false };
 }
 
