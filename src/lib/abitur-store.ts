@@ -31,12 +31,15 @@ function scheduleSave(profile: AbiturProfile) {
   if (!_syncUserId) return;
   if (_saveTimer) clearTimeout(_saveTimer);
   _pendingSave = true;
-  _saveTimer = setTimeout(() => {
-    if (!_syncUserId) return;
-    _pendingSave = false;
-    saveToolData(_syncUserId, 'abitur', { profile }).catch((err) => {
+  _saveTimer = setTimeout(async () => {
+    if (!_syncUserId) { _pendingSave = false; return; }
+    try {
+      await saveToolData(_syncUserId, 'abitur', { profile });
+    } catch (err) {
       console.error('[ORBIT] Failed to save Abitur data:', err);
-    });
+    } finally {
+      _pendingSave = false;
+    }
   }, 500);
 }
 

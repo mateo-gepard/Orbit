@@ -250,18 +250,29 @@ function cleanItems(items: VaultItem[]): VaultItem[] {
 }
 
 function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
-  if (!_syncUserId) return;
+  if (!_syncUserId) {
+    console.warn('[ORBIT] Vault scheduleSave skipped — no sync user ID');
+    return;
+  }
   if (_saveTimer) clearTimeout(_saveTimer);
   _pendingSave = true;
-  _saveTimer = setTimeout(() => {
-    if (!_syncUserId) return;
-    _pendingSave = false;
+  _saveTimer = setTimeout(async () => {
+    if (!_syncUserId) {
+      console.warn('[ORBIT] Vault save aborted — user signed out during debounce');
+      _pendingSave = false;
+      return;
+    }
+    const userId = _syncUserId;
     const clean = sanitizeForFirestore({ items, duels } satisfies WishlistCloudData);
-    saveToolData(_syncUserId, 'wishlist', clean).catch(
-      (err) => {
-        console.error('[ORBIT] Failed to save Vault data:', err);
-      }
-    );
+    console.log('[ORBIT] Vault saving to Firestore:', { userId, items: clean.items.length, duels: clean.duels.length });
+    try {
+      await saveToolData(userId, 'wishlist', clean);
+      console.log('[ORBIT] Vault save success');
+    } catch (err) {
+      console.error('[ORBIT] Vault save FAILED:', err);
+    } finally {
+      _pendingSave = false;
+    }
   }, 500);
 }
 
@@ -388,10 +399,14 @@ export const useWishlistStore = create<WishlistState>()(
           .sort((a, b) => b.elo - a.elo),
 
       _setFromCloud: (data) => {
-        if (_pendingSave) return;
+        if (_pendingSave) {
+          console.log('[ORBIT] Vault _setFromCloud skipped — pending save in flight');
+          return;
+        }
         const rawItems = Array.isArray(data.items) ? data.items : [];
         const duels = Array.isArray(data.duels) ? data.duels : [];
         const items = cleanItems(rawItems);
+        console.log('[ORBIT] Vault _setFromCloud applied:', { items: items.length, duels: duels.length });
         set({ items, duels });
         // If cleaning changed any names, persist the fix back to cloud
         if (items.some((c, i) => c !== rawItems[i])) {
