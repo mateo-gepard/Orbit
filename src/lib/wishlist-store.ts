@@ -427,21 +427,26 @@ export const useWishlistStore = create<WishlistState>()(
           .sort((a, b) => b.elo - a.elo),
 
       _setFromCloud: (data) => {
-        dbg(`📥 _setFromCloud called — keys: ${Object.keys(data || {}).join(',')} cloudReceived=${_cloudReceived} pendingSave=${_pendingSave}`);
-        // After initial load, skip echo-backs while a local save is in flight
-        if (_cloudReceived && _pendingSave) {
-          dbg('⏭ _setFromCloud skipped — save in flight (echo)');
-          return;
-        }
-        _cloudReceived = true;
-        const rawItems = Array.isArray(data.items) ? data.items : [];
-        const duels = Array.isArray(data.duels) ? data.duels : [];
-        const items = cleanItems(rawItems);
-        dbg(`☁️ cloud → store (${items.length} items, ${duels.length} duels)`);
-        set({ items, duels });
-        // If entity-cleaning changed any names, write back
-        if (items.some((c, i) => c !== rawItems[i])) {
-          scheduleSave(items, duels);
+        try {
+          dbg(`📥 _setFromCloud called — keys: ${Object.keys(data || {}).join(',')} cloudReceived=${_cloudReceived} pendingSave=${_pendingSave}`);
+          // After initial load, skip echo-backs while a local save is in flight
+          if (_cloudReceived && _pendingSave) {
+            dbg('⏭ _setFromCloud skipped — save in flight (echo)');
+            return;
+          }
+          _cloudReceived = true;
+          const rawItems = Array.isArray(data.items) ? data.items : [];
+          const duels = Array.isArray(data.duels) ? data.duels : [];
+          dbg(`📦 rawItems=${rawItems.length} duels=${duels.length} firstItem=${rawItems[0] ? JSON.stringify(rawItems[0]).slice(0, 80) : 'none'}`);
+          const items = cleanItems(rawItems);
+          dbg(`☁️ cloud → store (${items.length} items, ${duels.length} duels)`);
+          set({ items, duels });
+          // If entity-cleaning changed any names, write back
+          if (items.some((c, i) => c !== rawItems[i])) {
+            scheduleSave(items, duels);
+          }
+        } catch (err) {
+          dbg(`💥 _setFromCloud CRASHED: ${err}`);
         }
       },
 
