@@ -6,6 +6,7 @@ import {
   type AbiturProfile,
   type Semester,
   type SemesterGrade,
+  type IndividualGrade,
   type ExamType,
   SEMESTERS,
   createDefaultProfile,
@@ -14,6 +15,7 @@ import {
   isEingebracht,
   optimizeEinbringungen,
   selectAllEinbringungen,
+  calculateSemesterPoints,
 } from './abitur';
 import { saveToolData } from './firestore';
 
@@ -58,6 +60,11 @@ interface AbiturState {
   // Grades
   setGrade: (subjectId: string, semester: Semester, points: number | null) => void;
 
+  // Individual Grades (große/kleine Leistungsnachweise)
+  addIndividualGrade: (grade: Omit<IndividualGrade, 'id'>) => void;
+  updateIndividualGrade: (id: string, updates: Partial<IndividualGrade>) => void;
+  removeIndividualGrade: (id: string) => void;
+
   // Einbringungen
   toggleEinbringung: (subjectId: string, semester: Semester) => void;
 
@@ -77,6 +84,7 @@ interface AbiturState {
   // Auto-optimization
   autoOptimizeEinbringungen: () => void;
   selectAll: () => void;
+  deselectAll: () => void;
 
   // Sync
   _setProfileFromCloud: (profile: AbiturProfile) => void;
@@ -151,6 +159,47 @@ export const useAbiturStore = create<AbiturState>()(
           return { ...p, grades };
         })),
 
+      addIndividualGrade: (grade) =>
+        set((s) => updateProfile(s, (p) => {
+          const newGrade: IndividualGrade = { ...grade, id: crypto.randomUUID() };
+          const individualGrades = [...(p.individualGrades ?? []), newGrade];
+          // Auto-update the semester grade from individual grades
+          const semesterPoints = calculateSemesterPoints(individualGrades, grade.subjectId, grade.semester);
+          const grades = (p.grades ?? []).map((g) =>
+            g.subjectId === grade.subjectId && g.semester === grade.semester ? { ...g, points: semesterPoints } : g
+          );
+          const exists = grades.some((g) => g.subjectId === grade.subjectId && g.semester === grade.semester);
+          if (!exists) grades.push({ subjectId: grade.subjectId, semester: grade.semester, points: semesterPoints });
+          return { ...p, individualGrades, grades };
+        })),
+
+      updateIndividualGrade: (id, updates) =>
+        set((s) => updateProfile(s, (p) => {
+          const individualGrades = (p.individualGrades ?? []).map((g) =>
+            g.id === id ? { ...g, ...updates } : g
+          );
+          // Find the grade to know which subject/semester to recalc
+          const updated = individualGrades.find((g) => g.id === id);
+          if (!updated) return { ...p, individualGrades };
+          const semesterPoints = calculateSemesterPoints(individualGrades, updated.subjectId, updated.semester);
+          const grades = (p.grades ?? []).map((g) =>
+            g.subjectId === updated.subjectId && g.semester === updated.semester ? { ...g, points: semesterPoints } : g
+          );
+          return { ...p, individualGrades, grades };
+        })),
+
+      removeIndividualGrade: (id) =>
+        set((s) => updateProfile(s, (p) => {
+          const toRemove = (p.individualGrades ?? []).find((g) => g.id === id);
+          if (!toRemove) return p;
+          const individualGrades = (p.individualGrades ?? []).filter((g) => g.id !== id);
+          const semesterPoints = calculateSemesterPoints(individualGrades, toRemove.subjectId, toRemove.semester);
+          const grades = (p.grades ?? []).map((g) =>
+            g.subjectId === toRemove.subjectId && g.semester === toRemove.semester ? { ...g, points: semesterPoints } : g
+          );
+          return { ...p, individualGrades, grades };
+        })),
+
       toggleEinbringung: (subjectId, semester) =>
         set((s) => updateProfile(s, (p) => {
           // Mandatory subjects (Abiturfächer) can never be toggled
@@ -212,6 +261,16 @@ export const useAbiturStore = create<AbiturState>()(
           einbringungen: selectAllEinbringungen(p),
         }))),
 
+      deselectAll: () =>
+        set((s) => updateProfile(s, (p) => {
+          // Keep only mandatory einbringungen (Pflichteinbringungen)
+          const mandatory = (selectAllEinbringungen(p)).filter((key) => {
+            const [subjectId, semester] = key.split(':') as [string, Semester];
+            return isMandatory(subjectId, p);
+          });
+          return { ...p, einbringungen: mandatory };
+        })),
+
       _setProfileFromCloud: (cloudProfile) =>
         set((s) => {
           // Don't overwrite local changes that are still being saved
@@ -224,6 +283,7 @@ export const useAbiturStore = create<AbiturState>()(
           if (!Array.isArray(merged.subjects)) merged.subjects = s.profile.subjects ?? [];
           if (!Array.isArray(merged.examSubjects)) merged.examSubjects = s.profile.examSubjects ?? [];
           if (!Array.isArray(merged.exams)) merged.exams = s.profile.exams ?? [];
+          if (!Array.isArray(merged.individualGrades)) merged.individualGrades = s.profile.individualGrades ?? [];
           return { profile: merged };
         }),
 

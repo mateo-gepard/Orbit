@@ -44,6 +44,47 @@ export interface SemesterGrade {
   points: number | null;
 }
 
+/** Individual grade entry (große or kleine Leistungsnachweise) */
+export interface IndividualGrade {
+  id: string;
+  subjectId: string;
+  semester: Semester;
+  type: 'gross' | 'klein'; // große vs kleine Leistungsnachweise
+  points: number;
+  label?: string; // optional label like "Schulaufgabe 1", "Stegreifaufgabe", etc.
+}
+
+/**
+ * Calculate the semester grade (Halbjahresleistung) from individual grades.
+ * In Bavaria: Ø große LN and Ø kleine LN count 1:1.
+ * Returns null if no grades entered.
+ */
+export function calculateSemesterPoints(
+  grades: IndividualGrade[],
+  subjectId: string,
+  semester: Semester,
+): number | null {
+  const subGrades = grades.filter((g) => g.subjectId === subjectId && g.semester === semester);
+  if (subGrades.length === 0) return null;
+
+  const gross = subGrades.filter((g) => g.type === 'gross');
+  const klein = subGrades.filter((g) => g.type === 'klein');
+
+  // If only one type has grades, use just that average
+  if (gross.length === 0 && klein.length === 0) return null;
+  if (gross.length > 0 && klein.length === 0) {
+    return Math.round(gross.reduce((s, g) => s + g.points, 0) / gross.length);
+  }
+  if (gross.length === 0 && klein.length > 0) {
+    return Math.round(klein.reduce((s, g) => s + g.points, 0) / klein.length);
+  }
+
+  // Both types: 1:1 weighting (average of averages)
+  const grossAvg = gross.reduce((s, g) => s + g.points, 0) / gross.length;
+  const kleinAvg = klein.reduce((s, g) => s + g.points, 0) / klein.length;
+  return Math.round((grossAvg + kleinAvg) / 2);
+}
+
 export interface ExamResult {
   subjectId: string;
   examType: ExamType;
@@ -57,6 +98,8 @@ export interface AbiturProfile {
   subjects: string[];
   examSubjects: string[];
   grades: SemesterGrade[];
+  /** Individual grades (große/kleine Leistungsnachweise) per subject per semester */
+  individualGrades?: IndividualGrade[];
   /** User-selected einbringung keys ("subjectId:semester"). Mandatory ones are implicit. */
   einbringungen: string[];
   exams: ExamResult[];

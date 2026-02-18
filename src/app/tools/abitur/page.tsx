@@ -8,6 +8,7 @@ import {
   SEMESTER_LABELS,
   type Semester,
   type SubjectDefinition,
+  type IndividualGrade,
   getSubject,
   isEingebracht,
   canToggleSemester,
@@ -34,6 +35,7 @@ import {
   GraduationCap,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Check,
   Lock,
   TrendingUp,
@@ -50,6 +52,9 @@ import {
   X,
   Wand2,
   Replace,
+  Trash2,
+  FileText,
+  FileCheck,
 } from 'lucide-react';
 
 // ─── Field color accents ───────────────────────────────────
@@ -1009,8 +1014,9 @@ function OverviewTab({ result, profile, onNavigate }: { result: AbiturResult; pr
 
 function SemesterTab({ semester, result, profile }: { semester: Semester; result: AbiturResult; profile: AbiturProfile }) {
   const ss = result.semesterStats.find((s) => s.semester === semester)!;
-  const { setGrade, toggleEinbringung } = useAbiturStore();
+  const { setGrade, toggleEinbringung, addIndividualGrade, updateIndividualGrade, removeIndividualGrade } = useAbiturStore();
   const subjects = profile.subjects.filter((id) => id !== 'psem');
+  const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">
@@ -1057,7 +1063,7 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
         <div className="rounded-xl bg-foreground/[0.02] border border-dashed border-border/40 p-4 text-center">
           <PenLine className="h-4 w-4 text-muted-foreground/20 mx-auto mb-2" />
           <p className="text-[12px] text-muted-foreground/30">
-            Klicke auf das <span className="font-mono text-muted-foreground/40">—</span> neben einem Fach, um die Punktzahl einzutragen
+            Klicke auf ein Fach, um Einzelnoten (große/kleine LN) einzutragen, oder direkt auf die Punktzahl für die Halbjahresleistung
           </p>
         </div>
       )}
@@ -1087,74 +1093,119 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
           if (!subj) return null;
           const grade = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === semester);
           const pts = grade?.points ?? null;
-          const mandatory = isMandatory(subjectId, profile);
           const eingebracht = isEingebracht(subjectId, semester, profile);
-          
-          // Single source of truth for toggle ability
           const toggle = canToggleSemester(subjectId, semester, profile);
+          const isExpanded = expandedSubject === subjectId;
+          const individualGrades = (profile.individualGrades ?? []).filter(
+            (g) => g.subjectId === subjectId && g.semester === semester
+          );
+          const hasIndividualGrades = individualGrades.length > 0;
+          const grossGrades = individualGrades.filter((g) => g.type === 'gross');
+          const kleinGrades = individualGrades.filter((g) => g.type === 'klein');
 
           return (
-            <div
-              key={subjectId}
-              className={cn(
-                'flex items-center gap-3 px-4 py-3 transition-colors',
-                !eingebracht && pts !== null && 'bg-foreground/[0.01]'
-              )}
-            >
-              {/* Einbringung toggle */}
-              <button
-                onClick={() => toggle.canToggle && toggleEinbringung(subjectId, semester)}
-                title={toggle.reason}
+            <div key={subjectId}>
+              <div
                 className={cn(
-                  'h-5 w-5 rounded-[5px] border flex items-center justify-center shrink-0 transition-all',
-                  eingebracht
-                    ? toggle.canToggle
-                      ? 'bg-emerald-500 border-emerald-500 cursor-pointer hover:bg-emerald-600'
-                      : 'bg-emerald-500/15 border-emerald-500/30 cursor-not-allowed'
-                    : toggle.canToggle
-                      ? 'border-border/50 hover:border-emerald-500/40 cursor-pointer'
-                      : 'border-border/30 bg-muted-foreground/5 cursor-not-allowed',
+                  'flex items-center gap-3 px-4 py-3 transition-colors',
+                  !eingebracht && pts !== null && 'bg-foreground/[0.01]'
                 )}
               >
-                {eingebracht && (
-                  <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 16 16" fill="none">
-                    <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </button>
+                {/* Einbringung toggle */}
+                <button
+                  onClick={() => toggle.canToggle && toggleEinbringung(subjectId, semester)}
+                  title={toggle.reason}
+                  className={cn(
+                    'h-5 w-5 rounded-[5px] border flex items-center justify-center shrink-0 transition-all',
+                    eingebracht
+                      ? toggle.canToggle
+                        ? 'bg-emerald-500 border-emerald-500 cursor-pointer hover:bg-emerald-600'
+                        : 'bg-emerald-500/15 border-emerald-500/30 cursor-not-allowed'
+                      : toggle.canToggle
+                        ? 'border-emerald-500/40 hover:border-emerald-500 hover:bg-emerald-500/10 cursor-pointer'
+                        : 'border-border/30 bg-muted-foreground/5 cursor-not-allowed',
+                  )}
+                >
+                  {eingebracht ? (
+                    <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 16 16" fill="none">
+                      <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : toggle.canToggle ? (
+                    <Plus className="h-2.5 w-2.5 text-emerald-500/50" />
+                  ) : null}
+                </button>
 
-              {/* Subject badge */}
-              <div className={cn(
-                'h-7 w-7 rounded-lg flex items-center justify-center text-[9px] font-bold font-mono shrink-0',
-                FIELD_BG[subj.field],
-                FIELD_COLOR[subj.field],
-                !eingebracht && pts !== null && 'opacity-40'
-              )}>
-                {subj.shortName}
+                {/* Subject badge — clickable to expand */}
+                <button
+                  onClick={() => setExpandedSubject(isExpanded ? null : subjectId)}
+                  className={cn(
+                    'h-7 w-7 rounded-lg flex items-center justify-center text-[9px] font-bold font-mono shrink-0 transition-all',
+                    FIELD_BG[subj.field],
+                    FIELD_COLOR[subj.field],
+                    !eingebracht && pts !== null && 'opacity-40',
+                    'hover:ring-1 hover:ring-border/40'
+                  )}
+                >
+                  {subj.shortName}
+                </button>
+
+                <button
+                  onClick={() => setExpandedSubject(isExpanded ? null : subjectId)}
+                  className="flex-1 min-w-0 text-left"
+                >
+                  <p className={cn(
+                    'text-[12px] font-medium truncate',
+                    !eingebracht && pts !== null && 'text-muted-foreground/40'
+                  )}>
+                    {subj.name}
+                  </p>
+                  {hasIndividualGrades && (
+                    <p className="text-[9px] text-muted-foreground/30 mt-0.5">
+                      {grossGrades.length > 0 && `${grossGrades.length} groß`}
+                      {grossGrades.length > 0 && kleinGrades.length > 0 && ' · '}
+                      {kleinGrades.length > 0 && `${kleinGrades.length} klein`}
+                    </p>
+                  )}
+                </button>
+
+                {/* Expand indicator */}
+                <button
+                  onClick={() => setExpandedSubject(isExpanded ? null : subjectId)}
+                  className="text-muted-foreground/20 hover:text-muted-foreground/40 transition-colors shrink-0"
+                >
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-180')} />
+                </button>
+
+                {/* Points display */}
+                <PointsInput
+                  value={pts}
+                  onChange={(v) => setGrade(subjectId, semester, v)}
+                  dimmed={!eingebracht && pts !== null}
+                  hasIndividualGrades={hasIndividualGrades}
+                />
               </div>
 
-              <div className="flex-1 min-w-0">
-                <p className={cn(
-                  'text-[12px] font-medium truncate',
-                  !eingebracht && pts !== null && 'text-muted-foreground/40'
-                )}>
-                  {subj.name}
-                </p>
-              </div>
-
-              {/* Points input */}
-              <PointsInput
-                value={pts}
-                onChange={(v) => setGrade(subjectId, semester, v)}
-                dimmed={!eingebracht && pts !== null}
-              />
+              {/* Expanded: Individual Grades */}
+              {isExpanded && (
+                <div className="px-4 pb-4 bg-foreground/[0.015]">
+                  <IndividualGradesPanel
+                    subjectId={subjectId}
+                    semester={semester}
+                    grossGrades={grossGrades}
+                    kleinGrades={kleinGrades}
+                    onAdd={(type, points, label) => addIndividualGrade({ subjectId, semester, type, points, label })}
+                    onUpdate={updateIndividualGrade}
+                    onRemove={removeIndividualGrade}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-3 text-[10px] text-muted-foreground/25">
+      <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground/25">
         <div className="flex items-center gap-1">
           <div className="h-3 w-3 rounded-[3px] bg-emerald-500 flex items-center justify-center">
             <svg className="h-2 w-2 text-white" viewBox="0 0 16 16" fill="none">
@@ -1164,10 +1215,277 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
           <span>Eingebracht</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="h-3 w-3 rounded-[3px] border border-border/50" />
-          <span>Gestrichen</span>
+          <div className="h-3 w-3 rounded-[3px] border border-emerald-500/40 flex items-center justify-center">
+            <Plus className="h-1.5 w-1.5 text-emerald-500/50" />
+          </div>
+          <span>Zum Einbringen klicken</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="h-3 w-3 rounded-[3px] border border-border/30 bg-muted-foreground/5" />
+          <span>Gesperrt</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <FileCheck className="h-3 w-3 text-muted-foreground/30" />
+          <span>Große LN</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <FileText className="h-3 w-3 text-muted-foreground/30" />
+          <span>Kleine LN</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Individual Grades Panel — große/kleine Leistungsnachweise
+// ═══════════════════════════════════════════════════════════
+
+function IndividualGradesPanel({
+  subjectId,
+  semester,
+  grossGrades,
+  kleinGrades,
+  onAdd,
+  onUpdate,
+  onRemove,
+}: {
+  subjectId: string;
+  semester: Semester;
+  grossGrades: IndividualGrade[];
+  kleinGrades: IndividualGrade[];
+  onAdd: (type: 'gross' | 'klein', points: number, label?: string) => void;
+  onUpdate: (id: string, updates: Partial<IndividualGrade>) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [addingType, setAddingType] = useState<'gross' | 'klein' | null>(null);
+  const [newPoints, setNewPoints] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+
+  const grossAvg = grossGrades.length > 0
+    ? grossGrades.reduce((s, g) => s + g.points, 0) / grossGrades.length
+    : null;
+  const kleinAvg = kleinGrades.length > 0
+    ? kleinGrades.reduce((s, g) => s + g.points, 0) / kleinGrades.length
+    : null;
+  const totalAvg = grossAvg !== null && kleinAvg !== null
+    ? (grossAvg + kleinAvg) / 2
+    : grossAvg ?? kleinAvg;
+
+  const handleAdd = () => {
+    const n = parseInt(newPoints);
+    if (isNaN(n) || n < 0 || n > 15 || !addingType) return;
+    onAdd(addingType, n, newLabel.trim() || undefined);
+    setNewPoints('');
+    setNewLabel('');
+    setAddingType(null);
+  };
+
+  return (
+    <div className="space-y-3 pt-2">
+      {/* Average summary bar */}
+      {(grossGrades.length > 0 || kleinGrades.length > 0) && (
+        <div className="flex items-center gap-2 rounded-lg bg-background/50 border border-border/30 px-3 py-2">
+          <span className="text-[9px] text-muted-foreground/40 uppercase tracking-widest">1:1</span>
+          <div className="flex items-center gap-3 flex-1">
+            {grossAvg !== null && (
+              <div className="flex items-center gap-1.5">
+                <FileCheck className="h-3 w-3 text-violet-400/60" />
+                <span className="text-[11px] font-mono font-bold tabular-nums">{grossAvg.toFixed(1)}</span>
+                <span className="text-[8px] text-muted-foreground/25">Ø groß</span>
+              </div>
+            )}
+            {kleinAvg !== null && (
+              <div className="flex items-center gap-1.5">
+                <FileText className="h-3 w-3 text-sky-400/60" />
+                <span className="text-[11px] font-mono font-bold tabular-nums">{kleinAvg.toFixed(1)}</span>
+                <span className="text-[8px] text-muted-foreground/25">Ø klein</span>
+              </div>
+            )}
+          </div>
+          {totalAvg !== null && (
+            <div className={cn('text-[13px] font-bold font-mono tabular-nums', getPointsColor(Math.round(totalAvg)))}>
+              = {Math.round(totalAvg).toString().padStart(2, '0')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Große Leistungsnachweise */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-1.5">
+            <FileCheck className="h-3 w-3 text-violet-400/60" />
+            <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider">Große LN</span>
+            <span className="text-[9px] text-muted-foreground/25">({grossGrades.length})</span>
+          </div>
+          <button
+            onClick={() => { setAddingType('gross'); setNewPoints(''); setNewLabel(''); }}
+            className="flex items-center gap-1 text-[10px] text-violet-500 hover:text-violet-400 transition-colors"
+          >
+            <Plus className="h-3 w-3" />
+            Hinzufügen
+          </button>
+        </div>
+        {grossGrades.length > 0 && (
+          <div className="space-y-1">
+            {grossGrades.map((g) => (
+              <GradeRow key={g.id} grade={g} onUpdate={onUpdate} onRemove={onRemove} accent="violet" />
+            ))}
+          </div>
+        )}
+        {grossGrades.length === 0 && addingType !== 'gross' && (
+          <p className="text-[10px] text-muted-foreground/20 pl-5">Noch keine großen LN</p>
+        )}
+      </div>
+
+      {/* Kleine Leistungsnachweise */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-1.5">
+            <FileText className="h-3 w-3 text-sky-400/60" />
+            <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider">Kleine LN</span>
+            <span className="text-[9px] text-muted-foreground/25">({kleinGrades.length})</span>
+          </div>
+          <button
+            onClick={() => { setAddingType('klein'); setNewPoints(''); setNewLabel(''); }}
+            className="flex items-center gap-1 text-[10px] text-sky-500 hover:text-sky-400 transition-colors"
+          >
+            <Plus className="h-3 w-3" />
+            Hinzufügen
+          </button>
+        </div>
+        {kleinGrades.length > 0 && (
+          <div className="space-y-1">
+            {kleinGrades.map((g) => (
+              <GradeRow key={g.id} grade={g} onUpdate={onUpdate} onRemove={onRemove} accent="sky" />
+            ))}
+          </div>
+        )}
+        {kleinGrades.length === 0 && addingType !== 'klein' && (
+          <p className="text-[10px] text-muted-foreground/20 pl-5">Noch keine kleinen LN</p>
+        )}
+      </div>
+
+      {/* Add grade inline form */}
+      {addingType && (
+        <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-background/50 px-3 py-2">
+          <div className={cn(
+            'text-[9px] font-bold uppercase tracking-wider shrink-0',
+            addingType === 'gross' ? 'text-violet-400' : 'text-sky-400'
+          )}>
+            {addingType === 'gross' ? 'Groß' : 'Klein'}
+          </div>
+          <input
+            autoFocus
+            type="text"
+            inputMode="numeric"
+            placeholder="0-15"
+            value={newPoints}
+            onChange={(e) => setNewPoints(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
+            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+            className="w-12 rounded-md border border-border/40 text-center text-[12px] font-mono font-bold bg-transparent py-1 focus:outline-none focus:border-emerald-500/40"
+          />
+          <input
+            type="text"
+            placeholder="Bezeichnung (optional)"
+            value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+            className="flex-1 rounded-md border border-border/40 px-2 py-1 text-[11px] bg-transparent focus:outline-none focus:border-emerald-500/40 placeholder:text-muted-foreground/20"
+          />
+          <button
+            onClick={handleAdd}
+            className="h-7 w-7 rounded-md bg-emerald-500 text-white flex items-center justify-center hover:bg-emerald-600 transition-colors shrink-0"
+          >
+            <Check className="h-3 w-3" />
+          </button>
+          <button
+            onClick={() => setAddingType(null)}
+            className="h-7 w-7 rounded-md border border-border/40 flex items-center justify-center text-muted-foreground/40 hover:text-foreground transition-colors shrink-0"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Hint about 1:1 weighting */}
+      <p className="text-[9px] text-muted-foreground/20 leading-relaxed">
+        Große und kleine LN gehen 1:1 in die Halbjahresleistung ein. Die HJL wird automatisch berechnet.
+      </p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Grade Row — individual grade with edit/delete
+// ═══════════════════════════════════════════════════════════
+
+function GradeRow({
+  grade,
+  onUpdate,
+  onRemove,
+  accent,
+}: {
+  grade: IndividualGrade;
+  onUpdate: (id: string, updates: Partial<IndividualGrade>) => void;
+  onRemove: (id: string) => void;
+  accent: 'violet' | 'sky';
+}) {
+  const [editing, setEditing] = useState(false);
+  const [tmpPts, setTmpPts] = useState('');
+
+  const startEdit = () => {
+    setTmpPts(String(grade.points));
+    setEditing(true);
+  };
+
+  const commitEdit = () => {
+    const n = parseInt(tmpPts);
+    if (!isNaN(n) && n >= 0 && n <= 15) {
+      onUpdate(grade.id, { points: n });
+    }
+    setEditing(false);
+  };
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 group hover:bg-foreground/[0.02] transition-colors">
+      <div className={cn(
+        'h-1.5 w-1.5 rounded-full shrink-0',
+        accent === 'violet' ? 'bg-violet-400/50' : 'bg-sky-400/50'
+      )} />
+      <span className="text-[11px] text-muted-foreground/50 flex-1 truncate">
+        {grade.label || (grade.type === 'gross' ? 'Große LN' : 'Kleine LN')}
+      </span>
+      {editing ? (
+        <input
+          autoFocus
+          type="text"
+          inputMode="numeric"
+          value={tmpPts}
+          onChange={(e) => setTmpPts(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
+          onBlur={commitEdit}
+          onKeyDown={(e) => e.key === 'Enter' && commitEdit()}
+          className="w-10 h-6 rounded border border-emerald-500/40 text-center text-[11px] font-mono font-bold bg-background focus:outline-none"
+        />
+      ) : (
+        <button
+          onClick={startEdit}
+          className={cn(
+            'w-10 h-6 rounded text-center text-[11px] font-mono font-bold transition-all hover:ring-1 hover:ring-border/40',
+            getPointsBg(grade.points),
+            getPointsColor(grade.points),
+          )}
+        >
+          {grade.points.toString().padStart(2, '0')}
+        </button>
+      )}
+      <button
+        onClick={() => onRemove(grade.id)}
+        className="opacity-0 group-hover:opacity-100 text-muted-foreground/20 hover:text-red-400 transition-all shrink-0"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
     </div>
   );
 }
@@ -1176,11 +1494,12 @@ function SemesterTab({ semester, result, profile }: { semester: Semester; result
 // Points Input — inline, clean
 // ═══════════════════════════════════════════════════════════
 
-function PointsInput({ value, onChange, dimmed }: { value: number | null; onChange: (v: number | null) => void; dimmed?: boolean }) {
+function PointsInput({ value, onChange, dimmed, hasIndividualGrades }: { value: number | null; onChange: (v: number | null) => void; dimmed?: boolean; hasIndividualGrades?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [tmp, setTmp] = useState('');
 
   const startEdit = () => {
+    if (hasIndividualGrades) return; // auto-calculated from individual grades
     setTmp(value !== null ? String(value) : '');
     setEditing(true);
   };
@@ -1210,11 +1529,14 @@ function PointsInput({ value, onChange, dimmed }: { value: number | null; onChan
   return (
     <button
       onClick={startEdit}
+      title={hasIndividualGrades ? 'Automatisch berechnet aus Einzelnoten' : undefined}
       className={cn(
-        'w-11 h-8 rounded-lg text-center text-[13px] font-mono font-bold transition-all hover:ring-1 hover:ring-border/40',
+        'w-11 h-8 rounded-lg text-center text-[13px] font-mono font-bold transition-all',
+        !hasIndividualGrades && 'hover:ring-1 hover:ring-border/40',
         value !== null ? getPointsBg(value) : 'bg-foreground/[0.03]',
         value !== null ? getPointsColor(value) : 'text-muted-foreground/20',
-        dimmed && 'opacity-40'
+        dimmed && 'opacity-40',
+        hasIndividualGrades && 'cursor-default ring-1 ring-border/20'
       )}
     >
       {value !== null ? value.toString().padStart(2, '0') : '—'}
@@ -1342,7 +1664,7 @@ function SubjectsView() {
 // ═══════════════════════════════════════════════════════════
 
 function EinbringungenView({ profile }: { profile: AbiturProfile }) {
-  const { toggleEinbringung, autoOptimizeEinbringungen, selectAll } = useAbiturStore();
+  const { toggleEinbringung, autoOptimizeEinbringungen, selectAll, deselectAll } = useAbiturStore();
   const einCount = countAllEinbringungen(profile);
   const subjects = profile.subjects.filter((id) => id !== 'psem');
 
@@ -1382,20 +1704,27 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
       </div>
 
       {/* Action buttons */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <button
           onClick={selectAll}
-          className="flex items-center justify-center gap-2 rounded-2xl border border-border/40 bg-foreground/[0.02] p-3 text-[12px] font-medium text-muted-foreground/60 hover:bg-foreground/[0.05] transition-colors active:scale-[0.98]"
+          className="flex items-center justify-center gap-2 rounded-2xl border border-border/40 bg-foreground/[0.02] p-3 text-[11px] font-medium text-muted-foreground/60 hover:bg-foreground/[0.05] transition-colors active:scale-[0.98]"
         >
           <Plus className="h-3.5 w-3.5" />
-          Alle auswählen
+          Alle
+        </button>
+        <button
+          onClick={deselectAll}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-border/40 bg-foreground/[0.02] p-3 text-[11px] font-medium text-muted-foreground/60 hover:bg-foreground/[0.05] transition-colors active:scale-[0.98]"
+        >
+          <X className="h-3.5 w-3.5" />
+          Nur Pflicht
         </button>
         <button
           onClick={autoOptimizeEinbringungen}
-          className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3 text-[12px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/[0.08] transition-colors active:scale-[0.98]"
+          className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/[0.08] transition-colors active:scale-[0.98]"
         >
           <Wand2 className="h-3.5 w-3.5" />
-          Optimieren (40)
+          Optimieren
         </button>
       </div>
 
@@ -1455,7 +1784,7 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
                             : 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
                           : pts !== null
                             ? toggle.canToggle
-                              ? 'bg-foreground/[0.03] text-muted-foreground/40 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-600 border border-transparent cursor-pointer'
+                              ? 'bg-foreground/[0.03] text-muted-foreground/40 border border-dashed border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/40 hover:text-emerald-600 cursor-pointer'
                               : 'bg-muted-foreground/5 border border-border/40 text-muted-foreground/20 cursor-not-allowed'
                             : 'text-muted-foreground/10 cursor-default'
                       )}
@@ -1471,7 +1800,7 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-[10px] text-muted-foreground/25">
+      <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground/25">
         <div className="flex items-center gap-1.5">
           <div className="h-4 w-6 rounded bg-emerald-500 text-[8px] text-white font-mono flex items-center justify-center">08</div>
           <span>Eingebracht</span>
@@ -1481,8 +1810,12 @@ function EinbringungenView({ profile }: { profile: AbiturProfile }) {
           <span>Pflicht</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-4 w-6 rounded bg-foreground/[0.03] text-[8px] text-muted-foreground/25 font-mono flex items-center justify-center">08</div>
-          <span>Gestrichen</span>
+          <div className="h-4 w-6 rounded bg-foreground/[0.03] border border-dashed border-emerald-500/30 text-[8px] text-muted-foreground/40 font-mono flex items-center justify-center">08</div>
+          <span>Einbringbar</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="h-4 w-6 rounded bg-muted-foreground/5 border border-border/40 text-[8px] text-muted-foreground/20 font-mono flex items-center justify-center">08</div>
+          <span>Gesperrt</span>
         </div>
       </div>
     </div>
