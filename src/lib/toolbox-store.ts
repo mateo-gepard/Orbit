@@ -67,14 +67,14 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     id: 'wishlist',
-    name: 'Wishlist',
-    tagline: 'Rank your wants. Know your #1.',
+    name: 'The Vault',
+    tagline: 'Curate your desires. Settle it in the Arena.',
     description:
-      'Paste a URL or type a wish. Rank everything with quick "This or That" duels. ELO-powered leaderboard, price tracking, purchase history, and beautiful insights.',
-    icon: 'Heart',
+      'Every want becomes a lot in your personal collection. Rank everything with "This or That" duels — ELO-powered rankings, desire meters, provenance tracking, and a collector\'s portfolio.',
+    icon: 'Gem',
     href: '/tools/wishlist',
-    color: 'text-rose-600 dark:text-rose-400',
-    bgColor: 'bg-rose-500/10 dark:bg-rose-400/10',
+    color: 'text-amber-600 dark:text-amber-400',
+    bgColor: 'bg-amber-500/10 dark:bg-amber-400/10',
   },
 ];
 
