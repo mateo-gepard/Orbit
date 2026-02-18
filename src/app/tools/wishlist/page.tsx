@@ -122,15 +122,16 @@ export default function WishlistPage() {
       setQuickCategory(guessCategory(fullUrl, data.siteName));
       setQuickExpanded(true);
 
-      // If no image was found, try Google Image Search as fallback
-      if (!data.image && title) {
+      // Fire off Google Search fallback for missing image/price
+      if (title && (!data.image || !data.price)) {
         try {
-          const imgRes = await fetch(`/api/scrape/image?q=${encodeURIComponent(title)}`);
-          if (imgRes.ok) {
-            const imgData = await imgRes.json();
-            if (imgData.image) setQuickImageUrl(imgData.image);
+          const searchRes = await fetch(`/api/scrape/image?q=${encodeURIComponent(title)}`);
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            if (!data.image && searchData.image) setQuickImageUrl(searchData.image);
+            if (!data.price && searchData.price) setQuickPrice(searchData.price);
           }
-        } catch { /* image search failed silently */ }
+        } catch { /* search fallback failed silently */ }
       }
     } catch {
       let fullUrl = url.trim();
