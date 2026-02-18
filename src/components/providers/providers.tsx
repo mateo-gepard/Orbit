@@ -8,6 +8,7 @@ import { PWAProvider } from './pwa-provider';
 import { AppShell } from '@/components/shell/app-shell';
 import { useToolboxStore } from '@/lib/toolbox-store';
 import { useAbiturStore } from '@/lib/abitur-store';
+import { useWishlistStore } from '@/lib/wishlist-store';
 
 // ── Error Boundary ──
 interface ErrorBoundaryProps {
@@ -67,6 +68,7 @@ export function Providers({ children }: { children: ReactNode }) {
   useEffect(() => {
     useToolboxStore.persist.rehydrate();
     useAbiturStore.persist.rehydrate();
+    useWishlistStore.persist.rehydrate();
   }, []);
 
   return (
