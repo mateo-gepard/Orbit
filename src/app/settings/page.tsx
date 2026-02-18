@@ -6,6 +6,7 @@ import {
   Palette,
   Globe,
   Bell,
+  BellRing,
   Shield,
   Accessibility,
   Database,
@@ -28,11 +29,20 @@ import {
   EyeOff,
   Clock,
   Zap,
+  Send,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useSettingsStore } from '@/lib/settings-store';
+import type { UserSettings } from '@/lib/settings-store';
+import { useOrbitStore } from '@/lib/store';
+import {
+  requestNotificationPermission,
+  hasNotificationPermission,
+  sendMorningBriefingNow,
+  sendEveningBriefingNow,
+} from '@/lib/briefing-notifications';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
 import type {
@@ -197,6 +207,224 @@ const SHORTCUTS = [
   { keys: ['↑', '↓'], action: 'Navigate list items' },
   { keys: ['⌘', '⇧', 'D'], action: 'Toggle dark mode' },
 ];
+
+// ═══════════════════════════════════════════════════════════
+// Notifications section (extracted for state management)
+// ═══════════════════════════════════════════════════════════
+
+function NotificationsSection({
+  settings,
+  setNested,
+}: {
+  settings: UserSettings;
+  setNested: (section: string, updates: Record<string, unknown>) => void;
+}) {
+  const items = useOrbitStore((s) => s.items);
+  const [permissionStatus, setPermissionStatus] = useState<string>('default');
+  const [testSent, setTestSent] = useState<'morning' | 'evening' | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPermissionStatus(Notification.permission);
+    }
+  }, []);
+
+  const handleRequestPermission = async () => {
+    const granted = await requestNotificationPermission();
+    setPermissionStatus(granted ? 'granted' : 'denied');
+  };
+
+  const handleTestMorning = () => {
+    sendMorningBriefingNow(items);
+    setTestSent('morning');
+    setTimeout(() => setTestSent(null), 3000);
+  };
+
+  const handleTestEvening = () => {
+    sendEveningBriefingNow(items);
+    setTestSent('evening');
+    setTimeout(() => setTestSent(null), 3000);
+  };
+
+  return (
+    <div>
+      <SectionHeader icon={Bell} label="Notifications" />
+
+      {/* Permission status */}
+      <div className="mb-4 rounded-xl border border-border/30 bg-muted/20 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BellRing className={cn(
+              'h-4 w-4',
+              permissionStatus === 'granted' ? 'text-green-500' : 'text-muted-foreground/40'
+            )} />
+            <span className="text-[12px] font-medium">
+              {permissionStatus === 'granted'
+                ? 'Notifications enabled'
+                : permissionStatus === 'denied'
+                ? 'Notifications blocked'
+                : 'Notifications not set up'}
+            </span>
+          </div>
+          {permissionStatus !== 'granted' && (
+            <button
+              onClick={handleRequestPermission}
+              className="rounded-lg bg-foreground px-3 py-1 text-[11px] font-semibold text-background transition-opacity hover:opacity-80"
+            >
+              {permissionStatus === 'denied' ? 'Blocked by browser' : 'Enable'}
+            </button>
+          )}
+        </div>
+        {permissionStatus === 'denied' && (
+          <p className="mt-1.5 text-[10px] text-muted-foreground/50">
+            Reset in browser settings: click the lock icon in the address bar.
+          </p>
+        )}
+      </div>
+
+      <SettingRow label="Enable Notifications" description="Allow Orbit to send push notifications">
+        <Toggle
+          checked={settings.notifications.enabled}
+          onChange={(v) => setNested('notifications', { enabled: v })}
+        />
+      </SettingRow>
+
+      <SettingRow label="Notification Sound">
+        <button
+          onClick={() => setNested('notifications', { sound: !settings.notifications.sound })}
+          className="flex items-center gap-1.5 text-[12px] text-muted-foreground/60"
+        >
+          {settings.notifications.sound ? (
+            <Volume2 className="h-4 w-4" />
+          ) : (
+            <VolumeX className="h-4 w-4" />
+          )}
+          {settings.notifications.sound ? 'On' : 'Off'}
+        </button>
+      </SettingRow>
+
+      <div className="mt-4 mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
+        Briefings
+      </div>
+
+      <SettingRow label="Morning Briefing" description="Your day at a glance — tasks, events, habits">
+        <div className="flex items-center gap-2">
+          <Toggle
+            checked={settings.notifications.dailyBriefing}
+            onChange={(v) => setNested('notifications', { dailyBriefing: v })}
+          />
+          {settings.notifications.dailyBriefing && (
+            <input
+              type="time"
+              value={settings.notifications.dailyBriefingTime}
+              onChange={(e) => setNested('notifications', { dailyBriefingTime: e.target.value })}
+              className="rounded-lg border border-border/50 bg-background px-2 py-1 text-[11px] font-mono outline-none"
+            />
+          )}
+        </div>
+      </SettingRow>
+
+      <SettingRow label="Evening Briefing" description="Review your day — what you crushed, what's left">
+        <div className="flex items-center gap-2">
+          <Toggle
+            checked={settings.notifications.eveningBriefing}
+            onChange={(v) => setNested('notifications', { eveningBriefing: v })}
+          />
+          {settings.notifications.eveningBriefing && (
+            <input
+              type="time"
+              value={settings.notifications.eveningBriefingTime}
+              onChange={(e) => setNested('notifications', { eveningBriefingTime: e.target.value })}
+              className="rounded-lg border border-border/50 bg-background px-2 py-1 text-[11px] font-mono outline-none"
+            />
+          )}
+        </div>
+      </SettingRow>
+
+      {/* Test buttons */}
+      {permissionStatus === 'granted' && (
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={handleTestMorning}
+            disabled={testSent === 'morning'}
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-medium transition-all',
+              testSent === 'morning'
+                ? 'border-green-500/30 bg-green-500/10 text-green-600'
+                : 'hover:bg-muted/40 text-muted-foreground'
+            )}
+          >
+            {testSent === 'morning' ? <Check className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+            {testSent === 'morning' ? 'Sent!' : 'Test Morning'}
+          </button>
+          <button
+            onClick={handleTestEvening}
+            disabled={testSent === 'evening'}
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-medium transition-all',
+              testSent === 'evening'
+                ? 'border-green-500/30 bg-green-500/10 text-green-600'
+                : 'hover:bg-muted/40 text-muted-foreground'
+            )}
+          >
+            {testSent === 'evening' ? <Check className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+            {testSent === 'evening' ? 'Sent!' : 'Test Evening'}
+          </button>
+        </div>
+      )}
+
+      <div className="mt-6 mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
+        Reminders
+      </div>
+
+      <SettingRow label="Task Reminders" description="Remind before tasks are due">
+        <div className="flex items-center gap-2">
+          <Toggle
+            checked={settings.notifications.taskReminders}
+            onChange={(v) => setNested('notifications', { taskReminders: v })}
+          />
+          {settings.notifications.taskReminders && (
+            <NumberInput
+              value={settings.notifications.reminderMinutes}
+              onChange={(v) => setNested('notifications', { reminderMinutes: v })}
+              min={5}
+              max={1440}
+              suffix="min before"
+            />
+          )}
+        </div>
+      </SettingRow>
+
+      <SettingRow label="Habit Reminders" description="Daily reminders for active habits">
+        <Toggle
+          checked={settings.notifications.habitReminders}
+          onChange={(v) => setNested('notifications', { habitReminders: v })}
+        />
+      </SettingRow>
+
+      <SettingRow label="Weekly Review" description="Scheduled weekly summary" border={false}>
+        <div className="flex items-center gap-2">
+          <Toggle
+            checked={settings.notifications.weeklyReview}
+            onChange={(v) => setNested('notifications', { weeklyReview: v })}
+          />
+          {settings.notifications.weeklyReview && (
+            <SelectDropdown
+              value={String(settings.notifications.weeklyReviewDay)}
+              options={[
+                { value: '0', label: 'Sunday' },
+                { value: '1', label: 'Monday' },
+                { value: '5', label: 'Friday' },
+                { value: '6', label: 'Saturday' },
+              ]}
+              onChange={(v) => setNested('notifications', { weeklyReviewDay: Number(v) })}
+            />
+          )}
+        </div>
+      </SettingRow>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════
 // Main settings page
@@ -570,97 +798,7 @@ export default function SettingsPage() {
 
           {/* ═════ NOTIFICATIONS ═════ */}
           {activeSection === 'notifications' && (
-            <div>
-              <SectionHeader icon={Bell} label="Notifications" />
-
-              <SettingRow label="Enable Notifications" description="Allow Orbit to send push notifications">
-                <Toggle
-                  checked={settings.notifications.enabled}
-                  onChange={(v) => setNested('notifications', { enabled: v })}
-                />
-              </SettingRow>
-
-              <SettingRow label="Notification Sound">
-                <button
-                  onClick={() => setNested('notifications', { sound: !settings.notifications.sound })}
-                  className="flex items-center gap-1.5 text-[12px] text-muted-foreground/60"
-                >
-                  {settings.notifications.sound ? (
-                    <Volume2 className="h-4 w-4" />
-                  ) : (
-                    <VolumeX className="h-4 w-4" />
-                  )}
-                  {settings.notifications.sound ? 'On' : 'Off'}
-                </button>
-              </SettingRow>
-
-              <div className="mt-4 mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
-                Scheduled
-              </div>
-
-              <SettingRow label="Daily Briefing" description="Get a summary every morning">
-                <div className="flex items-center gap-2">
-                  <Toggle
-                    checked={settings.notifications.dailyBriefing}
-                    onChange={(v) => setNested('notifications', { dailyBriefing: v })}
-                  />
-                  {settings.notifications.dailyBriefing && (
-                    <input
-                      type="time"
-                      value={settings.notifications.dailyBriefingTime}
-                      onChange={(e) => setNested('notifications', { dailyBriefingTime: e.target.value })}
-                      className="rounded-lg border border-border/50 bg-background px-2 py-1 text-[11px] font-mono outline-none"
-                    />
-                  )}
-                </div>
-              </SettingRow>
-
-              <SettingRow label="Task Reminders" description="Remind before tasks are due">
-                <div className="flex items-center gap-2">
-                  <Toggle
-                    checked={settings.notifications.taskReminders}
-                    onChange={(v) => setNested('notifications', { taskReminders: v })}
-                  />
-                  {settings.notifications.taskReminders && (
-                    <NumberInput
-                      value={settings.notifications.reminderMinutes}
-                      onChange={(v) => setNested('notifications', { reminderMinutes: v })}
-                      min={5}
-                      max={1440}
-                      suffix="min before"
-                    />
-                  )}
-                </div>
-              </SettingRow>
-
-              <SettingRow label="Habit Reminders" description="Daily reminders for active habits">
-                <Toggle
-                  checked={settings.notifications.habitReminders}
-                  onChange={(v) => setNested('notifications', { habitReminders: v })}
-                />
-              </SettingRow>
-
-              <SettingRow label="Weekly Review" description="Scheduled weekly summary" border={false}>
-                <div className="flex items-center gap-2">
-                  <Toggle
-                    checked={settings.notifications.weeklyReview}
-                    onChange={(v) => setNested('notifications', { weeklyReview: v })}
-                  />
-                  {settings.notifications.weeklyReview && (
-                    <SelectDropdown
-                      value={String(settings.notifications.weeklyReviewDay)}
-                      options={[
-                        { value: '0', label: 'Sunday' },
-                        { value: '1', label: 'Monday' },
-                        { value: '5', label: 'Friday' },
-                        { value: '6', label: 'Saturday' },
-                      ]}
-                      onChange={(v) => setNested('notifications', { weeklyReviewDay: Number(v) })}
-                    />
-                  )}
-                </div>
-              </SettingRow>
-            </div>
+            <NotificationsSection settings={settings} setNested={setNested as unknown as (section: string, updates: Record<string, unknown>) => void} />
           )}
 
           {/* ═════ FOCUS & FLIGHT ═════ */}

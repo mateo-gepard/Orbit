@@ -9,6 +9,7 @@ import { useToolboxStore } from '@/lib/toolbox-store';
 import { useWishlistStore } from '@/lib/wishlist-store';
 import { useSettingsStore } from '@/lib/settings-store';
 import { subscribeToFlightLogs } from '@/lib/flight';
+import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
 import type { ToolId } from '@/lib/toolbox-store';
@@ -158,6 +159,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       );
       unsubToolDataRefs.current.push(unsubSettings2);
 
+      // Start briefing notification scheduler
+      startBriefingScheduler(() => useOrbitStore.getState().items);
+
       const unsubscribe = subscribeToItems(user.uid, (items) => {
         setItems(items);
         setError(null);
@@ -216,6 +220,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         unsub();
       }
       unsubToolDataRefs.current = [];
+      stopBriefingScheduler();
     };
   }, [connect]);
 

@@ -20,6 +20,8 @@ export interface NotificationSettings {
   enabled: boolean;
   dailyBriefing: boolean;
   dailyBriefingTime: string; // HH:mm
+  eveningBriefing: boolean;
+  eveningBriefingTime: string; // HH:mm
   taskReminders: boolean;
   reminderMinutes: number;   // minutes before due
   habitReminders: boolean;
@@ -135,6 +137,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
     enabled: true,
     dailyBriefing: false,
     dailyBriefingTime: '08:00',
+    eveningBriefing: false,
+    eveningBriefingTime: '21:00',
     taskReminders: true,
     reminderMinutes: 30,
     habitReminders: true,
