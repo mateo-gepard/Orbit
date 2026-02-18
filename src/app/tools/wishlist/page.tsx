@@ -62,7 +62,15 @@ export default function WishlistPage() {
   const [editingItem, setEditingItem] = useState<VaultItem | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
 
-  // Form state
+  // Quick-add state (inline in gallery)
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickName, setQuickName] = useState('');
+  const [quickExpanded, setQuickExpanded] = useState(false);
+  const [quickPrice, setQuickPrice] = useState('');
+  const [quickCategory, setQuickCategory] = useState<VaultCategory>('tech');
+  const quickInputRef = useRef<HTMLInputElement>(null);
+
+  // Form state (full edit form)
   const [formName, setFormName] = useState('');
   const [formPrice, setFormPrice] = useState('');
   const [formCurrency, setFormCurrency] = useState('EUR');
@@ -80,6 +88,13 @@ export default function WishlistPage() {
   const [auctionReady, setAuctionReady] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Auto-focus quick-add input when it opens
+  useEffect(() => {
+    if (showQuickAdd) {
+      setTimeout(() => quickInputRef.current?.focus(), 50);
+    }
+  }, [showQuickAdd]);
 
   const activeItems = useMemo(() => getActiveItems(), [items]);
   const acquiredItems = useMemo(() => getAcquiredItems(), [items]);
@@ -130,6 +145,23 @@ export default function WishlistPage() {
     setFormNotes(''); setEditingItem(null);
   };
 
+  const handleQuickAdd = () => {
+    if (!quickName.trim()) return;
+    const price = quickPrice ? parseFloat(quickPrice) : undefined;
+    addItem({
+      name: quickName.trim(),
+      price,
+      currency: 'EUR',
+      category: quickCategory,
+    });
+    setQuickName('');
+    setQuickPrice('');
+    setQuickCategory('tech');
+    setQuickExpanded(false);
+    // Keep the bar open so they can add more
+    quickInputRef.current?.focus();
+  };
+
   const openEdit = (item: VaultItem) => {
     setFormName(item.name); setFormPrice(item.price?.toString() || '');
     setFormCurrency(item.currency); setFormUrl(item.url || '');
@@ -164,7 +196,7 @@ export default function WishlistPage() {
 
   if (view === 'add' || view === 'edit') {
     return (
-      <div className="flex flex-col h-full bg-background">
+      <div className="min-h-full bg-background">
         {/* Header strip */}
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center gap-2">
           <button onClick={() => { resetForm(); setView('gallery'); }} className="text-muted-foreground/40 hover:text-foreground transition-colors">
@@ -176,7 +208,7 @@ export default function WishlistPage() {
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 max-w-xl mx-auto w-full">
+        <div className="p-4 lg:p-8 max-w-xl mx-auto w-full">
           {/* Appraisal document — styled like Flight's boarding pass */}
           <div className="rounded-2xl overflow-hidden border border-amber-500/20 bg-card">
             {/* Gold header bar */}
@@ -340,9 +372,9 @@ export default function WishlistPage() {
   if (view === 'auction') {
     if (!duelPair) startNewDuel();
     return (
-      <div className="flex flex-col h-full bg-background relative overflow-hidden">
+      <div className="relative min-h-full bg-background">
         {/* Ambient background glow */}
-        <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-0 left-1/4 w-64 h-64 bg-amber-500/[0.03] rounded-full blur-[100px]" />
           <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-amber-500/[0.02] rounded-full blur-[100px]" />
         </div>
@@ -371,10 +403,10 @@ export default function WishlistPage() {
           </div>
         </div>
 
-        <div className="relative z-10 flex-1 overflow-y-auto flex flex-col">
+        <div className="relative z-10">
           {!duelPair ? (
             /* Not enough pieces */
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex items-center justify-center py-20">
               <div className="text-center px-6">
                 <div className="relative mx-auto w-20 h-20 mb-4">
                   <div className="absolute inset-0 rounded-full bg-amber-500/5 animate-pulse" />
@@ -384,13 +416,13 @@ export default function WishlistPage() {
                 </div>
                 <p className="text-[16px] font-bold">Not Enough Pieces</p>
                 <p className="text-[12px] text-muted-foreground/30 mt-1 max-w-[280px]">Add at least 2 items to start the auction</p>
-                <button onClick={() => setView('add')} className="mt-4 inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber-500 hover:text-amber-400 transition-colors bg-amber-500/10 px-4 py-2 rounded-xl">
+                <button onClick={() => { setView('gallery'); setShowQuickAdd(true); }} className="mt-4 inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber-500 hover:text-amber-400 transition-colors bg-amber-500/10 px-4 py-2 rounded-xl">
                   <Plus className="h-3.5 w-3.5" /> Add Piece
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex flex-col p-4 lg:p-8 max-w-3xl mx-auto w-full">
+            <div className="p-4 lg:p-8 max-w-3xl mx-auto w-full">
               {/* Auction header */}
               <div className="text-center mb-6 lg:mb-8">
                 <div className="inline-flex items-center gap-2 bg-amber-500/10 rounded-full px-4 py-1.5 mb-3">
@@ -402,7 +434,7 @@ export default function WishlistPage() {
               </div>
 
               {/* Duel arena */}
-              <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8 items-start relative">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8 items-start relative">
                 {/* Center VS badge */}
                 <div className="hidden lg:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
                   <div className="relative">
@@ -526,7 +558,7 @@ export default function WishlistPage() {
   if (view === 'leaderboard') {
     const topThree = rankedItems.slice(0, 3);
     return (
-      <div className="flex flex-col h-full bg-background relative overflow-hidden">
+      <div className="relative min-h-full bg-background">
         {/* Ambient glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 bg-amber-500/[0.03] rounded-full blur-[120px] pointer-events-none" />
 
@@ -541,7 +573,7 @@ export default function WishlistPage() {
           <span className="text-[10px] text-muted-foreground/30 tabular-nums">{duels.length} duels total</span>
         </div>
 
-        <div className="relative z-10 flex-1 overflow-y-auto p-4 lg:p-8 max-w-2xl mx-auto w-full space-y-8">
+        <div className="relative z-10 p-4 lg:p-8 max-w-2xl mx-auto w-full space-y-8">
           {/* Podium — only show with 3+ items */}
           {topThree.length >= 3 && (
             <div className="pt-4">
@@ -693,7 +725,7 @@ export default function WishlistPage() {
   if (view === 'acquired') {
     const displayItems = showRemoved ? removedItems : acquiredItems;
     return (
-      <div className="flex flex-col h-full bg-background">
+      <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button onClick={() => { setView('gallery'); setShowRemoved(false); }} className="text-muted-foreground/40 hover:text-foreground transition-colors">
@@ -709,7 +741,7 @@ export default function WishlistPage() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 max-w-2xl mx-auto w-full space-y-4">
+        <div className="p-4 lg:p-8 max-w-2xl mx-auto w-full space-y-4">
           {/* Total spend banner */}
           {!showRemoved && acquiredItems.length > 0 && (
             <div className="rounded-2xl overflow-hidden border border-emerald-500/20 bg-card">
@@ -782,7 +814,7 @@ export default function WishlistPage() {
   // ═══════════════════════════════════════════════════════
 
   return (
-    <div className="flex flex-col h-full bg-background relative overflow-hidden">
+    <div className="relative min-h-full bg-background">
       {/* Ambient glow */}
       <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/[0.02] rounded-full blur-[100px] pointer-events-none" />
 
@@ -818,16 +850,110 @@ export default function WishlistPage() {
                 <Gavel className="h-3.5 w-3.5" /> Auction
               </button>
             )}
-            <button onClick={() => setView('add')}
-              className="flex items-center gap-1.5 text-[11px] font-bold bg-foreground text-background hover:opacity-90 transition-all active:scale-95 px-3 py-1.5 rounded-xl ml-1">
-              <Plus className="h-3.5 w-3.5" /> Add
+            <button onClick={() => setShowQuickAdd(!showQuickAdd)}
+              className={cn(
+                'flex items-center gap-1.5 text-[11px] font-bold transition-all active:scale-95 px-3 py-1.5 rounded-xl ml-1',
+                showQuickAdd
+                  ? 'bg-amber-500/15 text-amber-500 border border-amber-500/25'
+                  : 'bg-foreground text-background hover:opacity-90'
+              )}>
+              {showQuickAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+              {showQuickAdd ? '' : 'Add'}
             </button>
           </div>
         </div>
       </div>
 
-      <div className="relative z-10 flex-1 overflow-y-auto">
-        <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
+      {/* ─── Quick-Add Bar — frictionless inline input ─── */}
+      {showQuickAdd && (
+        <div className="relative z-10 border-b border-border/30 bg-card/50 backdrop-blur-sm">
+          <div className="px-4 lg:px-8 py-3 max-w-5xl mx-auto">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Gem className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-amber-500/40" />
+                <input
+                  ref={quickInputRef}
+                  value={quickName}
+                  onChange={(e) => setQuickName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleQuickAdd();
+                    if (e.key === 'Escape') { setShowQuickAdd(false); setQuickName(''); setQuickExpanded(false); }
+                  }}
+                  placeholder="What do you desire? Type a name and press Enter..."
+                  className="w-full rounded-xl border border-border/40 bg-transparent pl-9 pr-3 py-2.5 text-[14px] font-semibold placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/40 focus:shadow-[0_0_0_3px_rgba(245,158,11,0.05)] transition-all"
+                />
+              </div>
+              <button
+                onClick={() => setQuickExpanded(!quickExpanded)}
+                className={cn(
+                  'shrink-0 flex items-center gap-1 text-[10px] font-medium px-2.5 py-2.5 rounded-xl transition-all border',
+                  quickExpanded
+                    ? 'border-amber-500/25 text-amber-500 bg-amber-500/5'
+                    : 'border-border/30 text-muted-foreground/30 hover:text-muted-foreground/50 hover:border-border/50'
+                )}
+                title="More details"
+              >
+                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform duration-200', quickExpanded && 'rotate-90')} />
+              </button>
+              <button
+                onClick={handleQuickAdd}
+                disabled={!quickName.trim()}
+                className={cn(
+                  'shrink-0 flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[12px] font-bold transition-all active:scale-95',
+                  quickName.trim()
+                    ? 'bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-white shadow-lg shadow-amber-600/15 hover:from-amber-500 hover:via-amber-400 hover:to-yellow-400'
+                    : 'bg-muted-foreground/10 text-muted-foreground/20 cursor-not-allowed'
+                )}
+              >
+                <Plus className="h-3.5 w-3.5" /> Add
+              </button>
+            </div>
+
+            {/* Expanded options — still lightweight */}
+            {quickExpanded && (
+              <div className="mt-3 flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                {/* Price */}
+                <div className="flex items-center gap-1.5">
+                  <DollarSign className="h-3 w-3 text-muted-foreground/25" />
+                  <input
+                    value={quickPrice}
+                    onChange={(e) => setQuickPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="Price"
+                    type="text"
+                    inputMode="decimal"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd(); }}
+                    className="w-24 rounded-lg border border-border/30 bg-transparent px-2.5 py-1.5 text-[12px] font-semibold placeholder:text-muted-foreground/20 focus:outline-none focus:border-amber-500/30 transition-all tabular-nums"
+                  />
+                </div>
+                {/* Category pills */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  {VAULT_CATEGORIES.map((cat) => {
+                    const Icon = CATEGORY_ICONS[cat.icon] || Package;
+                    const isSelected = quickCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => setQuickCategory(cat.id)}
+                        className={cn(
+                          'flex items-center gap-1 rounded-lg px-2 py-1 text-[9px] font-bold uppercase tracking-wider transition-all active:scale-95 border',
+                          isSelected
+                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-500'
+                            : 'border-border/20 text-muted-foreground/25 hover:text-muted-foreground/40 hover:border-border/40'
+                        )}
+                      >
+                        <Icon className="h-2.5 w-2.5" strokeWidth={1.5} />
+                        {cat.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="relative z-10 p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
 
           {/* ─── Stats Dashboard — Museum Security Panel ─── */}
           {activeItems.length > 0 && (
@@ -923,7 +1049,7 @@ export default function WishlistPage() {
               <p className="text-[13px] text-muted-foreground/35 mt-2 max-w-[320px] mx-auto leading-relaxed">
                 Every great collection begins with a single piece. What will be your first acquisition?
               </p>
-              <button onClick={() => setView('add')}
+              <button onClick={() => setShowQuickAdd(true)}
                 className="mt-8 relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-white px-8 py-4 text-[14px] font-bold hover:from-amber-500 hover:via-amber-400 hover:to-yellow-400 transition-all active:scale-[0.98] shadow-xl shadow-amber-600/25 overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-vault-shimmer" />
                 <Plus className="h-4 w-4 relative z-10" /> <span className="relative z-10">First Acquisition</span>
@@ -964,7 +1090,6 @@ export default function WishlistPage() {
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 }
