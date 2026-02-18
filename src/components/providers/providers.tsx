@@ -1,14 +1,11 @@
 'use client';
 
-import { Component, type ReactNode, type ErrorInfo, useEffect } from 'react';
+import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { ThemeProvider } from './theme-provider';
 import { AuthProvider } from './auth-provider';
 import { DataProvider } from './data-provider';
 import { PWAProvider } from './pwa-provider';
 import { AppShell } from '@/components/shell/app-shell';
-import { useToolboxStore } from '@/lib/toolbox-store';
-import { useAbiturStore } from '@/lib/abitur-store';
-import { useWishlistStore } from '@/lib/wishlist-store';
 
 // ── Error Boundary ──
 interface ErrorBoundaryProps {
@@ -64,12 +61,9 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 // ── Root Providers ──
 export function Providers({ children }: { children: ReactNode }) {
-  // Rehydrate persisted stores on the client to avoid SSR mismatch
-  useEffect(() => {
-    useToolboxStore.persist.rehydrate();
-    useAbiturStore.persist.rehydrate();
-    useWishlistStore.persist.rehydrate();
-  }, []);
+  // NOTE: rehydrate() is called inside DataProvider.connect() — BEFORE
+  // Firestore subscriptions start — so cloud data always wins over stale
+  // localStorage on a fresh device.
 
   return (
     <ErrorBoundary>

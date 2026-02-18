@@ -45,6 +45,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      // ── Rehydrate persisted stores FIRST ──
+      // Must happen synchronously before subscriptions so that:
+      // 1. On the SAME device — localStorage state is restored before cloud
+      //    snapshots can overwrite it.
+      // 2. On a NEW device — localStorage is empty, so rehydrate is a no-op,
+      //    and the cloud snapshot correctly populates the store.
+      useToolboxStore.persist.rehydrate();
+      useAbiturStore.persist.rehydrate();
+      useWishlistStore.persist.rehydrate();
+
       // Set sync user ID for tag cloud sync
       setSyncUserId(user.uid);
 
