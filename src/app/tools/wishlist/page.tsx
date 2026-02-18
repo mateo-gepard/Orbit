@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus, X, ChevronLeft, Gem, ShoppingBag, ExternalLink,
   Gavel, Trophy, Archive, Undo2, Trash2, Edit3,
   DollarSign, Crown, ArrowRight,
   Cpu, Shirt, Compass, Home, Palette, Heart, BookOpen, Package,
   Link, Image, StickyNote, Hash, ChevronRight, Loader2, Globe,
-  Check, MoreHorizontal, Tag,
+  Check, MoreHorizontal, Tag, Bug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -15,6 +16,7 @@ import {
   useWishlistStore, VAULT_CATEGORIES, getItemRarity, getRarityLabel,
   getRarityColor, getVaultStats, formatPrice, pickDuelPair,
   recommendedRounds, rankingConfidence,
+  onDebugLog, getDebugLog,
   type VaultItem, type VaultCategory,
 } from '@/lib/wishlist-store';
 
@@ -81,6 +83,28 @@ export default function WishlistPage() {
 
   // Card expand (gallery detail overlay)
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
+
+  // ─── Debug overlay (imperative DOM — works across all view returns) ──
+  const [showDebug, setShowDebug] = useState(false);
+  const debugRef = useRef<HTMLDivElement | null>(null);
+  const debugLogVersion = useRef(0);
+  const debugLines = useSyncExternalStore(
+    (cb) => onDebugLog(() => { debugLogVersion.current++; cb(); }),
+    () => getDebugLog(),
+    () => [] as string[],
+  );
+
+  // Create persistent debug container in DOM
+  useEffect(() => {
+    let container = document.getElementById('vault-debug-root');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'vault-debug-root';
+      document.body.appendChild(container);
+    }
+    debugRef.current = container as HTMLDivElement;
+    return () => { container?.remove(); debugRef.current = null; };
+  }, []);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -232,11 +256,53 @@ export default function WishlistPage() {
 
   if (!mounted) return null;
 
+  // ─── Debug overlay — portal into persistent DOM container ──
+  const debugPortal = debugRef.current ? createPortal(
+    <>
+      <button
+        onClick={() => setShowDebug((p) => !p)}
+        className="fixed bottom-4 left-4 z-[9999] flex h-8 w-8 items-center justify-center rounded-full bg-foreground/10 backdrop-blur-sm border border-border/50 text-muted-foreground hover:text-foreground transition-colors"
+        aria-label="Toggle sync debug"
+      >
+        <Bug className="h-3.5 w-3.5" />
+      </button>
+      {showDebug && (
+        <div className="fixed bottom-14 left-4 right-4 z-[9999] max-w-md rounded-lg border border-border bg-background/95 backdrop-blur-md shadow-xl overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+            <span className="text-[11px] font-mono font-semibold text-foreground">Vault Sync Debug</span>
+            <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
+              <span>uid: {user?.uid?.slice(0, 8) ?? 'none'}…</span>
+              <span>items: {items.length}</span>
+              <span>duels: {duels.length}</span>
+            </div>
+          </div>
+          <div className="max-h-[40vh] overflow-y-auto p-2 space-y-0.5">
+            {debugLines.length === 0 ? (
+              <p className="text-[10px] text-muted-foreground font-mono p-2">No sync activity yet. Try adding an item.</p>
+            ) : (
+              debugLines.map((line, i) => (
+                <p key={i} className="text-[10px] font-mono leading-relaxed text-muted-foreground whitespace-pre-wrap break-all">
+                  {line}
+                </p>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </>,
+    debugRef.current,
+  ) : null;
+
+  // Always render the portal — it's fixed-position and works across all views
+  // by attaching to the persistent DOM container outside React's tree.
+  // We need it in every return, so we use a helper:
+  const withDebug = (content: React.ReactNode) => <>{debugPortal}{content}</>;
+
   // ═══════════════════════════════════════════════════════
   // EDIT FORM — Clean editorial
   // ═══════════════════════════════════════════════════════
   if (view === 'add' || view === 'edit') {
-    return (
+    return withDebug(
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center gap-3">
           <button onClick={() => { resetForm(); setView('gallery'); }} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -328,7 +394,7 @@ export default function WishlistPage() {
     const confidence = rankingConfidence(items);
     const sessionDone = duelCount >= target && duelCount > 0;
 
-    return (
+    return withDebug(
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50">
           <div className="flex items-center justify-between">
@@ -484,7 +550,7 @@ export default function WishlistPage() {
   // ═══════════════════════════════════════════════════════
   if (view === 'leaderboard') {
     const confidence = rankingConfidence(items);
-    return (
+    return withDebug(
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50">
           <div className="flex items-center justify-between">
@@ -634,7 +700,7 @@ export default function WishlistPage() {
   // ═══════════════════════════════════════════════════════
   if (view === 'acquired') {
     const displayItems = showRemoved ? removedItems : acquiredItemsList;
-    return (
+    return withDebug(
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -707,7 +773,7 @@ export default function WishlistPage() {
   // ═══════════════════════════════════════════════════════
   // GALLERY — The Collection
   // ═══════════════════════════════════════════════════════
-  return (
+  return withDebug(
     <div className="relative min-h-full bg-background">
 
       {/* Header */}

@@ -201,6 +201,31 @@ export function formatPrice(amount: number | undefined, currency: string): strin
 // Zustand Store with Firestore Sync
 // ═══════════════════════════════════════════════════════════
 
+// ─── On-screen debug log (visible on mobile) ──────────────
+const MAX_DEBUG_LINES = 30;
+const _debugLog: string[] = [];
+const _debugListeners = new Set<() => void>();
+
+function dbg(msg: string) {
+  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const line = `${ts} ${msg}`;
+  _debugLog.push(line);
+  if (_debugLog.length > MAX_DEBUG_LINES) _debugLog.shift();
+  console.log(`[ORBIT] ${msg}`);
+  _debugListeners.forEach((fn) => fn());
+}
+
+/** Subscribe to debug log changes (for React component) */
+export function onDebugLog(fn: () => void): () => void {
+  _debugListeners.add(fn);
+  return () => { _debugListeners.delete(fn); };
+}
+
+/** Get the current debug log lines */
+export function getDebugLog(): string[] {
+  return [..._debugLog];
+}
+
 let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 let _pendingSave = false;
@@ -252,25 +277,26 @@ function cleanItems(items: VaultItem[]): VaultItem[] {
 
 function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
   if (!_syncUserId) {
-    console.warn('[ORBIT] Vault scheduleSave skipped — no sync user ID');
+    dbg('⏭ scheduleSave skipped — no userId');
     return;
   }
   if (_saveTimer) clearTimeout(_saveTimer);
   _pendingSave = true;
+  dbg(`⏳ scheduleSave queued (${items.length} items, ${duels.length} duels)`);
   _saveTimer = setTimeout(async () => {
     if (!_syncUserId) {
-      console.warn('[ORBIT] Vault save aborted — user signed out during debounce');
+      dbg('⏭ save aborted — signed out during debounce');
       _pendingSave = false;
       return;
     }
     const userId = _syncUserId;
     const clean = sanitizeForFirestore({ items, duels } satisfies WishlistCloudData);
-    console.log('[ORBIT] Vault saving to Firestore:', { userId, items: clean.items.length, duels: clean.duels.length });
+    dbg(`🔄 saving → Firestore (${clean.items.length} items, ${clean.duels.length} duels)`);
     try {
       await saveToolData(userId, 'wishlist', clean);
-      console.log('[ORBIT] Vault save success');
+      dbg('✅ save success');
     } catch (err) {
-      console.error('[ORBIT] Vault save FAILED:', err);
+      dbg(`❌ save FAILED: ${err}`);
     } finally {
       _pendingSave = false;
     }
@@ -320,6 +346,7 @@ export const useWishlistStore = create<WishlistState>()(
         });
         const items = [...get().items, item];
         set({ items });
+        dbg(`➕ addItem "${item.name}" (total: ${items.length})`);
         scheduleSave(items, get().duels);
       },
 
@@ -400,19 +427,16 @@ export const useWishlistStore = create<WishlistState>()(
           .sort((a, b) => b.elo - a.elo),
 
       _setFromCloud: (data) => {
-        // Only skip if we have a local save in-flight — the echo-back
-        // from Firestore will carry the same data we just wrote.
         if (_pendingSave) {
-          console.log('[ORBIT] Vault _setFromCloud skipped — pending save in flight');
+          dbg('⏭ _setFromCloud skipped — save in flight');
           return;
         }
         _cloudReceived = true;
         const rawItems = Array.isArray(data.items) ? data.items : [];
         const duels = Array.isArray(data.duels) ? data.duels : [];
         const items = cleanItems(rawItems);
-        console.log('[ORBIT] Vault _setFromCloud applied:', { items: items.length, duels: duels.length });
+        dbg(`☁️ cloud → store (${items.length} items, ${duels.length} duels)`);
         set({ items, duels });
-        // If cleaning changed any names, persist the fix back to cloud
         if (items.some((c, i) => c !== rawItems[i])) {
           scheduleSave(items, duels);
         }
@@ -422,17 +446,21 @@ export const useWishlistStore = create<WishlistState>()(
         const prev = _syncUserId;
         _syncUserId = userId;
         if (!userId) {
-          _cloudReceived = false; // reset on sign-out
+          _cloudReceived = false;
+          dbg('🔓 userId cleared (signed out)');
           return;
         }
-        // When user signs in (null → uid), push any un-synced local items to cloud.
-        // Skip if we already received cloud data (items are already in Firestore).
+        dbg(`🔑 userId set: ${userId.slice(0, 8)}…`);
         if (!prev && !_cloudReceived) {
           const { items, duels } = get();
           if (items.length > 0) {
-            console.log('[ORBIT] Vault: user signed in — pushing local items to cloud');
+            dbg(`📤 pushing ${items.length} local items → cloud`);
             scheduleSave(items, duels);
+          } else {
+            dbg('📭 no local items to push');
           }
+        } else if (_cloudReceived) {
+          dbg('☁️ cloud already received — skip push');
         }
       },
     }),
@@ -441,6 +469,7 @@ export const useWishlistStore = create<WishlistState>()(
       partialize: (state) => ({ items: state.items, duels: state.duels }),
       skipHydration: true,
       onRehydrateStorage: () => (state) => {
+        dbg(`💾 rehydrated from localStorage (${state?.items?.length ?? 0} items)`);
         // Clean HTML entities from any previously saved items
         if (state && state.items.length > 0) {
           const cleaned = cleanItems(state.items);
