@@ -524,7 +524,7 @@ export function CommandBar() {
                   Create new {TYPE_LABELS[parsed.type].toLowerCase()}
                 </div>
                 <button
-                  onClick={handleSubmit}
+                  onClick={() => handleSubmit()}
                   className="flex w-full items-center gap-3 px-3 py-3.5 lg:py-2.5 text-left transition-colors hover:bg-foreground/[0.03] active:bg-foreground/[0.06]"
                 >
                   <TypeIcon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
@@ -556,7 +556,7 @@ export function CommandBar() {
                   Create {parsed.tags.length === 1 ? 'tag' : 'tags'}
                 </div>
                 <button
-                  onClick={handleSubmit}
+                  onClick={() => handleSubmit()}
                   className="flex w-full items-center gap-3 px-3 py-3.5 lg:py-2.5 text-left transition-colors hover:bg-foreground/[0.03] active:bg-foreground/[0.06]"
                 >
                   <Hash className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
