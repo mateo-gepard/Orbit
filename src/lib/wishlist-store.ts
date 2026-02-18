@@ -427,6 +427,7 @@ export const useWishlistStore = create<WishlistState>()(
           .sort((a, b) => b.elo - a.elo),
 
       _setFromCloud: (data) => {
+        dbg(`📥 _setFromCloud called — keys: ${Object.keys(data || {}).join(',')} cloudReceived=${_cloudReceived} pendingSave=${_pendingSave}`);
         // After initial load, skip echo-backs while a local save is in flight
         if (_cloudReceived && _pendingSave) {
           dbg('⏭ _setFromCloud skipped — save in flight (echo)');

@@ -117,6 +117,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         user.uid,
         'wishlist',
         (data) => {
+          console.log('[ORBIT] Wishlist callback fired, data:', data ? `items=${(data as Record<string, unknown>).items ? (data.items as unknown[]).length : 'missing'}, keys=${Object.keys(data).join(',')}` : 'null');
           if (data) {
             useWishlistStore.getState()._setFromCloud(data as { items: never[]; duels: never[] });
           }
