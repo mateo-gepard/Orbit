@@ -83,8 +83,12 @@ service cloud.firestore {
                     && request.resource.data.timestamp is int
                     && request.resource.data.date is string;
       
-      // No update or delete — analytics are immutable
-      allow update, delete: if false;
+      // No update — analytics are immutable
+      allow update: if false;
+
+      // DELETE: User can delete their own analytics (account deletion)
+      allow delete: if isSignedIn()
+                    && isOwner(resource.data.userId);
     }
     
     // ─────────────────────────────────────────────────────────

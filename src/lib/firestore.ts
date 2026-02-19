@@ -796,24 +796,43 @@ export async function deleteAllUserData(userId: string): Promise<void> {
   }
 
   const database = getDb();
-  const batch = writeBatch(database);
 
-  // Delete all items owned by the user
-  const itemsQuery = query(
-    collection(database, ITEMS_COLLECTION),
-    where('userId', '==', userId)
+  // Collect all document refs to delete
+  const refsToDelete: ReturnType<typeof doc>[] = [];
+
+  // 1. All items owned by the user
+  const itemsSnap = await getDocs(
+    query(collection(database, ITEMS_COLLECTION), where('userId', '==', userId))
   );
-  const itemsSnap = await getDocs(itemsQuery);
-  itemsSnap.forEach((d) => batch.delete(d.ref));
+  itemsSnap.forEach((d) => refsToDelete.push(d.ref));
 
-  // Delete tool data docs (settings, toolbox, wishlist, abitur, flight, etc.)
-  const toolIds = ['settings', 'toolbox', 'wishlist', 'abitur', 'flight'];
-  for (const toolId of toolIds) {
-    const ref = doc(database, TOOL_DATA_COLLECTION, `${userId}_${toolId}`);
-    batch.delete(ref);
+  // 2. All tool data docs owned by the user
+  const toolDataSnap = await getDocs(
+    query(collection(database, TOOL_DATA_COLLECTION), where('userId', '==', userId))
+  );
+  toolDataSnap.forEach((d) => refsToDelete.push(d.ref));
+
+  // 3. All analytics docs owned by the user
+  const analyticsSnap = await getDocs(
+    query(collection(database, 'analytics'), where('userId', '==', userId))
+  );
+  analyticsSnap.forEach((d) => refsToDelete.push(d.ref));
+
+  // 4. User settings doc (doc ID = userId)
+  const settingsRef = doc(database, SETTINGS_COLLECTION, userId);
+  const settingsSnap = await getDoc(settingsRef);
+  if (settingsSnap.exists()) {
+    refsToDelete.push(settingsRef);
   }
 
-  await batch.commit();
+  // Commit in batches of 500 (Firestore limit)
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < refsToDelete.length; i += BATCH_SIZE) {
+    const batch = writeBatch(database);
+    const chunk = refsToDelete.slice(i, i + BATCH_SIZE);
+    chunk.forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
 
   // Clear local storage
   localStorage.removeItem(LOCAL_STORAGE_KEY);
