@@ -29,6 +29,7 @@ import {
   Clock,
   Zap,
   Send,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -77,6 +78,7 @@ const SECTIONS: SettingSection[] = [
   { id: 'shortcuts', label: 'settings.shortcuts', icon: Keyboard },
   { id: 'privacy', label: 'settings.privacy', icon: Shield },
   { id: 'accessibility', label: 'settings.accessibility', icon: Accessibility },
+  { id: 'eastereggs', label: 'settings.easterEggs', icon: Sparkles },
   { id: 'data', label: 'settings.dataStorage', icon: Database },
 ];
 
@@ -970,6 +972,98 @@ export default function SettingsPage() {
                   onChange={(v) => setNested('accessibility', { fontSize: v })}
                 />
               </SettingRow>
+            </div>
+          )}
+
+          {/* ═════ EASTER EGGS ═════ */}
+          {activeSection === 'eastereggs' && (
+            <div>
+              <SectionHeader icon={Sparkles} label={t('settings.easterEggs')} />
+
+              {/* Hockey mode card */}
+              <div className="rounded-2xl border border-border/40 bg-card overflow-hidden">
+                {/* Card header with fun visual */}
+                <div className="relative px-4 sm:px-5 pt-5 pb-4 overflow-hidden">
+                  {/* Background decoration */}
+                  <div className="absolute top-0 right-0 text-[80px] opacity-[0.04] leading-none select-none pointer-events-none">
+                    🏒
+                  </div>
+                  <div className="absolute bottom-0 left-1/2 text-[60px] opacity-[0.03] leading-none select-none pointer-events-none">
+                    ⚕️
+                  </div>
+
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/10 to-red-500/10 border border-cyan-500/20 text-lg">
+                      🏒
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-[14px] font-semibold">{t('settings.hockeyMode')}</h3>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full">
+                          Easter Egg
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground/60 mt-1 leading-relaxed">
+                        {t('settings.hockeyModeDesc')}
+                      </p>
+                    </div>
+                    <div className="shrink-0 mt-0.5">
+                      <Toggle checked={settings.hockeyMode} onChange={(v) => set('hockeyMode', v)} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preview of what changes when hockey mode is on */}
+                {settings.hockeyMode && (
+                  <div className="border-t border-border/20 px-4 sm:px-5 py-3 bg-muted/20">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2">
+                      {t('settings.hockeyPreview')}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {[
+                        { emoji: '🎯', from: t('type.task'), to: 'Spielzug' },
+                        { emoji: '📋', from: settings.language === 'de' ? 'Projekt' : 'Project', to: 'Saison' },
+                        { emoji: '🔄', from: settings.language === 'de' ? 'Gewohnheit' : 'Habit', to: 'Training' },
+                        { emoji: '📅', from: settings.language === 'de' ? 'Termin' : 'Event', to: 'Anpfiff' },
+                        { emoji: '🏆', from: settings.language === 'de' ? 'Ziel' : 'Goal', to: 'Meisterschaft' },
+                        { emoji: '📝', from: settings.language === 'de' ? 'Notiz' : 'Note', to: 'Rezept' },
+                      ].map((item) => (
+                        <div key={item.from} className="flex items-center gap-1.5 text-[10px]">
+                          <span>{item.emoji}</span>
+                          <span className="text-muted-foreground/40 line-through">{item.from}</span>
+                          <span className="text-foreground/70 font-medium">→ {item.to}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {settings.language !== 'de' && (
+                      <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+                        <span className="text-xs">🇩🇪</span>
+                        <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                          Hockey Mode works best in German — switch language for the full experience!
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Fun features list */}
+                <div className="border-t border-border/20 px-4 sm:px-5 py-3">
+                  <div className="space-y-2">
+                    {[
+                      { icon: '🥅', text: t('settings.hockeyFeature1') },
+                      { icon: '🩺', text: t('settings.hockeyFeature2') },
+                      { icon: '🚨', text: t('settings.hockeyFeature3') },
+                      { icon: '📋', text: t('settings.hockeyFeature4') },
+                    ].map((feature, i) => (
+                      <div key={i} className="flex items-center gap-2.5">
+                        <span className="text-sm shrink-0">{feature.icon}</span>
+                        <span className="text-[11px] text-muted-foreground/70">{feature.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

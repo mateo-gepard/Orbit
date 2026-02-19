@@ -90,6 +90,7 @@ export function Sidebar() {
 
   const allTags = getAllTags();
   const showBadges = useSettingsStore((s) => s.settings.showSidebarBadges);
+  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const { t } = useTranslation();
   const storeItems = useOrbitStore((s) => s.items);
 
@@ -174,10 +175,15 @@ export function Sidebar() {
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background font-semibold text-xs tracking-tight">
-              O
+            <div className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-md font-semibold text-xs tracking-tight",
+              hockeyMode ? "bg-cyan-600 text-white" : "bg-foreground text-background"
+            )}>
+              {hockeyMode ? '🏒' : 'O'}
             </div>
-            <span className="text-[15px] font-semibold tracking-tight">ORBIT</span>
+            <span className="text-[15px] font-semibold tracking-tight">
+              {hockeyMode ? 'ORBIT 🩺' : 'ORBIT'}
+            </span>
           </div>
           <Button
             variant="ghost"

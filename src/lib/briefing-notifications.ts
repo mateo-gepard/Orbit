@@ -2,6 +2,7 @@
 // ORBIT — Briefing Notifications
 // Real browser push notifications with smart, human briefings.
 // Morning: what's ahead. Evening: what you accomplished.
+// Hockey Mode: sports commentary + medical vibes (German).
 // ═══════════════════════════════════════════════════════════
 
 import { format, isToday, parseISO, isTomorrow, isPast, differenceInDays } from 'date-fns';
@@ -64,6 +65,164 @@ function getDayOfWeekVibe(): string {
   return pickRandom(vibes[day] || ['Let\'s go.']);
 }
 
+// ── Hockey mode: German sports commentary ─────────────────
+
+const HOCKEY_MORNING_GREETINGS = [
+  'Aufwärmen, Dr.! 🏒',
+  'Eisbahn frei! Los geht\'s.',
+  'Anpfiff in 3... 2... 1... 🚨',
+  'Die Kabine ist bereit, Dr.',
+  'Helm auf, Schlittschuhe an!',
+  'Guten Morgen, Dr. — Spieltag!',
+];
+
+const HOCKEY_EVENING_GREETINGS = [
+  'Schlusspfiff! 🏒',
+  'Das Spiel ist aus, Dr.',
+  'Abpfiff — ab in die Kabine.',
+  'Die Eisbahn wird geräumt.',
+  'Schichtende, Dr. — Feierabend!',
+  'Visite beendet. 🩺',
+];
+
+function getDayOfWeekVibeHockey(): string {
+  const day = new Date().getDay();
+  const vibes: Record<number, string[]> = {
+    0: ['Sonntag — Regeneration. Die beste Medizin.', 'Ruhetag. Der Körper muss heilen. 🩺'],
+    1: ['Montag. Erstes Bully der Woche!', 'Neue Woche, neues Spiel. 🏒'],
+    2: ['Dienstag — zweites Drittel der Woche.', 'Weiter trainieren, Dr.'],
+    3: ['Mittwoch — Halbzeit! Wie steht\'s?', 'Drittelpause. Nachschub holen.'],
+    4: ['Donnerstag — Endspurt Richtung Wochenende.', 'Power Play, Dr.!'],
+    5: ['Freitag! Letztes Drittel. Vollgas! 🚨', 'TGIF — Schluss-Sirene naht!'],
+    6: ['Samstag. Freies Training.', 'Wochenende — aber Sieger ruhen nie.'],
+  };
+  return pickRandom(vibes[day] || ['Bully! 🏒']);
+}
+
+function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
+  const today = new Date();
+  const todayStr = format(today, 'yyyy-MM-dd');
+
+  const tasksDueToday = items.filter(
+    (i) => i.type === 'task' && i.status === 'active' && i.dueDate === todayStr
+  );
+  const overdue = items.filter(
+    (i) => i.type === 'task' && i.status === 'active' && i.dueDate && i.dueDate < todayStr
+  );
+  const eventsToday = items.filter(
+    (i) => i.type === 'event' && i.status === 'active' && i.startDate === todayStr
+  );
+  const habitsToday = items.filter(
+    (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
+  );
+
+  const title = pickRandom(HOCKEY_MORNING_GREETINGS);
+  const lines: string[] = [];
+
+  lines.push(getDayOfWeekVibeHockey());
+
+  const parts: string[] = [];
+  if (tasksDueToday.length > 0) {
+    parts.push(`${tasksDueToday.length} Spielzüge auf dem Eis`);
+  }
+  if (eventsToday.length > 0) {
+    parts.push(`${eventsToday.length} ${eventsToday.length > 1 ? 'Anpfiffe' : 'Anpfiff'}`);
+  }
+  if (habitsToday.length > 0) {
+    parts.push(`${habitsToday.length}× Training`);
+  }
+
+  if (parts.length > 0) {
+    lines.push(parts.join(' · '));
+  } else {
+    lines.push('Leeres Eis — plane deine Spielzüge, Dr.');
+  }
+
+  if (overdue.length > 0) {
+    lines.push(`⏱️ ${overdue.length}× Nachspielzeit!`);
+  }
+
+  const topTask = tasksDueToday.find((t) => t.priority === 'high') || tasksDueToday[0];
+  if (topTask) {
+    lines.push(`→ Notfall-Spielzug: ${topTask.title}`);
+  }
+
+  if (eventsToday.length > 0 && eventsToday[0].startTime) {
+    lines.push(`🏟️ ${eventsToday[0].title} um ${eventsToday[0].startTime}`);
+  }
+
+  return { title, body: lines.join('\n'), tag: 'orbit-morning-briefing' };
+}
+
+function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
+  const today = new Date();
+  const todayStr = format(today, 'yyyy-MM-dd');
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const todayEnd = todayStart + 86400000;
+
+  const completedToday = items.filter(
+    (i) => i.type === 'task' && i.status === 'done' && i.completedAt && i.completedAt >= todayStart && i.completedAt < todayEnd
+  );
+  const unfinished = items.filter(
+    (i) => i.type === 'task' && i.status === 'active' && i.dueDate === todayStr
+  );
+  const habitsToday = items.filter(
+    (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
+  );
+  const habitsDone = habitsToday.filter((h) => isHabitCompletedForDate(h, today));
+  const bestStreak = habitsToday.reduce((max, h) => {
+    const s = calculateStreak(h);
+    return s > max ? s : max;
+  }, 0);
+
+  const tomorrowStr = format(new Date(todayStart + 86400000), 'yyyy-MM-dd');
+  const dueTomorrow = items.filter(
+    (i) => i.type === 'task' && i.status === 'active' && i.dueDate === tomorrowStr
+  );
+
+  const title = pickRandom(HOCKEY_EVENING_GREETINGS);
+  const totalScheduled = completedToday.length + unfinished.length;
+  const habitRate = habitsToday.length > 0 ? habitsDone.length / habitsToday.length : 0;
+
+  let verdict: string;
+  if (totalScheduled === 0 && habitsToday.length === 0) {
+    verdict = 'Spielfrei heute — kein Einsatz, Dr.';
+  } else if (unfinished.length === 0 && habitRate >= 1) {
+    verdict = pickRandom([
+      'Sauberes Spiel! Alle Tore geschossen. 🏆',
+      'Shutout! Alles erledigt, Dr. — Diagnose: perfekt. 🩺',
+      'Hat-Trick! Training & Spielzüge — alles drin.',
+    ]);
+  } else if (unfinished.length === 0 && completedToday.length > 0) {
+    verdict = `${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} geschossen. Sauberes Eis!`;
+  } else if (completedToday.length > unfinished.length) {
+    verdict = `Endstand: ${completedToday.length} Tore, ${unfinished.length} noch offen.`;
+  } else if (completedToday.length > 0) {
+    verdict = `${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} — ${unfinished.length} noch auf dem Eis.`;
+  } else {
+    verdict = `${unfinished.length} Spielzüge nicht abgeschlossen. Morgen neuer Anpfiff!`;
+  }
+
+  const lines: string[] = [];
+  lines.push(verdict);
+
+  if (habitsToday.length > 0) {
+    lines.push(`Training: ${habitsDone.length}/${habitsToday.length}${bestStreak > 1 ? ` · ${bestStreak} Tage Siegesserie 🏒` : ''}`);
+  }
+
+  if (dueTomorrow.length > 0) {
+    lines.push(`Morgen: ${dueTomorrow.length} Spielzüge warten`);
+  }
+
+  if (unfinished.length === 0 && completedToday.length > 0) {
+    lines.push(pickRandom(['Gute Nacht, Dr. 🌙', 'Ab in die Kabine. Ruh dich aus.', 'Feierabend — du hast es dir verdient.']));
+  } else if (unfinished.length > 0) {
+    lines.push(pickRandom(['Morgen ist ein neues Spiel.', 'Schlaf gut — morgen wird aufgeholt.']));
+  }
+
+  return { title, body: lines.join('\n'), tag: 'orbit-evening-briefing' };
+}
+
 // ── Morning briefing content ──────────────────────────────
 
 interface BriefingData {
@@ -73,6 +232,12 @@ interface BriefingData {
 }
 
 export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
+  // Hockey mode: use themed German briefing
+  const { settings } = useSettingsStore.getState();
+  if (settings.hockeyMode && settings.language === 'de') {
+    return generateHockeyMorningBriefing(items);
+  }
+
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
 
@@ -161,6 +326,12 @@ export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
 // ── Evening briefing content ──────────────────────────────
 
 export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
+  // Hockey mode: use themed German briefing
+  const { settings } = useSettingsStore.getState();
+  if (settings.hockeyMode && settings.language === 'de') {
+    return generateHockeyEveningBriefing(items);
+  }
+
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();

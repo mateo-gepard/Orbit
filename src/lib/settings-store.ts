@@ -107,6 +107,9 @@ export interface UserSettings {
   // Data
   data: DataSettings;
 
+  // Easter Eggs
+  hockeyMode: boolean;
+
   // Metadata
   updatedAt: number;
 }
@@ -179,6 +182,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
     lastBackupAt: null,
     lastExportAt: null,
   },
+
+  hockeyMode: false,
 
   updatedAt: Date.now(),
 };

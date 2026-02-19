@@ -2,6 +2,7 @@
 
 import { Menu, Search } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
+import { useSettingsStore } from '@/lib/settings-store';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from './sidebar';
@@ -13,6 +14,7 @@ import { CompletionAnimation } from '@/components/ui/completion-animation';
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, setCommandBarOpen, completionAnimation, setCompletionAnimation } = useOrbitStore();
   const { t } = useTranslation();
+  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
 
   return (
     <>
@@ -31,10 +33,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-4 w-4" />
             </Button>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-background font-semibold text-[10px]">
-              O
+            <div className={`flex h-6 w-6 items-center justify-center rounded-md font-semibold text-[10px] ${hockeyMode ? 'bg-cyan-600 text-white' : 'bg-foreground text-background'}`}>
+              {hockeyMode ? '🏒' : 'O'}
             </div>
-            <span className="text-sm font-semibold tracking-tight">ORBIT</span>
+            <span className="text-sm font-semibold tracking-tight">
+              {hockeyMode ? 'ORBIT 🩺' : 'ORBIT'}
+            </span>
             <div className="flex-1" />
             <Button
               variant="ghost"

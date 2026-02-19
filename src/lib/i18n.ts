@@ -8,6 +8,119 @@ import { useSettingsStore, type Language } from './settings-store';
 
 export type TranslationKey = keyof typeof en;
 
+// ── Hockey / Medical mode overrides (German only) ──────────
+// When hockeyMode is on, these keys replace the normal German
+// translations to give the app a fun hockey + medical vibe.
+
+const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
+  // ── Greetings (medical visite style) ─────────────────────
+  'greeting.morning': 'Guten Morgen, Dr.',
+  'greeting.afternoon': 'Mahlzeit, Dr.',
+  'greeting.evening': 'Guten Abend, Dr.',
+
+  // ── Types (hockey/medical terms) ─────────────────────────
+  'type.task': 'Spielzug',
+  'type.project': 'Saison',
+  'type.habit': 'Training',
+  'type.event': 'Anpfiff',
+  'type.goal': 'Meisterschaft',
+  'type.note': 'Rezept',
+
+  // ── Inbox ────────────────────────────────────────────────
+  'inbox.zero': 'Sauberes Eis! 🏒',
+  'inbox.zeroDesc': 'Alles verarbeitet. Die Eisfläche ist frei für neue Spielzüge.',
+
+  // ── Status ───────────────────────────────────────────────
+  'status.active': 'Im Spiel',
+  'status.waiting': 'Auf der Bank',
+  'status.done': 'Tor! ✓',
+  'status.archived': 'Ruhestand',
+  'status.active.desc': 'Wird gerade gespielt',
+  'status.waiting.desc': 'Sitzt auf der Ersatzbank',
+  'status.done.desc': 'Erfolgreich abgeschlossen — TOOOR!',
+  'status.archived.desc': 'Karriere beendet',
+
+  // ── Priority (triage) ───────────────────────────────────
+  'priority.high': 'Notfall 🚨',
+  'priority.medium': 'Dringend',
+  'priority.low': 'Wartezimmer',
+  'priority.none': 'Keine Triage',
+
+  // ── Habits ───────────────────────────────────────────────
+  'habits.streak': 'Siegesserie',
+  'habits.noHabits': 'Kein Training geplant',
+  'habits.noHabitsTap': 'Tippe auf + um dein erstes Training zu starten',
+
+  // ── Dashboard ────────────────────────────────────────────
+  'dashboard.tasks': 'Spielzüge',
+  'dashboard.habitsLabel': 'Training',
+  'dashboard.projectsLabel': 'Saisons',
+  'dashboard.nothingScheduled': 'Spielfrei — genieße die Pause, Dr.',
+  'dashboard.noTasksPast': 'Kein Spiel an diesem Tag',
+  'dashboard.noHabitsScheduled': 'Trainingsfreier Tag',
+
+  // ── Today page ───────────────────────────────────────────
+  'today.tasks': 'Spielzüge',
+  'today.habits': 'Training',
+  'today.events': 'Anpfiffe',
+  'today.noTasks': 'Kein Spielzug für heute — die Bank ist voll',
+  'today.noHabits': 'Heute kein Training geplant',
+  'today.overdue': 'Nachspielzeit ⏱️',
+
+  // ── Goals page ───────────────────────────────────────────
+  'goals.noGoals': 'Noch keine Meisterschaften',
+  'goals.noGoalsDesc': 'Definiere Meisterschaften und verknüpfe Spielzüge für den Pokal.',
+
+  // ── Projects page ────────────────────────────────────────
+  'projects.newProject': 'Neue Saison',
+  'projects.noProjects': 'Noch keine Saisons',
+  'projects.addTask': 'Spielzug hinzufügen',
+
+  // ── Onboarding ───────────────────────────────────────────
+  'onboarding.title': 'Anpfiff! 🏒',
+  'onboarding.description': 'Drücke ⌘K um deinen ersten Spielzug zu starten, Dr.',
+  'onboarding.cta': 'Erstes Bully',
+
+  // ── Command bar ──────────────────────────────────────────
+  'commandBar.placeholder': 'Spielzug ansagen...',
+  'commandBar.tip': 'Tipp: Nutze #tag !notfall @saison und Daten wie morgen oder 15.03',
+
+  // ── Item row ─────────────────────────────────────────────
+  'itemRow.doneSwipe': 'TOR!',
+
+  // ── Common ───────────────────────────────────────────────
+  'common.done': 'Tor!',
+  'common.overdue': 'Nachspielzeit',
+
+  // ── Notes ────────────────────────────────────────────────
+  'notes.takeANote': 'Rezept schreiben...',
+  'notes.noNotes': 'Noch keine Rezepte',
+  'notes.noNotesDesc': 'Schreibe Rezepte, Diagnosen und Behandlungspläne.',
+  'notes.titlePlaceholder': 'Diagnose...',
+  'notes.contentPlaceholder': 'Rezept schreiben... (nutze - oder • für Listen)',
+
+  // ── Archive ──────────────────────────────────────────────
+  'archive.subtitle': 'Abgeschlossene Spiele und Ruhestand',
+  'archive.noCompleted': 'Noch keine Tore geschossen',
+  'archive.noCompletedDesc': 'Erledigte Spielzüge erscheinen hier',
+
+  // ── Navigation (fun labels) ──────────────────────────────
+  'nav.inbox': 'Kabine',
+  'nav.tasks': 'Spielzüge',
+  'nav.habits': 'Training',
+  'nav.goals': 'Meisterschaften',
+  'nav.notes': 'Rezepte',
+  'nav.archive': 'Ruhestand',
+  'nav.projects': 'Saisons',
+  'nav.today': 'Spieltag',
+  'nav.calendar': 'Spielplan',
+
+  // ── Mobile nav ───────────────────────────────────────────
+  'mobile.tasks': 'Spielzüge',
+  'mobile.habits': 'Training',
+  'mobile.notes': 'Rezepte',
+};
+
 // ── English (default) ──────────────────────────────────────
 
 const en = {
@@ -450,6 +563,16 @@ const en = {
   'settings.version': 'ORBIT v1.0.0 · Made with focus',
   'settings.syncedLocally': 'Settings synced locally',
   'settings.syncedFirebase': 'Settings synced with Firebase',
+
+  // ── Easter Eggs ──────────────────────────────────────────
+  'settings.easterEggs': 'Easter Eggs',
+  'settings.hockeyMode': 'Hockey & Medizin Mode',
+  'settings.hockeyModeDesc': 'Transform Orbit into a hockey rink meets hospital. Tasks become plays, habits become training, and completions trigger goal celebrations.',
+  'settings.hockeyPreview': 'Active changes',
+  'settings.hockeyFeature1': 'TOR! animation when completing tasks',
+  'settings.hockeyFeature2': 'Medical triage priority labels (Notfall, Dringend, Wartezimmer)',
+  'settings.hockeyFeature3': 'Hockey-themed notifications with game commentary',
+  'settings.hockeyFeature4': 'All labels transform to hockey & medical terms',
 
   // ── Login extras ─────────────────────────────────────────
   'login.emailLinkSentDesc': 'Open the link in the email to sign in. You can close this tab.',
@@ -900,6 +1023,16 @@ const de: Record<TranslationKey, string> = {
   'settings.syncedLocally': 'Einstellungen lokal gespeichert',
   'settings.syncedFirebase': 'Einstellungen mit Firebase synchronisiert',
 
+  // ── Easter Eggs ──────────────────────────────────────────
+  'settings.easterEggs': 'Easter Eggs',
+  'settings.hockeyMode': 'Eishockey & Medizin Modus',
+  'settings.hockeyModeDesc': 'Verwandle Orbit in eine Eisbahn trifft Krankenhaus. Aufgaben werden Spielzüge, Gewohnheiten werden Training, und abgeschlossene Aufgaben lösen Tor-Jubel aus.',
+  'settings.hockeyPreview': 'Aktive Änderungen',
+  'settings.hockeyFeature1': 'TOR!-Animation beim Abschließen von Aufgaben',
+  'settings.hockeyFeature2': 'Medizinische Triage-Prioritäten (Notfall, Dringend, Wartezimmer)',
+  'settings.hockeyFeature3': 'Eishockey-Benachrichtigungen im Sport-Kommentarstil',
+  'settings.hockeyFeature4': 'Alle Labels werden zu Hockey- & Medizin-Begriffen',
+
   // ── Login extras ─────────────────────────────────────────
   'login.emailLinkSentDesc': 'Öffnen Sie den Link in der E-Mail, um sich anzumelden. Sie können diesen Tab schließen.',
   'login.emailLinkSentNote': 'Der Anmelde-Link läuft nach kurzer Zeit ab.',
@@ -926,11 +1059,20 @@ export function t(key: TranslationKey, lang: Language): string {
 
 /**
  * React hook — returns a `t(key)` function bound to the current language.
+ * When hockeyMode is on and language is German, applies hockey/medical overrides.
  */
 export function useTranslation() {
   const lang = useSettingsStore((s) => s.settings.language);
+  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode);
   return {
-    t: (key: TranslationKey) => t(key, lang),
+    t: (key: TranslationKey) => {
+      // Hockey mode only applies to German
+      if (hockeyMode && lang === 'de' && key in hockeyOverrides) {
+        return hockeyOverrides[key]!;
+      }
+      return t(key, lang);
+    },
     lang,
+    hockeyMode: hockeyMode && lang === 'de',
   };
 }
