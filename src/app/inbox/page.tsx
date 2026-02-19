@@ -9,10 +9,12 @@ import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
 import type { ItemStatus } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
+import { useSettingsStore } from '@/lib/settings-store';
 
 export default function InboxPage() {
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const { t } = useTranslation();
+  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
 
   const inboxItems = useMemo(
     () => items.filter((i) => 
@@ -91,17 +93,35 @@ export default function InboxPage() {
 
         {inboxItems.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
-              <InboxIcon className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
-            </div>
-            <h3 className="text-[15px] font-medium">{t('inbox.zero')}</h3>
-            <p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
-              All items processed. Press{' '}
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-[10px] font-mono">
-                ⌘K
-              </kbd>{' '}
-              to add new ones.
-            </p>
+            {hockeyMode ? (
+              <>
+                {/* Hockey-themed empty state */}
+                <div className="mb-4 text-5xl select-none" style={{ filter: 'drop-shadow(0 2px 8px rgba(0,200,200,0.15))' }}>
+                  🥅
+                </div>
+                <h3 className="text-[15px] font-semibold">Sauberes Spielfeld! 🏒</h3>
+                <p className="text-[12px] text-muted-foreground/50 mt-1.5 max-w-xs">
+                  Keine Bälle im Strafraum. Drück{' '}
+                  <kbd className="rounded border border-cyan-500/20 bg-cyan-500/5 px-1 py-0.5 text-[10px] font-mono text-cyan-600 dark:text-cyan-400">
+                    ⌘K
+                  </kbd>{' '}
+                  um neue Spielzüge einzuwechseln.
+                </p>
+                <p className="text-[10px] text-muted-foreground/30 mt-3 italic">
+                  &ldquo;Die beste Verteidigung ist eine leere Inbox.&rdquo; — Dr. Orbit
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
+                  <InboxIcon className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
+                </div>
+                <h3 className="text-[15px] font-medium">{t('inbox.zero')}</h3>
+                <p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
+                  {t('inbox.zeroDesc')}
+                </p>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -69,34 +69,45 @@ function getDayOfWeekVibe(): string {
 
 const HOCKEY_MORNING_GREETINGS = [
   'Aufwärmen, Dr.! 🏒',
-  'Eisbahn frei! Los geht\'s.',
+  'Spielfeld frei! Los geht\'s.',
   'Anpfiff in 3... 2... 1... 🚨',
   'Die Kabine ist bereit, Dr.',
-  'Helm auf, Schlittschuhe an!',
+  'Schienbeinschoner an, geht los!',
   'Guten Morgen, Dr. — Spieltag!',
+  'Der Kunstrasen ruft, Dr.! 🏟️',
+  'Schläger in die Hand — Visite beginnt! 🩺',
+  'Mannschaftsbesprechung: Dein Tag.',
+  'Aufstellung steht — du bist dran!',
+  'Guten Morgen! Diagnose: Produktiv. 💪',
+  'Short Corner für den Tag — mach was draus!',
 ];
 
 const HOCKEY_EVENING_GREETINGS = [
   'Schlusspfiff! 🏒',
   'Das Spiel ist aus, Dr.',
   'Abpfiff — ab in die Kabine.',
-  'Die Eisbahn wird geräumt.',
+  'Der Platz wird gesperrt.',
   'Schichtende, Dr. — Feierabend!',
   'Visite beendet. 🩺',
+  'Trikot aus, Dusche an. 🚿',
+  'Ergebnis steht, Dr.',
+  'Post-Match-Analyse:',
+  'Kabine auf — Analyse läuft.',
+  'Strafbank-Report des Tages:',
 ];
 
 function getDayOfWeekVibeHockey(): string {
   const day = new Date().getDay();
   const vibes: Record<number, string[]> = {
     0: ['Sonntag — Regeneration. Die beste Medizin.', 'Ruhetag. Der Körper muss heilen. 🩺'],
-    1: ['Montag. Erstes Bully der Woche!', 'Neue Woche, neues Spiel. 🏒'],
+    1: ['Montag. Erster Anpfiff der Woche!', 'Neue Woche, neues Spiel. 🏒'],
     2: ['Dienstag — zweites Drittel der Woche.', 'Weiter trainieren, Dr.'],
     3: ['Mittwoch — Halbzeit! Wie steht\'s?', 'Drittelpause. Nachschub holen.'],
     4: ['Donnerstag — Endspurt Richtung Wochenende.', 'Power Play, Dr.!'],
     5: ['Freitag! Letztes Drittel. Vollgas! 🚨', 'TGIF — Schluss-Sirene naht!'],
-    6: ['Samstag. Freies Training.', 'Wochenende — aber Sieger ruhen nie.'],
+    6: ['Samstag. Freies Training auf dem Platz.', 'Wochenende — aber Sieger ruhen nie.'],
   };
-  return pickRandom(vibes[day] || ['Bully! 🏒']);
+  return pickRandom(vibes[day] || ['Anpfiff! 🏒']);
 }
 
 function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
@@ -123,7 +134,7 @@ function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
 
   const parts: string[] = [];
   if (tasksDueToday.length > 0) {
-    parts.push(`${tasksDueToday.length} Spielzüge auf dem Eis`);
+    parts.push(`${tasksDueToday.length} Spielzüge auf dem Platz`);
   }
   if (eventsToday.length > 0) {
     parts.push(`${eventsToday.length} ${eventsToday.length > 1 ? 'Anpfiffe' : 'Anpfiff'}`);
@@ -135,7 +146,7 @@ function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
   if (parts.length > 0) {
     lines.push(parts.join(' · '));
   } else {
-    lines.push('Leeres Eis — plane deine Spielzüge, Dr.');
+    lines.push('Leeres Spielfeld — plane deine Spielzüge, Dr.');
   }
 
   if (overdue.length > 0) {
@@ -194,11 +205,11 @@ function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
       'Hat-Trick! Training & Spielzüge — alles drin.',
     ]);
   } else if (unfinished.length === 0 && completedToday.length > 0) {
-    verdict = `${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} geschossen. Sauberes Eis!`;
+    verdict = `${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} geschossen. Sauberes Spielfeld!`;
   } else if (completedToday.length > unfinished.length) {
     verdict = `Endstand: ${completedToday.length} Tore, ${unfinished.length} noch offen.`;
   } else if (completedToday.length > 0) {
-    verdict = `${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} — ${unfinished.length} noch auf dem Eis.`;
+    verdict = `${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} — ${unfinished.length} noch auf dem Platz.`;
   } else {
     verdict = `${unfinished.length} Spielzüge nicht abgeschlossen. Morgen neuer Anpfiff!`;
   }

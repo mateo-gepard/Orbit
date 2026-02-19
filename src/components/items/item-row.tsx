@@ -10,6 +10,7 @@ import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
 import { calculateStreak } from '@/lib/habits';
 import { useSettingsStore } from '@/lib/settings-store';
+import { useTranslation } from '@/lib/i18n';
 
 const PRIORITY_DOTS: Record<Priority, string> = {
   low: 'bg-foreground/20',
@@ -28,6 +29,8 @@ interface ItemRowProps {
 export function ItemRow({ item, showType = false, showProject = false, compact = false, enableSwipe = true }: ItemRowProps) {
   const { setSelectedItemId, getItemById, setCompletionAnimation } = useOrbitStore();
   const { dateFormat, language } = useSettingsStore((s) => s.settings);
+  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
+  const { t } = useTranslation();
   const parent = item.parentId ? getItemById(item.parentId) : undefined;
 
   const toggleComplete = async (e: React.MouseEvent) => {
@@ -163,12 +166,12 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           <div className="flex items-center gap-1.5 mt-0.5">
             {item.status === 'waiting' && (
               <span className="inline-flex items-center gap-1 rounded-md bg-gray-500/10 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-                Waiting
+                {t('status.waiting')}
               </span>
             )}
             {showType && (
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
-                {item.type}
+                {t(`type.${item.type}`)}
               </span>
             )}
             {showProject && parent && (
@@ -204,7 +207,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           )}
         >
           <CalendarClock className="h-3 w-3" />
-          <span>{isDueToday ? 'Remove' : 'Today'}</span>
+          <span>{isDueToday ? (hockeyMode ? 'Rausnehmen' : 'Remove') : t('nav.today')}</span>
         </button>
       )}
 
@@ -218,7 +221,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           )}
         >
           {isDueToday
-            ? 'today'
+            ? t('date.today')
             : format(parseISO(item.dueDate), shortDatePattern(dateFormat), { locale: getLocale(language) })}
         </span>
       )}
@@ -231,8 +234,8 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       <SwipeableRow
         onSwipeRight={item.type === 'task' || item.type === 'habit' ? handleSwipeComplete : undefined}
         onSwipeLeft={item.type === 'task' ? handleSwipeToday : undefined}
-        rightLabel="Done"
-        leftLabel={isDueToday ? "Remove" : "Today"}
+        rightLabel={hockeyMode ? 'TOR!' : 'Done'}
+        leftLabel={isDueToday ? (hockeyMode ? 'Raus' : 'Remove') : (hockeyMode ? 'Aufstellung' : 'Today')}
         rightIcon={Check}
         leftIcon={isDueToday ? CalendarX : CalendarPlus}
       >

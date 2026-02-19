@@ -27,10 +27,13 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'type.note': 'Rezept',
 
   // ── Inbox ────────────────────────────────────────────────
-  'inbox.zero': 'Sauberes Eis! 🏒',
-  'inbox.zeroDesc': 'Alles verarbeitet. Die Eisfläche ist frei für neue Spielzüge.',
+  'inbox.zero': 'Sauberes Feld! 🏒',
+  'inbox.zeroDesc': 'Alles verarbeitet. Das Feld ist frei für neue Spielzüge.',
+  'inbox.activate': 'Aufstellen',
+  'inbox.swipeHint': '← Aufstellen · Vom Feld nehmen →',
 
   // ── Status ───────────────────────────────────────────────
+  'status.inbox': 'Kabine',
   'status.active': 'Im Spiel',
   'status.waiting': 'Auf der Bank',
   'status.done': 'Tor! ✓',
@@ -50,75 +53,203 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'habits.streak': 'Siegesserie',
   'habits.noHabits': 'Kein Training geplant',
   'habits.noHabitsTap': 'Tippe auf + um dein erstes Training zu starten',
+  'habits.week': 'Spielwoche',
+  'habits.month': 'Spielmonat',
 
   // ── Dashboard ────────────────────────────────────────────
+  'dashboard.events': 'Anpfiffe',
   'dashboard.tasks': 'Spielzüge',
   'dashboard.habitsLabel': 'Training',
   'dashboard.projectsLabel': 'Saisons',
-  'dashboard.nothingScheduled': 'Spielfrei — genieße die Pause, Dr.',
+  'dashboard.nothingScheduled': 'Spielfrei — genieße die Pause, Dr. 🩺',
   'dashboard.noTasksPast': 'Kein Spiel an diesem Tag',
-  'dashboard.noHabitsScheduled': 'Trainingsfreier Tag',
+  'dashboard.noHabitsScheduled': 'Trainingsfreier Tag — Regeneration! 💪',
 
   // ── Today page ───────────────────────────────────────────
   'today.tasks': 'Spielzüge',
   'today.habits': 'Training',
   'today.events': 'Anpfiffe',
   'today.noTasks': 'Kein Spielzug für heute — die Bank ist voll',
-  'today.noHabits': 'Heute kein Training geplant',
+  'today.noHabits': 'Heute kein Training geplant — Ruhetag, Dr.',
   'today.overdue': 'Nachspielzeit ⏱️',
 
   // ── Goals page ───────────────────────────────────────────
+  'goals.thisQuarter': 'Diese Halbsaison',
+  'goals.thisYear': 'Diese Saison',
+  'goals.longterm': 'Karriereziel',
   'goals.noGoals': 'Noch keine Meisterschaften',
-  'goals.noGoalsDesc': 'Definiere Meisterschaften und verknüpfe Spielzüge für den Pokal.',
+  'goals.noGoalsDesc': 'Definiere Meisterschaften und verknüpfe Spielzüge für den Pokal. 🏆',
 
   // ── Projects page ────────────────────────────────────────
   'projects.newProject': 'Neue Saison',
   'projects.noProjects': 'Noch keine Saisons',
   'projects.addTask': 'Spielzug hinzufügen',
+  'projects.createToStart': 'Starte eine neue Saison',
+  'projects.milestones': 'Spieltage',
+  'projects.grid': 'Aufstellung',
+  'projects.kanban': 'Taktiktafel',
+  'kanban.inProgress': 'Auf dem Feld',
+  'kanban.waiting': 'Auf der Bank',
+  'kanban.done': 'Tor!',
 
   // ── Onboarding ───────────────────────────────────────────
   'onboarding.title': 'Anpfiff! 🏒',
-  'onboarding.description': 'Drücke ⌘K um deinen ersten Spielzug zu starten, Dr.',
-  'onboarding.cta': 'Erstes Bully',
+  'onboarding.description': 'Drücke ⌘K um deinen ersten Spielzug zu planen, Dr.',
+  'onboarding.cta': 'Anpfiff!',
 
   // ── Command bar ──────────────────────────────────────────
-  'commandBar.placeholder': 'Spielzug ansagen...',
+  'commandBar.placeholder': 'Spielzug ansagen, Dr. ...',
   'commandBar.tip': 'Tipp: Nutze #tag !notfall @saison und Daten wie morgen oder 15.03',
+  'commandBar.results': 'Spielzüge',
+  'commandBar.commands': 'Taktiken',
 
   // ── Item row ─────────────────────────────────────────────
   'itemRow.doneSwipe': 'TOR!',
+  'itemRow.waiting': 'Bank',
+  'itemRow.todayBtn': 'Spieltag',
 
   // ── Common ───────────────────────────────────────────────
   'common.done': 'Tor!',
   'common.overdue': 'Nachspielzeit',
+  'common.new': 'Einwechseln',
+  'common.create': 'Aufstellen',
+  'common.delete': 'Rote Karte',
+  'common.archive': 'In Ruhestand',
+  'common.restore': 'Comeback',
+  'common.search': 'Scouting',
 
   // ── Notes ────────────────────────────────────────────────
   'notes.takeANote': 'Rezept schreiben...',
   'notes.noNotes': 'Noch keine Rezepte',
-  'notes.noNotesDesc': 'Schreibe Rezepte, Diagnosen und Behandlungspläne.',
+  'notes.noNotesDesc': 'Schreibe Rezepte, Diagnosen und Behandlungspläne. 🩺',
   'notes.titlePlaceholder': 'Diagnose...',
   'notes.contentPlaceholder': 'Rezept schreiben... (nutze - oder • für Listen)',
 
+  // ── Note subtypes ────────────────────────────────────────
+  'noteSubtype.general': 'Befund',
+  'noteSubtype.idea': 'Taktik-Idee',
+  'noteSubtype.principle': 'Spielregel',
+  'noteSubtype.plan': 'Taktikplan',
+  'noteSubtype.journal': 'Spieltagebuch',
+  'notes.all': 'Alle',
+  'notes.ideas': 'Taktiken',
+  'notes.principles': 'Spielregeln',
+  'notes.plans': 'Taktikpläne',
+  'notes.journal': 'Spieltagebuch',
+
   // ── Archive ──────────────────────────────────────────────
-  'archive.subtitle': 'Abgeschlossene Spiele und Ruhestand',
+  'archive.subtitle': 'Abgeschlossene Spiele und Karriereende',
+  'archive.completedTab': 'Tore',
+  'archive.archivedTab': 'Ruhestand',
+  'archive.uncomplete': 'Tor aberkennen',
   'archive.noCompleted': 'Noch keine Tore geschossen',
   'archive.noCompletedDesc': 'Erledigte Spielzüge erscheinen hier',
+  'archive.archiveEmpty': 'Ruhestandsliste leer',
+  'archive.archiveEmptyDesc': 'Karriere-beendete Einträge erscheinen hier',
 
   // ── Navigation (fun labels) ──────────────────────────────
+  'nav.dashboard': 'Spielfeld',
   'nav.inbox': 'Kabine',
   'nav.tasks': 'Spielzüge',
   'nav.habits': 'Training',
-  'nav.goals': 'Meisterschaften',
+  'nav.goals': 'Pokale',
   'nav.notes': 'Rezepte',
   'nav.archive': 'Ruhestand',
   'nav.projects': 'Saisons',
   'nav.today': 'Spieltag',
   'nav.calendar': 'Spielplan',
+  'nav.files': 'Röntgenbilder',
+  'nav.toolbox': 'Arztkoffer',
+  'nav.organize': 'Aufstellung',
+  'nav.capture': 'Diagnose',
 
   // ── Mobile nav ───────────────────────────────────────────
+  'mobile.home': 'Feld',
   'mobile.tasks': 'Spielzüge',
   'mobile.habits': 'Training',
   'mobile.notes': 'Rezepte',
+  'mobile.toolbox': 'Arztkoffer',
+
+  // ── Sidebar ──────────────────────────────────────────────
+  'sidebar.quickAdd': 'Einwechseln...',
+  'sidebar.localMode': 'Trainingslager',
+  'sidebar.signOut': 'Pfeife weg',
+
+  // ── Detail panel ─────────────────────────────────────────
+  'detail.changeType': 'Position ändern',
+  'detail.changeStatus': 'Spielstatus ändern',
+  'detail.linksRelations': 'Pässe & Assists',
+  'detail.frequency': 'Trainingsrhythmus',
+  'detail.timeframe': 'Saisonphase',
+  'detail.category': 'Abteilung',
+  'detail.priority': 'Triage',
+  'detail.checklist': 'Behandlungsplan',
+  'detail.notes': 'Patientenakte',
+  'detail.tags': 'Trikot-Labels',
+  'detail.parent': 'Mannschaft',
+  'detail.addToToday': 'Für Spieltag nominieren',
+  'detail.itemDetails': 'Spieler-Profil',
+  'detail.metricPlaceholder': 'Wann gilt der Patient als geheilt?',
+  'detail.checklistPlaceholder': 'Behandlungsschritt hinzufügen…',
+  'detail.notesPlaceholder': 'Patientenakte führen…',
+  'detail.successMetric': 'Heilungskriterium',
+
+  // ── Filter / Sort / Group ────────────────────────────────
+  'filter.active': 'Im Spiel',
+  'filter.completed': 'Tore',
+  'filter.all': 'Gesamtkader',
+  'sort.dueDate': 'Spieltag',
+  'sort.priority': 'Triage-Stufe',
+  'sort.newest': 'Neuzugang',
+  'group.none': 'Freies Spiel',
+  'group.byProject': 'Nach Saison',
+  'group.byGoal': 'Nach Pokal',
+  'group.byPriority': 'Nach Triage',
+  'group.byDueDate': 'Nach Spieltag',
+  'group.allTasks': 'Gesamtkader',
+  'group.noProject': 'Vereinslos',
+  'group.noGoal': 'Ohne Pokal',
+  'group.highPriority': 'Notfall-OP',
+  'group.mediumPriority': 'Dringend',
+  'group.lowPriority': 'Wartezimmer',
+
+  // ── Frequency ────────────────────────────────────────────
+  'frequency.daily': 'tägliches Training',
+  'frequency.weekly': 'wöchentliches Training',
+
+  // ── Timeframe ────────────────────────────────────────────
+  'timeframe.quarterly': 'Halbsaison',
+  'timeframe.yearly': 'Vollsaison',
+  'timeframe.longterm': 'Karriereziel',
+
+  // ── Tasks page ───────────────────────────────────────────
+  'tasks.searchPlaceholder': 'Spielzüge scouten...',
+  'tasks.noTasks': 'Keine Spielzüge',
+  'tasks.noMatchSearch': 'Kein Spielzug gefunden',
+  'tasks.noCompleted': 'Noch keine Tore',
+  'tasks.noActiveHint': 'Keine aktiven Spielzüge — nutze ⌘K zum Aufstellen',
+  'tasks.clearFilters': 'Taktiktafel löschen',
+
+  // ── Calendar ─────────────────────────────────────────────
+  'calendar.noEventsMonth': 'Spielfreier Monat',
+  'calendar.eventsThisMonth': 'Spieltage diesen Monat',
+  'calendar.noEventsOrTasks': 'Kein Spiel an diesem Tag',
+
+  // ── Date context ─────────────────────────────────────────
+  'date.past': 'Abgepfiffen',
+  'date.future': 'Ausstehend',
+  'date.today': 'Spieltag',
+  'date.previousDay': 'Letztes Spiel',
+  'date.nextDay': 'Nächstes Spiel',
+
+  // ── Settings page references ─────────────────────────────
+  'settings.dangerZone': 'Strafbank 🟥',
+  'settings.resetAll': 'Saison-Reset',
+  'settings.resetAllDesc': 'Alle Einstellungen auf Startaufstellung zurücksetzen',
+  'settings.deleteAccount': 'Karriereende',
+  'settings.deleteAccountDesc': 'Endgültiger Rücktritt — alle Daten werden gelöscht',
+  'settings.yesDeleteEverything': 'Ja, Karriere beenden',
+  'settings.version': 'ORBIT v1.0.0 · Made with Hockeygeist 🏒',
 };
 
 // ── English (default) ──────────────────────────────────────
@@ -567,12 +698,12 @@ const en = {
   // ── Easter Eggs ──────────────────────────────────────────
   'settings.easterEggs': 'Easter Eggs',
   'settings.hockeyMode': 'Hockey & Medizin Mode',
-  'settings.hockeyModeDesc': 'Transform Orbit into a hockey rink meets hospital. Tasks become plays, habits become training, and completions trigger goal celebrations.',
+  'settings.hockeyModeDesc': 'Transform Orbit into a hockey field meets hospital. Tasks become plays, habits become training, and completions trigger goal celebrations.',
   'settings.hockeyPreview': 'Active changes',
-  'settings.hockeyFeature1': 'TOR! animation when completing tasks',
+  'settings.hockeyFeature1': 'TOR! animation when completing tasks (+ Hat-Trick bonus)',
   'settings.hockeyFeature2': 'Medical triage priority labels (Notfall, Dringend, Wartezimmer)',
   'settings.hockeyFeature3': 'Hockey-themed notifications with game commentary',
-  'settings.hockeyFeature4': 'All labels transform to hockey & medical terms',
+  'settings.hockeyFeature4': 'Scoreboard display, motivational quotes & hockey emojis everywhere',
 
   // ── Login extras ─────────────────────────────────────────
   'login.emailLinkSentDesc': 'Open the link in the email to sign in. You can close this tab.',
@@ -1025,13 +1156,13 @@ const de: Record<TranslationKey, string> = {
 
   // ── Easter Eggs ──────────────────────────────────────────
   'settings.easterEggs': 'Easter Eggs',
-  'settings.hockeyMode': 'Eishockey & Medizin Modus',
-  'settings.hockeyModeDesc': 'Verwandle Orbit in eine Eisbahn trifft Krankenhaus. Aufgaben werden Spielzüge, Gewohnheiten werden Training, und abgeschlossene Aufgaben lösen Tor-Jubel aus.',
+  'settings.hockeyMode': 'Hockey & Medizin Modus',
+  'settings.hockeyModeDesc': 'Verwandle Orbit in ein Hockeyfeld trifft Krankenhaus. Aufgaben werden Spielzüge, Gewohnheiten werden Training, und abgeschlossene Aufgaben lösen Tor-Jubel aus.',
   'settings.hockeyPreview': 'Aktive Änderungen',
-  'settings.hockeyFeature1': 'TOR!-Animation beim Abschließen von Aufgaben',
+  'settings.hockeyFeature1': 'TOR!-Animation beim Abschließen von Aufgaben (+ Hat-Trick Bonus)',
   'settings.hockeyFeature2': 'Medizinische Triage-Prioritäten (Notfall, Dringend, Wartezimmer)',
-  'settings.hockeyFeature3': 'Eishockey-Benachrichtigungen im Sport-Kommentarstil',
-  'settings.hockeyFeature4': 'Alle Labels werden zu Hockey- & Medizin-Begriffen',
+  'settings.hockeyFeature3': 'Hockey-Benachrichtigungen im Sport-Kommentarstil',
+  'settings.hockeyFeature4': 'Spielstand-Anzeige, Motivationssprüche & Hockey-Emojis überall',
 
   // ── Login extras ─────────────────────────────────────────
   'login.emailLinkSentDesc': 'Öffnen Sie den Link in der E-Mail, um sich anzumelden. Sie können diesen Tab schließen.',

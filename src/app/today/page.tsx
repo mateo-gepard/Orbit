@@ -16,6 +16,7 @@ export default function TodayPage() {
   const { items, setSelectedItemId } = useOrbitStore();
   const { t, lang } = useTranslation();
   const locale = getLocale(lang);
+  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
 
@@ -142,7 +143,11 @@ export default function TodayPage() {
                 </span>
                 {streak > 0 && (
                   <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums">
-                    <Flame className="h-3 w-3" />
+                    {hockeyMode ? (
+                      <span className="text-xs">🏒</span>
+                    ) : (
+                      <Flame className="h-3 w-3" />
+                    )}
                     {streak}
                   </span>
                 )}

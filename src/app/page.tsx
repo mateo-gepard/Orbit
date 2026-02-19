@@ -381,12 +381,73 @@ function Section({
   );
 }
 
+/* ── Hockey / Medical Quotes ── */
+const HOCKEY_QUOTES = [
+  { text: 'Hockey ist nicht nur ein Sport — es ist eine Lebenseinstellung.', emoji: '🏒' },
+  { text: 'Wer am härtesten trainiert, feiert am lautesten.', emoji: '🏑' },
+  { text: 'Jeder Treffer beginnt mit dem ersten Schritt aufs Feld.', emoji: '🥅' },
+  { text: 'Im Hockey wie im Leben: Wer stehen bleibt, verliert den Ball.', emoji: '🏒' },
+  { text: 'Ein Team ist stärker als die Summe seiner Spieler.', emoji: '🤝' },
+  { text: 'Die beste Verteidigung ist ein guter Angriff.', emoji: '🛡️' },
+  { text: 'Nicht der Größte gewinnt, sondern der Entschlossenste.', emoji: '💪' },
+  { text: 'Jede Niederlage ist ein Trainingsplan in Verkleidung.', emoji: '📋' },
+  { text: 'Disziplin auf dem Feld, Disziplin im Leben.', emoji: '🏟️' },
+  { text: 'Ein guter Arzt heilt, ein großartiger Arzt verhindert.', emoji: '🩺' },
+  { text: 'Manchmal ist die beste Medizin ein Hockeyschläger und frische Luft.', emoji: '🌿' },
+  { text: 'Diagnose: Zu viel Talent für nur ein Spielfeld.', emoji: '⚕️' },
+  { text: 'Die Short Corner ist die Ecke, an der sich Spiele entscheiden.', emoji: '🏒' },
+  { text: 'Spielintelligenz schlägt Schnelligkeit — meistens.', emoji: '🧠' },
+  { text: 'Jeder Sprint zum Tor ist ein Sprint zum Erfolg.', emoji: '🏃' },
+  { text: 'Ärzte und Hockeyspieler haben eins gemeinsam: Unter Druck glänzen sie.', emoji: '💎' },
+  { text: 'Die Strafecke gehört den Mutigen.', emoji: '🎯' },
+  { text: 'Nach dem Spiel ist vor dem Spiel.', emoji: '🔄' },
+  { text: 'Kein Patient, kein Gegner — kein Problem ist unlösbar.', emoji: '🩻' },
+  { text: 'Im dritten Drittel zeigt sich der wahre Charakter.', emoji: '⏱️' },
+];
+
+function HockeyQuote() {
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    setIdx(Math.floor(Math.random() * HOCKEY_QUOTES.length));
+  }, []);
+
+  const quote = HOCKEY_QUOTES[idx];
+
+  return (
+    <div
+      className="group relative rounded-xl border border-cyan-500/20 bg-gradient-to-r from-cyan-500/[0.03] to-emerald-500/[0.03] px-4 py-3 overflow-hidden cursor-pointer select-none transition-all hover:border-cyan-500/30"
+      onClick={() => setIdx((idx + 1) % HOCKEY_QUOTES.length)}
+      title="Klick für neues Zitat"
+    >
+      {/* subtle field-line decoration */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
+        <div className="absolute top-1/2 left-0 right-0 h-px bg-cyan-500" />
+        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-cyan-500" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border border-cyan-500" />
+      </div>
+      <div className="flex items-start gap-3 relative z-10">
+        <span className="text-lg mt-0.5 transition-transform group-hover:scale-125 group-hover:rotate-12">
+          {quote.emoji}
+        </span>
+        <p className="text-[13px] italic text-foreground/70 leading-relaxed">
+          &ldquo;{quote.text}&rdquo;
+        </p>
+      </div>
+      <p className="text-[9px] text-muted-foreground/40 mt-1.5 text-right tracking-wider uppercase">
+        Tipp: Klicken für mehr
+      </p>
+    </div>
+  );
+}
+
 /* ── Dashboard ── */
 export default function DashboardPage() {
   const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const defaultView = useSettingsStore((s) => s.settings.defaultView);
   const { weekStart: weekStartSetting, language, dateFormat } = useSettingsStore((s) => s.settings);
+  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const locale = getLocale(language);
   const weekStartsOn = getWeekStartsOn(weekStartSetting);
   const router = useRouter();
@@ -565,16 +626,77 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Principles ── */}
-      {principles.length > 0 && (
+      {/* ── Principles / Hockey Quotes ── */}
+      {hockeyMode ? (
+        <HockeyQuote />
+      ) : principles.length > 0 ? (
         <div className="rounded-xl bg-foreground/[0.02] border border-border/40 px-4 py-3">
           <p className="text-[13px] italic text-foreground/70 leading-relaxed">
             &ldquo;{principles[Math.floor(Math.random() * principles.length)]?.title}&rdquo;
           </p>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Stats strip — scrollable on mobile ── */}
+      {/* ── Stats strip / Hockey Scoreboard ── */}
+      {hockeyMode ? (
+        <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-r from-cyan-500/[0.04] to-emerald-500/[0.04] p-3">
+          <div className="flex items-center justify-between">
+            {/* Left team: completed */}
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🏒</span>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Erledigt</p>
+                <p className="text-2xl font-black tabular-nums text-foreground leading-none mt-0.5">
+                  {items.filter(i => {
+                    if (i.type !== 'task' || i.status !== 'done' || !i.completedAt) return false;
+                    const today = new Date(); today.setHours(0,0,0,0);
+                    return i.completedAt >= today.getTime();
+                  }).length}
+                </p>
+              </div>
+            </div>
+            
+            {/* Center: VS divider + period */}
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[10px] font-black text-muted-foreground/30">:</span>
+              <span className="text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-wider">
+                {new Date().getHours() < 12 ? '1. Drittel' : new Date().getHours() < 17 ? '2. Drittel' : '3. Drittel'}
+              </span>
+            </div>
+            
+            {/* Right team: remaining */}
+            <div className="flex items-center gap-2">
+              <div className="text-right">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Offen</p>
+                <p className="text-2xl font-black tabular-nums text-foreground/50 leading-none mt-0.5">
+                  {todayTasks.length + overdueItems.length}
+                </p>
+              </div>
+              <span className="text-lg">🩺</span>
+            </div>
+          </div>
+          
+          {/* Bottom: habits as period stats */}
+          {todayHabits.length > 0 && (
+            <div className="flex items-center justify-center gap-2 mt-2 pt-2 border-t border-cyan-500/10">
+              <span className="text-[10px] text-muted-foreground/50">Training</span>
+              <div className="flex gap-0.5">
+                {todayHabits.map((h, i) => (
+                  <div
+                    key={h.id}
+                    className={cn(
+                      'h-2 w-2 rounded-full transition-colors',
+                      isHabitCompletedForDate(h, selectedDate) ? 'bg-cyan-500' : 'bg-foreground/10'
+                    )}
+                    title={h.title}
+                  />
+                ))}
+              </div>
+              <span className="text-[10px] text-muted-foreground/40 tabular-nums">{completedHabitsToday}/{todayHabits.length}</span>
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="flex items-center gap-4 lg:gap-6 text-[13px] overflow-x-auto -mx-4 px-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
         <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -596,6 +718,7 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Week strip — larger touch targets on mobile ── */}
       <div className="flex items-center gap-1">
@@ -712,7 +835,11 @@ export default function DashboardPage() {
                   </span>
                   {streak > 0 && (
                     <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums">
-                      <Flame className="h-3 w-3" />
+                      {hockeyMode ? (
+                        <span className="text-xs">🏒</span>
+                      ) : (
+                        <Flame className="h-3 w-3" />
+                      )}
                       {streak}
                     </span>
                   )}
