@@ -22,7 +22,7 @@ import { ItemRow } from '@/components/items/item-row';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, getLocale, getWeekStartsOn } from '@/lib/utils';
 import {
   format,
   isToday,
@@ -382,6 +382,9 @@ export default function DashboardPage() {
   const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const defaultView = useSettingsStore((s) => s.settings.defaultView);
+  const { weekStart: weekStartSetting, language, dateFormat } = useSettingsStore((s) => s.settings);
+  const locale = getLocale(language);
+  const weekStartsOn = getWeekStartsOn(weekStartSetting);
   const router = useRouter();
 
   // Hydration-safe: avoid rendering date-dependent text during SSR
@@ -496,8 +499,8 @@ export default function DashboardPage() {
     await updateItem(habit.id, { completions });
   };
 
-  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const weekStartDate = startOfWeek(selectedDate, { weekStartsOn });
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
 
   return (
     <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6 lg:space-y-8">
@@ -505,7 +508,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
           <p className="text-[13px] text-muted-foreground">
-            {format(selectedDate, 'EEEE, d MMMM yyyy')}
+            {format(selectedDate, 'EEEE, d MMMM yyyy', { locale })}
             {!isViewingToday && (
               <span className="ml-2 text-[11px] text-muted-foreground/60">
                 ({isViewingPast ? 'Past' : 'Future'})
@@ -523,7 +526,7 @@ export default function DashboardPage() {
                 {user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}
               </>
             ) : (
-              format(selectedDate, 'MMMM d, yyyy')
+              format(selectedDate, 'MMMM d, yyyy', { locale })
             )}
           </h1>
         </div>
@@ -619,7 +622,7 @@ export default function DashboardPage() {
                 !isCurrentDay && !isDayToday && 'text-muted-foreground/50',
                 isDayToday && !isCurrentDay && 'text-foreground/70'
               )}>
-                {format(day, 'EEE')}
+                {format(day, 'EEE', { locale })}
               </span>
               <span className={cn(
                 'text-sm font-semibold mt-0.5 tabular-nums', 
@@ -649,7 +652,7 @@ export default function DashboardPage() {
       <div className="grid gap-4 lg:gap-6 lg:grid-cols-2">
         {/* Tasks */}
         <Section
-          title={isViewingToday ? 'Today' : format(selectedDate, 'MMM d')}
+          title={isViewingToday ? 'Today' : format(selectedDate, 'MMM d', { locale })}
           icon={CheckSquare}
           count={todayTasks.length + overdueItems.length}
           href="/today"

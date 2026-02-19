@@ -11,6 +11,7 @@ import {
   onSnapshot,
   writeBatch,
   getDoc,
+  getDocs,
   setDoc,
   type Firestore,
 } from 'firebase/firestore';
@@ -779,4 +780,45 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
   );
 
   return unsubscribe;
+}
+
+/**
+ * Delete all Firestore data for a user (items + tool data).
+ * Called during account deletion.
+ */
+export async function deleteAllUserData(userId: string): Promise<void> {
+  if (!isFirebaseAvailable()) {
+    // Clear local storage instead
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    const toolKeys = Object.keys(localStorage).filter((k) => k.startsWith('orbit-'));
+    toolKeys.forEach((k) => localStorage.removeItem(k));
+    return;
+  }
+
+  const database = getDb();
+  const batch = writeBatch(database);
+
+  // Delete all items owned by the user
+  const itemsQuery = query(
+    collection(database, ITEMS_COLLECTION),
+    where('userId', '==', userId)
+  );
+  const itemsSnap = await getDocs(itemsQuery);
+  itemsSnap.forEach((d) => batch.delete(d.ref));
+
+  // Delete tool data docs (settings, toolbox, wishlist, abitur, flight, etc.)
+  const toolIds = ['settings', 'toolbox', 'wishlist', 'abitur', 'flight'];
+  for (const toolId of toolIds) {
+    const ref = doc(database, TOOL_DATA_COLLECTION, `${userId}_${toolId}`);
+    batch.delete(ref);
+  }
+
+  await batch.commit();
+
+  // Clear local storage
+  localStorage.removeItem(LOCAL_STORAGE_KEY);
+  const toolKeys = Object.keys(localStorage).filter((k) => k.startsWith('orbit-'));
+  toolKeys.forEach((k) => localStorage.removeItem(k));
+
+  console.info('[ORBIT] All user data deleted for', userId);
 }

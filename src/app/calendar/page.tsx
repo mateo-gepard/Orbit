@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw, ArrowLeft } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { cn } from '@/lib/utils';
+import { getLocale, getWeekStartsOn } from '@/lib/utils';
+import { useSettingsStore } from '@/lib/settings-store';
 import {
   format,
   startOfMonth,
@@ -38,6 +40,10 @@ type ViewMode = 'month' | 'day';
 export default function CalendarPage() {
   const { user } = useAuth();
   const { items, setSelectedItemId } = useOrbitStore();
+  const { weekStart, language, dateFormat } = useSettingsStore((s) => s.settings);
+  const { showWeekNumbers } = useSettingsStore((s) => s.settings.calendar);
+  const weekStartsOn = getWeekStartsOn(weekStart);
+  const locale = getLocale(language);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('month');
@@ -54,8 +60,8 @@ export default function CalendarPage() {
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
-  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn });
+  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn });
 
   const calendarDays = useMemo(() => {
     const days: Date[] = [];
@@ -200,7 +206,7 @@ export default function CalendarPage() {
           <div>
             <h1 className="text-xl lg:text-[22px] font-semibold tracking-tight">
               {viewMode === 'day' && selectedDay
-                ? format(selectedDay, 'EEEE, MMMM d, yyyy')
+                ? format(selectedDay, 'EEEE, MMMM d, yyyy', { locale })
                 : 'Calendar'}
             </h1>
             {isSyncRunning() && lastSync > 0 && (
@@ -244,7 +250,7 @@ export default function CalendarPage() {
                 Today
               </button>
               <span className="text-[13px] lg:text-[14px] font-semibold min-w-[120px] lg:min-w-[140px] text-center tabular-nums">
-                {format(currentMonth, 'MMMM yyyy')}
+                {format(currentMonth, 'MMMM yyyy', { locale })}
               </span>
               <button
                 onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
@@ -262,18 +268,28 @@ export default function CalendarPage() {
         <div className="flex-1 min-h-0">
           <div className="h-full rounded-xl lg:rounded-2xl border border-border/60 overflow-hidden bg-card shadow-sm flex flex-col">
             {/* Day headers */}
-            <div className="grid grid-cols-7 border-b border-border/50 bg-muted/40 flex-shrink-0">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-                <div key={d} className="px-1 lg:px-2 py-3 text-center text-[9px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                  <span className="lg:hidden">{d.charAt(0)}</span>
-                  <span className="hidden lg:inline">{d}</span>
+            <div className={cn('grid border-b border-border/50 bg-muted/40 flex-shrink-0', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')}>
+              {showWeekNumbers && (
+                <div className="px-1 lg:px-2 py-3 text-center text-[9px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/40">
+                  <span className="lg:hidden">#</span>
+                  <span className="hidden lg:inline">Wk</span>
                 </div>
-              ))}
+              )}
+              {Array.from({ length: 7 }, (_, i) => {
+                const dayDate = addDays(calendarStart, i);
+                const dayLabel = format(dayDate, 'EEE', { locale });
+                return (
+                  <div key={i} className="px-1 lg:px-2 py-3 text-center text-[9px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                    <span className="lg:hidden">{dayLabel.charAt(0)}</span>
+                    <span className="hidden lg:inline">{dayLabel}</span>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Calendar grid + multi-day overlay wrapper */}
             <div className="relative flex-1">
-              <div className="grid grid-cols-7 h-full">{calendarDays.map((day) => {
+              <div className={cn('grid h-full', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')}>{calendarDays.map((day, idx) => {
                   const dayItems = getItemsForDate(day);
                   const isCurrentMonth = isSameMonth(day, currentMonth);
                   const isTodayDate = isToday(day);
@@ -283,7 +299,16 @@ export default function CalendarPage() {
                     (!i.endDate || i.endDate === i.startDate)
                   );
 
+                  // Week number cell at start of each row
+                  const weekNumCell = showWeekNumbers && idx % 7 === 0 ? (
+                    <div key={`wk-${idx}`} className="flex items-start justify-center pt-2.5 border-b border-r border-border/30 text-[10px] text-muted-foreground/30 tabular-nums font-medium">
+                      {format(day, 'I')}
+                    </div>
+                  ) : null;
+
                   return (
+                    <React.Fragment key={day.toISOString()}>
+                    {weekNumCell}
                     <button
                       key={day.toISOString()}
                       onClick={() => handleDayClick(day)}
@@ -369,6 +394,7 @@ export default function CalendarPage() {
                         )}
                       </div>
                     </button>
+                    </React.Fragment>
                   );
                 })}
               </div>
@@ -432,7 +458,7 @@ export default function CalendarPage() {
                               </div>
                               {seg.isStart && (
                                 <div className="text-[9px] opacity-80">
-                                  {format(startDate, 'd')}–{format(endDate, 'd')} {format(startDate, 'MMM')}
+                                  {format(startDate, 'd')}–{format(endDate, 'd')} {format(startDate, 'MMM', { locale })}
                                 </div>
                               )}
                             </div>
@@ -486,7 +512,7 @@ export default function CalendarPage() {
                         {isMultiDay && start && end ? (
                           <>
                             <span className="text-[10px] text-muted-foreground/40 uppercase">
-                              {format(start, 'EEE')}
+                              {format(start, 'EEE', { locale })}
                             </span>
                             <span className="text-[14px] font-semibold tabular-nums">
                               {format(start, 'd')}–{format(end, 'd')}
@@ -495,7 +521,7 @@ export default function CalendarPage() {
                         ) : start ? (
                           <>
                             <span className="text-[10px] text-muted-foreground/40 uppercase">
-                              {format(start, 'EEE')}
+                              {format(start, 'EEE', { locale })}
                             </span>
                             <span className="text-[16px] font-semibold tabular-nums">
                               {format(start, 'd')}
@@ -536,9 +562,9 @@ export default function CalendarPage() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-[12px] font-medium text-muted-foreground/60 uppercase tracking-wider">
-                  {isToday(selectedDay) ? 'Today' : format(selectedDay, 'EEEE')}
+                  {isToday(selectedDay) ? 'Today' : format(selectedDay, 'EEEE', { locale })}
                 </h3>
-                <p className="text-[20px] lg:text-2xl font-bold mt-1">{format(selectedDay, 'MMMM d, yyyy')}</p>
+                <p className="text-[20px] lg:text-2xl font-bold mt-1">{format(selectedDay, 'MMMM d, yyyy', { locale })}</p>
               </div>
               <div className="text-right">
                 <p className="text-[12px] text-muted-foreground/60">

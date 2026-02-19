@@ -12,7 +12,6 @@ import {
   Database,
   Keyboard,
   Monitor,
-  Brain,
   Calendar,
   RotateCcw,
   Download,
@@ -43,6 +42,8 @@ import {
   sendMorningBriefingNow,
   sendEveningBriefingNow,
 } from '@/lib/briefing-notifications';
+import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
+import { hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
 import type {
@@ -71,7 +72,6 @@ const SECTIONS: SettingSection[] = [
   { id: 'regional', label: 'Language & Region', icon: Globe },
   { id: 'behavior', label: 'General', icon: Monitor },
   { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'focus', label: 'Focus & Flight', icon: Brain },
   { id: 'calendar', label: 'Calendar', icon: Calendar },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: Keyboard },
   { id: 'privacy', label: 'Privacy & Security', icon: Shield },
@@ -434,12 +434,14 @@ function NotificationsSection({
 // ═══════════════════════════════════════════════════════════
 
 export default function SettingsPage() {
-  const { user, isDemo, signOut } = useAuth();
+  const { user, isDemo, signOut, deleteAccount } = useAuth();
   const { settings, update, updateNested, reset } = useSettingsStore();
   const { setTheme } = useTheme();
   const [activeSection, setActiveSection] = useState('profile');
   const [mounted, setMounted] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
@@ -806,55 +808,6 @@ export default function SettingsPage() {
             <NotificationsSection settings={settings} setNested={setNested as unknown as (section: string, updates: Record<string, unknown>) => void} />
           )}
 
-          {/* ═════ FOCUS & FLIGHT ═════ */}
-          {activeSection === 'focus' && (
-            <div>
-              <SectionHeader icon={Brain} label="Focus & Flight" />
-
-              <SettingRow label="Default Flight Duration" description="Session length when starting a new flight">
-                <NumberInput
-                  value={settings.focus.defaultFlightDuration}
-                  onChange={(v) => setNested('focus', { defaultFlightDuration: v })}
-                  min={10}
-                  max={240}
-                  step={5}
-                  suffix="min"
-                />
-              </SettingRow>
-
-              <SettingRow label="Auto-Start Breaks" description="Automatically start a break after landing">
-                <Toggle
-                  checked={settings.focus.autoStartBreaks}
-                  onChange={(v) => setNested('focus', { autoStartBreaks: v })}
-                />
-              </SettingRow>
-
-              <SettingRow label="Break Duration" description="Length of breaks between flights">
-                <NumberInput
-                  value={settings.focus.breakDuration}
-                  onChange={(v) => setNested('focus', { breakDuration: v })}
-                  min={1}
-                  max={60}
-                  suffix="min"
-                />
-              </SettingRow>
-
-              <SettingRow label="Block Notifications During Flight" description="Suppress all notifications while in-flight">
-                <Toggle
-                  checked={settings.focus.blockNotifications}
-                  onChange={(v) => setNested('focus', { blockNotifications: v })}
-                />
-              </SettingRow>
-
-              <SettingRow label="Turbulence Screen Shake" description="Shake the screen when logging turbulence" border={false}>
-                <Toggle
-                  checked={settings.focus.turbulenceShakeScreen}
-                  onChange={(v) => setNested('focus', { turbulenceShakeScreen: v })}
-                />
-              </SettingRow>
-            </div>
-          )}
-
           {/* ═════ CALENDAR ═════ */}
           {activeSection === 'calendar' && (
             <div>
@@ -863,7 +816,23 @@ export default function SettingsPage() {
               <SettingRow label="Google Calendar Sync" description="Sync events with your Google Calendar">
                 <Toggle
                   checked={settings.calendar.googleCalendarSync}
-                  onChange={(v) => setNested('calendar', { googleCalendarSync: v })}
+                  onChange={async (v) => {
+                    setNested('calendar', { googleCalendarSync: v });
+                    if (v && user && !isDemo) {
+                      // Enable: request permission if needed, then start sync
+                      if (!hasCalendarPermission()) {
+                        try {
+                          await requestCalendarPermission();
+                        } catch { /* user declined */ }
+                      }
+                      if (hasCalendarPermission()) {
+                        startGoogleCalendarSync(user.uid);
+                      }
+                    } else {
+                      // Disable: stop sync
+                      stopGoogleCalendarSync();
+                    }
+                  }}
                 />
               </SettingRow>
 
@@ -1074,6 +1043,46 @@ export default function SettingsPage() {
                       >
                         <RotateCcw className="h-3 w-3" />
                         Reset
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-4 border-t border-destructive/10">
+                    <div>
+                      <p className="text-[13px] font-medium text-foreground/90">Delete Account</p>
+                      <p className="text-[11px] text-muted-foreground/50">Permanently delete your account and all data</p>
+                    </div>
+                    {showDeleteConfirm ? (
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={async () => {
+                            setDeleteLoading(true);
+                            try {
+                              await deleteAccount();
+                            } catch {
+                              setDeleteLoading(false);
+                              setShowDeleteConfirm(false);
+                            }
+                          }}
+                          disabled={deleteLoading}
+                          className="rounded-lg bg-destructive px-3 py-1.5 text-[11px] font-medium text-white hover:bg-destructive/90 transition-colors disabled:opacity-50"
+                        >
+                          {deleteLoading ? 'Deleting...' : 'Yes, delete everything'}
+                        </button>
+                        <button
+                          onClick={() => setShowDeleteConfirm(false)}
+                          className="rounded-lg border border-border/50 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-[12px] font-medium text-destructive/80 hover:bg-destructive/5 transition-colors w-fit"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete Account
                       </button>
                     )}
                   </div>

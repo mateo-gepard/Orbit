@@ -8,7 +8,8 @@ import { useSettingsStore } from '@/lib/settings-store';
  * Mount once in the provider chain. No UI rendered.
  *
  * Handles: accentColor, compactMode, animationsEnabled,
- *          accessibility.reduceMotion, highContrast, fontSize
+ *          accessibility.reduceMotion, highContrast, fontSize,
+ *          language (html lang attribute)
  */
 export function SettingsEffects() {
   const settings = useSettingsStore((s) => s.settings);
@@ -16,6 +17,9 @@ export function SettingsEffects() {
   useEffect(() => {
     const root = document.documentElement;
     const body = document.body;
+
+    // ── Language ────────────────────────────────────────────
+    root.setAttribute('lang', settings.language === 'de' ? 'de' : 'en');
 
     // ── Accent color ───────────────────────────────────────
     // Set a CSS variable that components can reference
@@ -56,6 +60,7 @@ export function SettingsEffects() {
     settings.accessibility.reduceMotion,
     settings.accessibility.highContrast,
     settings.accessibility.fontSize,
+    settings.language,
   ]);
 
   return null;

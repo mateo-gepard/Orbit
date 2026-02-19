@@ -4,11 +4,12 @@ import { Check, CalendarDays, Flag, Circle, Clock, CalendarClock, CalendarPlus, 
 import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import type { OrbitItem, Priority } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, shortDatePattern, getLocale } from '@/lib/utils';
 import { format, isPast, isToday, parseISO } from 'date-fns';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
 import { calculateStreak } from '@/lib/habits';
+import { useSettingsStore } from '@/lib/settings-store';
 
 const PRIORITY_DOTS: Record<Priority, string> = {
   low: 'bg-foreground/20',
@@ -26,6 +27,7 @@ interface ItemRowProps {
 
 export function ItemRow({ item, showType = false, showProject = false, compact = false, enableSwipe = true }: ItemRowProps) {
   const { setSelectedItemId, getItemById, setCompletionAnimation } = useOrbitStore();
+  const { dateFormat, language } = useSettingsStore((s) => s.settings);
   const parent = item.parentId ? getItemById(item.parentId) : undefined;
 
   const toggleComplete = async (e: React.MouseEvent) => {
@@ -216,7 +218,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         >
           {isDueToday
             ? 'today'
-            : format(parseISO(item.dueDate), 'dd MMM')}
+            : format(parseISO(item.dueDate), shortDatePattern(dateFormat), { locale: getLocale(language) })}
         </span>
       )}
     </div>

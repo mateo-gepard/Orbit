@@ -38,7 +38,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Textarea } from '@/components/ui/textarea';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { calculateStreak } from '@/lib/habits';
-import { cn, formatTimestamp } from '@/lib/utils';
+import { cn, formatTimestamp, fullTimestampPattern, getLocale } from '@/lib/utils';
 import { format } from 'date-fns';
 
 const STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
@@ -748,9 +748,9 @@ export function DetailPanel() {
         <div className="pt-2 pb-4">
           <div className="h-px bg-border/30 mb-3" />
           <div className="space-y-0.5 text-[11px] text-muted-foreground/40">
-            <p>Created {formatTimestamp(item.createdAt)}</p>
-            <p>Modified {formatTimestamp(item.updatedAt)}</p>
-            {item.completedAt && <p>Completed {formatTimestamp(item.completedAt)}</p>}
+            <p>Created {format(new Date(item.createdAt), fullTimestampPattern(useSettingsStore.getState().settings.dateFormat, useSettingsStore.getState().settings.timeFormat), { locale: getLocale(useSettingsStore.getState().settings.language) })}</p>
+            <p>Modified {format(new Date(item.updatedAt), fullTimestampPattern(useSettingsStore.getState().settings.dateFormat, useSettingsStore.getState().settings.timeFormat), { locale: getLocale(useSettingsStore.getState().settings.language) })}</p>
+            {item.completedAt && <p>Completed {format(new Date(item.completedAt), fullTimestampPattern(useSettingsStore.getState().settings.dateFormat, useSettingsStore.getState().settings.timeFormat), { locale: getLocale(useSettingsStore.getState().settings.language) })}</p>}
           </div>
         </div>
       </div>

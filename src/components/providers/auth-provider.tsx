@@ -11,6 +11,7 @@ import {
   sendSignInLinkToEmail,
   isSignInWithEmailLink,
   signInWithEmailLink,
+  deleteUser as firebaseDeleteUser,
   type User,
   type IdTokenResult,
 } from 'firebase/auth';
@@ -18,6 +19,8 @@ import { auth, googleProvider } from '@/lib/firebase';
 import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { hasCalendarPermission } from '@/lib/google-calendar';
 import { initAnalytics, stopAnalytics } from '@/lib/analytics';
+import { deleteAllUserData } from '@/lib/firestore';
+import { useSettingsStore } from '@/lib/settings-store';
 
 const EMAIL_LINK_KEY = 'orbitEmailForSignIn';
 
@@ -28,6 +31,7 @@ interface AuthContextType {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
   sendEmailLink: (email: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   isDemo: boolean;
 }
@@ -39,6 +43,7 @@ const AuthContext = createContext<AuthContextType>({
   signInWithEmail: async () => {},
   signUpWithEmail: async () => {},
   sendEmailLink: async () => {},
+  deleteAccount: async () => {},
   signOut: async () => {},
   isDemo: false,
 });
@@ -94,8 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initAnalytics(firebaseUser.uid);
         }
         
-        // Start Google Calendar sync if user has permission
-        if (firebaseUser && hasCalendarPermission()) {
+        // Start Google Calendar sync if user has permission AND setting is enabled
+        const calSyncEnabled = useSettingsStore.getState().settings.calendar.googleCalendarSync;
+        if (firebaseUser && calSyncEnabled && hasCalendarPermission()) {
           startGoogleCalendarSync(firebaseUser.uid);
         }
       },
@@ -192,6 +198,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
+  const deleteAccount = useCallback(async () => {
+    if (isDemo || !auth || !auth.currentUser) {
+      // Demo mode — just clear local storage
+      setUser(null);
+      setIsDemo(false);
+      return;
+    }
+    const uid = auth.currentUser.uid;
+    try {
+      // Delete all Firestore data for this user
+      await deleteAllUserData(uid);
+      // Delete the Firebase Auth user
+      await firebaseDeleteUser(auth.currentUser);
+      console.info('[ORBIT Auth] Account deleted');
+    } catch (error) {
+      console.error('[ORBIT Auth] Account deletion error:', error);
+      throw error;
+    } finally {
+      setUser(null);
+    }
+  }, [isDemo]);
+
   const signOut = useCallback(async () => {
     stopAnalytics();
     if (isDemo) {
@@ -210,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isDemo]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink: sendEmailLinkFn, signOut, isDemo }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink: sendEmailLinkFn, deleteAccount, signOut, isDemo }}>
       {children}
     </AuthContext.Provider>
   );
