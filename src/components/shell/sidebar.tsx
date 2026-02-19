@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useSettingsStore } from '@/lib/settings-store';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
 // LIFE_AREA_TAGS now managed via store.getAllTags()
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -44,28 +45,28 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-const NAV_SECTIONS = [
+const NAV_SECTIONS: { labelKey?: TranslationKey; items: { href: string; labelKey: TranslationKey; icon: typeof LayoutDashboard }[] }[] = [
   {
     items: [
-      { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { href: '/tasks', label: 'Tasks', icon: CheckSquare },
+      { href: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+      { href: '/tasks', labelKey: 'nav.tasks', icon: CheckSquare },
     ],
   },
   {
-    label: 'Organize',
+    labelKey: 'nav.organize',
     items: [
-      { href: '/projects', label: 'Projects', icon: FolderKanban },
-      { href: '/habits', label: 'Habits', icon: Repeat },
-      { href: '/goals', label: 'Goals', icon: Target },
+      { href: '/projects', labelKey: 'nav.projects', icon: FolderKanban },
+      { href: '/habits', labelKey: 'nav.habits', icon: Repeat },
+      { href: '/goals', labelKey: 'nav.goals', icon: Target },
     ],
   },
   {
-    label: 'Capture',
+    labelKey: 'nav.capture',
     items: [
-      { href: '/notes', label: 'Notes', icon: FileText },
-      { href: '/calendar', label: 'Calendar', icon: Calendar },
-      { href: '/files', label: 'Files', icon: Files },
-      { href: '/archive', label: 'Archive', icon: Archive },
+      { href: '/notes', labelKey: 'nav.notes', icon: FileText },
+      { href: '/calendar', labelKey: 'nav.calendar', icon: Calendar },
+      { href: '/files', labelKey: 'nav.files', icon: Files },
+      { href: '/archive', labelKey: 'nav.archive', icon: Archive },
     ],
   },
 ];
@@ -89,6 +90,7 @@ export function Sidebar() {
 
   const allTags = getAllTags();
   const showBadges = useSettingsStore((s) => s.settings.showSidebarBadges);
+  const { t } = useTranslation();
   const storeItems = useOrbitStore((s) => s.items);
 
   // Compute badge counts per route
@@ -194,7 +196,7 @@ export function Sidebar() {
             className="flex w-full items-center gap-2.5 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-[13px] text-muted-foreground transition-all hover:border-border hover:bg-background hover:shadow-sm"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span className="flex-1 text-left">Quick add...</span>
+            <span className="flex-1 text-left">{t('sidebar.quickAdd')}</span>
             <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-[10px] font-mono leading-none">
               ⌘K
             </kbd>
@@ -204,10 +206,10 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-1">
           {NAV_SECTIONS.map((section, sIdx) => (
-            <div key={sIdx} className={cn(sIdx > 0 && 'mt-5')}>
-              {section.label && (
+            <div key={sIdx} className={cn(sIdx > 0 && 'mt-5')} data-slot="nav-section">
+              {section.labelKey && (
                 <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
-                  {section.label}
+                  {t(section.labelKey)}
                 </div>
               )}
               <div className="space-y-0.5">
@@ -220,6 +222,7 @@ export function Sidebar() {
                       key={item.href}
                       href={item.href}
                       onClick={() => setSidebarOpen(false)}
+                      data-slot="nav-item"
                       className={cn(
                         'group flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-all',
                         isActive
@@ -234,7 +237,7 @@ export function Sidebar() {
                         )}
                         strokeWidth={isActive ? 2 : 1.5}
                       />
-                      <span className="flex-1">{item.label}</span>
+                      <span className="flex-1">{t(item.labelKey)}</span>
                       {showBadges && badgeCounts[item.href] > 0 && (
                         <span className="ml-auto text-[10px] font-medium tabular-nums text-muted-foreground/50">
                           {badgeCounts[item.href]}
@@ -250,7 +253,7 @@ export function Sidebar() {
           {/* Toolbox */}
           <div className="mt-5">
             <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
-              Toolbox
+              {t('nav.toolbox')}
             </div>
             <div className="space-y-0.5">
               <Link
@@ -270,7 +273,7 @@ export function Sidebar() {
                   )}
                   strokeWidth={pathname === '/toolbox' ? 2 : 1.5}
                 />
-                <span className="flex-1">All Tools</span>
+                <span className="flex-1">{t('nav.allTools')}</span>
               </Link>
               {enabledTools.map((tool) => {
                 const Icon = TOOL_ICON_MAP[tool.id];
@@ -305,7 +308,7 @@ export function Sidebar() {
           <div className="mt-5">
             <div className="mb-1 px-2 flex items-center justify-between">
               <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
-                Areas
+                {t('nav.areas')}
               </span>
               <div className="flex items-center gap-0.5">
                 <button
@@ -316,14 +319,14 @@ export function Sidebar() {
                       ? 'text-foreground bg-foreground/10'
                       : 'text-muted-foreground/40 hover:text-muted-foreground/70'
                   )}
-                  title={isManaging ? 'Done managing' : 'Manage tags'}
+                  title={isManaging ? t('sidebar.doneTags') : t('sidebar.manageTags')}
                 >
                   <Pencil className="h-3 w-3" />
                 </button>
                 <button
                   onClick={() => { setIsAddingTag(true); setIsManaging(true); }}
                   className="rounded p-0.5 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
-                  title="Add tag"
+                  title={t('sidebar.addTag')}
                 >
                   <Plus className="h-3 w-3" />
                 </button>
@@ -392,14 +395,14 @@ export function Sidebar() {
                         <button
                           onClick={() => { setEditingTag(tag); setEditValue(tag); }}
                           className="rounded p-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
-                          title="Rename"
+                          title={t('common.rename')}
                         >
                           <Pencil className="h-2.5 w-2.5" />
                         </button>
                         <button
                           onClick={() => setDeletingTag(tag)}
                           className="rounded p-0.5 text-muted-foreground/40 hover:text-destructive transition-colors"
-                          title="Delete"
+                          title={t('common.delete')}
                         >
                           <Trash2 className="h-2.5 w-2.5" />
                         </button>
@@ -421,7 +424,7 @@ export function Sidebar() {
                     onChange={(e) => setNewTagValue(e.target.value)}
                     onBlur={handleAddTag}
                     onKeyDown={(e) => { if (e.key === 'Escape') { setIsAddingTag(false); setNewTagValue(''); } }}
-                    placeholder="new tag..."
+                    placeholder={t('sidebar.newTagPlaceholder')}
                     className="w-20 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/40"
                   />
                 </form>
@@ -450,7 +453,7 @@ export function Sidebar() {
                   <Settings className="h-4 w-4" strokeWidth={1.5} />
                 </Link>
               </TooltipTrigger>
-              <TooltipContent side="top">Settings</TooltipContent>
+              <TooltipContent side="top">{t('nav.settings')}</TooltipContent>
             </Tooltip>
 
             {user && (
@@ -467,7 +470,7 @@ export function Sidebar() {
                       {user.displayName || user.email}
                     </span>
                     {isDemo && (
-                      <span className="text-[10px] leading-tight text-muted-foreground/70">Local mode</span>
+                      <span className="text-[10px] leading-tight text-muted-foreground/70">{t('sidebar.localMode')}</span>
                     )}
                   </div>
                 </div>
@@ -482,7 +485,7 @@ export function Sidebar() {
                       <LogOut className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Sign out</TooltipContent>
+                  <TooltipContent side="top">{t('sidebar.signOut')}</TooltipContent>
                 </Tooltip>
               </>
             )}

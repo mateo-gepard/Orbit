@@ -2,6 +2,7 @@
 
 import { Menu, Search } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
+import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from './sidebar';
 import { DetailPanel } from './detail-panel';
@@ -11,6 +12,7 @@ import { CompletionAnimation } from '@/components/ui/completion-animation';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, setCommandBarOpen, completionAnimation, setCompletionAnimation } = useOrbitStore();
+  const { t } = useTranslation();
 
   return (
     <>

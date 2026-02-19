@@ -40,6 +40,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { calculateStreak } from '@/lib/habits';
 import { cn, formatTimestamp, fullTimestampPattern, getLocale } from '@/lib/utils';
 import { format } from 'date-fns';
+import { useTranslation } from '@/lib/i18n';
 
 const STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
 const STATUS_DESCRIPTIONS: Record<ItemStatus, string> = {
@@ -76,6 +77,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export function DetailPanel() {
   const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags, removeCustomTag, setCompletionAnimation } = useOrbitStore();
   const item = selectedItemId ? items.find(i => i.id === selectedItemId) : undefined;
+  const { t } = useTranslation();
   const [title, setTitle] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
@@ -254,11 +256,11 @@ export function DetailPanel() {
               {item.status === 'done' && <Check className="h-3 w-3 text-white" />}
             </button>
           )}
-          <span className="text-[11px] text-muted-foreground/50 capitalize">{item.type}</span>
+          <span className="text-[11px] text-muted-foreground/50 capitalize">{t((`type.${item.type}`) as any)}</span>
           {item.status === 'done' && (
             <>
               <span className="text-[11px] text-muted-foreground/30">·</span>
-              <span className="text-[11px] text-green-600/80">Done</span>
+              <span className="text-[11px] text-green-600/80">{t('status.done')}</span>
             </>
           )}
         </div>
@@ -276,7 +278,7 @@ export function DetailPanel() {
               setShowLinkGraph(true);
             }}
             className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors active:scale-95"
-            title="View link graph"
+            title={t('detail.viewLinkGraph')}
             type="button"
           >
             <Network className="h-4 w-4" />
@@ -292,7 +294,7 @@ export function DetailPanel() {
             <DropdownMenuContent align="end" className="w-56">
               {/* Change Type */}
               <div className="px-2 py-2">
-                <FieldLabel>Change Type</FieldLabel>
+                <FieldLabel>{t('detail.changeType')}</FieldLabel>
                 <Select value={item.type} onValueChange={(v) => handleUpdate({ type: v as ItemType })}>
                   <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -307,7 +309,7 @@ export function DetailPanel() {
 
               {/* Change Status */}
               <div className="px-2 py-2">
-                <FieldLabel>Change Status</FieldLabel>
+                <FieldLabel>{t('detail.changeStatus')}</FieldLabel>
                 <Select value={item.status} onValueChange={(v) => handleUpdate({ status: v as ItemStatus, completedAt: v === 'done' ? Date.now() : undefined })}>
                   <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -322,7 +324,7 @@ export function DetailPanel() {
 
               {/* Links & Relations */}
               <div className="px-2 py-2">
-                <FieldLabel>Links & Relations</FieldLabel>
+                <FieldLabel>{t('detail.linksRelations')}</FieldLabel>
                 <div className="mt-2">
                   <LinkManager
                     item={item}
@@ -337,7 +339,7 @@ export function DetailPanel() {
                 <>
                   <DropdownMenuSeparator />
                   <div className="px-2 py-2">
-                    <FieldLabel>Frequency</FieldLabel>
+                    <FieldLabel>{t('detail.frequency')}</FieldLabel>
                     <Select value={item.frequency || 'daily'} onValueChange={(v) => handleUpdate({ frequency: v as HabitFrequency })}>
                       <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -384,7 +386,7 @@ export function DetailPanel() {
                 <>
                   <DropdownMenuSeparator />
                   <div className="px-2 py-2">
-                    <FieldLabel>Timeframe</FieldLabel>
+                    <FieldLabel>{t('detail.timeframe')}</FieldLabel>
                     <Select value={item.timeframe || 'quarterly'} onValueChange={(v) => handleUpdate({ timeframe: v as GoalTimeframe })}>
                       <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -402,7 +404,7 @@ export function DetailPanel() {
                 <>
                   <DropdownMenuSeparator />
                   <div className="px-2 py-2">
-                    <FieldLabel>Category</FieldLabel>
+                    <FieldLabel>{t('detail.category')}</FieldLabel>
                     <Select value={item.noteSubtype || 'general'} onValueChange={(v) => handleUpdate({ noteSubtype: v as NoteSubtype })}>
                       <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -432,7 +434,7 @@ export function DetailPanel() {
                       )}
                     >
                       <CalendarIcon className="h-3.5 w-3.5" />
-                      {syncingCalendar ? 'Syncing...' : item.calendarSynced ? 'Synced to Calendar ✓' : 'Sync to Google Calendar'}
+                      {syncingCalendar ? t('detail.syncing') : item.calendarSynced ? t('detail.syncedToCalendar') : t('detail.syncToGoogle')}
                     </button>
                   </div>
                 </>
@@ -444,19 +446,19 @@ export function DetailPanel() {
               {item.status === 'archived' ? (
                 <DropdownMenuItem onClick={handleRestore}>
                   <RotateCcw className="h-3.5 w-3.5 mr-2" />
-                  Restore
+                  {t('common.restore')}
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem onClick={handleArchive}>
                   <Archive className="h-3.5 w-3.5 mr-2" />
-                  Archive
+                  {t('common.archive')}
                 </DropdownMenuItem>
               )}
 
               {/* Delete */}
               <DropdownMenuItem onClick={handleDelete} className="text-red-600 dark:text-red-400">
                 <Trash2 className="h-3.5 w-3.5 mr-2" />
-                Delete
+                {t('common.delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -482,7 +484,7 @@ export function DetailPanel() {
           onBlur={() => handleUpdate({ title })}
           onKeyDown={(e) => e.key === 'Enter' && handleUpdate({ title })}
           className="w-full bg-transparent text-lg font-semibold leading-snug outline-none placeholder:text-muted-foreground/30"
-          placeholder="Title…"
+          placeholder={t('detail.titlePlaceholder')}
         />
 
         {/* Quick Actions Bar - Most important stuff first */}
@@ -491,10 +493,10 @@ export function DetailPanel() {
           {item.type === 'task' && (
             <Select value={item.priority || 'none'} onValueChange={(v) => handleUpdate({ priority: v === 'none' ? undefined : v as Priority })}>
               <SelectTrigger className="h-9 text-[13px] w-auto min-w-[100px]">
-                <SelectValue placeholder="Priority" />
+                <SelectValue placeholder={t('detail.priority')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none" className="text-[12px]">No Priority</SelectItem>
+                <SelectItem value="none" className="text-[12px]">{t('priority.none')}</SelectItem>
                 {PRIORITY_OPTIONS.map((p) => (
                   <SelectItem key={p} value={p} className="capitalize text-[12px]">{p}</SelectItem>
                 ))}
@@ -529,7 +531,7 @@ export function DetailPanel() {
               className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 h-9 text-[13px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Add to Today
+              {t('detail.addToToday')}
             </button>
           )}
         </div>
@@ -539,21 +541,21 @@ export function DetailPanel() {
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <FieldLabel>Start Date</FieldLabel>
+                <FieldLabel>{t('detail.startDate')}</FieldLabel>
                 <Input type="date" value={item.startDate || ''} onChange={(e) => handleUpdate({ startDate: e.target.value || undefined })} className="mt-1 h-9 text-[13px]" />
               </div>
               <div>
-                <FieldLabel>Start Time</FieldLabel>
+                <FieldLabel>{t('detail.startTime')}</FieldLabel>
                 <Input type="time" value={item.startTime || ''} onChange={(e) => handleUpdate({ startTime: e.target.value || undefined })} className="mt-1 h-9 text-[13px]" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <FieldLabel>End Date</FieldLabel>
+                <FieldLabel>{t('detail.endDate')}</FieldLabel>
                 <Input type="date" value={item.endDate || ''} onChange={(e) => handleUpdate({ endDate: e.target.value || undefined })} className="mt-1 h-9 text-[13px]" />
               </div>
               <div>
-                <FieldLabel>End Time</FieldLabel>
+                <FieldLabel>{t('detail.endTime')}</FieldLabel>
                 <Input type="time" value={item.endTime || ''} onChange={(e) => handleUpdate({ endTime: e.target.value || undefined })} className="mt-1 h-9 text-[13px]" />
               </div>
             </div>
@@ -563,12 +565,12 @@ export function DetailPanel() {
         {/* Goal Success Metric */}
         {item.type === 'goal' && (
           <div>
-            <FieldLabel>Success Metric</FieldLabel>
+            <FieldLabel>{t('detail.successMetric')}</FieldLabel>
             <Textarea
               value={item.metric || ''}
               onChange={(e) => handleUpdate({ metric: e.target.value })}
               className="mt-1.5 text-[13px] min-h-20 resize-none"
-              placeholder="How will you measure success?"
+              placeholder={t('detail.metricPlaceholder')}
             />
           </div>
         )}
@@ -576,7 +578,7 @@ export function DetailPanel() {
         {/* Checklist (Task) - Prominent position */}
         {item.type === 'task' && (item.checklist && item.checklist.length > 0 || newChecklistText) && (
           <div>
-            <FieldLabel>Checklist</FieldLabel>
+            <FieldLabel>{t('detail.checklist')}</FieldLabel>
             <div className="mt-2 space-y-1">
               {(item.checklist || []).map((check) => (
                 <div key={check.id} className="flex items-center gap-2.5 group">
@@ -604,7 +606,7 @@ export function DetailPanel() {
                   value={newChecklistText}
                   onChange={(e) => setNewChecklistText(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addChecklistItem()}
-                  placeholder="Add checklist item…"
+                  placeholder={t('detail.checklistPlaceholder')}
                   className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/30 py-1.5 border-b border-border/30 focus:border-border transition-colors"
                 />
                 <button onClick={addChecklistItem} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors shrink-0" aria-label="Add checklist item">
@@ -617,18 +619,18 @@ export function DetailPanel() {
 
         {/* Notes/Content - Larger text area */}
         <div>
-          <FieldLabel>Notes</FieldLabel>
+          <FieldLabel>{t('detail.notes')}</FieldLabel>
           <Textarea
             value={item.content || ''}
             onChange={(e) => handleUpdate({ content: e.target.value })}
             className="mt-1.5 text-[14px] min-h-32 resize-none leading-relaxed"
-            placeholder="Write your thoughts…"
+            placeholder={t('detail.notesPlaceholder')}
           />
         </div>
 
         {/* Tags */}
         <div>
-          <FieldLabel>Tags</FieldLabel>
+          <FieldLabel>{t('detail.tags')}</FieldLabel>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {allTags.map((tag) => (
               <button
@@ -653,7 +655,7 @@ export function DetailPanel() {
             {/* Parent */}
             {parentItem && (
               <div>
-                <FieldLabel>Parent</FieldLabel>
+                <FieldLabel>{t('detail.parent')}</FieldLabel>
                 <div className="mt-2">
                   <button
                     onClick={() => setSelectedItemId(parentItem.id)}
@@ -778,7 +780,7 @@ export function DetailPanel() {
             style={swipeStyles}
           >
           <SheetHeader className="sr-only">
-            <SheetTitle>Item Details</SheetTitle>
+            <SheetTitle>{t('detail.itemDetails')}</SheetTitle>
           </SheetHeader>
           {/* Swipe Handle */}
           <div

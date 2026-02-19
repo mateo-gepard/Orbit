@@ -7,6 +7,7 @@ import { useAuth } from '@/components/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
+import { useTranslation } from '@/lib/i18n';
 import {
   format,
   startOfMonth,
@@ -44,6 +45,7 @@ export default function CalendarPage() {
   const { showWeekNumbers } = useSettingsStore((s) => s.settings.calendar);
   const weekStartsOn = getWeekStartsOn(weekStart);
   const locale = getLocale(language);
+  const { t } = useTranslation();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('month');
@@ -159,7 +161,7 @@ export default function CalendarPage() {
 
           const newEvent: any = {
             type: 'event',
-            title: eventData.summary || 'Untitled Event',
+            title: eventData.summary || t('calendar.untitledEvent'),
             status: 'active',
             googleCalendarId: eventData.id,
             calendarSynced: true,
@@ -207,7 +209,7 @@ export default function CalendarPage() {
             <h1 className="text-xl lg:text-[22px] font-semibold tracking-tight">
               {viewMode === 'day' && selectedDay
                 ? format(selectedDay, 'EEEE, MMMM d, yyyy', { locale })
-                : 'Calendar'}
+                : t('nav.calendar')}
             </h1>
             {isSyncRunning() && lastSync > 0 && (
               <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50 mt-0.5">
@@ -233,8 +235,8 @@ export default function CalendarPage() {
               )}
             >
               <RefreshCw className={cn('h-3 w-3 lg:h-3.5 lg:w-3.5', importing && 'animate-spin')} />
-              <span className="hidden sm:inline">{importing ? 'Importing...' : 'Import from Google'}</span>
-              <span className="sm:hidden">{importing ? '...' : 'Import'}</span>
+              <span className="hidden sm:inline">{importing ? t('calendar.importing') : t('calendar.importFromGoogle')}</span>
+              <span className="sm:hidden">{importing ? '...' : t('calendar.import')}</span>
             </button>
             <div className="flex items-center gap-1 lg:gap-2 bg-muted/40 rounded-xl lg:rounded-lg border border-border/40 p-1">
               <button
@@ -247,7 +249,7 @@ export default function CalendarPage() {
                 onClick={() => setCurrentMonth(new Date())}
                 className="rounded-lg lg:rounded-md px-2 py-1 lg:px-3 lg:py-1.5 text-[12px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-background transition-all"
               >
-                Today
+                {t('common.today')}
               </button>
               <span className="text-[13px] lg:text-[14px] font-semibold min-w-[120px] lg:min-w-[140px] text-center tabular-nums">
                 {format(currentMonth, 'MMMM yyyy', { locale })}
@@ -272,7 +274,7 @@ export default function CalendarPage() {
               {showWeekNumbers && (
                 <div className="px-1 lg:px-2 py-3 text-center text-[9px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/40">
                   <span className="lg:hidden">#</span>
-                  <span className="hidden lg:inline">Wk</span>
+                  <span className="hidden lg:inline">{t('calendar.wk')}</span>
                 </div>
               )}
               {Array.from({ length: 7 }, (_, i) => {
@@ -584,7 +586,7 @@ export default function CalendarPage() {
               if (dayItems.length === 0) {
                 return (
                   <div className="rounded-xl border border-border/60 bg-card p-8 text-center">
-                    <p className="text-muted-foreground/40">No events or tasks for this day</p>
+                    <p className="text-muted-foreground/40">{t('calendar.noEventsOrTasks')}</p>
                   </div>
                 );
               }

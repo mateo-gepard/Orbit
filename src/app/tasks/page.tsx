@@ -19,6 +19,7 @@ import { ItemRow } from '@/components/items/item-row';
 import { cn } from '@/lib/utils';
 import { format, isPast, isToday, parseISO } from 'date-fns';
 import type { OrbitItem, Priority } from '@/lib/types';
+import { useTranslation } from '@/lib/i18n';
 // Tags now fully managed via store.getAllTags()/removeTag()
 
 // ═══════════════════════════════════════════════════════════
@@ -201,6 +202,7 @@ const GROUP_OPTIONS: { key: GroupBy; label: string; icon: typeof FolderKanban }[
 
 export default function TasksPage() {
   const { items, setSelectedItemId, getAllTags, removeTag } = useOrbitStore();
+  const { t } = useTranslation();
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('active');
@@ -308,7 +310,7 @@ export default function TasksPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <CheckSquare className="h-5 w-5 text-muted-foreground/60" strokeWidth={1.5} />
-          <h1 className="text-xl font-semibold tracking-tight">Tasks</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{t('nav.tasks')}</h1>
           <span className="text-[12px] text-muted-foreground/40 tabular-nums">{totalCount}</span>
         </div>
       </div>
@@ -317,7 +319,7 @@ export default function TasksPage() {
       <div className="relative">
         <input
           type="text"
-          placeholder="Search tasks..."
+          placeholder={t('tasks.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className={cn(

@@ -41,6 +41,7 @@ import {
 import { updateItem } from '@/lib/firestore';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useTranslation } from '@/lib/i18n';
 
 /* ── Login ── */
 function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }: {
@@ -56,17 +57,19 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const { t } = useTranslation();
+
   const firebaseErrorMessage = (code: string) => {
     const map: Record<string, string> = {
-      'auth/user-not-found': 'No account with that email.',
-      'auth/wrong-password': 'Incorrect password.',
-      'auth/invalid-email': 'Invalid email address.',
-      'auth/email-already-in-use': 'Email already registered. Try signing in.',
-      'auth/weak-password': 'Password must be at least 6 characters.',
-      'auth/invalid-credential': 'Invalid email or password.',
-      'auth/too-many-requests': 'Too many attempts. Try again later.',
+      'auth/user-not-found': t('error.userNotFound'),
+      'auth/wrong-password': t('error.wrongPassword'),
+      'auth/invalid-email': t('error.invalidEmail'),
+      'auth/email-already-in-use': t('error.emailInUse'),
+      'auth/weak-password': t('error.weakPassword'),
+      'auth/invalid-credential': t('error.invalidCredential'),
+      'auth/too-many-requests': t('error.tooManyRequests'),
     };
-    return map[code] || 'Something went wrong. Please try again.';
+    return map[code] || t('error.generic');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -110,19 +113,19 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
             O
           </div>
           <h1 className="text-2xl font-bold tracking-tight mt-4">
-            {mode === 'signup' ? 'Create Account'
-              : mode === 'email-link' ? 'Sign in with Email Link'
-              : mode === 'email-link-sent' ? 'Check your Inbox'
-              : 'Welcome to ORBIT'}
+            {mode === 'signup' ? t('login.createAccount')
+              : mode === 'email-link' ? t('login.signInEmailLink')
+              : mode === 'email-link-sent' ? t('login.checkInbox')
+              : t('login.welcome')}
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
             {mode === 'signup'
-              ? 'Set up your account to sync across devices.'
+              ? t('login.createAccountDesc')
               : mode === 'email-link'
-              ? 'We\'ll send a passwordless sign-in link to your email.'
+              ? t('login.emailLinkDesc')
               : mode === 'email-link-sent'
-              ? `We sent a sign-in link to ${email}. Click the link in the email to sign in.`
-              : 'Your personal system for tasks, habits, goals, and ideas.'}
+              ? t('login.checkInboxFor').replace('{email}', email)
+              : t('login.tagline')}
           </p>
         </div>
 
@@ -138,7 +141,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
                 <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                 <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
               </svg>
-              Continue with Google
+              {t('login.continueGoogle')}
             </button>
 
             <div className="relative my-4">
@@ -146,7 +149,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
                 <div className="w-full border-t border-border/50" />
               </div>
               <div className="relative flex justify-center text-[11px] uppercase">
-                <span className="bg-background px-3 text-muted-foreground/50">or</span>
+                <span className="bg-background px-3 text-muted-foreground/50">{t('common.or')}</span>
               </div>
             </div>
 
@@ -154,19 +157,19 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
               onClick={() => setMode('login')}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-[15px] font-medium text-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
             >
-              Sign in with Email
+              {t('login.signInEmail')}
             </button>
             <button
               onClick={() => setMode('email-link')}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-[15px] font-medium text-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
             >
-              Sign in with Email Link
+              {t('login.signInEmailLink')}
             </button>
             <button
               onClick={onSignIn}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
             >
-              Try without account
+              {t('login.tryWithout')}
             </button>
           </div>
         ) : mode === 'email-link-sent' ? (
@@ -177,20 +180,20 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
               </svg>
             </div>
             <p className="text-[13px] text-muted-foreground">
-              Open the link in the email to sign in. You can close this tab.
+              {t('login.emailLinkSentDesc')}
             </p>
             <button
               onClick={() => { setMode('choice'); setEmail(''); setError(''); }}
               className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
             >
-              &larr; Back to login
+              {t('login.backToLogin')}
             </button>
           </div>
         ) : mode === 'email-link' ? (
           <form onSubmit={handleSendLink} className="space-y-3">
             <input
               type="email"
-              placeholder="Email"
+              placeholder={t('login.emailPlaceholder')}
               value={email}
               onChange={(e) => { setEmail(e.target.value); setError(''); }}
               required
@@ -211,7 +214,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
               {submitting ? (
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
               ) : (
-                'Send Sign-in Link'
+                t('login.sendSignInLink')
               )}
             </button>
 
@@ -221,14 +224,14 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
                 onClick={() => { setMode('choice'); setError(''); }}
                 className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
               >
-                &larr; Back
+                {t('login.back')}
               </button>
               <button
                 type="button"
                 onClick={() => { setMode('login'); setError(''); }}
                 className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
               >
-                Use password instead
+                {t('login.usePasswordInstead')}
               </button>
             </div>
           </form>
@@ -237,7 +240,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
             {mode === 'signup' && (
               <input
                 type="text"
-                placeholder="Display name (optional)"
+                placeholder={t('login.namePlaceholder')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
@@ -246,7 +249,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
             )}
             <input
               type="email"
-              placeholder="Email"
+              placeholder={t('login.emailPlaceholder')}
               value={email}
               onChange={(e) => { setEmail(e.target.value); setError(''); }}
               required
@@ -256,7 +259,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
             />
             <input
               type="password"
-              placeholder="Password"
+              placeholder={t('login.passwordPlaceholder')}
               value={password}
               onChange={(e) => { setPassword(e.target.value); setError(''); }}
               required
@@ -277,9 +280,9 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
               {submitting ? (
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
               ) : mode === 'signup' ? (
-                'Create Account'
+                t('login.createAccount')
               ) : (
-                'Sign In'
+                t('login.signIn')
               )}
             </button>
 
@@ -289,14 +292,14 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
                 onClick={() => { setMode('choice'); setError(''); }}
                 className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
               >
-                &larr; Back
+                {t('login.back')}
               </button>
               <button
                 type="button"
                 onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
                 className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
               >
-                {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+                {mode === 'login' ? t('login.dontHaveAccount') : t('login.alreadyHaveAccount')}
               </button>
             </div>
           </form>
@@ -304,10 +307,10 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
 
         <p className="text-center text-[11px] text-muted-foreground/60">
           {mode === 'choice'
-            ? 'Local mode stores everything in your browser. No account needed.'
+            ? t('login.localModeNote')
             : mode === 'email-link-sent'
-            ? 'The sign-in link expires after a short time.'
-            : 'Your data is encrypted and synced securely via Firebase.'}
+            ? t('login.emailLinkSentNote')
+            : t('login.dataEncrypted')}
         </p>
       </div>
     </div>
@@ -316,22 +319,22 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
 
 /* ── Onboarding (empty dashboard) ── */
 function OnboardingState({ onOpen }: { onOpen: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
       <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-foreground/[0.05]">
         <Sparkles className="h-6 w-6 text-foreground/40" />
       </div>
-      <h2 className="text-lg font-semibold tracking-tight">Start your orbit</h2>
+      <h2 className="text-lg font-semibold tracking-tight">{t('onboarding.title')}</h2>
       <p className="mt-1.5 max-w-sm text-sm text-muted-foreground leading-relaxed">
-        Press <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-[10px] font-mono">⌘K</kbd> to
-        create your first task, habit, or project.
+        {t('onboarding.description')}
       </p>
       <button
         onClick={onOpen}
         className="mt-5 flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
       >
         <Plus className="h-3.5 w-3.5" />
-        Create something
+        {t('onboarding.cta')}
       </button>
     </div>
   );
@@ -353,6 +356,7 @@ function Section({
   children: React.ReactNode;
   action?: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
       <div className="flex items-center justify-between mb-2 px-1">
@@ -365,7 +369,7 @@ function Section({
         </div>
         {href && (
           <Link href={href} className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors">
-            View all
+            {t('common.viewAll')}
           </Link>
         )}
         {action}
@@ -386,6 +390,7 @@ export default function DashboardPage() {
   const locale = getLocale(language);
   const weekStartsOn = getWeekStartsOn(weekStartSetting);
   const router = useRouter();
+  const { t } = useTranslation();
 
   // Hydration-safe: avoid rendering date-dependent text during SSR
   const [mounted, setMounted] = useState(false);
@@ -511,7 +516,7 @@ export default function DashboardPage() {
             {format(selectedDate, 'EEEE, d MMMM yyyy', { locale })}
             {!isViewingToday && (
               <span className="ml-2 text-[11px] text-muted-foreground/60">
-                ({isViewingPast ? 'Past' : 'Future'})
+                ({isViewingPast ? t('date.past') : t('date.future')})
               </span>
             )}
           </p>
@@ -519,10 +524,10 @@ export default function DashboardPage() {
             {isViewingToday ? (
               <>
                 {new Date().getHours() < 12
-                  ? 'Good morning'
+                  ? t('greeting.morning')
                   : new Date().getHours() < 18
-                  ? 'Good afternoon'
-                  : 'Good evening'}
+                  ? t('greeting.afternoon')
+                  : t('greeting.evening')}
                 {user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}
               </>
             ) : (
@@ -536,7 +541,7 @@ export default function DashboardPage() {
           <button
             onClick={() => setSelectedDate(subDays(selectedDate, 1))}
             className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-foreground/[0.05] active:scale-95 transition-all"
-            title="Previous day"
+            title={t('date.previousDay')}
           >
             <ChevronLeft className="h-4 w-4 text-muted-foreground" />
           </button>
@@ -546,14 +551,14 @@ export default function DashboardPage() {
               onClick={() => setSelectedDate(new Date())}
               className="rounded-lg px-3 py-1.5 text-[11px] font-medium bg-foreground/[0.08] hover:bg-foreground/[0.12] active:scale-95 transition-all"
             >
-              Today
+              {t('date.today')}
             </button>
           )}
           
           <button
             onClick={() => setSelectedDate(addDays(selectedDate, 1))}
             className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-foreground/[0.05] active:scale-95 transition-all"
-            title="Next day"
+            title={t('date.nextDay')}
           >
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </button>
@@ -574,20 +579,20 @@ export default function DashboardPage() {
         <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
           <span className="tabular-nums font-medium">{todayTasks.length + overdueItems.length}</span>
-          <span className="text-muted-foreground/60">{isViewingPast ? 'tasks' : 'tasks'}</span>
+          <span className="text-muted-foreground/60">{t('dashboard.tasks')}</span>
         </div>
         {todayHabits.length > 0 && (
           <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
             <Repeat className="h-3.5 w-3.5" strokeWidth={1.5} />
             <span className="tabular-nums font-medium">{completedHabitsToday}/{todayHabits.length}</span>
-            <span className="text-muted-foreground/60">habits</span>
+            <span className="text-muted-foreground/60">{t('dashboard.habitsLabel')}</span>
           </div>
         )}
         {isViewingToday && (
           <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
             <FolderKanban className="h-3.5 w-3.5" strokeWidth={1.5} />
             <span className="tabular-nums font-medium">{activeProjects.length}</span>
-            <span className="text-muted-foreground/60">projects</span>
+            <span className="text-muted-foreground/60">{t('dashboard.projectsLabel')}</span>
           </div>
         )}
       </div>
@@ -652,7 +657,7 @@ export default function DashboardPage() {
       <div className="grid gap-4 lg:gap-6 lg:grid-cols-2">
         {/* Tasks */}
         <Section
-          title={isViewingToday ? 'Today' : format(selectedDate, 'MMM d', { locale })}
+          title={isViewingToday ? t('nav.today') : format(selectedDate, 'MMM d', { locale })}
           icon={CheckSquare}
           count={todayTasks.length + overdueItems.length}
           href="/today"
@@ -667,8 +672,8 @@ export default function DashboardPage() {
             {overdueItems.length === 0 && todayTasks.length === 0 && (
               <p className="px-4 py-5 text-center text-[12px] text-muted-foreground/50">
                 {isViewingPast 
-                  ? 'No tasks were scheduled for this day'
-                  : 'Nothing scheduled for this day'
+                  ? t('dashboard.noTasksPast')
+                  : t('dashboard.nothingScheduled')
                 }
               </p>
             )}
@@ -676,7 +681,7 @@ export default function DashboardPage() {
         </Section>
 
         {/* Habits */}
-        <Section title="Habits" icon={Repeat} count={todayHabits.length} href="/habits">
+        <Section title={t('nav.habits')} icon={Repeat} count={todayHabits.length} href="/habits">
           <div className="py-2 px-3 space-y-1">
             {todayHabits.map((habit) => {
               const completed = isHabitCompletedForDate(habit, selectedDate);
@@ -715,14 +720,14 @@ export default function DashboardPage() {
               );
             })}
             {todayHabits.length === 0 && (
-              <p className="py-4 text-center text-[12px] text-muted-foreground/50">No habits scheduled</p>
+              <p className="py-4 text-center text-[12px] text-muted-foreground/50">{t('dashboard.noHabitsScheduled')}</p>
             )}
           </div>
         </Section>
 
         {/* Events */}
         {todayEvents.length > 0 && (
-          <Section title="Events" icon={CalendarDays} count={todayEvents.length} href="/calendar">
+          <Section title={t('dashboard.events')} icon={CalendarDays} count={todayEvents.length} href="/calendar">
             <div className="py-1">
               {todayEvents.map((item) => (
                 <ItemRow key={item.id} item={item} compact />
@@ -734,7 +739,7 @@ export default function DashboardPage() {
         {/* Projects */}
         {activeProjects.length > 0 && (
           <Section
-            title="Projects"
+            title={t('nav.projects')}
             icon={FolderKanban}
             count={activeProjects.length}
             href="/projects"

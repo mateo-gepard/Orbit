@@ -8,6 +8,9 @@ import { createItem, updateItem } from '@/lib/firestore';
 import { cn } from '@/lib/utils';
 import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, addMonths, subMonths, getDay } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate, getWeekCompletionRate } from '@/lib/habits';
+import { useTranslation } from '@/lib/i18n';
+import { getLocale, getWeekStartsOn } from '@/lib/utils';
+import { useSettingsStore } from '@/lib/settings-store';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -16,6 +19,10 @@ type ViewMode = 'week' | 'month';
 export default function HabitsPage() {
   const { items, setSelectedItemId } = useOrbitStore();
   const { user } = useAuth();
+  const { t, lang } = useTranslation();
+  const locale = getLocale(lang);
+  const weekStartSetting = useSettingsStore((s) => s.settings.weekStart);
+  const weekStartsOnNum = getWeekStartsOn(weekStartSetting);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const today = new Date();
@@ -64,7 +71,7 @@ export default function HabitsPage() {
     <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Habits</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{t('nav.habits')}</h1>
           <p className="text-[13px] text-muted-foreground/60 mt-0.5">
             {completionRate}% this week
           </p>

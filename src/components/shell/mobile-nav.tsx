@@ -13,18 +13,20 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
 
-const TABS = [
-  { href: '/', icon: LayoutDashboard, label: 'Home' },
-  { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
-  { href: '/habits', icon: Repeat, label: 'Habits' },
-  { href: '/notes', icon: FileText, label: 'Notes' },
-  { href: '/toolbox', icon: Wrench, label: 'Toolbox' },
+const TABS: { href: string; icon: typeof LayoutDashboard; labelKey: TranslationKey }[] = [
+  { href: '/', icon: LayoutDashboard, labelKey: 'mobile.home' },
+  { href: '/tasks', icon: CheckSquare, labelKey: 'mobile.tasks' },
+  { href: '/habits', icon: Repeat, labelKey: 'mobile.habits' },
+  { href: '/notes', icon: FileText, labelKey: 'mobile.notes' },
+  { href: '/toolbox', icon: Wrench, labelKey: 'mobile.toolbox' },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
   const { setCommandBarOpen } = useOrbitStore();
+  const { t } = useTranslation();
 
   return (
     <>
@@ -102,7 +104,7 @@ export function MobileNav() {
                     isActive ? 'opacity-100' : 'opacity-0 h-0'
                   )}
                 >
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </span>
               </Link>
             );

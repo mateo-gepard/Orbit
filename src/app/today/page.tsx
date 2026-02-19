@@ -8,9 +8,14 @@ import { cn } from '@/lib/utils';
 import { format, isToday, isPast, parseISO } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate } from '@/lib/habits';
 import { updateItem } from '@/lib/firestore';
+import { useTranslation } from '@/lib/i18n';
+import { getLocale } from '@/lib/utils';
+import { useSettingsStore } from '@/lib/settings-store';
 
 export default function TodayPage() {
   const { items, setSelectedItemId } = useOrbitStore();
+  const { t, lang } = useTranslation();
+  const locale = getLocale(lang);
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
 
@@ -42,8 +47,8 @@ export default function TodayPage() {
     <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div>
-        <p className="text-[13px] text-muted-foreground/60">{format(today, 'EEEE')}</p>
-        <h1 className="text-xl font-semibold tracking-tight">{format(today, 'd MMMM yyyy')}</h1>
+        <p className="text-[13px] text-muted-foreground/60">{format(today, 'EEEE', { locale })}</p>
+        <h1 className="text-xl font-semibold tracking-tight">{format(today, 'd MMMM yyyy', { locale })}</h1>
       </div>
 
       {/* Overdue */}
@@ -52,7 +57,7 @@ export default function TodayPage() {
           <div className="flex items-center gap-2 mb-2 px-1">
             <div className="h-1.5 w-1.5 rounded-full bg-foreground/40" />
             <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
-              Overdue · {overdue.length}
+              {t('today.overdue')} · {overdue.length}
             </span>
           </div>
           <div className="rounded-xl border border-border/60 bg-card py-1">
@@ -68,7 +73,7 @@ export default function TodayPage() {
         <div className="flex items-center gap-2 mb-2 px-1">
           <CheckSquare className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
           <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
-            Tasks · {todayTasks.length}
+              {t('today.tasks')} · {todayTasks.length}
           </span>
         </div>
         <div className="rounded-xl border border-border/60 bg-card py-1">
@@ -77,7 +82,7 @@ export default function TodayPage() {
           ))}
           {todayTasks.length === 0 && (
             <p className="px-4 py-6 text-center text-[12px] text-muted-foreground/40">
-              No tasks for today
+              {t('today.noTasks')}
             </p>
           )}
         </div>
@@ -89,7 +94,7 @@ export default function TodayPage() {
           <div className="flex items-center gap-2 mb-2 px-1">
             <div className="h-1.5 w-1.5 rounded-full bg-foreground/20" />
             <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
-              Events · {todayEvents.length}
+              {t('today.events')} · {todayEvents.length}
             </span>
           </div>
           <div className="rounded-xl border border-border/60 bg-card py-1">
@@ -105,7 +110,7 @@ export default function TodayPage() {
         <div className="flex items-center gap-2 mb-2 px-1">
           <Repeat className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
           <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
-            Habits · {todayHabits.length}
+              {t('today.habits')} · {todayHabits.length}
           </span>
         </div>
         <div className="rounded-xl border border-border/60 bg-card px-3 py-2 space-y-0.5">
@@ -145,7 +150,7 @@ export default function TodayPage() {
             );
           })}
           {todayHabits.length === 0 && (
-            <p className="py-5 text-center text-[12px] text-muted-foreground/40">No habits scheduled</p>
+            <p className="py-5 text-center text-[12px] text-muted-foreground/40">{t('today.noHabits')}</p>
           )}
         </div>
       </div>

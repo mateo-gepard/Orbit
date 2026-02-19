@@ -9,18 +9,20 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import type { NoteSubtype, OrbitItem } from '@/lib/types';
 import { NoteEditor } from '@/components/notes/note-editor';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
 
-const FILTERS: { label: string; value: NoteSubtype | 'all' }[] = [
-	{ label: 'All', value: 'all' },
-	{ label: 'Ideas', value: 'idea' },
-	{ label: 'Principles', value: 'principle' },
-	{ label: 'Plans', value: 'plan' },
-	{ label: 'Journal', value: 'journal' },
+const FILTERS: { labelKey: TranslationKey; value: NoteSubtype | 'all' }[] = [
+	{ labelKey: 'notes.all', value: 'all' },
+	{ labelKey: 'notes.ideas', value: 'idea' },
+	{ labelKey: 'notes.principles', value: 'principle' },
+	{ labelKey: 'notes.plans', value: 'plan' },
+	{ labelKey: 'notes.journal', value: 'journal' },
 ];
 
 export default function NotesPage() {
 	const { items, setSelectedItemId } = useOrbitStore();
 	const { user } = useAuth();
+	const { t } = useTranslation();
 	const [filter, setFilter] = useState<NoteSubtype | 'all'>('all');
 	const [isCreating, setIsCreating] = useState(false);
 	const [newNoteTitle, setNewNoteTitle] = useState('');
@@ -236,7 +238,7 @@ export default function NotesPage() {
 			<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto pb-safe">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-xl font-semibold tracking-tight">Notes</h1>
+					<h1 className="text-xl font-semibold tracking-tight">{t('nav.notes')}</h1>
 					<p className="text-[13px] text-muted-foreground/60 mt-0.5">
 						{notes.length} {notes.length === 1 ? 'note' : 'notes'}
 					</p>
@@ -256,7 +258,7 @@ export default function NotesPage() {
 								: 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]'
 						)}
 					>
-						{f.label}
+						{t(f.labelKey)}
 					</button>
 				))}
 			</div>
@@ -313,9 +315,9 @@ export default function NotesPage() {
 					<div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
 						<FileText className="h-5 w-5 text-muted-foreground/30" />
 					</div>
-					<h3 className="text-[15px] font-medium">No notes yet</h3>
+					<h3 className="text-[15px] font-medium">{t('notes.noNotes')}</h3>
 					<p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
-						Capture ideas, principles, plans, and reflections.
+						{t('notes.noNotesDesc')}
 					</p>
 				</div>
 			)}

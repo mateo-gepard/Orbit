@@ -21,6 +21,7 @@ import { syncEventToGoogle, hasCalendarPermission, requestCalendarPermission } f
 import type { ItemType, NoteSubtype, OrbitItem } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { useTranslation } from '@/lib/i18n';
 
 const TYPE_ICONS: Record<ItemType, typeof CheckSquare> = {
   task: CheckSquare,
@@ -43,6 +44,7 @@ const TYPE_LABELS: Record<ItemType, string> = {
 export function CommandBar() {
   const { user } = useAuth();
   const { commandBarOpen, setCommandBarOpen, items, getAllTags, addCustomTag } = useOrbitStore();
+  const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -374,7 +376,7 @@ export function CommandBar() {
                   setSelectedIndex((i) => Math.max(i - 1, 0));
                 }
               }}
-              placeholder="What do you need?"
+              placeholder={t('commandBar.placeholder')}
               className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
               autoFocus
               autoComplete="off"
@@ -406,7 +408,7 @@ export function CommandBar() {
             {suggestedTags.length > 0 && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
-                  Tags
+                  {t('commandBar.tags')}
                 </div>
                 {suggestedTags.map((tag, idx) => (
                   <button
@@ -428,7 +430,7 @@ export function CommandBar() {
             {suggestedPriorities.length > 0 && !suggestedTags.length && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
-                  Priority
+                  {t('commandBar.priority')}
                 </div>
                 {suggestedPriorities.map((priority, idx) => (
                   <button
@@ -454,7 +456,7 @@ export function CommandBar() {
             {suggestedLinks.length > 0 && !suggestedTags.length && !suggestedPriorities.length && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
-                  Link to
+                  {t('commandBar.linkTo')}
                 </div>
                 {suggestedLinks.map((item, idx) => {
                   const Icon = TYPE_ICONS[item.type];
@@ -493,7 +495,7 @@ export function CommandBar() {
             {filteredItems.length > 0 && !input.startsWith('/') && !showingAutocomplete && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
-                  Results
+                  {t('commandBar.results')}
                 </div>
                 {filteredItems.map((item, idx) => {
                   const Icon = TYPE_ICONS[item.type];
@@ -553,7 +555,7 @@ export function CommandBar() {
             {input.trim() && isCreateMode && !suggestedTags.length && !parsed.title.trim() && parsed.tags.length > 0 && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
-                  Create {parsed.tags.length === 1 ? 'tag' : 'tags'}
+                  {parsed.tags.length === 1 ? t('commandBar.createTag') : t('commandBar.createTags')}
                 </div>
                 <button
                   onClick={() => handleSubmit()}
@@ -576,7 +578,7 @@ export function CommandBar() {
             {!input.trim() && (
               <div className="px-4 py-3 space-y-3">
                 <div className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
-                  Commands
+                  {t('commandBar.commands')}
                 </div>
                 <div className="grid grid-cols-3 lg:grid-cols-2 gap-1.5">
                   {Object.entries(TYPE_ICONS).map(([type, Icon]) => (

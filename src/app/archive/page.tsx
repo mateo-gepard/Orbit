@@ -9,6 +9,7 @@ import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useTranslation } from '@/lib/i18n';
 
 type ViewTab = 'completed' | 'archived';
 
@@ -16,6 +17,7 @@ export default function ArchivePage() {
   const { items } = useOrbitStore();
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<ViewTab>('completed');
+  const { t } = useTranslation();
 
   const completedItems = useMemo(() => {
     const completed = items.filter((i) => i.status === 'done' && i.type !== 'habit');
@@ -54,9 +56,9 @@ export default function ArchivePage() {
       {/* Header */}
       <div className="px-4 lg:px-8 pt-4 lg:pt-8 pb-3 lg:pb-4 border-b border-border/40 bg-background">
         <div className="max-w-3xl mx-auto">
-          <h1 className="text-xl font-semibold tracking-tight">Archive</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{t('nav.archive')}</h1>
           <p className="text-[13px] text-muted-foreground/60 mt-0.5">
-            View completed and archived items
+            {t('archive.subtitle')}
           </p>
         </div>
       </div>
@@ -81,7 +83,7 @@ export default function ArchivePage() {
               >
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>Completed</span>
+                  <span>{t('archive.completedTab')}</span>
                   <span className="text-[11px] text-muted-foreground/40 font-normal">
                     {completedItems.length}
                   </span>
@@ -97,7 +99,7 @@ export default function ArchivePage() {
               >
                 <div className="flex items-center gap-2">
                   <ArchiveIcon className="h-3.5 w-3.5" />
-                  <span>Archived</span>
+                  <span>{t('archive.archivedTab')}</span>
                   <span className="text-[11px] text-muted-foreground/40 font-normal">
                     {archivedItems.length}
                   </span>

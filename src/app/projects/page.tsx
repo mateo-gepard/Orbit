@@ -15,10 +15,12 @@ import { useOrbitStore } from "@/lib/store";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createItem, updateItem } from "@/lib/firestore";
 import { cn } from "@/lib/utils";
+import { useTranslation } from '@/lib/i18n';
 type ViewMode = "grid" | "kanban";
 export default function ProjectsPage() {
   const { items, setSelectedItemId } = useOrbitStore();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const projects = useMemo(
     () => items.filter((i) => i.type === "project" && i.status !== "archived"),
@@ -89,7 +91,7 @@ export default function ProjectsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl lg:text-[22px] font-semibold tracking-tight">
-            Projects
+            {t('nav.projects')}
           </h1>
           <p className="text-[13px] text-muted-foreground/60 mt-1">
             {projects.length} active project{projects.length !== 1 ? 's' : ''}
@@ -125,7 +127,7 @@ export default function ProjectsPage() {
             onClick={handleNewProject}
             className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-2 text-[13px] lg:text-[12px] font-medium text-background transition-all hover:opacity-90 active:scale-[0.98]"
           >
-            <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" /> New Project
+            <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" /> {t('projects.newProject')}
           </button>
         </div>
       </div>

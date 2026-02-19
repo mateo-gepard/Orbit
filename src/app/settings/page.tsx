@@ -46,6 +46,7 @@ import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-ca
 import { hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import type {
   ThemeMode,
   DateFormat,
@@ -62,21 +63,21 @@ import type {
 
 interface SettingSection {
   id: string;
-  label: string;
+  label: TranslationKey;
   icon: LucideIcon;
 }
 
 const SECTIONS: SettingSection[] = [
-  { id: 'profile', label: 'Profile', icon: User },
-  { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'regional', label: 'Language & Region', icon: Globe },
-  { id: 'behavior', label: 'General', icon: Monitor },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'calendar', label: 'Calendar', icon: Calendar },
-  { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: Keyboard },
-  { id: 'privacy', label: 'Privacy & Security', icon: Shield },
-  { id: 'accessibility', label: 'Accessibility', icon: Accessibility },
-  { id: 'data', label: 'Data & Storage', icon: Database },
+  { id: 'profile', label: 'settings.profile', icon: User },
+  { id: 'appearance', label: 'settings.appearance', icon: Palette },
+  { id: 'regional', label: 'settings.languageRegion', icon: Globe },
+  { id: 'behavior', label: 'settings.general', icon: Monitor },
+  { id: 'notifications', label: 'settings.notifications', icon: Bell },
+  { id: 'calendar', label: 'settings.calendar', icon: Calendar },
+  { id: 'shortcuts', label: 'settings.shortcuts', icon: Keyboard },
+  { id: 'privacy', label: 'settings.privacy', icon: Shield },
+  { id: 'accessibility', label: 'settings.accessibility', icon: Accessibility },
+  { id: 'data', label: 'settings.dataStorage', icon: Database },
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -202,13 +203,13 @@ function NumberInput({
 }
 
 // Shortcut data
-const SHORTCUTS = [
-  { keys: ['⌘', 'K'], action: 'Open command bar' },
-  { keys: ['⌘', 'B'], action: 'Toggle sidebar' },
-  { keys: ['Esc'], action: 'Close panel / dialog' },
-  { keys: ['Enter'], action: 'Submit / confirm' },
-  { keys: ['↑', '↓'], action: 'Navigate list items' },
-  { keys: ['⌘', '⇧', 'D'], action: 'Toggle dark mode' },
+const SHORTCUTS: { keys: string[]; action: TranslationKey }[] = [
+  { keys: ['⌘', 'K'], action: 'settings.commandBar' },
+  { keys: ['⌘', 'B'], action: 'settings.toggleSidebar' },
+  { keys: ['Esc'], action: 'settings.closePanel' },
+  { keys: ['Enter'], action: 'settings.submitConfirm' },
+  { keys: ['↑', '↓'], action: 'settings.navigateList' },
+  { keys: ['⌘', '⇧', 'D'], action: 'settings.toggleDarkMode' },
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -222,6 +223,7 @@ function NotificationsSection({
   settings: UserSettings;
   setNested: (section: string, updates: Record<string, unknown>) => void;
 }) {
+  const { t } = useTranslation();
   const items = useOrbitStore((s) => s.items);
   const [permissionStatus, setPermissionStatus] = useState<string>('default');
   const [testSent, setTestSent] = useState<'morning' | 'evening' | null>(null);
@@ -251,7 +253,7 @@ function NotificationsSection({
 
   return (
     <div>
-      <SectionHeader icon={Bell} label="Notifications" />
+      <SectionHeader icon={Bell} label={t('settings.notifications')} />
 
       {/* Permission status */}
       <div className="mb-4 rounded-xl border border-border/30 bg-muted/20 px-3 sm:px-4 py-3">
@@ -263,10 +265,10 @@ function NotificationsSection({
             )} />
             <span className="text-[12px] font-medium">
               {permissionStatus === 'granted'
-                ? 'Notifications enabled'
+                ? t('settings.enableNotif')
                 : permissionStatus === 'denied'
-                ? 'Notifications blocked'
-                : 'Notifications not set up'}
+                ? t('settings.enableNotif')
+                : t('settings.enableNotif')}
             </span>
           </div>
           {permissionStatus !== 'granted' && (
@@ -274,7 +276,7 @@ function NotificationsSection({
               onClick={handleRequestPermission}
               className="rounded-lg bg-foreground px-3 py-1 text-[11px] font-semibold text-background transition-opacity hover:opacity-80"
             >
-              {permissionStatus === 'denied' ? 'Blocked by browser' : 'Enable'}
+              {permissionStatus === 'denied' ? 'Blocked' : 'Enable'}
             </button>
           )}
         </div>
@@ -285,14 +287,14 @@ function NotificationsSection({
         )}
       </div>
 
-      <SettingRow label="Enable Notifications" description="Allow Orbit to send push notifications">
+      <SettingRow label={t('settings.enableNotif')} description={t('settings.enableNotifDesc')}>
         <Toggle
           checked={settings.notifications.enabled}
           onChange={(v) => setNested('notifications', { enabled: v })}
         />
       </SettingRow>
 
-      <SettingRow label="Notification Sound">
+      <SettingRow label={t('settings.notifSound')}>
         <button
           onClick={() => setNested('notifications', { sound: !settings.notifications.sound })}
           className="flex items-center gap-1.5 text-[12px] text-muted-foreground/60"
@@ -302,15 +304,15 @@ function NotificationsSection({
           ) : (
             <VolumeX className="h-4 w-4" />
           )}
-          {settings.notifications.sound ? 'On' : 'Off'}
+          {settings.notifications.sound ? t('common.on') : t('common.off')}
         </button>
       </SettingRow>
 
       <div className="mt-4 mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
-        Briefings
+        {t('settings.briefings')}
       </div>
 
-      <SettingRow label="Morning Briefing" description="Your day at a glance — tasks, events, habits">
+      <SettingRow label={t('settings.morningBriefing')} description={t('settings.morningBriefingDesc')}>
         <div className="flex items-center gap-2">
           <Toggle
             checked={settings.notifications.dailyBriefing}
@@ -327,7 +329,7 @@ function NotificationsSection({
         </div>
       </SettingRow>
 
-      <SettingRow label="Evening Briefing" description="Review your day — what you crushed, what's left">
+      <SettingRow label={t('settings.eveningBriefing')} description={t('settings.eveningBriefingDesc')}>
         <div className="flex items-center gap-2">
           <Toggle
             checked={settings.notifications.eveningBriefing}
@@ -358,7 +360,7 @@ function NotificationsSection({
             )}
           >
             {testSent === 'morning' ? <Check className="h-3 w-3" /> : <Send className="h-3 w-3" />}
-            {testSent === 'morning' ? 'Sent!' : 'Test Morning'}
+            {testSent === 'morning' ? t('common.sent') : t('settings.testMorning')}
           </button>
           <button
             onClick={handleTestEvening}
@@ -371,16 +373,16 @@ function NotificationsSection({
             )}
           >
             {testSent === 'evening' ? <Check className="h-3 w-3" /> : <Send className="h-3 w-3" />}
-            {testSent === 'evening' ? 'Sent!' : 'Test Evening'}
+            {testSent === 'evening' ? t('common.sent') : t('settings.testEvening')}
           </button>
         </div>
       )}
 
       <div className="mt-6 mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
-        Reminders
+        {t('settings.reminders')}
       </div>
 
-      <SettingRow label="Task Reminders" description="Remind before tasks are due">
+      <SettingRow label={t('settings.taskReminders')} description={t('settings.taskRemindersDesc')}>
         <div className="flex items-center gap-2">
           <Toggle
             checked={settings.notifications.taskReminders}
@@ -392,20 +394,20 @@ function NotificationsSection({
               onChange={(v) => setNested('notifications', { reminderMinutes: v })}
               min={5}
               max={1440}
-              suffix="min before"
+              suffix={t('settings.minBefore')}
             />
           )}
         </div>
       </SettingRow>
 
-      <SettingRow label="Habit Reminders" description="Daily reminders for active habits">
+      <SettingRow label={t('settings.habitReminders')} description={t('settings.habitRemindersDesc')}>
         <Toggle
           checked={settings.notifications.habitReminders}
           onChange={(v) => setNested('notifications', { habitReminders: v })}
         />
       </SettingRow>
 
-      <SettingRow label="Weekly Review" description="Scheduled weekly summary" border={false}>
+      <SettingRow label={t('settings.weeklyReview')} description={t('settings.weeklyReviewDesc')} border={false}>
         <div className="flex items-center gap-2">
           <Toggle
             checked={settings.notifications.weeklyReview}
@@ -415,8 +417,8 @@ function NotificationsSection({
             <SelectDropdown
               value={String(settings.notifications.weeklyReviewDay)}
               options={[
-                { value: '0', label: 'Sunday' },
-                { value: '1', label: 'Monday' },
+                { value: '0', label: t('settings.sunday') },
+                { value: '1', label: t('settings.monday') },
                 { value: '5', label: 'Friday' },
                 { value: '6', label: 'Saturday' },
               ]}
@@ -434,6 +436,7 @@ function NotificationsSection({
 // ═══════════════════════════════════════════════════════════
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const { user, isDemo, signOut, deleteAccount } = useAuth();
   const { settings, update, updateNested, reset } = useSettingsStore();
   const { setTheme } = useTheme();
@@ -521,7 +524,7 @@ export default function SettingsPage() {
     <div className="flex h-full">
       {/* ─── Left sidebar nav ─── */}
       <nav className="hidden lg:flex flex-col w-[220px] border-r border-border/30 py-6 px-3 shrink-0">
-        <h1 className="text-[13px] font-semibold tracking-tight px-3 mb-5 text-muted-foreground/70 uppercase">Settings</h1>
+        <h1 className="text-[13px] font-semibold tracking-tight px-3 mb-5 text-muted-foreground/70 uppercase">{t('settings.title')}</h1>
         <div className="space-y-0.5">
           {SECTIONS.map((s) => {
             const isActive = activeSection === s.id;
@@ -537,7 +540,7 @@ export default function SettingsPage() {
                 )}
               >
                 <s.icon className="h-[15px] w-[15px] shrink-0" strokeWidth={1.5} />
-                <span>{s.label}</span>
+                <span>{t(s.label)}</span>
               </button>
             );
           })}
@@ -549,7 +552,7 @@ export default function SettingsPage() {
             onClick={signOut}
             className="flex items-center gap-2 text-[12px] text-muted-foreground/50 hover:text-destructive transition-colors"
           >
-            Sign out
+            {t('settings.signOut')}
           </button>
         </div>
       </nav>
@@ -571,7 +574,7 @@ export default function SettingsPage() {
                 )}
               >
                 <s.icon className="h-3 w-3" strokeWidth={1.5} />
-                {s.label}
+                {t(s.label)}
               </button>
             ))}
           </div>
@@ -588,13 +591,13 @@ export default function SettingsPage() {
               )}
             >
               <Check className="h-3 w-3" />
-              Saved
+              {t('common.saved')}
             </div>
 
             {/* ═════ PROFILE ═════ */}
             {activeSection === 'profile' && (
               <div>
-              <SectionHeader icon={User} label="Profile" />
+              <SectionHeader icon={User} label={t('settings.profile')} />
 
               {/* Avatar + name card */}
               <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-2xl border border-border/40 bg-card mb-6">
@@ -606,44 +609,44 @@ export default function SettingsPage() {
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <p className="text-[15px] font-semibold truncate">
-                    {user?.displayName || 'User'}
+                    {user?.displayName || t('settings.user')}
                   </p>
                   <p className="text-[12px] text-muted-foreground/60 truncate">
                     {user?.email || ''}
                   </p>
                   {isDemo && (
                     <span className="inline-block mt-1 text-[10px] text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full font-medium">
-                      Demo Mode
+                      {t('settings.demoMode')}
                     </span>
                   )}
                 </div>
               </div>
 
-              <SettingRow label="Display Name" description="How you appear in the app">
+              <SettingRow label={t('settings.displayName')} description={t('settings.displayNameDesc')}>
                 <input
                   value={settings.displayName || user?.displayName || ''}
                   onChange={(e) => set('displayName', e.target.value)}
-                  placeholder={user?.displayName || 'Your name'}
+                  placeholder={user?.displayName || t('settings.yourNamePlaceholder')}
                   className="w-full sm:w-[180px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20"
                 />
               </SettingRow>
 
-              <SettingRow label="Email" description="Linked to your Google account">
+              <SettingRow label={t('settings.email')} description={t('settings.emailDesc')}>
                 <span className="text-[12px] text-muted-foreground/60 font-mono">
                   {user?.email || 'demo@orbit.local'}
                 </span>
               </SettingRow>
 
-              <SettingRow label="Bio" description="Short description about yourself">
+              <SettingRow label={t('settings.bio')} description={t('settings.bioDesc')}>
                 <input
                   value={settings.bio}
                   onChange={(e) => set('bio', e.target.value)}
-                  placeholder="A few words..."
+                  placeholder={t('settings.bioPlaceholder')}
                   className="w-full sm:w-[180px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20"
                 />
               </SettingRow>
 
-              <SettingRow label="Timezone" description="Used for scheduling and due dates" border={false}>
+              <SettingRow label={t('settings.timezone')} description={t('settings.timezoneDesc')} border={false}>
                 <span className="text-[12px] text-muted-foreground/60 font-mono">
                   {settings.timezone}
                 </span>
@@ -654,14 +657,14 @@ export default function SettingsPage() {
           {/* ═════ APPEARANCE ═════ */}
           {activeSection === 'appearance' && (
             <div>
-              <SectionHeader icon={Palette} label="Appearance" />
+              <SectionHeader icon={Palette} label={t('settings.appearance')} />
 
-              <SettingRow label="Theme" description="Choose how Orbit looks">
+              <SettingRow label={t('settings.theme')} description={t('settings.themeDesc')}>
                 <div className="flex gap-1 rounded-lg border border-border/40 p-0.5 w-full sm:w-auto">
                   {([
-                    { value: 'light' as ThemeMode, icon: Sun, label: 'Light' },
-                    { value: 'dark' as ThemeMode, icon: Moon, label: 'Dark' },
-                    { value: 'system' as ThemeMode, icon: SunMoon, label: 'System' },
+                    { value: 'light' as ThemeMode, icon: Sun, label: t('settings.light') },
+                    { value: 'dark' as ThemeMode, icon: Moon, label: t('settings.dark') },
+                    { value: 'system' as ThemeMode, icon: SunMoon, label: t('settings.system') },
                   ]).map((opt) => (
                     <button
                       key={opt.value}
@@ -680,7 +683,7 @@ export default function SettingsPage() {
                 </div>
               </SettingRow>
 
-              <SettingRow label="Accent Color" description="Primary tint throughout the UI">
+              <SettingRow label={t('settings.accentColor')} description={t('settings.accentColorDesc')}>
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
@@ -692,22 +695,22 @@ export default function SettingsPage() {
                 </div>
               </SettingRow>
 
-              <SettingRow label="Density" description="Comfortable shows more whitespace">
+              <SettingRow label={t('settings.density')} description={t('settings.densityDesc')}>
                 <SelectDropdown<CompactMode>
                   value={settings.compactMode}
                   options={[
-                    { value: 'comfortable', label: 'Comfortable' },
-                    { value: 'compact', label: 'Compact' },
+                    { value: 'comfortable', label: t('settings.comfortable') },
+                    { value: 'compact', label: t('settings.compact') },
                   ]}
                   onChange={(v) => set('compactMode', v)}
                 />
               </SettingRow>
 
-              <SettingRow label="Sidebar Badges" description="Show count badges on navigation items">
+              <SettingRow label={t('settings.sidebarBadges')} description={t('settings.sidebarBadgesDesc')}>
                 <Toggle checked={settings.showSidebarBadges} onChange={(v) => set('showSidebarBadges', v)} />
               </SettingRow>
 
-              <SettingRow label="Animations" description="Enable UI transitions and motion effects" border={false}>
+              <SettingRow label={t('settings.animations')} description={t('settings.animationsDesc')} border={false}>
                 <Toggle checked={settings.animationsEnabled} onChange={(v) => set('animationsEnabled', v)} />
               </SettingRow>
             </div>
@@ -716,20 +719,20 @@ export default function SettingsPage() {
           {/* ═════ LANGUAGE & REGION ═════ */}
           {activeSection === 'regional' && (
             <div>
-              <SectionHeader icon={Globe} label="Language & Region" />
+              <SectionHeader icon={Globe} label={t('settings.languageRegion')} />
 
-              <SettingRow label="Language">
+              <SettingRow label={t('settings.language')}>
                 <SelectDropdown<Language>
                   value={settings.language}
                   options={[
-                    { value: 'en', label: 'English' },
-                    { value: 'de', label: 'Deutsch' },
+                    { value: 'en', label: t('settings.english') },
+                    { value: 'de', label: t('settings.deutsch') },
                   ]}
                   onChange={(v) => set('language', v)}
                 />
               </SettingRow>
 
-              <SettingRow label="Date Format">
+              <SettingRow label={t('settings.dateFormat')}>
                 <SelectDropdown<DateFormat>
                   value={settings.dateFormat}
                   options={[
@@ -741,7 +744,7 @@ export default function SettingsPage() {
                 />
               </SettingRow>
 
-              <SettingRow label="Time Format">
+              <SettingRow label={t('settings.timeFormat')}>
                 <SelectDropdown<TimeFormat>
                   value={settings.timeFormat}
                   options={[
@@ -752,12 +755,12 @@ export default function SettingsPage() {
                 />
               </SettingRow>
 
-              <SettingRow label="Week Starts On" border={false}>
+              <SettingRow label={t('settings.weekStartsOn')} border={false}>
                 <SelectDropdown<WeekStart>
                   value={settings.weekStart}
                   options={[
-                    { value: 'monday', label: 'Monday' },
-                    { value: 'sunday', label: 'Sunday' },
+                    { value: 'monday', label: t('settings.monday') },
+                    { value: 'sunday', label: t('settings.sunday') },
                   ]}
                   onChange={(v) => set('weekStart', v)}
                 />
@@ -768,36 +771,36 @@ export default function SettingsPage() {
           {/* ═════ GENERAL / BEHAVIOR ═════ */}
           {activeSection === 'behavior' && (
             <div>
-              <SectionHeader icon={Monitor} label="General" />
+              <SectionHeader icon={Monitor} label={t('settings.general')} />
 
-              <SettingRow label="Start Page" description="Which page to show when you open Orbit">
+              <SettingRow label={t('settings.startPage')} description={t('settings.startPageDesc')}>
                 <SelectDropdown<DefaultView>
                   value={settings.defaultView}
                   options={[
-                    { value: 'dashboard', label: 'Dashboard' },
-                    { value: 'today', label: 'Today' },
-                    { value: 'tasks', label: 'Tasks' },
-                    { value: 'inbox', label: 'Inbox' },
+                    { value: 'dashboard', label: t('nav.dashboard') },
+                    { value: 'today', label: t('nav.today') },
+                    { value: 'tasks', label: t('nav.tasks') },
+                    { value: 'inbox', label: t('nav.inbox') },
                   ]}
                   onChange={(v) => set('defaultView', v)}
                 />
               </SettingRow>
 
-              <SettingRow label="Confirm Before Delete" description="Show a warning before deleting items">
+              <SettingRow label={t('settings.confirmDelete')} description={t('settings.confirmDeleteDesc')}>
                 <Toggle checked={settings.confirmBeforeDelete} onChange={(v) => set('confirmBeforeDelete', v)} />
               </SettingRow>
 
-              <SettingRow label="Archive Instead of Delete" description="Move items to archive rather than permanently deleting">
+              <SettingRow label={t('settings.archiveInstead')} description={t('settings.archiveInsteadDesc')}>
                 <Toggle checked={settings.archiveInsteadOfDelete} onChange={(v) => set('archiveInsteadOfDelete', v)} />
               </SettingRow>
 
-              <SettingRow label="Auto-Archive Completed" description="Archive tasks after a set number of days" border={false}>
+              <SettingRow label={t('settings.autoArchive')} description={t('settings.autoArchiveDesc')} border={false}>
                 <NumberInput
                   value={settings.autoArchiveDays}
                   onChange={(v) => set('autoArchiveDays', v)}
                   min={0}
                   max={365}
-                  suffix="days"
+                  suffix={t('common.days')}
                 />
               </SettingRow>
             </div>
@@ -811,9 +814,9 @@ export default function SettingsPage() {
           {/* ═════ CALENDAR ═════ */}
           {activeSection === 'calendar' && (
             <div>
-              <SectionHeader icon={Calendar} label="Calendar" />
+              <SectionHeader icon={Calendar} label={t('settings.calendar')} />
 
-              <SettingRow label="Google Calendar Sync" description="Sync events with your Google Calendar">
+              <SettingRow label={t('settings.calendarSync')} description={t('settings.calendarSyncDesc')}>
                 <Toggle
                   checked={settings.calendar.googleCalendarSync}
                   onChange={async (v) => {
@@ -836,25 +839,25 @@ export default function SettingsPage() {
                 />
               </SettingRow>
 
-              <SettingRow label="Default Event Duration" description="When creating events without specifying length">
+              <SettingRow label={t('settings.defaultDuration')} description={t('settings.defaultDurationDesc')}>
                 <NumberInput
                   value={settings.calendar.defaultEventDuration}
                   onChange={(v) => setNested('calendar', { defaultEventDuration: v })}
                   min={15}
                   max={480}
                   step={15}
-                  suffix="min"
+                  suffix={t('common.min')}
                 />
               </SettingRow>
 
-              <SettingRow label="Show Week Numbers" description="Display ISO week numbers in calendar views">
+              <SettingRow label={t('settings.showWeekNumbers')} description={t('settings.showWeekNumbersDesc')}>
                 <Toggle
                   checked={settings.calendar.showWeekNumbers}
                   onChange={(v) => setNested('calendar', { showWeekNumbers: v })}
                 />
               </SettingRow>
 
-              <SettingRow label="Show Declined Events" description="Display events you've declined" border={false}>
+              <SettingRow label={t('settings.showDeclined')} description={t('settings.showDeclinedDesc')} border={false}>
                 <Toggle
                   checked={settings.calendar.showDeclinedEvents}
                   onChange={(v) => setNested('calendar', { showDeclinedEvents: v })}
@@ -866,7 +869,7 @@ export default function SettingsPage() {
           {/* ═════ KEYBOARD SHORTCUTS ═════ */}
           {activeSection === 'shortcuts' && (
             <div>
-              <SectionHeader icon={Keyboard} label="Keyboard Shortcuts" />
+              <SectionHeader icon={Keyboard} label={t('settings.shortcuts')} />
               <div className="rounded-2xl border border-border/40 overflow-hidden">
                 {SHORTCUTS.map((shortcut, i) => (
                   <div
@@ -876,7 +879,7 @@ export default function SettingsPage() {
                       i < SHORTCUTS.length - 1 && 'border-b border-border/20'
                     )}
                   >
-                    <span className="text-[13px] text-foreground/80">{shortcut.action}</span>
+                    <span className="text-[13px] text-foreground/80">{t(shortcut.action)}</span>
                     <div className="flex gap-1">
                       {shortcut.keys.map((key, j) => (
                         <kbd
@@ -891,7 +894,7 @@ export default function SettingsPage() {
                 ))}
               </div>
               <p className="text-[11px] text-muted-foreground/40 mt-3">
-                Custom shortcut configuration coming soon.
+                {t('settings.shortcutsComingSoon')}
               </p>
             </div>
           )}
@@ -899,23 +902,23 @@ export default function SettingsPage() {
           {/* ═════ PRIVACY & SECURITY ═════ */}
           {activeSection === 'privacy' && (
             <div>
-              <SectionHeader icon={Shield} label="Privacy & Security" />
+              <SectionHeader icon={Shield} label={t('settings.privacy')} />
 
-              <SettingRow label="Usage Analytics" description="Help improve Orbit by sharing anonymous usage data">
+              <SettingRow label={t('settings.analytics')} description={t('settings.analyticsDesc')}>
                 <Toggle
                   checked={settings.privacy.analyticsEnabled}
                   onChange={(v) => setNested('privacy', { analyticsEnabled: v })}
                 />
               </SettingRow>
 
-              <SettingRow label="Crash Reports" description="Automatically send crash logs for debugging">
+              <SettingRow label={t('settings.crashReports')} description={t('settings.crashReportsDesc')}>
                 <Toggle
                   checked={settings.privacy.crashReportsEnabled}
                   onChange={(v) => setNested('privacy', { crashReportsEnabled: v })}
                 />
               </SettingRow>
 
-              <SettingRow label="Show Profile Photo" description="Display your Google profile picture in the sidebar" border={false}>
+              <SettingRow label={t('settings.showPhoto')} description={t('settings.showPhotoDesc')} border={false}>
                 <div className="flex items-center gap-2">
                   <Toggle
                     checked={settings.privacy.showProfilePhoto}
@@ -931,8 +934,7 @@ export default function SettingsPage() {
 
               <div className="mt-6 p-4 rounded-2xl border border-border/40 bg-card">
                 <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-                  Your data is stored securely in Firebase with end-to-end authentication.
-                  Only you can access your items. Orbit never sells or shares personal data.
+                  {t('settings.privacyNote')}
                 </p>
               </div>
             </div>
@@ -941,29 +943,29 @@ export default function SettingsPage() {
           {/* ═════ ACCESSIBILITY ═════ */}
           {activeSection === 'accessibility' && (
             <div>
-              <SectionHeader icon={Accessibility} label="Accessibility" />
+              <SectionHeader icon={Accessibility} label={t('settings.accessibility')} />
 
-              <SettingRow label="Reduce Motion" description="Minimize animations and transitions">
+              <SettingRow label={t('settings.reduceMotion')} description={t('settings.reduceMotionDesc')}>
                 <Toggle
                   checked={settings.accessibility.reduceMotion}
                   onChange={(v) => setNested('accessibility', { reduceMotion: v })}
                 />
               </SettingRow>
 
-              <SettingRow label="High Contrast" description="Increase contrast for better readability">
+              <SettingRow label={t('settings.highContrast')} description={t('settings.highContrastDesc')}>
                 <Toggle
                   checked={settings.accessibility.highContrast}
                   onChange={(v) => setNested('accessibility', { highContrast: v })}
                 />
               </SettingRow>
 
-              <SettingRow label="Font Size" description="Adjust base text size throughout the app" border={false}>
+              <SettingRow label={t('settings.fontSize')} description={t('settings.fontSizeDesc')} border={false}>
                 <SelectDropdown
                   value={settings.accessibility.fontSize}
                   options={[
-                    { value: 'small', label: 'Small' },
-                    { value: 'default', label: 'Default' },
-                    { value: 'large', label: 'Large' },
+                    { value: 'small', label: t('settings.small') },
+                    { value: 'default', label: t('settings.default') },
+                    { value: 'large', label: t('settings.large') },
                   ]}
                   onChange={(v) => setNested('accessibility', { fontSize: v })}
                 />
@@ -974,32 +976,32 @@ export default function SettingsPage() {
           {/* ═════ DATA & STORAGE ═════ */}
           {activeSection === 'data' && (
             <div>
-              <SectionHeader icon={Database} label="Data & Storage" />
+              <SectionHeader icon={Database} label={t('settings.dataStorage')} />
 
-              <SettingRow label="Auto Backup" description="Periodically back up your data to cloud storage">
+              <SettingRow label={t('settings.autoBackup')} description={t('settings.autoBackupDesc')}>
                 <Toggle
                   checked={settings.data.autoBackup}
                   onChange={(v) => setNested('data', { autoBackup: v })}
                 />
               </SettingRow>
 
-              <SettingRow label="Export Settings" description="Download all settings as a JSON file">
+              <SettingRow label={t('settings.exportSettings')} description={t('settings.exportSettingsDesc')}>
                 <button
                   onClick={handleExportData}
                   className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 hover:bg-foreground/[0.03] transition-colors"
                 >
                   <Download className="h-3 w-3" />
-                  Export
+                  {t('settings.exportSettings')}
                 </button>
               </SettingRow>
 
-              <SettingRow label="Import Settings" description="Restore settings from a JSON backup">
+              <SettingRow label={t('settings.importSettings')} description={t('settings.importSettingsDesc')}>
                 <button
                   onClick={handleImportData}
                   className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 hover:bg-foreground/[0.03] transition-colors"
                 >
                   <Upload className="h-3 w-3" />
-                  Import
+                  {t('settings.importSettings')}
                 </button>
               </SettingRow>
 
@@ -1012,14 +1014,14 @@ export default function SettingsPage() {
               {/* Danger zone */}
               <div className="mt-8 pt-6 border-t border-border/30">
                 <p className="text-[10px] font-medium uppercase tracking-widest text-destructive/60 mb-3">
-                  Danger Zone
+                  {t('settings.dangerZone')}
                 </p>
 
                 <div className="rounded-2xl border border-destructive/20 p-4 space-y-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-[13px] font-medium text-foreground/90">Reset All Settings</p>
-                      <p className="text-[11px] text-muted-foreground/50">Restore every setting to its default value</p>
+                      <p className="text-[13px] font-medium text-foreground/90">{t('settings.resetAll')}</p>
+                      <p className="text-[11px] text-muted-foreground/50">{t('settings.resetAllDesc')}</p>
                     </div>
                     {showResetConfirm ? (
                       <div className="flex gap-1.5">
@@ -1027,7 +1029,7 @@ export default function SettingsPage() {
                           onClick={() => { reset(); setShowResetConfirm(false); flashSaved(); }}
                           className="rounded-lg bg-destructive px-3 py-1.5 text-[11px] font-medium text-white hover:bg-destructive/90 transition-colors"
                         >
-                          Confirm Reset
+                          {t('settings.confirmReset')}
                         </button>
                         <button
                           onClick={() => setShowResetConfirm(false)}
@@ -1042,15 +1044,15 @@ export default function SettingsPage() {
                         className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-[12px] font-medium text-destructive/80 hover:bg-destructive/5 transition-colors w-fit"
                       >
                         <RotateCcw className="h-3 w-3" />
-                        Reset
+                        {t('settings.reset')}
                       </button>
                     )}
                   </div>
 
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-4 border-t border-destructive/10">
                     <div>
-                      <p className="text-[13px] font-medium text-foreground/90">Delete Account</p>
-                      <p className="text-[11px] text-muted-foreground/50">Permanently delete your account and all data</p>
+                      <p className="text-[13px] font-medium text-foreground/90">{t('settings.deleteAccount')}</p>
+                      <p className="text-[11px] text-muted-foreground/50">{t('settings.deleteAccountDesc')}</p>
                     </div>
                     {showDeleteConfirm ? (
                       <div className="flex gap-1.5">
@@ -1067,7 +1069,7 @@ export default function SettingsPage() {
                           disabled={deleteLoading}
                           className="rounded-lg bg-destructive px-3 py-1.5 text-[11px] font-medium text-white hover:bg-destructive/90 transition-colors disabled:opacity-50"
                         >
-                          {deleteLoading ? 'Deleting...' : 'Yes, delete everything'}
+                          {deleteLoading ? t('settings.deleting') : t('settings.yesDeleteEverything')}
                         </button>
                         <button
                           onClick={() => setShowDeleteConfirm(false)}
@@ -1082,7 +1084,7 @@ export default function SettingsPage() {
                         className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-[12px] font-medium text-destructive/80 hover:bg-destructive/5 transition-colors w-fit"
                       >
                         <Trash2 className="h-3 w-3" />
-                        Delete Account
+                        {t('settings.deleteAccount')}
                       </button>
                     )}
                   </div>
@@ -1092,10 +1094,10 @@ export default function SettingsPage() {
               {/* App info */}
               <div className="mt-8 pt-4 border-t border-border/20 text-center">
                 <p className="text-[11px] text-muted-foreground/30">
-                  ORBIT v1.0.0 · Made with focus
+                  {t('settings.version')}
                 </p>
                 <p className="text-[10px] text-muted-foreground/20 mt-0.5">
-                  Settings synced {isDemo ? 'locally' : 'with Firebase'}
+                  {isDemo ? t('settings.syncedLocally') : t('settings.syncedFirebase')}
                 </p>
               </div>
             </div>

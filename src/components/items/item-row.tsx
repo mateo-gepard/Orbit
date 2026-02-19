@@ -96,6 +96,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     <div
       role="button"
       tabIndex={0}
+      data-slot="item-row"
       onClick={() => {
         haptic('light');
         setSelectedItemId(item.id);

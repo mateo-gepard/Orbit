@@ -9,16 +9,18 @@ import { cn } from '@/lib/utils';
 import { computeBadges } from '@/lib/badges';
 import { BadgesSection } from '@/components/ui/badge-stack';
 import type { GoalTimeframe } from '@/lib/types';
+import { useTranslation } from '@/lib/i18n';
 
-const TIMEFRAME_LABELS: Record<GoalTimeframe, string> = {
-  quarterly: 'This Quarter',
-  yearly: 'This Year',
-  longterm: 'Long-term',
+const TIMEFRAME_KEYS: Record<GoalTimeframe, string> = {
+  quarterly: 'goals.thisQuarter',
+  yearly: 'goals.thisYear',
+  longterm: 'goals.longterm',
 };
 
 export default function GoalsPage() {
   const { items, setSelectedItemId } = useOrbitStore();
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const goals = useMemo(
     () => items.filter((i) => i.type === 'goal' && i.status !== 'archived'),
@@ -68,7 +70,7 @@ export default function GoalsPage() {
     <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Goals</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{t('nav.goals')}</h1>
           <p className="text-[13px] text-muted-foreground/60 mt-0.5">
             {goals.length} active
           </p>
@@ -78,7 +80,7 @@ export default function GoalsPage() {
           className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform"
         >
           <Plus className="h-3.5 w-3.5" />
-          New
+          {t('common.new')}
         </button>
       </div>
 
@@ -93,7 +95,7 @@ export default function GoalsPage() {
         return (
           <div key={timeframe}>
             <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 px-1">
-              {TIMEFRAME_LABELS[timeframe]}
+              {t(TIMEFRAME_KEYS[timeframe] as any)}
             </span>
             <div className="grid gap-2.5 sm:grid-cols-2 mt-2">
               {group.map((goal) => {
@@ -140,9 +142,9 @@ export default function GoalsPage() {
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
             <Target className="h-5 w-5 text-muted-foreground/30" />
           </div>
-          <h3 className="text-[15px] font-medium">No goals yet</h3>
+          <h3 className="text-[15px] font-medium">{t('goals.noGoals')}</h3>
           <p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
-            Define goals and link tasks to track progress toward what matters.
+            {t('goals.noGoalsDesc')}
           </p>
         </div>
       )}
