@@ -181,7 +181,7 @@ export function DetailPanel() {
   };
 
   const handleAddToToday = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = format(new Date(), 'yyyy-MM-dd');
     const isMyDay = item?.myDay === today;
     
     // If already in My Day, remove it, otherwise add it
@@ -525,7 +525,7 @@ export function DetailPanel() {
           )}
 
           {/* Add to Today (Task) */}
-          {item.type === 'task' && item.status !== 'done' && item.myDay !== new Date().toISOString().split('T')[0] && (
+          {item.type === 'task' && item.status !== 'done' && item.myDay !== format(new Date(), 'yyyy-MM-dd') && (
             <button
               onClick={handleAddToToday}
               className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 h-9 text-[13px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"

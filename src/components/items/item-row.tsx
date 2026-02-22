@@ -78,16 +78,16 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
   
   const isDueToday = item.dueDate && isToday(parseISO(item.dueDate));
 
-  const isMyDay = item.myDay === new Date().toISOString().split('T')[0];
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const isMyDay = item.myDay === todayStr;
 
   const handleSwipeToday = async () => {
     haptic(isMyDay ? 'light' : 'success');
-    const today = new Date().toISOString().split('T')[0];
     
     if (isMyDay) {
       await updateItem(item.id, { myDay: undefined });
     } else {
-      await updateItem(item.id, { myDay: today });
+      await updateItem(item.id, { myDay: todayStr });
     }
   };
 
