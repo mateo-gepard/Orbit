@@ -503,6 +503,7 @@ export default function SettingsPage() {
   const { t } = useTranslation();
   const { user, isDemo, signOut, deleteAccount } = useAuth();
   const { settings, update, updateNested, reset } = useSettingsStore();
+  const items = useOrbitStore((s) => s.items);
   const { setTheme } = useTheme();
   const [activeSection, setActiveSection] = useState('profile');
   const [mounted, setMounted] = useState(false);
@@ -577,6 +578,49 @@ export default function SettingsPage() {
       }
     };
     input.click();
+  };
+
+  const handleExportAllData = () => {
+    const tasks = items.filter((i) => i.type === 'task');
+    const habits = items.filter((i) => i.type === 'habit');
+    const events = items.filter((i) => i.type === 'event');
+    const goals = items.filter((i) => i.type === 'goal');
+    const projects = items.filter((i) => i.type === 'project');
+    const notes = items.filter((i) => i.type === 'note');
+
+    const data = {
+      exportedAt: new Date().toISOString(),
+      version: 1,
+      user: user ? { uid: user.uid, email: user.email, displayName: user.displayName } : null,
+      stats: {
+        tasks: tasks.length,
+        habits: habits.length,
+        events: events.length,
+        goals: goals.length,
+        projects: projects.length,
+        notes: notes.length,
+        total: items.length,
+      },
+      settings,
+      items: {
+        tasks,
+        habits,
+        events,
+        goals,
+        projects,
+        notes,
+      },
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orbit-full-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    updateNested('data', { lastExportAt: Date.now() });
+    flashSaved();
   };
 
   if (!mounted) return null;
@@ -1139,6 +1183,16 @@ export default function SettingsPage() {
                   checked={settings.data.autoBackup}
                   onChange={(v) => setNested('data', { autoBackup: v })}
                 />
+              </SettingRow>
+
+              <SettingRow label={t('settings.exportAllData')} description={t('settings.exportAllDataDesc')}>
+                <button
+                  onClick={handleExportAllData}
+                  className="flex items-center gap-1.5 rounded-lg bg-foreground text-background px-3 py-1.5 text-[12px] font-medium hover:bg-foreground/90 transition-colors"
+                >
+                  <Download className="h-3 w-3" />
+                  {t('settings.exportAllData')}
+                </button>
               </SettingRow>
 
               <SettingRow label={t('settings.exportSettings')} description={t('settings.exportSettingsDesc')}>
