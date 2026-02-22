@@ -139,11 +139,11 @@ async function registerNativeWebPush(
 ): Promise<string | null> {
   try {
     // Convert VAPID key from base64url to Uint8Array
-    const applicationServerKey = urlBase64ToUint8Array(vapidKey);
+    const keyArray = urlBase64ToUint8Array(vapidKey);
 
     const subscription = await swRegistration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey,
+      applicationServerKey: keyArray.buffer as ArrayBuffer,
     });
 
     const subJson = JSON.stringify(subscription.toJSON());
