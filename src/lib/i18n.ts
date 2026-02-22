@@ -64,6 +64,7 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'dashboard.nothingScheduled': 'Spielfrei — genieße die Pause, Dr. 🩺',
   'dashboard.noTasksPast': 'Kein Spiel an diesem Tag',
   'dashboard.noHabitsScheduled': 'Trainingsfreier Tag — Regeneration! 💪',
+  'dashboard.allCaughtUp': 'Alles aufgeholt — stark! 💪',
 
   // ── Today page ───────────────────────────────────────────
   'today.tasks': 'Spielzüge',
@@ -366,6 +367,7 @@ const en = {
   'dashboard.nothingScheduled': 'Nothing scheduled for this day',
   'dashboard.noTasksPast': 'No tasks were scheduled for this day',
   'dashboard.noHabitsScheduled': 'No habits scheduled',
+  'dashboard.allCaughtUp': 'All caught up!',
   'dashboard.tasks': 'tasks',
   'dashboard.habitsLabel': 'habits',
   'dashboard.projectsLabel': 'projects',
@@ -827,6 +829,7 @@ const de: Record<TranslationKey, string> = {
   'dashboard.nothingScheduled': 'Nichts geplant für diesen Tag',
   'dashboard.noTasksPast': 'Keine Aufgaben für diesen Tag geplant',
   'dashboard.noHabitsScheduled': 'Keine Gewohnheiten geplant',
+  'dashboard.allCaughtUp': 'Alles erledigt!',
   'dashboard.tasks': 'Aufgaben',
   'dashboard.habitsLabel': 'Gewohnheiten',
   'dashboard.projectsLabel': 'Projekte',
