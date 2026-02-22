@@ -145,6 +145,9 @@ function sanitizeItem(item: OrbitItem): OrbitItem {
   // Note-specific fields
   if (item.noteSubtype) sanitized.noteSubtype = item.noteSubtype;
 
+  // My Day field
+  if (item.myDay) sanitized.myDay = item.myDay;
+
   return sanitized as unknown as OrbitItem;
 }
 
