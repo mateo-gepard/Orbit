@@ -10,6 +10,7 @@ import { useWishlistStore } from '@/lib/wishlist-store';
 import { useSettingsStore } from '@/lib/settings-store';
 import { subscribeToFlightLogs } from '@/lib/flight';
 import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
+import { registerFCMToken, unregisterFCMToken, setupForegroundMessageHandler, isFCMAvailable } from '@/lib/fcm';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
 import type { ToolId } from '@/lib/toolbox-store';
@@ -33,9 +34,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const unsubSettingsRef = useRef<(() => void) | null>(null);
   const unsubToolDataRefs = useRef<(() => void)[]>([]);
   const loadingStartTime = useRef(Date.now());
+  const prevUserIdRef = useRef<string | null>(null);
 
   const connect = useCallback(() => {
     if (!user) {
+      // Unregister FCM token on sign-out
+      if (prevUserIdRef.current) {
+        unregisterFCMToken(prevUserIdRef.current).catch(() => {});
+        prevUserIdRef.current = null;
+      }
       setItems([]);
       setSyncUserId(null);
       useAbiturStore.getState()._setSyncUserId(null);
@@ -66,6 +73,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       // Set sync user ID for tag cloud sync
       setSyncUserId(user.uid);
+      prevUserIdRef.current = user.uid;
 
       // Set sync user IDs for tool stores
       useAbiturStore.getState()._setSyncUserId(user.uid);
@@ -168,6 +176,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       // Start briefing notification scheduler
       startBriefingScheduler(() => useOrbitStore.getState().items);
+
+      // Register FCM for background push notifications
+      if (isFCMAvailable()) {
+        registerFCMToken(user.uid).then((token) => {
+          if (token) {
+            setupForegroundMessageHandler();
+            console.log('[ORBIT] FCM registered for background briefings');
+          }
+        }).catch((err) => {
+          console.warn('[ORBIT] FCM registration skipped:', err);
+        });
+      }
 
       const unsubscribe = subscribeToItems(user.uid, (items) => {
         setItems(items);

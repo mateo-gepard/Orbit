@@ -125,6 +125,26 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────
+    // FCM Tokens Collection (push notification registration)
+    // Doc ID = userId_tokenHash, scoped by userId field
+    // Cloud Function also reads this (using admin SDK, bypasses rules)
+    // ─────────────────────────────────────────────────────────
+
+    match /fcmTokens/{docId} {
+      allow read: if isSignedIn()
+                  && (resource == null
+                      ? docId[0:request.auth.uid.size()] == request.auth.uid
+                      : isOwner(resource.data.userId));
+      allow create: if isSignedIn()
+                    && isOwner(request.resource.data.userId);
+      allow update: if isSignedIn()
+                    && isOwner(resource.data.userId)
+                    && isOwner(request.resource.data.userId);
+      allow delete: if isSignedIn()
+                    && isOwner(resource.data.userId);
+    }
+
+    // ─────────────────────────────────────────────────────────
     // Deny all other paths
     // ─────────────────────────────────────────────────────────
     

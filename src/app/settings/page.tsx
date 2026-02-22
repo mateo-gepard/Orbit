@@ -44,6 +44,7 @@ import {
   sendEveningBriefingNow,
   syncBriefingScheduleToSW,
 } from '@/lib/briefing-notifications';
+import { updateFCMSchedule, isFCMAvailable, hasFCMToken, registerFCMToken } from '@/lib/fcm';
 import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -228,25 +229,40 @@ function NotificationsSection({
 }) {
   const { t } = useTranslation();
   const items = useOrbitStore((s) => s.items);
+  const { user } = useAuth();
   const [permissionStatus, setPermissionStatus] = useState<string>('default');
   const [testSent, setTestSent] = useState<'morning' | 'evening' | null>(null);
+  const [fcmStatus, setFcmStatus] = useState<'unavailable' | 'unregistered' | 'registered'>('unavailable');
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setPermissionStatus(Notification.permission);
     }
+    if (isFCMAvailable()) {
+      setFcmStatus(hasFCMToken() ? 'registered' : 'unregistered');
+    }
   }, []);
 
-  // Sync briefing schedule to Service Worker whenever settings change
+  // Sync briefing schedule to Service Worker + Firestore whenever settings change
   useEffect(() => {
     syncBriefingScheduleToSW();
+    if (user && hasFCMToken()) {
+      updateFCMSchedule(user.uid).catch(() => {});
+    }
   }, [
+    user,
     settings.notifications.enabled,
     settings.notifications.dailyBriefing,
     settings.notifications.dailyBriefingTime,
     settings.notifications.eveningBriefing,
     settings.notifications.eveningBriefingTime,
   ]);
+
+  const handleEnableBackgroundPush = async () => {
+    if (!user) return;
+    const token = await registerFCMToken(user.uid);
+    setFcmStatus(token ? 'registered' : 'unregistered');
+  };
 
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();
@@ -389,6 +405,40 @@ function NotificationsSection({
             {testSent === 'evening' ? <Check className="h-3 w-3" /> : <Send className="h-3 w-3" />}
             {testSent === 'evening' ? t('common.sent') : t('settings.testEvening')}
           </button>
+        </div>
+      )}
+
+      {/* Background push status */}
+      {permissionStatus === 'granted' && (
+        <div className="mt-3 rounded-lg border border-border/40 bg-muted/20 px-3 py-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                'h-2 w-2 rounded-full',
+                fcmStatus === 'registered' ? 'bg-green-500' : 'bg-amber-500'
+              )} />
+              <span className="text-[11px] font-medium text-muted-foreground">
+                {fcmStatus === 'registered'
+                  ? 'Background push active'
+                  : fcmStatus === 'unregistered'
+                    ? 'Background push available'
+                    : 'Background push not supported'}
+              </span>
+            </div>
+            {fcmStatus === 'unregistered' && user && (
+              <button
+                onClick={handleEnableBackgroundPush}
+                className="text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Enable
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground/50 mt-1">
+            {fcmStatus === 'registered'
+              ? 'Briefings will be delivered even when the app is closed.'
+              : 'Enable to receive briefings when the app is closed or your phone is sleeping.'}
+          </p>
         </div>
       )}
 
