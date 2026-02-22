@@ -17,6 +17,7 @@ import {
   MoreVertical,
   Files,
   Network,
+  ChevronDown,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
@@ -48,6 +49,7 @@ export function ProjectDashboard() {
   const [title, setTitle] = useState(item?.title || '');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showLinkGraph, setShowLinkGraph] = useState(false);
+  const [doneCollapsed, setDoneCollapsed] = useState(true);
 
   const { isDragging, swipeStyles, handlers: swipeHandlers } = useSwipeToClose({
     onClose: () => setDetailPanelOpen(false),
@@ -425,34 +427,40 @@ export function ProjectDashboard() {
               </div>
             )}
 
-            {/* Done */}
+            {/* Done — Collapsible */}
             {tasksByStatus.done.length > 0 && (
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <h4 className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">Done</h4>
+                <button
+                  onClick={() => setDoneCollapsed(!doneCollapsed)}
+                  className="flex items-center justify-between w-full mb-1.5 group"
+                >
+                  <div className="flex items-center gap-1">
+                    <ChevronDown className={cn(
+                      "h-3 w-3 text-muted-foreground/40 transition-transform duration-200",
+                      doneCollapsed && "-rotate-90"
+                    )} />
+                    <h4 className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">Done</h4>
+                  </div>
                   <span className="text-[10px] text-muted-foreground/40 tabular-nums">{tasksByStatus.done.length}</span>
-                </div>
-                <div className="space-y-1">
-                  {tasksByStatus.done.slice(0, 5).map((task) => (
-                    <button
-                      key={task.id}
-                      onClick={() => setSelectedItemId(task.id)}
-                      className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-3 w-3 text-foreground/30" />
-                        <p className="text-[13px] font-medium text-muted-foreground/40 line-through flex-1">
-                          {task.title}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                  {tasksByStatus.done.length > 5 && (
-                    <p className="text-[11px] text-muted-foreground/30 text-center py-1">
-                      +{tasksByStatus.done.length - 5} more completed
-                    </p>
-                  )}
-                </div>
+                </button>
+                {!doneCollapsed && (
+                  <div className="space-y-1">
+                    {tasksByStatus.done.map((task) => (
+                      <button
+                        key={task.id}
+                        onClick={() => setSelectedItemId(task.id)}
+                        className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-3 w-3 text-foreground/30" />
+                          <p className="text-[13px] font-medium text-muted-foreground/40 line-through flex-1">
+                            {task.title}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

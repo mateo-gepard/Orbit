@@ -42,6 +42,7 @@ import {
   hasNotificationPermission,
   sendMorningBriefingNow,
   sendEveningBriefingNow,
+  syncBriefingScheduleToSW,
 } from '@/lib/briefing-notifications';
 import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
@@ -235,6 +236,17 @@ function NotificationsSection({
       setPermissionStatus(Notification.permission);
     }
   }, []);
+
+  // Sync briefing schedule to Service Worker whenever settings change
+  useEffect(() => {
+    syncBriefingScheduleToSW();
+  }, [
+    settings.notifications.enabled,
+    settings.notifications.dailyBriefing,
+    settings.notifications.dailyBriefingTime,
+    settings.notifications.eveningBriefing,
+    settings.notifications.eveningBriefingTime,
+  ]);
 
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();

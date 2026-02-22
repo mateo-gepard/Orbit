@@ -449,43 +449,113 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
 function sendNotification(data: BriefingData) {
   if (!hasNotificationPermission()) return;
 
-  try {
-    const notification = new Notification(data.title, {
+  // Prefer service worker — works even when tab is in background / phone sleeping
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'SHOW_BRIEFING_NOW',
+      title: data.title,
+      body: data.body,
+      tag: data.tag,
+    });
+    return;
+  }
+
+  // Fallback: try via SW registration directly
+  navigator.serviceWorker?.ready.then((reg) => {
+    reg.showNotification(data.title, {
       body: data.body,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       tag: data.tag,
-      silent: !useSettingsStore.getState().settings.notifications.sound,
-      requireInteraction: false,
-      data: { url: '/' },
-    } as NotificationOptions);
-
-    notification.onclick = () => {
-      window.focus();
-      notification.close();
-    };
-  } catch {
-    // Fallback: use service worker registration
-    navigator.serviceWorker?.ready.then((reg) => {
-      reg.showNotification(data.title, {
+      data: { url: '/today' },
+    });
+  }).catch(() => {
+    // Last resort: in-page notification (only works while tab is open)
+    try {
+      const notification = new Notification(data.title, {
         body: data.body,
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: data.tag,
-        data: { url: '/' },
+        silent: !useSettingsStore.getState().settings.notifications.sound,
+        requireInteraction: false,
       });
-    }).catch(() => { /* SW not available */ });
+
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    } catch {
+      // Nothing else we can do
+    }
+  });
+}
+
+// ── Push schedule to Service Worker ───────────────────────
+// The SW stores this in IndexedDB and checks every 30s,
+// firing notifications even when the page is closed.
+
+export function syncBriefingScheduleToSW() {
+  const { settings } = useSettingsStore.getState();
+  
+  if (!('serviceWorker' in navigator)) return;
+
+  const config = {
+    morningEnabled: settings.notifications.enabled && settings.notifications.dailyBriefing,
+    morningTime: settings.notifications.dailyBriefingTime,
+    eveningEnabled: settings.notifications.enabled && settings.notifications.eveningBriefing,
+    eveningTime: settings.notifications.eveningBriefingTime,
+  };
+
+  // Send to SW controller
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'UPDATE_BRIEFING_SCHEDULE',
+      config,
+    });
+    console.log('[ORBIT] Briefing schedule synced to SW:', config);
+  } else {
+    // SW not yet controlling — wait for it
+    navigator.serviceWorker.ready.then((reg) => {
+      if (reg.active) {
+        reg.active.postMessage({
+          type: 'UPDATE_BRIEFING_SCHEDULE',
+          config,
+        });
+        console.log('[ORBIT] Briefing schedule synced to SW (via ready):', config);
+      }
+    });
+  }
+
+  // Also register Periodic Background Sync if available (Chrome 80+)
+  registerPeriodicSync();
+}
+
+async function registerPeriodicSync() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if ('periodicSync' in reg) {
+      await (reg as unknown as { periodicSync: { register: (tag: string, options: { minInterval: number }) => Promise<void> } })
+        .periodicSync.register('orbit-briefing-check', {
+          minInterval: 60 * 60 * 1000, // Check at least every hour
+        });
+      console.log('[ORBIT] Periodic background sync registered');
+    }
+  } catch {
+    // Not supported or permission denied — that's fine, SW timer handles it
   }
 }
 
 // ── Scheduler ─────────────────────────────────────────────
-// Uses setInterval to check every minute if it's time to fire.
-// Only fires if the app/tab is open — but service workers can
-// extend this to background later.
+// Dual strategy:
+// 1. Service Worker checks schedule in IndexedDB every 30s (works in background)
+// 2. In-app setInterval as a backup when SW can't fire (e.g. iOS Safari)
+// The SW also listens for Periodic Background Sync events.
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let lastMorningFired: string | null = null;
 let lastEveningFired: string | null = null;
+let swMessageListenerRegistered = false;
 
 function getTimeStr(): string {
   const now = new Date();
@@ -499,7 +569,44 @@ function getDateStr(): string {
 export function startBriefingScheduler(getItems: () => OrbitItem[]) {
   if (schedulerInterval) clearInterval(schedulerInterval);
 
-  // Check every 30 seconds
+  // 1. Sync schedule to service worker for background notifications
+  syncBriefingScheduleToSW();
+
+  // 2. Listen for SW messages (e.g. when SW fires a briefing and wants the app to generate content)
+  if (!swMessageListenerRegistered && 'serviceWorker' in navigator) {
+    swMessageListenerRegistered = true;
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type === 'BRIEFING_FIRE') {
+        const items = getItems();
+        if (event.data.briefing === 'morning') {
+          const briefing = generateMorningBriefing(items);
+          // Update the notification with actual content
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(briefing.title, {
+              body: briefing.body,
+              icon: '/icons/icon-192.png',
+              badge: '/icons/icon-192.png',
+              tag: briefing.tag,
+              data: { url: '/today' },
+            } as NotificationOptions);
+          }).catch(() => { /* ignore */ });
+        } else if (event.data.briefing === 'evening') {
+          const briefing = generateEveningBriefing(items);
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(briefing.title, {
+              body: briefing.body,
+              icon: '/icons/icon-192.png',
+              badge: '/icons/icon-192.png',
+              tag: briefing.tag,
+              data: { url: '/today' },
+            } as NotificationOptions);
+          }).catch(() => { /* ignore */ });
+        }
+      }
+    });
+  }
+
+  // 3. In-app backup timer — catches cases where SW can't fire
   schedulerInterval = setInterval(() => {
     const { settings } = useSettingsStore.getState();
     if (!settings.notifications.enabled) return;
@@ -518,7 +625,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       const items = getItems();
       const briefing = generateMorningBriefing(items);
       sendNotification(briefing);
-      console.log('[ORBIT] Morning briefing sent');
+      console.log('[ORBIT] Morning briefing sent (in-app timer)');
     }
 
     // Evening briefing
@@ -531,11 +638,11 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       const items = getItems();
       const briefing = generateEveningBriefing(items);
       sendNotification(briefing);
-      console.log('[ORBIT] Evening briefing sent');
+      console.log('[ORBIT] Evening briefing sent (in-app timer)');
     }
   }, 30_000); // every 30 seconds
 
-  console.log('[ORBIT] Briefing scheduler started');
+  console.log('[ORBIT] Briefing scheduler started (SW + in-app timer)');
 }
 
 export function stopBriefingScheduler() {
