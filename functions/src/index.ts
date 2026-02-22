@@ -100,17 +100,19 @@ export const sendBriefingNotifications = onSchedule(
     secrets: [vapidPublicKey, vapidPrivateKey],
   },
   async () => {
-    // Configure web-push with VAPID keys (read from secrets at runtime)
+    // Configure web-push with VAPID keys (injected as env vars by secrets config)
     let webPushReady = false;
     try {
-      const pubKey = vapidPublicKey.value();
-      const privKey = vapidPrivateKey.value();
+      const pubKey = vapidPublicKey.value() || process.env.VAPID_PUBLIC_KEY || '';
+      const privKey = vapidPrivateKey.value() || process.env.VAPID_PRIVATE_KEY || '';
+      console.log(`[ORBIT] VAPID keys: pub=${pubKey ? 'set (' + pubKey.length + ' chars)' : 'MISSING'}, priv=${privKey ? 'set (' + privKey.length + ' chars)' : 'MISSING'}`);
       if (pubKey && privKey) {
         webpush.setVapidDetails(VAPID_SUBJECT, pubKey, privKey);
         webPushReady = true;
+        console.log('[ORBIT] web-push configured with VAPID keys');
       }
-    } catch {
-      console.warn('[ORBIT] VAPID secrets not available — native Web Push disabled');
+    } catch (e) {
+      console.warn('[ORBIT] VAPID secrets not available — native Web Push disabled:', e);
     }
 
     try {
