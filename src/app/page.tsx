@@ -15,7 +15,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Sun,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -687,7 +686,7 @@ export default function DashboardPage() {
               <div className="text-right">
                 <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Offen</p>
                 <p className="text-2xl font-black tabular-nums text-foreground/50 leading-none mt-0.5">
-                  {todayTasks.length + myDayTasks.length + overdueItems.length + notDoneFromBefore.length}
+                  {todayTasks.length + myDayTasks.length + overdueItems.length}
                 </p>
               </div>
               <span className="text-lg">🩺</span>
@@ -718,7 +717,7 @@ export default function DashboardPage() {
       <div className="flex items-center gap-4 lg:gap-6 text-[13px] overflow-x-auto -mx-4 px-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
         <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-          <span className="tabular-nums font-medium">{todayTasks.length + myDayTasks.length + overdueItems.length + notDoneFromBefore.length}</span>
+          <span className="tabular-nums font-medium">{todayTasks.length + myDayTasks.length + overdueItems.length}</span>
           <span className="text-muted-foreground/60">{t('dashboard.tasks')}</span>
         </div>
         {todayHabits.length > 0 && (
@@ -800,45 +799,20 @@ export default function DashboardPage() {
         <Section
           title={isViewingToday ? t('nav.today') : format(selectedDate, 'MMM d', { locale })}
           icon={CheckSquare}
-          count={todayTasks.length + myDayTasks.length + overdueItems.length + notDoneFromBefore.length}
+          count={todayTasks.length + myDayTasks.length + overdueItems.length}
           href="/today"
         >
           <div className="py-1">
             {overdueItems.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
-            {/* Not Done from Before */}
-            {notDoneFromBefore.length > 0 && (
-              <div className="px-3 pt-2 pb-1">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Clock3 className="h-3 w-3 text-muted-foreground/40" strokeWidth={1.5} />
-                  <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
-                    {t('today.notDoneFromBefore')} · {notDoneFromBefore.length}
-                  </span>
-                </div>
-              </div>
-            )}
-            {notDoneFromBefore.map((item) => (
-              <ItemRow key={item.id} item={item} showProject compact />
-            ))}
-            {/* My Day */}
-            {myDayTasks.length > 0 && (
-              <div className="px-3 pt-2 pb-1">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Sun className="h-3 w-3 text-muted-foreground/40" strokeWidth={1.5} />
-                  <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
-                    {t('today.myDay')} · {myDayTasks.length}
-                  </span>
-                </div>
-              </div>
-            )}
             {myDayTasks.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
             {todayTasks.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
-            {overdueItems.length === 0 && todayTasks.length === 0 && myDayTasks.length === 0 && notDoneFromBefore.length === 0 && (
+            {overdueItems.length === 0 && todayTasks.length === 0 && myDayTasks.length === 0 && (
               <p className="px-4 py-5 text-center text-[12px] text-muted-foreground/50">
                 {isViewingPast 
                   ? t('dashboard.noTasksPast')
@@ -897,6 +871,17 @@ export default function DashboardPage() {
             )}
           </div>
         </Section>
+
+        {/* Not Done from Before */}
+        {isViewingToday && notDoneFromBefore.length > 0 && (
+          <Section title={t('today.notDoneFromBefore')} icon={Clock3} count={notDoneFromBefore.length}>
+            <div className="py-1">
+              {notDoneFromBefore.map((item) => (
+                <ItemRow key={item.id} item={item} showProject compact />
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* Events */}
         {todayEvents.length > 0 && (
