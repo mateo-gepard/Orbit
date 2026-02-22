@@ -446,49 +446,50 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
 
 // ── Send the actual notification ──────────────────────────
 
-function sendNotification(data: BriefingData) {
-  if (!hasNotificationPermission()) return;
-
-  // Prefer service worker — works even when tab is in background / phone sleeping
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'SHOW_BRIEFING_NOW',
-      title: data.title,
-      body: data.body,
-      tag: data.tag,
-    });
+async function sendNotification(data: BriefingData) {
+  if (!hasNotificationPermission()) {
+    console.warn('[ORBIT] sendNotification: no permission');
     return;
   }
 
-  // Fallback: try via SW registration directly
-  navigator.serviceWorker?.ready.then((reg) => {
-    reg.showNotification(data.title, {
-      body: data.body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      tag: data.tag,
-      data: { url: '/today' },
-    });
-  }).catch(() => {
-    // Last resort: in-page notification (only works while tab is open)
-    try {
-      const notification = new Notification(data.title, {
+  console.log('[ORBIT] sendNotification:', data.title, '|', data.body?.slice(0, 60));
+
+  // Strategy 1: Show via SW registration directly (most reliable)
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(data.title, {
         body: data.body,
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: data.tag,
-        silent: !useSettingsStore.getState().settings.notifications.sound,
-        requireInteraction: false,
-      });
-
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
-    } catch {
-      // Nothing else we can do
+        data: { url: '/today' },
+        renotify: true,
+      } as NotificationOptions);
+      console.log('[ORBIT] Notification shown via SW registration');
+      return;
     }
-  });
+  } catch (err) {
+    console.warn('[ORBIT] SW showNotification failed:', err);
+  }
+
+  // Strategy 2: Plain Notification API (only works when tab is focused)
+  try {
+    const notification = new Notification(data.title, {
+      body: data.body,
+      icon: '/icons/icon-192.png',
+      tag: data.tag,
+      silent: !useSettingsStore.getState().settings.notifications.sound,
+    });
+
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+    };
+    console.log('[ORBIT] Notification shown via Notification API');
+  } catch (err) {
+    console.error('[ORBIT] All notification strategies failed:', err);
+  }
 }
 
 // ── Push schedule to Service Worker ───────────────────────

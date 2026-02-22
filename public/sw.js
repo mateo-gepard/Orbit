@@ -6,45 +6,49 @@
 // ─── Firebase Cloud Messaging (background push) ───────────
 // Import Firebase compat SDK so FCM can deliver push messages
 // when the app is closed or in background.
-importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-messaging-compat.js');
+// Wrapped in try/catch so SW still works if Firebase CDN is unreachable.
+let fcmMessaging = null;
+try {
+  importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
+  importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-messaging-compat.js');
 
-// Initialize Firebase in the SW (minimal config — only needs for message delivery)
-firebase.initializeApp({
-  apiKey: 'AIzaSyBOqJE0MVXrfBwTope_4vgCTMeAM_omY-E',
-  authDomain: 'orbit-9e0b6.firebaseapp.com',
-  projectId: 'orbit-9e0b6',
-  storageBucket: 'orbit-9e0b6.firebasestorage.app',
-  messagingSenderId: '631355120389',
-  appId: '1:631355120389:web:42c163eae64bc3dfe5f56c',
-});
+  firebase.initializeApp({
+    apiKey: 'AIzaSyBOqJE0MVXrfBwTope_4vgCTMeAM_omY-E',
+    authDomain: 'orbit-9e0b6.firebaseapp.com',
+    projectId: 'orbit-9e0b6',
+    storageBucket: 'orbit-9e0b6.firebasestorage.app',
+    messagingSenderId: '631355120389',
+    appId: '1:631355120389:web:42c163eae64bc3dfe5f56c',
+  });
 
-// Get messaging instance — this hooks into the push event automatically
-const fcmMessaging = firebase.messaging();
+  fcmMessaging = firebase.messaging();
 
-// Handle background FCM messages (when app is NOT in foreground)
-fcmMessaging.onBackgroundMessage((payload) => {
-  console.log('[SW] FCM background message:', payload);
+  // Handle background FCM messages (when app is NOT in foreground)
+  fcmMessaging.onBackgroundMessage((payload) => {
+    console.log('[SW] FCM background message:', payload);
 
-  const title = payload.notification?.title || payload.data?.title || 'ORBIT';
-  const body = payload.notification?.body || payload.data?.body || '';
-  const tag = payload.data?.tag || 'orbit-push';
+    const title = payload.notification?.title || payload.data?.title || 'ORBIT';
+    const body = payload.notification?.body || payload.data?.body || '';
+    const tag = payload.data?.tag || 'orbit-push';
 
-  // Don't show duplicate — FCM already shows notification from `notification` payload.
-  // But if it's data-only, we need to show it ourselves.
-  if (!payload.notification) {
-    self.registration.showNotification(title, {
-      body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      tag,
-      data: { url: payload.data?.url || '/today' },
-      renotify: true,
-    });
-  }
-});
+    if (!payload.notification) {
+      self.registration.showNotification(title, {
+        body,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag,
+        data: { url: payload.data?.url || '/today' },
+        renotify: true,
+      });
+    }
+  });
 
-const CACHE_VERSION = 4; // Increment this to force cache refresh
+  console.log('[SW] Firebase Messaging initialized');
+} catch (e) {
+  console.warn('[SW] Firebase Messaging init failed (push will use generic handler):', e);
+}
+
+const CACHE_VERSION = 5; // Increment this to force cache refresh
 const CACHE_NAME = `orbit-v${CACHE_VERSION}`;
 const OFFLINE_URLS = ['/', '/today', '/inbox', '/tasks', '/habits'];
 
