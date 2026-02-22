@@ -103,8 +103,8 @@ export const sendBriefingNotifications = onSchedule(
     // Configure web-push with VAPID keys (injected as env vars by secrets config)
     let webPushReady = false;
     try {
-      const pubKey = vapidPublicKey.value() || process.env.VAPID_PUBLIC_KEY || '';
-      const privKey = vapidPrivateKey.value() || process.env.VAPID_PRIVATE_KEY || '';
+      const pubKey = (vapidPublicKey.value() || process.env.VAPID_PUBLIC_KEY || '').trim();
+      const privKey = (vapidPrivateKey.value() || process.env.VAPID_PRIVATE_KEY || '').trim();
       console.log(`[ORBIT] VAPID keys: pub=${pubKey ? 'set (' + pubKey.length + ' chars)' : 'MISSING'}, priv=${privKey ? 'set (' + privKey.length + ' chars)' : 'MISSING'}`);
       if (pubKey && privKey) {
         webpush.setVapidDetails(VAPID_SUBJECT, pubKey, privKey);

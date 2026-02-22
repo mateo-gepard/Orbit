@@ -553,9 +553,26 @@ async function registerPeriodicSync() {
 // The SW also listens for Periodic Background Sync events.
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
-let lastMorningFired: string | null = null;
-let lastEveningFired: string | null = null;
 let swMessageListenerRegistered = false;
+
+// Persist last-fired dates in localStorage to survive page reloads
+// but allow re-firing on a new day
+function getLastFired(): { morning: string | null; evening: string | null } {
+  try {
+    const raw = localStorage.getItem('orbit-briefing-lastFired');
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { morning: null, evening: null };
+}
+
+function setLastFired(type: 'morning' | 'evening') {
+  const today = getDateStr();
+  const current = getLastFired();
+  current[type] = today;
+  try {
+    localStorage.setItem('orbit-briefing-lastFired', JSON.stringify(current));
+  } catch { /* ignore */ }
+}
 
 function getTimeStr(): string {
   const now = new Date();
@@ -614,14 +631,15 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
 
     const now = getTimeStr();
     const today = getDateStr();
+    const lastFired = getLastFired();
 
     // Morning briefing
     if (
       settings.notifications.dailyBriefing &&
       now === settings.notifications.dailyBriefingTime &&
-      lastMorningFired !== today
+      lastFired.morning !== today
     ) {
-      lastMorningFired = today;
+      setLastFired('morning');
       const items = getItems();
       const briefing = generateMorningBriefing(items);
       sendNotification(briefing);
@@ -632,15 +650,15 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
     if (
       settings.notifications.eveningBriefing &&
       now === settings.notifications.eveningBriefingTime &&
-      lastEveningFired !== today
+      lastFired.evening !== today
     ) {
-      lastEveningFired = today;
+      setLastFired('evening');
       const items = getItems();
       const briefing = generateEveningBriefing(items);
       sendNotification(briefing);
       console.log('[ORBIT] Evening briefing sent (in-app timer)');
     }
-  }, 30_000); // every 30 seconds
+  }, 15_000); // every 15 seconds
 
   console.log('[ORBIT] Briefing scheduler started (SW + in-app timer)');
 }
