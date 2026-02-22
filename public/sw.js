@@ -48,7 +48,7 @@ try {
   console.warn('[SW] Firebase Messaging init failed (push will use generic handler):', e);
 }
 
-const CACHE_VERSION = 6; // Increment this to force cache refresh
+const CACHE_VERSION = 7; // Increment this to force cache refresh
 const CACHE_NAME = `orbit-v${CACHE_VERSION}`;
 const OFFLINE_URLS = ['/', '/today', '/inbox', '/tasks', '/habits', '/briefing'];
 
@@ -177,9 +177,15 @@ async function checkAndFireBriefings() {
     lastFired.morning !== today
   ) {
     await setLastFired({ morning: today });
-    await showBriefingNotification('morning', config);
-    // Notify all clients to generate a proper briefing
-    notifyClients({ type: 'BRIEFING_FIRE', briefing: 'morning' });
+    // Check if any app windows are open — let them handle the rich notification
+    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+    if (clients.length > 0) {
+      // App is open — delegate to in-app handler for rich content
+      notifyClients({ type: 'BRIEFING_FIRE', briefing: 'morning' });
+    } else {
+      // App is closed — show generic notification from SW
+      await showBriefingNotification('morning', config);
+    }
   }
 
   // Evening briefing
@@ -189,8 +195,12 @@ async function checkAndFireBriefings() {
     lastFired.evening !== today
   ) {
     await setLastFired({ evening: today });
-    await showBriefingNotification('evening', config);
-    notifyClients({ type: 'BRIEFING_FIRE', briefing: 'evening' });
+    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+    if (clients.length > 0) {
+      notifyClients({ type: 'BRIEFING_FIRE', briefing: 'evening' });
+    } else {
+      await showBriefingNotification('evening', config);
+    }
   }
 }
 
@@ -208,7 +218,7 @@ async function showBriefingNotification(type, config) {
       badge: '/icons/icon-192.png',
       tag: isMorning ? 'orbit-morning-briefing' : 'orbit-evening-briefing',
       data: { url: `/briefing?type=${type}`, type: 'briefing', briefingType: type },
-      renotify: true,
+      renotify: false,
       requireInteraction: false,
     });
     console.log(`[SW] ${type} briefing notification shown`);
@@ -294,7 +304,7 @@ self.addEventListener('message', (event) => {
       badge: '/icons/icon-192.png',
       tag,
       data: { url: '/today' },
-      renotify: true,
+      renotify: false,
     }).catch((e) => console.error('[SW] showNotification failed:', e));
   }
 });
@@ -303,17 +313,27 @@ self.addEventListener('message', (event) => {
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {};
   const title = data.title || 'ORBIT';
+  const tag = data.tag || 'orbit-push';
   const options = {
     body: data.body || 'You have a notification.',
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    tag: data.tag || 'orbit-push',
+    tag,
     data: { url: data.url || '/' },
-    renotify: true,
+    renotify: false,
   };
 
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    (async () => {
+      // Mark lastFired so SW timer doesn't double-fire
+      const today = getDateStr();
+      if (tag === 'orbit-morning-briefing') {
+        await setLastFired({ morning: today });
+      } else if (tag === 'orbit-evening-briefing') {
+        await setLastFired({ evening: today });
+      }
+      await self.registration.showNotification(title, options);
+    })()
   );
 });
 

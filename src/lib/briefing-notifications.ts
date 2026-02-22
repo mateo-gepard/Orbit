@@ -390,7 +390,7 @@ async function sendNotification(data: BriefingData) {
         badge: '/icons/icon-192.png',
         tag: data.tag,
         data: { url, type: 'briefing', briefingType },
-        renotify: true,
+        renotify: false,
       } as NotificationOptions);
       console.log('[ORBIT] Notification shown via SW registration');
       return;
@@ -523,6 +523,8 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       if (event.data?.type === 'BRIEFING_FIRE') {
         const items = getItems();
         if (event.data.briefing === 'morning') {
+          // Mark as fired so in-app timer doesn't double-fire
+          setLastFired('morning');
           const briefing = generateMorningBriefing(items);
           navigator.serviceWorker.ready.then((reg) => {
             reg.showNotification(briefing.title, {
@@ -534,6 +536,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
             } as NotificationOptions);
           }).catch(() => { /* ignore */ });
         } else if (event.data.briefing === 'evening') {
+          setLastFired('evening');
           const briefing = generateEveningBriefing(items);
           navigator.serviceWorker.ready.then((reg) => {
             reg.showNotification(briefing.title, {
@@ -549,7 +552,8 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
     });
   }
 
-  // 3. In-app backup timer — catches cases where SW can't fire
+  // 3. In-app backup timer — only fires if SW didn't handle it
+  //    Runs every 60s with a 10s offset to give SW priority
   schedulerInterval = setInterval(() => {
     const { settings } = useSettingsStore.getState();
     if (!settings.notifications.enabled) return;
@@ -559,7 +563,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
     const today = getDateStr();
     const lastFired = getLastFired();
 
-    // Morning briefing
+    // Morning briefing — only if SW/BRIEFING_FIRE didn't already handle it
     if (
       settings.notifications.dailyBriefing &&
       now === settings.notifications.dailyBriefingTime &&
@@ -569,7 +573,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       const items = getItems();
       const briefing = generateMorningBriefing(items);
       sendNotification(briefing);
-      console.log('[ORBIT] Morning briefing sent (in-app timer)');
+      console.log('[ORBIT] Morning briefing sent (in-app fallback timer)');
     }
 
     // Evening briefing
@@ -582,11 +586,11 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       const items = getItems();
       const briefing = generateEveningBriefing(items);
       sendNotification(briefing);
-      console.log('[ORBIT] Evening briefing sent (in-app timer)');
+      console.log('[ORBIT] Evening briefing sent (in-app fallback timer)');
     }
-  }, 15_000); // every 15 seconds
+  }, 60_000); // every 60 seconds (SW checks every 30s, so this is the backup)
 
-  console.log('[ORBIT] Briefing scheduler started (SW + in-app timer)');
+  console.log('[ORBIT] Briefing scheduler started (SW + in-app fallback)');
 }
 
 export function stopBriefingScheduler() {
