@@ -67,11 +67,13 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
 
   // ── Today page ───────────────────────────────────────────
   'today.tasks': 'Spielzüge',
+  'today.myDay': 'Mein Spieltag',
   'today.habits': 'Training',
   'today.events': 'Anpfiffe',
   'today.noTasks': 'Kein Spielzug für heute — die Bank ist voll',
   'today.noHabits': 'Heute kein Training geplant — Ruhetag, Dr.',
   'today.overdue': 'Nachspielzeit ⏱️',
+  'today.notDoneFromBefore': 'Nachholspiele',
 
   // ── Goals page ───────────────────────────────────────────
   'goals.thisQuarter': 'Diese Halbsaison',
@@ -421,10 +423,12 @@ const en = {
   // ── Today page ───────────────────────────────────────────
   'today.overdue': 'Overdue',
   'today.tasks': 'Tasks',
+  'today.myDay': 'My Day',
   'today.events': 'Events',
   'today.habits': 'Habits',
   'today.noTasks': 'No tasks for today',
   'today.noHabits': 'No habits scheduled',
+  'today.notDoneFromBefore': 'Not Done from Before',
 
   // ── Habits page ──────────────────────────────────────────
   'habits.week': 'Week',
@@ -880,10 +884,12 @@ const de: Record<TranslationKey, string> = {
   // ── Today page ───────────────────────────────────────────
   'today.overdue': 'Überfällig',
   'today.tasks': 'Aufgaben',
+  'today.myDay': 'Mein Tag',
   'today.events': 'Termine',
   'today.habits': 'Gewohnheiten',
   'today.noTasks': 'Keine Aufgaben für heute',
   'today.noHabits': 'Keine Gewohnheiten geplant',
+  'today.notDoneFromBefore': 'Noch nicht erledigt',
 
   // ── Habits page ──────────────────────────────────────────
   'habits.week': 'Woche',

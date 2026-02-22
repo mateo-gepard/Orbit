@@ -181,13 +181,11 @@ async function sendPush(
     'Good morning.',
     'Rise and shine.',
     'A new day awaits.',
-    'Let\'s make it count.',
     'Fresh start.',
   ];
   const eveningGreetings = [
-    'Day\'s winding down.',
-    'Almost there.',
     'Evening check-in.',
+    'Day\'s winding down.',
     'Time to reflect.',
     'Wrapping up.',
   ];
@@ -197,10 +195,11 @@ async function sendPush(
     : eveningGreetings[Math.floor(Math.random() * eveningGreetings.length)];
 
   const body = isMorning
-    ? 'Your morning briefing is ready — open ORBIT to see what\'s ahead.'
-    : 'Your day is winding down — open ORBIT to review.';
+    ? 'Your morning briefing is ready.'
+    : 'Time to review your day.';
 
   const tag = isMorning ? 'orbit-morning-briefing' : 'orbit-evening-briefing';
+  const url = `/briefing?type=${type}`;
 
   try {
     if (data.type === 'webpush' && data.subscription) {
@@ -216,7 +215,7 @@ async function sendPush(
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag,
-        url: '/today',
+        url,
         type: 'briefing',
         briefingType: type,
       });
@@ -250,13 +249,13 @@ async function sendPush(
             requireInteraction: false,
           },
           fcmOptions: {
-            link: '/today',
+            link: url,
           },
         },
         data: {
           type: 'briefing',
           briefingType: type,
-          url: '/today',
+          url,
           tag,
         },
       });

@@ -78,14 +78,16 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
   
   const isDueToday = item.dueDate && isToday(parseISO(item.dueDate));
 
+  const isMyDay = item.myDay === new Date().toISOString().split('T')[0];
+
   const handleSwipeToday = async () => {
-    haptic(isDueToday ? 'light' : 'success');
+    haptic(isMyDay ? 'light' : 'success');
     const today = new Date().toISOString().split('T')[0];
     
-    if (isDueToday) {
-      await updateItem(item.id, { dueDate: undefined });
+    if (isMyDay) {
+      await updateItem(item.id, { myDay: undefined });
     } else {
-      await updateItem(item.id, { dueDate: today });
+      await updateItem(item.id, { myDay: today });
     }
   };
 
@@ -201,13 +203,13 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           className={cn(
             'hidden lg:flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all shrink-0',
             'opacity-0 group-hover:opacity-100',
-            isDueToday 
+            isMyDay 
               ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400'
               : 'bg-foreground/[0.04] hover:bg-foreground/[0.08] text-muted-foreground/60 hover:text-foreground',
           )}
         >
           <CalendarClock className="h-3 w-3" />
-          <span>{isDueToday ? (hockeyMode ? 'Rausnehmen' : 'Remove') : t('nav.today')}</span>
+          <span>{isMyDay ? (hockeyMode ? 'Rausnehmen' : 'Remove') : t('nav.today')}</span>
         </button>
       )}
 
@@ -235,9 +237,9 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         onSwipeRight={item.type === 'task' || item.type === 'habit' ? handleSwipeComplete : undefined}
         onSwipeLeft={item.type === 'task' ? handleSwipeToday : undefined}
         rightLabel={hockeyMode ? 'TOR!' : 'Done'}
-        leftLabel={isDueToday ? (hockeyMode ? 'Raus' : 'Remove') : (hockeyMode ? 'Aufstellung' : 'Today')}
+        leftLabel={isMyDay ? (hockeyMode ? 'Raus' : 'Remove') : (hockeyMode ? 'Aufstellung' : 'Today')}
         rightIcon={Check}
-        leftIcon={isDueToday ? CalendarX : CalendarPlus}
+        leftIcon={isMyDay ? CalendarX : CalendarPlus}
       >
         {row}
       </SwipeableRow>

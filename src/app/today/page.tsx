@@ -1,11 +1,11 @@
 'use client';
 
 import { useMemo } from 'react';
-import { CheckSquare, Flame, Repeat } from 'lucide-react';
+import { CheckSquare, Flame, Repeat, Clock3, CalendarPlus, Sun } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { ItemRow } from '@/components/items/item-row';
 import { cn } from '@/lib/utils';
-import { format, isToday, isPast, parseISO } from 'date-fns';
+import { format, isToday, isPast, parseISO, isBefore, startOfDay } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate } from '@/lib/habits';
 import { updateItem } from '@/lib/firestore';
 import { useTranslation } from '@/lib/i18n';
@@ -20,12 +20,17 @@ export default function TodayPage() {
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
 
-  const { overdue, todayTasks, todayEvents, todayHabits } = useMemo(() => {
+  const { overdue, todayTasks, notDoneFromBefore, todayEvents, todayHabits } = useMemo(() => {
     const overdue = items.filter(
       (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate && isPast(parseISO(i.dueDate)) && !isToday(parseISO(i.dueDate))
     );
+    // My Day tasks: myDay is set to today
     const todayTasks = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate === todayStr
+      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay === todayStr
+    );
+    // Not done from before: myDay was set to a past date (accumulated, not just yesterday)
+    const notDoneFromBefore = items.filter(
+      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay && i.myDay < todayStr
     );
     const todayEvents = items.filter(
       (i) => i.type === 'event' && i.status !== 'archived' && i.startDate === todayStr
@@ -33,7 +38,7 @@ export default function TodayPage() {
     const todayHabits = items.filter(
       (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
     );
-    return { overdue, todayTasks, todayEvents, todayHabits };
+    return { overdue, todayTasks, notDoneFromBefore, todayEvents, todayHabits };
   }, [items, todayStr]);
 
   const toggleHabit = async (habit: typeof items[0]) => {
@@ -41,8 +46,6 @@ export default function TodayPage() {
     completions[todayStr] = !completions[todayStr];
     await updateItem(habit.id, { completions });
   };
-
-  const totalTasks = overdue.length + todayTasks.length;
 
   return (
     <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-3xl mx-auto">
@@ -52,7 +55,7 @@ export default function TodayPage() {
         <h1 className="text-xl font-semibold tracking-tight">{format(today, 'd MMMM yyyy', { locale })}</h1>
       </div>
 
-      {/* Overdue */}
+      {/* Overdue (tasks with dueDate in the past) */}
       {overdue.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-2 px-1">
@@ -69,12 +72,29 @@ export default function TodayPage() {
         </div>
       )}
 
-      {/* Tasks */}
+      {/* Not Done from Before (accumulated past myDay tasks) */}
+      {notDoneFromBefore.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <Clock3 className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
+            <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
+              {t('today.notDoneFromBefore')} · {notDoneFromBefore.length}
+            </span>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-card py-1">
+            {notDoneFromBefore.map((item) => (
+              <ItemRow key={item.id} item={item} showProject compact />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* My Day Tasks */}
       <div>
         <div className="flex items-center gap-2 mb-2 px-1">
-          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
+          <Sun className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
           <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
-              {t('today.tasks')} · {todayTasks.length}
+              {t('today.myDay')} · {todayTasks.length}
           </span>
         </div>
         <div className="rounded-xl border border-border/60 bg-card py-1">

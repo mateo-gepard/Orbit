@@ -75,6 +75,9 @@ export interface OrbitItem {
   // File Attachments
   files?: ProjectFile[];
 
+  // My Day — marks a task as added to "Today" view (YYYY-MM-DD)
+  myDay?: string;
+
   // Google Calendar sync
   calendarSynced?: boolean;
 

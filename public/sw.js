@@ -48,9 +48,9 @@ try {
   console.warn('[SW] Firebase Messaging init failed (push will use generic handler):', e);
 }
 
-const CACHE_VERSION = 5; // Increment this to force cache refresh
+const CACHE_VERSION = 6; // Increment this to force cache refresh
 const CACHE_NAME = `orbit-v${CACHE_VERSION}`;
-const OFFLINE_URLS = ['/', '/today', '/inbox', '/tasks', '/habits'];
+const OFFLINE_URLS = ['/', '/today', '/inbox', '/tasks', '/habits', '/briefing'];
 
 // ─── Briefing notification state ───────────────────────────
 // Stored in IndexedDB so it persists across SW restarts
@@ -198,8 +198,8 @@ async function showBriefingNotification(type, config) {
   const isMorning = type === 'morning';
   const title = isMorning ? 'Good morning.' : 'Evening check-in.';
   const body = isMorning
-    ? 'Your morning briefing is ready — open ORBIT to see what\'s ahead.'
-    : 'Your day is winding down — open ORBIT to review.';
+    ? 'Your morning briefing is ready.'
+    : 'Time to review your day.';
 
   try {
     await self.registration.showNotification(title, {
@@ -207,7 +207,7 @@ async function showBriefingNotification(type, config) {
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       tag: isMorning ? 'orbit-morning-briefing' : 'orbit-evening-briefing',
-      data: { url: '/today', type: 'briefing', briefingType: type },
+      data: { url: `/briefing?type=${type}`, type: 'briefing', briefingType: type },
       renotify: true,
       requireInteraction: false,
     });

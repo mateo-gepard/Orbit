@@ -128,41 +128,24 @@ function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
   );
 
   const title = pickRandom(HOCKEY_MORNING_GREETINGS);
-  const lines: string[] = [];
 
-  lines.push(getDayOfWeekVibeHockey());
+  // Build a single-line summary that won't get cut off on mobile
+  const counts: string[] = [];
+  if (tasksDueToday.length > 0) counts.push(`${tasksDueToday.length} Spielzüge`);
+  if (eventsToday.length > 0) counts.push(`${eventsToday.length} ${eventsToday.length > 1 ? 'Anpfiffe' : 'Anpfiff'}`);
+  if (habitsToday.length > 0) counts.push(`${habitsToday.length}× Training`);
+  if (overdue.length > 0) counts.push(`${overdue.length} überfällig ⏱️`);
 
-  const parts: string[] = [];
-  if (tasksDueToday.length > 0) {
-    parts.push(`${tasksDueToday.length} Spielzüge auf dem Platz`);
-  }
-  if (eventsToday.length > 0) {
-    parts.push(`${eventsToday.length} ${eventsToday.length > 1 ? 'Anpfiffe' : 'Anpfiff'}`);
-  }
-  if (habitsToday.length > 0) {
-    parts.push(`${habitsToday.length}× Training`);
-  }
-
-  if (parts.length > 0) {
-    lines.push(parts.join(' · '));
+  let body: string;
+  if (counts.length > 0) {
+    body = counts.join(' · ');
+    const topTask = tasksDueToday.find((t) => t.priority === 'high') || tasksDueToday[0];
+    if (topTask) body += ` → ${topTask.title}`;
   } else {
-    lines.push('Leeres Spielfeld — plane deine Spielzüge, Dr.');
+    body = 'Spielfrei — plane deine Züge, Dr.';
   }
 
-  if (overdue.length > 0) {
-    lines.push(`⏱️ ${overdue.length}× Nachspielzeit!`);
-  }
-
-  const topTask = tasksDueToday.find((t) => t.priority === 'high') || tasksDueToday[0];
-  if (topTask) {
-    lines.push(`→ Notfall-Spielzug: ${topTask.title}`);
-  }
-
-  if (eventsToday.length > 0 && eventsToday[0].startTime) {
-    lines.push(`🏟️ ${eventsToday[0].title} um ${eventsToday[0].startTime}`);
-  }
-
-  return { title, body: lines.join('\n'), tag: 'orbit-morning-briefing' };
+  return { title, body, tag: 'orbit-morning-briefing' };
 }
 
 function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
@@ -195,43 +178,34 @@ function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
   const totalScheduled = completedToday.length + unfinished.length;
   const habitRate = habitsToday.length > 0 ? habitsDone.length / habitsToday.length : 0;
 
-  let verdict: string;
-  if (totalScheduled === 0 && habitsToday.length === 0) {
-    verdict = 'Spielfrei heute — kein Einsatz, Dr.';
-  } else if (unfinished.length === 0 && habitRate >= 1) {
-    verdict = pickRandom([
-      'Sauberes Spiel! Alle Tore geschossen. 🏆',
-      'Shutout! Alles erledigt, Dr. — Diagnose: perfekt. 🩺',
-      'Hat-Trick! Training & Spielzüge — alles drin.',
-    ]);
-  } else if (unfinished.length === 0 && completedToday.length > 0) {
-    verdict = `${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} geschossen. Sauberes Spielfeld!`;
-  } else if (completedToday.length > unfinished.length) {
-    verdict = `Endstand: ${completedToday.length} Tore, ${unfinished.length} noch offen.`;
-  } else if (completedToday.length > 0) {
-    verdict = `${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} — ${unfinished.length} noch auf dem Platz.`;
-  } else {
-    verdict = `${unfinished.length} Spielzüge nicht abgeschlossen. Morgen neuer Anpfiff!`;
+  // Build concise single-line body for notification
+  const parts: string[] = [];
+
+  if (completedToday.length > 0) {
+    parts.push(`${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} ✓`);
+  }
+  if (unfinished.length > 0) {
+    parts.push(`${unfinished.length} offen`);
+  }
+  if (habitsToday.length > 0) {
+    parts.push(`Training ${habitsDone.length}/${habitsToday.length}`);
+  }
+  if (bestStreak > 1) {
+    parts.push(`${bestStreak}d Serie 🏒`);
   }
 
-  const lines: string[] = [];
-  lines.push(verdict);
-
-  if (habitsToday.length > 0) {
-    lines.push(`Training: ${habitsDone.length}/${habitsToday.length}${bestStreak > 1 ? ` · ${bestStreak} Tage Siegesserie 🏒` : ''}`);
+  let body: string;
+  if (parts.length > 0) {
+    body = parts.join(' · ');
+  } else {
+    body = 'Spielfrei heute — Ruhetag, Dr.';
   }
 
   if (dueTomorrow.length > 0) {
-    lines.push(`Morgen: ${dueTomorrow.length} Spielzüge warten`);
+    body += ` → Morgen: ${dueTomorrow.length} Spielzüge`;
   }
 
-  if (unfinished.length === 0 && completedToday.length > 0) {
-    lines.push(pickRandom(['Gute Nacht, Dr. 🌙', 'Ab in die Kabine. Ruh dich aus.', 'Feierabend — du hast es dir verdient.']));
-  } else if (unfinished.length > 0) {
-    lines.push(pickRandom(['Morgen ist ein neues Spiel.', 'Schlaf gut — morgen wird aufgeholt.']));
-  }
-
-  return { title, body: lines.join('\n'), tag: 'orbit-evening-briefing' };
+  return { title, body, tag: 'orbit-evening-briefing' };
 }
 
 // ── Morning briefing content ──────────────────────────────
@@ -286,50 +260,25 @@ export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
   const greeting = pickRandom(MORNING_GREETINGS);
   const title = greeting;
 
-  // Build body — the actual brief, max ~100 chars for notification readability
-  const lines: string[] = [];
+  // Build a concise single-line body that won't get cut off
+  const counts: string[] = [];
+  if (tasksDueToday.length > 0) counts.push(`${tasksDueToday.length} task${tasksDueToday.length > 1 ? 's' : ''}`);
+  if (eventsToday.length > 0) counts.push(`${eventsToday.length} event${eventsToday.length > 1 ? 's' : ''}`);
+  if (habitsToday.length > 0) counts.push(`${habitsToday.length} habit${habitsToday.length > 1 ? 's' : ''}`);
+  if (overdue.length > 0) counts.push(`${overdue.length} overdue ⚠️`);
 
-  // Day vibe
-  lines.push(getDayOfWeekVibe());
-
-  // Core stats
-  const parts: string[] = [];
-  if (tasksDueToday.length > 0) {
-    parts.push(`${tasksDueToday.length} task${tasksDueToday.length > 1 ? 's' : ''} due`);
-  }
-  if (eventsToday.length > 0) {
-    const firstEvent = eventsToday[0];
-    parts.push(`${eventsToday.length} event${eventsToday.length > 1 ? 's' : ''} (${firstEvent.startTime || 'today'})`);
-  }
-  if (habitsToday.length > 0) {
-    parts.push(`${habitsToday.length} habit${habitsToday.length > 1 ? 's' : ''}`);
-  }
-
-  if (parts.length > 0) {
-    lines.push(parts.join(' · '));
+  let body: string;
+  if (counts.length > 0) {
+    body = counts.join(' · ');
+    const topTask = tasksDueToday.find((t) => t.priority === 'high') || tasksDueToday[0];
+    if (topTask) body += ` → ${topTask.title}`;
   } else {
-    lines.push('Clear runway ahead — define your priorities.');
-  }
-
-  // Overdue warning
-  if (overdue.length > 0) {
-    lines.push(`⚠️ ${overdue.length} overdue`);
-  }
-
-  // Top task (most important)
-  const topTask = tasksDueToday.find((t) => t.priority === 'high') || tasksDueToday[0];
-  if (topTask) {
-    lines.push(`→ ${topTask.title}`);
-  }
-
-  // First event time
-  if (eventsToday.length > 0 && eventsToday[0].startTime) {
-    lines.push(`📍 ${eventsToday[0].title} at ${eventsToday[0].startTime}`);
+    body = 'Clear runway ahead — plan your day.';
   }
 
   return {
     title,
-    body: lines.join('\n'),
+    body,
     tag: 'orbit-morning-briefing',
   };
 }
@@ -383,63 +332,36 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
 
   const greeting = pickRandom(EVENING_GREETINGS);
 
-  // Verdict on the day
-  const completionRate = completedToday.length;
-  const totalScheduled = completedToday.length + unfinished.length;
-  const habitRate = habitsToday.length > 0 ? habitsDone.length / habitsToday.length : 0;
+  // Build concise single-line body for notification
+  const parts: string[] = [];
 
-  let verdict: string;
-  if (totalScheduled === 0 && habitsToday.length === 0) {
-    verdict = 'Quiet day — nothing scheduled.';
-  } else if (unfinished.length === 0 && habitRate >= 1) {
-    verdict = pickRandom([
-      'Clean sweep. Everything done. 🏆',
-      'Perfect day — all tasks and habits checked off.',
-      'Full marks. You showed up.',
-    ]);
-  } else if (unfinished.length === 0 && completionRate > 0) {
-    verdict = pickRandom([
-      'All tasks done.',
-      `${completionRate} task${completionRate > 1 ? 's' : ''} completed. Nice.`,
-    ]);
-  } else if (completionRate > unfinished.length) {
-    verdict = `${completionRate} done, ${unfinished.length} carried over.`;
-  } else if (completionRate > 0) {
-    verdict = `${completionRate} done — ${unfinished.length} still open.`;
-  } else {
-    verdict = `${unfinished.length} task${unfinished.length > 1 ? 's' : ''} left unfinished.`;
+  if (completedToday.length > 0) {
+    parts.push(`${completedToday.length} done ✓`);
   }
-
-  const lines: string[] = [];
-  lines.push(verdict);
-
-  // Habits summary
+  if (unfinished.length > 0) {
+    parts.push(`${unfinished.length} open`);
+  }
   if (habitsToday.length > 0) {
-    lines.push(`Habits: ${habitsDone.length}/${habitsToday.length}${bestStreak > 1 ? ` · ${bestStreak}d streak 🔥` : ''}`);
+    parts.push(`Habits ${habitsDone.length}/${habitsToday.length}`);
+  }
+  if (bestStreak > 1) {
+    parts.push(`${bestStreak}d streak 🔥`);
   }
 
-  // Tomorrow preview
-  const tomorrowParts: string[] = [];
+  let body: string;
+  if (parts.length > 0) {
+    body = parts.join(' · ');
+  } else {
+    body = 'Quiet day — nothing was scheduled.';
+  }
+
   if (dueTomorrow.length > 0) {
-    tomorrowParts.push(`${dueTomorrow.length} task${dueTomorrow.length > 1 ? 's' : ''}`);
-  }
-  if (eventsTomorrow.length > 0) {
-    tomorrowParts.push(`${eventsTomorrow.length} event${eventsTomorrow.length > 1 ? 's' : ''}`);
-  }
-  if (tomorrowParts.length > 0) {
-    lines.push(`Tomorrow: ${tomorrowParts.join(', ')}`);
-  }
-
-  // Motivational closer
-  if (unfinished.length === 0 && completionRate > 0) {
-    lines.push(pickRandom(['Rest well.', 'You earned it.', 'Good night. 🌙']));
-  } else if (unfinished.length > 0) {
-    lines.push(pickRandom(['Tomorrow\'s a fresh start.', 'Get some rest — regroup tomorrow.']));
+    body += ` → Tomorrow: ${dueTomorrow.length} task${dueTomorrow.length > 1 ? 's' : ''}`;
   }
 
   return {
     title: greeting,
-    body: lines.join('\n'),
+    body,
     tag: 'orbit-evening-briefing',
   };
 }
@@ -452,7 +374,11 @@ async function sendNotification(data: BriefingData) {
     return;
   }
 
-  console.log('[ORBIT] sendNotification:', data.title, '|', data.body?.slice(0, 60));
+  console.log('[ORBIT] sendNotification:', data.title, '|', data.body?.slice(0, 80));
+
+  // Determine briefing page URL from tag
+  const briefingType = data.tag.includes('morning') ? 'morning' : 'evening';
+  const url = `/briefing?type=${briefingType}`;
 
   // Strategy 1: Show via SW registration directly (most reliable)
   try {
@@ -463,7 +389,7 @@ async function sendNotification(data: BriefingData) {
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: data.tag,
-        data: { url: '/today' },
+        data: { url, type: 'briefing', briefingType },
         renotify: true,
       } as NotificationOptions);
       console.log('[ORBIT] Notification shown via SW registration');
@@ -598,14 +524,13 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
         const items = getItems();
         if (event.data.briefing === 'morning') {
           const briefing = generateMorningBriefing(items);
-          // Update the notification with actual content
           navigator.serviceWorker.ready.then((reg) => {
             reg.showNotification(briefing.title, {
               body: briefing.body,
               icon: '/icons/icon-192.png',
               badge: '/icons/icon-192.png',
               tag: briefing.tag,
-              data: { url: '/today' },
+              data: { url: '/briefing?type=morning', type: 'briefing', briefingType: 'morning' },
             } as NotificationOptions);
           }).catch(() => { /* ignore */ });
         } else if (event.data.briefing === 'evening') {
@@ -616,7 +541,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
               icon: '/icons/icon-192.png',
               badge: '/icons/icon-192.png',
               tag: briefing.tag,
-              data: { url: '/today' },
+              data: { url: '/briefing?type=evening', type: 'briefing', briefingType: 'evening' },
             } as NotificationOptions);
           }).catch(() => { /* ignore */ });
         }
