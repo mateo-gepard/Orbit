@@ -1,56 +1,114 @@
 'use client';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Firebase Cloud Messaging (FCM)
-// Handles push notification token registration, storage,
-// and lifecycle management for background briefing delivery.
+// ORBIT — Push Notification Registration (FCM + Web Push)
+//
+// Two strategies:
+//  1. FCM (Firebase Cloud Messaging) — works on Chrome, Edge, Firefox
+//  2. Native Web Push API — works on iOS 16.4+ PWAs and Safari
+//
+// The Cloud Function reads Firestore docs from `pushTokens` and
+// dispatches via FCM (for `token` docs) or web-push (for
+// `subscription` docs).
 // ═══════════════════════════════════════════════════════════
 
-import { getMessaging, getToken, onMessage, type Messaging } from 'firebase/messaging';
 import { app, db } from './firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { useSettingsStore } from './settings-store';
 
-const FCM_TOKEN_COLLECTION = 'fcmTokens';
-const FCM_TOKEN_LOCAL_KEY = 'orbit-fcm-token';
+const PUSH_TOKEN_COLLECTION = 'fcmTokens';
+const PUSH_TOKEN_LOCAL_KEY = 'orbit-fcm-token';
+const PUSH_SUB_LOCAL_KEY = 'orbit-push-subscription';
 
-let messaging: Messaging | null = null;
+// ── Platform detection ────────────────────────────────────
 
-function getMessagingInstance(): Messaging | null {
-  if (messaging) return messaging;
+function isIOSorSafari(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  // iOS (iPhone/iPad/iPod) or macOS Safari (not Chrome/Firefox on Mac)
+  return /iPad|iPhone|iPod/.test(ua) ||
+    (ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Firefox'));
+}
+
+function useNativeWebPush(): boolean {
+  // On iOS/Safari, Firebase messaging doesn't work — use native Web Push
+  return isIOSorSafari();
+}
+
+// ── FCM (non-Safari) ─────────────────────────────────────
+
+let fcmMessaging: import('firebase/messaging').Messaging | null = null;
+
+async function getMessagingInstance() {
+  if (fcmMessaging) return fcmMessaging;
   if (!app || typeof window === 'undefined') return null;
   try {
-    messaging = getMessaging(app);
-    return messaging;
+    const { getMessaging } = await import('firebase/messaging');
+    fcmMessaging = getMessaging(app);
+    return fcmMessaging;
   } catch (err) {
     console.warn('[ORBIT] FCM: getMessaging failed:', err);
     return null;
   }
 }
 
-// ── Token Management ──────────────────────────────────────
+// ── Token/Subscription Registration ──────────────────────
 
 /**
- * Request permission and get FCM token.
- * Stores token in Firestore so the Cloud Function can send pushes.
+ * Register for push notifications.
+ * Uses native Web Push on iOS/Safari, FCM elsewhere.
+ * Returns a truthy string identifier on success.
  */
 export async function registerFCMToken(userId: string): Promise<string | null> {
-  const msg = getMessagingInstance();
-  if (!msg) {
-    console.warn('[ORBIT] FCM: messaging not available');
+  try {
+    // Ensure notification permission
+    if (Notification.permission !== 'granted') {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        console.warn('[ORBIT] Push: permission denied');
+        return null;
+      }
+    }
+
+    const swRegistration = await navigator.serviceWorker.ready;
+
+    if (useNativeWebPush()) {
+      // Native Web Push uses the web push VAPID key (for iOS/Safari)
+      const vapidKey = process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY || process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+      if (!vapidKey) {
+        console.warn('[ORBIT] Push: no VAPID key configured');
+        return null;
+      }
+      return await registerNativeWebPush(userId, vapidKey, swRegistration);
+    } else {
+      // FCM uses the Firebase VAPID key
+      const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+      if (!vapidKey) {
+        console.warn('[ORBIT] Push: Firebase VAPID key not set');
+        return null;
+      }
+      return await registerFCM(userId, vapidKey, swRegistration);
+    }
+  } catch (err) {
+    console.error('[ORBIT] Push: registration failed:', err);
     return null;
   }
+}
 
-  const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
-  if (!vapidKey) {
-    console.warn('[ORBIT] FCM: NEXT_PUBLIC_FIREBASE_VAPID_KEY not set');
-    return null;
+/** FCM registration (Chrome, Edge, Firefox on desktop/Android) */
+async function registerFCM(
+  userId: string,
+  vapidKey: string,
+  swRegistration: ServiceWorkerRegistration
+): Promise<string | null> {
+  const msg = await getMessagingInstance();
+  if (!msg) {
+    console.warn('[ORBIT] FCM: messaging not available, falling back to native Web Push');
+    return registerNativeWebPush(userId, vapidKey, swRegistration);
   }
 
   try {
-    // Ensure we have a service worker registration
-    const swRegistration = await navigator.serviceWorker.ready;
-
+    const { getToken } = await import('firebase/messaging');
     const token = await getToken(msg, {
       vapidKey,
       serviceWorkerRegistration: swRegistration,
@@ -61,77 +119,159 @@ export async function registerFCMToken(userId: string): Promise<string | null> {
       return null;
     }
 
-    // Save to localStorage for quick reference
-    localStorage.setItem(FCM_TOKEN_LOCAL_KEY, token);
+    localStorage.setItem(PUSH_TOKEN_LOCAL_KEY, token);
+    localStorage.removeItem(PUSH_SUB_LOCAL_KEY);
 
-    // Save to Firestore so the Cloud Function can look it up
-    await saveFCMTokenToFirestore(userId, token);
-
+    await saveTokenToFirestore(userId, token);
     console.log('[ORBIT] FCM token registered');
     return token;
   } catch (err) {
-    console.error('[ORBIT] FCM: registration failed:', err);
+    console.error('[ORBIT] FCM: getToken failed, falling back to native Web Push:', err);
+    return registerNativeWebPush(userId, vapidKey, swRegistration);
+  }
+}
+
+/** Native Web Push registration (iOS 16.4+ PWA, Safari) */
+async function registerNativeWebPush(
+  userId: string,
+  vapidKey: string,
+  swRegistration: ServiceWorkerRegistration
+): Promise<string | null> {
+  try {
+    // Convert VAPID key from base64url to Uint8Array
+    const applicationServerKey = urlBase64ToUint8Array(vapidKey);
+
+    const subscription = await swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey,
+    });
+
+    const subJson = JSON.stringify(subscription.toJSON());
+    localStorage.setItem(PUSH_SUB_LOCAL_KEY, subJson);
+    localStorage.removeItem(PUSH_TOKEN_LOCAL_KEY);
+
+    await saveSubscriptionToFirestore(userId, subscription);
+    console.log('[ORBIT] Native Web Push subscription registered');
+    return subJson;
+  } catch (err) {
+    console.error('[ORBIT] Native Web Push: subscribe failed:', err);
     return null;
   }
 }
 
 /**
- * Unregister FCM token (on sign-out).
+ * Unregister push token (on sign-out).
  */
 export async function unregisterFCMToken(userId: string): Promise<void> {
-  const token = localStorage.getItem(FCM_TOKEN_LOCAL_KEY);
-  if (!token || !db) return;
+  if (!db) return;
 
   try {
-    const docRef = doc(db, FCM_TOKEN_COLLECTION, `${userId}_${tokenHash(token)}`);
-    await deleteDoc(docRef);
-    localStorage.removeItem(FCM_TOKEN_LOCAL_KEY);
-    console.log('[ORBIT] FCM token unregistered');
+    // Try FCM token first
+    const token = localStorage.getItem(PUSH_TOKEN_LOCAL_KEY);
+    if (token) {
+      const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${tokenHash(token)}`);
+      await deleteDoc(docRef);
+      localStorage.removeItem(PUSH_TOKEN_LOCAL_KEY);
+      console.log('[ORBIT] FCM token unregistered');
+      return;
+    }
+
+    // Try Web Push subscription
+    const subJson = localStorage.getItem(PUSH_SUB_LOCAL_KEY);
+    if (subJson) {
+      const sub = JSON.parse(subJson);
+      const subId = tokenHash(sub.endpoint || subJson);
+      const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${subId}`);
+      await deleteDoc(docRef);
+      localStorage.removeItem(PUSH_SUB_LOCAL_KEY);
+
+      // Also unsubscribe from PushManager
+      const swReg = await navigator.serviceWorker?.ready;
+      const existingSub = await swReg?.pushManager?.getSubscription();
+      if (existingSub) await existingSub.unsubscribe();
+
+      console.log('[ORBIT] Web Push subscription unregistered');
+    }
   } catch (err) {
-    console.error('[ORBIT] FCM: unregister failed:', err);
+    console.error('[ORBIT] Push: unregister failed:', err);
   }
 }
 
-/**
- * Save FCM token + user's briefing schedule to Firestore.
- * The Cloud Function reads this to know when/what to send.
- */
-async function saveFCMTokenToFirestore(userId: string, token: string): Promise<void> {
+// ── Firestore persistence ─────────────────────────────────
+
+/** Save an FCM token to Firestore */
+async function saveTokenToFirestore(userId: string, token: string): Promise<void> {
   if (!db) return;
 
   const { settings } = useSettingsStore.getState();
-  const docRef = doc(db, FCM_TOKEN_COLLECTION, `${userId}_${tokenHash(token)}`);
+  const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${tokenHash(token)}`);
 
   await setDoc(docRef, {
     userId,
+    type: 'fcm',
     token,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    // Briefing schedule — Cloud Function reads these
     morningEnabled: settings.notifications.enabled && settings.notifications.dailyBriefing,
     morningTime: settings.notifications.dailyBriefingTime,
     eveningEnabled: settings.notifications.enabled && settings.notifications.eveningBriefing,
     eveningTime: settings.notifications.eveningBriefingTime,
-    // Timezone offset so the Cloud Function fires at the right local time
     timezoneOffset: new Date().getTimezoneOffset(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    // User agent for debugging
+    userAgent: navigator.userAgent,
+  }, { merge: true });
+}
+
+/** Save a Web Push subscription to Firestore */
+async function saveSubscriptionToFirestore(
+  userId: string,
+  subscription: PushSubscription
+): Promise<void> {
+  if (!db) return;
+
+  const { settings } = useSettingsStore.getState();
+  const subJson = subscription.toJSON();
+  const subId = tokenHash(subJson.endpoint || JSON.stringify(subJson));
+  const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${subId}`);
+
+  await setDoc(docRef, {
+    userId,
+    type: 'webpush',
+    subscription: subJson,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    morningEnabled: settings.notifications.enabled && settings.notifications.dailyBriefing,
+    morningTime: settings.notifications.dailyBriefingTime,
+    eveningEnabled: settings.notifications.enabled && settings.notifications.eveningBriefing,
+    eveningTime: settings.notifications.eveningBriefingTime,
+    timezoneOffset: new Date().getTimezoneOffset(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     userAgent: navigator.userAgent,
   }, { merge: true });
 }
 
 /**
- * Update the briefing schedule in the FCM token doc.
+ * Update the briefing schedule in the push token doc.
  * Called whenever the user changes notification settings.
  */
 export async function updateFCMSchedule(userId: string): Promise<void> {
   if (!db) return;
 
-  const token = localStorage.getItem(FCM_TOKEN_LOCAL_KEY);
-  if (!token) return;
+  // Find the right doc ID
+  const token = localStorage.getItem(PUSH_TOKEN_LOCAL_KEY);
+  const subJson = localStorage.getItem(PUSH_SUB_LOCAL_KEY);
+  if (!token && !subJson) return;
+
+  let docId: string;
+  if (token) {
+    docId = `${userId}_${tokenHash(token)}`;
+  } else {
+    const sub = JSON.parse(subJson!);
+    docId = `${userId}_${tokenHash(sub.endpoint || subJson!)}`;
+  }
 
   const { settings } = useSettingsStore.getState();
-  const docRef = doc(db, FCM_TOKEN_COLLECTION, `${userId}_${tokenHash(token)}`);
+  const docRef = doc(db, PUSH_TOKEN_COLLECTION, docId);
 
   try {
     await setDoc(docRef, {
@@ -143,9 +283,9 @@ export async function updateFCMSchedule(userId: string): Promise<void> {
       timezoneOffset: new Date().getTimezoneOffset(),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }, { merge: true });
-    console.log('[ORBIT] FCM schedule updated in Firestore');
+    console.log('[ORBIT] Push schedule updated in Firestore');
   } catch (err) {
-    console.error('[ORBIT] FCM: schedule update failed:', err);
+    console.error('[ORBIT] Push: schedule update failed:', err);
   }
 }
 
@@ -153,32 +293,40 @@ export async function updateFCMSchedule(userId: string): Promise<void> {
 
 /**
  * Listen for FCM messages when the app is in the foreground.
- * Shows them as in-page notifications.
+ * Only works with FCM (non-Safari). Web Push messages always
+ * go through the SW push event handler.
  */
 export function setupForegroundMessageHandler(): void {
-  const msg = getMessagingInstance();
-  if (!msg) return;
+  if (useNativeWebPush()) {
+    // On iOS/Safari, foreground messages come through SW push event
+    // which already calls showNotification. Nothing extra needed.
+    console.log('[ORBIT] Push: foreground handler skipped (native Web Push — handled by SW)');
+    return;
+  }
 
-  onMessage(msg, (payload) => {
-    console.log('[ORBIT] FCM foreground message:', payload);
+  getMessagingInstance().then((msg) => {
+    if (!msg) return;
+    import('firebase/messaging').then(({ onMessage }) => {
+      onMessage(msg, (payload) => {
+        console.log('[ORBIT] FCM foreground message:', payload);
 
-    const title = payload.notification?.title || 'ORBIT';
-    const body = payload.notification?.body || '';
+        const title = payload.notification?.title || 'ORBIT';
+        const body = payload.notification?.body || '';
 
-    // Show via service worker for consistency
-    navigator.serviceWorker?.ready.then((reg) => {
-      reg.showNotification(title, {
-        body,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag: payload.data?.tag || 'orbit-push',
-        data: { url: payload.data?.url || '/today' },
+        navigator.serviceWorker?.ready.then((reg) => {
+          reg.showNotification(title, {
+            body,
+            icon: '/icons/icon-192.png',
+            badge: '/icons/icon-192.png',
+            tag: (payload.data?.tag as string) || 'orbit-push',
+            data: { url: (payload.data?.url as string) || '/today' },
+          });
+        }).catch(() => {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(title, { body, icon: '/icons/icon-192.png' });
+          }
+        });
       });
-    }).catch(() => {
-      // Fallback to in-page notification
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(title, { body, icon: '/icons/icon-192.png' });
-      }
     });
   });
 }
@@ -196,18 +344,33 @@ function tokenHash(token: string): string {
   return Math.abs(hash).toString(36);
 }
 
-/** Check if FCM is available and configured */
+/** Convert a base64url VAPID key to Uint8Array for pushManager.subscribe() */
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+/** Check if push notifications are available (FCM or native Web Push) */
 export function isFCMAvailable(): boolean {
   return !!(
     typeof window !== 'undefined' &&
     'serviceWorker' in navigator &&
     'PushManager' in window &&
-    process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY &&
-    app
+    'Notification' in window &&
+    process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
   );
 }
 
-/** Check if user has an FCM token registered */
+/** Check if user has a push token/subscription registered */
 export function hasFCMToken(): boolean {
-  return !!localStorage.getItem(FCM_TOKEN_LOCAL_KEY);
+  return !!(
+    localStorage.getItem(PUSH_TOKEN_LOCAL_KEY) ||
+    localStorage.getItem(PUSH_SUB_LOCAL_KEY)
+  );
 }
