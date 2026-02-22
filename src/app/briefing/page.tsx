@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useEffect, useState } from 'react';
+import { Suspense, useMemo, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Sun,
@@ -37,6 +37,14 @@ import type { OrbitItem } from '@/lib/types';
 type Phase = 'morning' | 'evening';
 
 export default function BriefingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-[100dvh] bg-background" />}>
+      <BriefingContent />
+    </Suspense>
+  );
+}
+
+function BriefingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { items, setSelectedItemId } = useOrbitStore();
