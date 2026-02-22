@@ -793,8 +793,9 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* ── Content grid — single column mobile, two column desktop ── */}
-      <div className="grid gap-4 lg:gap-6 lg:grid-cols-2">
+      {/* ── Content — masonry-style two column on desktop ── */}
+      <div className="lg:hidden flex flex-col gap-4">
+        {/* Mobile: single column, natural order */}
         {/* Tasks */}
         <Section
           title={isViewingToday ? t('nav.today') : format(selectedDate, 'MMM d', { locale })}
@@ -833,7 +834,7 @@ export default function DashboardPage() {
                 <div key={habit.id} className="flex items-center gap-2.5 py-1">
                   <button
                     onClick={() => toggleHabit(habit)}
-                    disabled={isViewingPast && !completed} // Can't check off past habits
+                    disabled={isViewingPast && !completed}
                     className={cn(
                       'flex h-5 w-5 items-center justify-center rounded-md border transition-all shrink-0',
                       completed
@@ -937,6 +938,156 @@ export default function DashboardPage() {
             </div>
           </Section>
         )}
+      </div>
+
+      {/* Desktop: two independent columns so cards stack tightly (masonry) */}
+      <div className="hidden lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start">
+        {/* ── Left column: Tasks ── */}
+        <div className="flex flex-col gap-6">
+          <Section
+            title={isViewingToday ? t('nav.today') : format(selectedDate, 'MMM d', { locale })}
+            icon={CheckSquare}
+            count={todayTasks.length + myDayTasks.length + overdueItems.length}
+            href="/today"
+          >
+            <div className="py-1">
+              {overdueItems.map((item) => (
+                <ItemRow key={item.id} item={item} showProject compact />
+              ))}
+              {myDayTasks.map((item) => (
+                <ItemRow key={item.id} item={item} showProject compact />
+              ))}
+              {todayTasks.map((item) => (
+                <ItemRow key={item.id} item={item} showProject compact />
+              ))}
+              {overdueItems.length === 0 && todayTasks.length === 0 && myDayTasks.length === 0 && (
+                <p className="px-4 py-5 text-center text-[12px] text-muted-foreground/50">
+                  {isViewingPast 
+                    ? t('dashboard.noTasksPast')
+                    : t('dashboard.nothingScheduled')
+                  }
+                </p>
+              )}
+            </div>
+          </Section>
+
+          {/* Events below tasks on left */}
+          {todayEvents.length > 0 && (
+            <Section title={t('dashboard.events')} icon={CalendarDays} count={todayEvents.length} href="/calendar">
+              <div className="py-1">
+                {todayEvents.map((item) => (
+                  <ItemRow key={item.id} item={item} compact />
+                ))}
+              </div>
+            </Section>
+          )}
+        </div>
+
+        {/* ── Right column: Habits, Not Done from Before, Projects ── */}
+        <div className="flex flex-col gap-6">
+          <Section title={t('nav.habits')} icon={Repeat} count={todayHabits.length} href="/habits">
+            <div className="py-2 px-3 space-y-1">
+              {todayHabits.map((habit) => {
+                const completed = isHabitCompletedForDate(habit, selectedDate);
+                const streak = calculateStreak(habit);
+                return (
+                  <div key={habit.id} className="flex items-center gap-2.5 py-1">
+                    <button
+                      onClick={() => toggleHabit(habit)}
+                      disabled={isViewingPast && !completed}
+                      className={cn(
+                        'flex h-5 w-5 items-center justify-center rounded-md border transition-all shrink-0',
+                        completed
+                          ? 'border-foreground/20 bg-foreground/10'
+                          : 'border-foreground/15 hover:border-foreground/30',
+                        isViewingPast && !completed && 'opacity-30 cursor-not-allowed'
+                      )}
+                    >
+                      {completed && <CheckSquare className="h-3 w-3 text-foreground/50" />}
+                    </button>
+                    <span
+                      className={cn(
+                        'flex-1 text-[13px] cursor-pointer transition-colors hover:text-foreground',
+                        completed ? 'line-through text-muted-foreground/50' : 'text-foreground'
+                      )}
+                      onClick={() => setSelectedItemId(habit.id)}
+                    >
+                      {habit.title}
+                    </span>
+                    {streak > 0 && (
+                      <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums">
+                        {hockeyMode ? (
+                          <span className="text-xs">🏒</span>
+                        ) : (
+                          <Flame className="h-3 w-3" />
+                        )}
+                        {streak}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+              {todayHabits.length === 0 && (
+                <p className="py-4 text-center text-[12px] text-muted-foreground/50">{t('dashboard.noHabitsScheduled')}</p>
+              )}
+            </div>
+          </Section>
+
+          {/* Not Done from Before */}
+          {isViewingToday && (
+            <Section title={t('today.notDoneFromBefore')} icon={Clock3} count={notDoneFromBefore.length}>
+              <div className="py-1">
+                {notDoneFromBefore.map((item) => (
+                  <ItemRow key={item.id} item={item} showProject compact />
+                ))}
+                {notDoneFromBefore.length === 0 && (
+                  <p className="px-4 py-5 text-center text-[12px] text-muted-foreground/50">
+                    {t('dashboard.allCaughtUp')}
+                  </p>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* Projects */}
+          {activeProjects.length > 0 && (
+            <Section
+              title={t('nav.projects')}
+              icon={FolderKanban}
+              count={activeProjects.length}
+              href="/projects"
+            >
+              <div className="p-3 space-y-2.5">
+                {activeProjects.slice(0, 4).map((project) => {
+                  const progress = getProjectProgress(project.id);
+                  return (
+                    <button
+                      key={project.id}
+                      onClick={() => setSelectedItemId(project.id)}
+                      className="flex w-full items-center gap-3 text-left group transition-colors"
+                    >
+                      <span className="text-sm">{project.emoji || '📁'}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[13px] font-medium truncate block group-hover:text-foreground transition-colors">
+                          {project.title}
+                        </span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="flex-1 h-1 rounded-full bg-foreground/[0.06] overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-foreground/20 transition-all"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-muted-foreground/50 tabular-nums">{progress}%</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+        </div>
       </div>
     </div>
   );
