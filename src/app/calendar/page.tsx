@@ -560,12 +560,14 @@ export default function CalendarPage() {
   const multiDayEvents = useMemo(() => {
     const events: { item: OrbitItem; startDate: Date; endDate: Date; daysSpan: number }[] = [];
     items.filter((i) => i.type === 'event' && i.status !== 'archived' && i.startDate).forEach((item) => {
-      const start = parseISO(item.startDate + 'T12:00:00');
-      const end = item.endDate ? parseISO(item.endDate + 'T12:00:00') : start;
+      const rawStart = parseISO(item.startDate + 'T12:00:00');
+      const rawEnd = item.endDate ? parseISO(item.endDate + 'T12:00:00') : rawStart;
+      if (rawStart > calendarEnd || rawEnd < calendarStart) return;
+      // Clamp to visible calendar range so bars render correctly
+      const start = rawStart < calendarStart ? startOfDay(calendarStart) : rawStart;
+      const end = rawEnd > calendarEnd ? startOfDay(calendarEnd) : rawEnd;
       const daysSpan = differenceInDays(end, start) + 1;
-      if (start <= calendarEnd && end >= calendarStart) {
-        events.push({ item, startDate: start, endDate: end, daysSpan });
-      }
+      events.push({ item, startDate: start, endDate: end, daysSpan });
     });
     return events.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
   }, [items, calendarStart, calendarEnd]);
@@ -598,7 +600,15 @@ export default function CalendarPage() {
           const newEvent: Record<string, unknown> = { type: 'event', title: (d.summary as string) || t('calendar.untitledEvent'), status: 'active', googleCalendarId: d.id, calendarSynced: true, userId: user.uid, createdAt: Date.now(), updatedAt: Date.now(), tags: [], linkedIds: [] };
           if (d.description) newEvent.content = d.description;
           const sd = start?.date || start?.dateTime?.split('T')[0]; if (sd) newEvent.startDate = sd;
-          const ed = end?.date || end?.dateTime?.split('T')[0]; if (ed) newEvent.endDate = ed;
+          // Google Calendar all-day events use exclusive end dates — subtract 1 day
+          let ed = end?.date || end?.dateTime?.split('T')[0];
+          if (ed && start?.date && !start?.dateTime) {
+            const [ey, em, eday] = ed.split('-').map(Number);
+            const endObj = new Date(Date.UTC(ey, em - 1, eday));
+            endObj.setUTCDate(endObj.getUTCDate() - 1);
+            ed = `${endObj.getUTCFullYear()}-${String(endObj.getUTCMonth() + 1).padStart(2, '0')}-${String(endObj.getUTCDate()).padStart(2, '0')}`;
+          }
+          if (ed && ed !== sd) newEvent.endDate = ed;
           const st = start?.dateTime?.split('T')[1]?.substring(0, 5); if (st) newEvent.startTime = st;
           const et = end?.dateTime?.split('T')[1]?.substring(0, 5); if (et) newEvent.endTime = et;
           await createItem(newEvent as Omit<OrbitItem, 'id'>);
@@ -762,7 +772,7 @@ export default function CalendarPage() {
               </div>
 
               {/* Multi-day bars */}
-              <div className="hidden lg:grid absolute inset-0 pointer-events-none" style={{ gridTemplateColumns: showWeekNumbers ? '1fr repeat(7, 1fr)' : 'repeat(7, 1fr)', gridTemplateRows: `repeat(${totalRows}, 1fr)` }}>
+              <div className={cn('hidden lg:grid absolute inset-0 pointer-events-none', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')} style={{ gridTemplateRows: `repeat(${totalRows}, 1fr)` }}>
                 {showWeekNumbers && Array.from({ length: totalRows }, (_, r) => (<div key={`s-${r}`} style={{ gridRow: r + 1, gridColumn: 1 }} />))}
                 {multiDayLayout.map((seg, i) => {
                   const color = getEventColor(seg.item);
