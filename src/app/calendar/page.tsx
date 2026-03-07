@@ -45,6 +45,7 @@ import {
 } from '@/lib/google-calendar';
 import { getLastSyncTime, isSyncRunning } from '@/lib/google-calendar-sync';
 import { createItem } from '@/lib/firestore';
+import { isMobile } from '@/lib/mobile';
 import type { OrbitItem } from '@/lib/types';
 
 // ═══════════════════════════════════════════════════════════
@@ -501,8 +502,16 @@ export default function CalendarPage() {
   const locale = getLocale(language);
   const is24h = timeFormat === '24h';
   const { t } = useTranslation();
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    setMobile(isMobile());
+    const mql = window.matchMedia('(max-width: 1023px)');
+    const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('week');
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [importing, setImporting] = useState(false);
   const [lastSync, setLastSync] = useState<number>(0);
@@ -526,6 +535,13 @@ export default function CalendarPage() {
     const start = startOfWeek(currentDate, { weekStartsOn });
     return Array.from({ length: 7 }, (_, i) => addDays(start, i));
   }, [currentDate, weekStartsOn]);
+
+  // Mobile: 3-day view when "week" is selected
+  const mobileWeekDays = useMemo(() => {
+    return [addDays(currentDate, -1), currentDate, addDays(currentDate, 1)];
+  }, [currentDate]);
+
+  const effectiveWeekDays = mobile ? mobileWeekDays : weekDays;
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -598,13 +614,14 @@ export default function CalendarPage() {
   const headerLabel = useMemo(() => {
     if (viewMode === 'month') return format(currentDate, 'MMMM yyyy', { locale });
     if (viewMode === 'week') {
-      const s = weekDays[0], e = weekDays[6];
+      const days = mobile ? mobileWeekDays : weekDays;
+      const s = days[0], e = days[days.length - 1];
       if (isSameMonth(s, e)) return format(s, 'MMMM yyyy', { locale });
       if (s.getFullYear() === e.getFullYear()) return `${format(s, 'MMM', { locale })} – ${format(e, 'MMM yyyy', { locale })}`;
       return `${format(s, 'MMM yyyy', { locale })} – ${format(e, 'MMM yyyy', { locale })}`;
     }
     return format(currentDate, 'EEEE, MMMM d, yyyy', { locale });
-  }, [viewMode, currentDate, weekDays, locale]);
+  }, [viewMode, currentDate, weekDays, mobileWeekDays, mobile, locale]);
 
   const handleEventClick = useCallback((id: string) => setSelectedItemId(id), [setSelectedItemId]);
   const handleSlotClick = useCallback((date: Date, time: string) => setQuickAdd({ date, time }), []);
@@ -667,7 +684,7 @@ export default function CalendarPage() {
 
       {/* Week View */}
       {viewMode === 'week' && (
-        <TimeGrid days={weekDays} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} showWeekNumbers={showWeekNumbers} />
+        <TimeGrid days={effectiveWeekDays} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} showWeekNumbers={!mobile && showWeekNumbers} />
       )}
 
       {/* Day View */}
