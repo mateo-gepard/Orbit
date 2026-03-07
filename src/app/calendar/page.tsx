@@ -901,7 +901,7 @@ export default function CalendarPage() {
                         </div>
 
                         {/* Space for multi-day lane bars */}
-                        {lanesInRow > 0 && <div style={{ height: lanesInRow * 20 }} />}
+                        {lanesInRow > 0 && <div style={{ height: lanesInRow * 22 }} />}
 
                         {/* Desktop: event chips */}
                         <div className="hidden lg:block space-y-0.5 mt-0.5">
@@ -947,7 +947,7 @@ export default function CalendarPage() {
                   const color = getEventColor(seg.item);
                   const colOff = showWeekNumbers ? 2 : 1;
                   return (
-                    <div key={`${seg.item.id}-${i}`} className="pointer-events-auto cursor-pointer px-[2px]" style={{ gridRow: seg.row + 1, gridColumn: `${seg.col + colOff} / span ${seg.span}`, alignSelf: 'start', marginTop: `${28 + seg.lane * 20}px` }} onClick={() => setSelectedItemId(seg.item.id)}>
+                    <div key={`${seg.item.id}-${i}`} className="pointer-events-auto cursor-pointer px-[2px]" style={{ gridRow: seg.row + 1, gridColumn: `${seg.col + colOff} / span ${seg.span}`, alignSelf: 'start', marginTop: `${38 + seg.lane * 22}px` }} onClick={() => setSelectedItemId(seg.item.id)}>
                       <div className={cn(
                         'h-[18px] px-2 text-[9px] font-bold leading-[18px] truncate transition-all hover:brightness-110',
                         color.accent, 'text-white shadow-sm',
