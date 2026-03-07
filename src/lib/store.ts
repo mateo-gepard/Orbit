@@ -94,6 +94,10 @@ export const useOrbitStore = create<OrbitStore>()(
           console.error('[ORBIT Store] setItems received non-array:', typeof items);
           return;
         }
+        const currentCount = get().items.length;
+        if (currentCount > 0 && items.length === 0) {
+          console.warn(`[ORBIT Store] setItems: ${currentCount} items → 0. Potential data wipe detected.`);
+        }
         set({ items });
       },
 

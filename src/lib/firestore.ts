@@ -92,61 +92,27 @@ function validateItem(item: Partial<OrbitItem>): boolean {
 }
 
 function sanitizeItem(item: OrbitItem): OrbitItem {
-  // Remove all undefined fields (Firestore doesn't accept undefined)
-  const sanitized: Record<string, unknown> = {
-    id: item.id || crypto.randomUUID(),
-    title: (item.title || '').trim() || 'Untitled',
-    type: VALID_TYPES.has(item.type) ? item.type : 'task',
-    status: VALID_STATUSES.has(item.status) ? item.status : 'active',
-    createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
-    updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : Date.now(),
-    userId: item.userId || 'demo-user',
-    tags: Array.isArray(item.tags) ? item.tags : [],
-    linkedIds: Array.isArray(item.linkedIds) ? item.linkedIds : [],
-  };
+  // Preserve ALL existing fields — never strip unknown/future fields.
+  // Only validate & default the required ones.
+  const sanitized: Record<string, unknown> = {};
 
-  // Only include optional fields if they have valid values
-  if (item.content) sanitized.content = item.content;
-  if (item.dueDate) sanitized.dueDate = item.dueDate;
-  if (item.priority) sanitized.priority = item.priority;
-  if (item.assignee) sanitized.assignee = item.assignee;
-  if (item.parentId) sanitized.parentId = item.parentId;
-  if (item.completedAt) sanitized.completedAt = item.completedAt;
-  
-  if (Array.isArray(item.checklist) && item.checklist.length > 0) {
-    sanitized.checklist = item.checklist;
+  // Copy every field from the source item
+  for (const [key, value] of Object.entries(item)) {
+    if (value !== undefined) {
+      sanitized[key] = value;
+    }
   }
-  
-  // Project-specific fields
-  if (item.emoji) sanitized.emoji = item.emoji;
-  if (item.color) sanitized.color = item.color;
-  if (Array.isArray(item.files)) sanitized.files = item.files;
-  
-  // Habit-specific fields
-  if (item.frequency) sanitized.frequency = item.frequency;
-  if (Array.isArray(item.customDays)) sanitized.customDays = item.customDays;
-  if (item.habitTime) sanitized.habitTime = item.habitTime;
-  if (item.completions && typeof item.completions === 'object') {
-    sanitized.completions = item.completions;
-  }
-  
-  // Event-specific fields
-  if (item.startDate) sanitized.startDate = item.startDate;
-  if (item.endDate) sanitized.endDate = item.endDate;
-  if (item.startTime) sanitized.startTime = item.startTime;
-  if (item.endTime) sanitized.endTime = item.endTime;
-  if (item.googleCalendarId) sanitized.googleCalendarId = item.googleCalendarId;
-  if (item.calendarSynced !== undefined) sanitized.calendarSynced = item.calendarSynced;
-  
-  // Goal-specific fields
-  if (item.timeframe) sanitized.timeframe = item.timeframe;
-  if (item.metric) sanitized.metric = item.metric;
-  
-  // Note-specific fields
-  if (item.noteSubtype) sanitized.noteSubtype = item.noteSubtype;
 
-  // My Day field
-  if (item.myDay) sanitized.myDay = item.myDay;
+  // Ensure required fields have valid defaults
+  sanitized.id = item.id || crypto.randomUUID();
+  sanitized.title = (item.title || '').trim() || 'Untitled';
+  sanitized.type = VALID_TYPES.has(item.type) ? item.type : 'task';
+  sanitized.status = VALID_STATUSES.has(item.status) ? item.status : 'active';
+  sanitized.createdAt = typeof item.createdAt === 'number' ? item.createdAt : Date.now();
+  sanitized.updatedAt = typeof item.updatedAt === 'number' ? item.updatedAt : Date.now();
+  sanitized.userId = item.userId || 'demo-user';
+  sanitized.tags = Array.isArray(item.tags) ? item.tags : [];
+  sanitized.linkedIds = Array.isArray(item.linkedIds) ? item.linkedIds : [];
 
   return sanitized as unknown as OrbitItem;
 }
@@ -273,15 +239,26 @@ export function subscribeToItems(
       snapshot.forEach((d) => {
         items.push(sanitizeItem({ id: d.id, ...d.data() } as OrbitItem));
       });
+
+      // Backup to localStorage for catastrophic recovery
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+      } catch { /* quota exceeded — ignore */ }
+
       callback(items);
     },
     (error) => {
       console.error('[ORBIT] Firestore subscription error:', error);
-      // Fallback: try to load from local cache
+      // Fallback: load from local cache backup
       const cached = loadLocalItems();
       if (cached.length > 0) {
-        console.warn('[ORBIT] Using local cache as fallback');
+        console.warn('[ORBIT] Using local cache as fallback (' + cached.length + ' items)');
         callback(cached);
+      } else {
+        // No cache available — still call callback so loading screen dismisses
+        // and user sees an error state rather than infinite loading
+        console.error('[ORBIT] No local cache available — showing empty state');
+        callback([]);
       }
     }
   );
