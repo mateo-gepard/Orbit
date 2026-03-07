@@ -13,7 +13,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { app, db } from './firebase';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useSettingsStore } from './settings-store';
 
 const PUSH_TOKEN_COLLECTION = 'fcmTokens';
@@ -373,4 +373,106 @@ export function hasFCMToken(): boolean {
     localStorage.getItem(PUSH_TOKEN_LOCAL_KEY) ||
     localStorage.getItem(PUSH_SUB_LOCAL_KEY)
   );
+}
+
+// ── Device Management ─────────────────────────────────────
+
+export interface RegisteredDevice {
+  docId: string;
+  type: 'fcm' | 'webpush';
+  userAgent: string;
+  updatedAt: number;
+  isCurrentDevice: boolean;
+}
+
+function parseDeviceName(ua: string): string {
+  if (!ua) return 'Unknown device';
+  if (/iPhone/.test(ua)) return 'iPhone';
+  if (/iPad/.test(ua)) return 'iPad';
+  if (/Android/.test(ua)) {
+    const match = ua.match(/Android[^;]*;\s*([^)]+)/);
+    return match ? match[1].trim() : 'Android';
+  }
+  if (/Macintosh/.test(ua)) return 'Mac';
+  if (/Windows/.test(ua)) return 'Windows PC';
+  if (/Linux/.test(ua)) return 'Linux';
+  return 'Browser';
+}
+
+function parseBrowserName(ua: string): string {
+  if (!ua) return '';
+  if (/Edg\//.test(ua)) return 'Edge';
+  if (/OPR\/|Opera/.test(ua)) return 'Opera';
+  if (/Firefox\//.test(ua)) return 'Firefox';
+  if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) return 'Chrome';
+  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return 'Safari';
+  return '';
+}
+
+export function getDeviceLabel(ua: string): string {
+  const device = parseDeviceName(ua);
+  const browser = parseBrowserName(ua);
+  return browser ? `${device} · ${browser}` : device;
+}
+
+/** List all registered push devices for a user */
+export async function getRegisteredDevices(userId: string): Promise<RegisteredDevice[]> {
+  if (!db) return [];
+  try {
+    const q = query(collection(db, PUSH_TOKEN_COLLECTION), where('userId', '==', userId));
+    const snapshot = await getDocs(q);
+    const currentToken = localStorage.getItem(PUSH_TOKEN_LOCAL_KEY);
+    const currentSub = localStorage.getItem(PUSH_SUB_LOCAL_KEY);
+
+    return snapshot.docs.map((d) => {
+      const data = d.data();
+      let isCurrent = false;
+      if (data.type === 'fcm' && currentToken && data.token === currentToken) isCurrent = true;
+      if (data.type === 'webpush' && currentSub) {
+        try {
+          const subEndpoint = JSON.parse(currentSub).endpoint;
+          const docEndpoint = data.subscription?.endpoint;
+          if (subEndpoint && docEndpoint && subEndpoint === docEndpoint) isCurrent = true;
+        } catch {}
+      }
+      return {
+        docId: d.id,
+        type: data.type || 'fcm',
+        userAgent: data.userAgent || '',
+        updatedAt: data.updatedAt || data.createdAt || 0,
+        isCurrentDevice: isCurrent,
+      };
+    });
+  } catch (err) {
+    console.error('[ORBIT] Failed to list devices:', err);
+    return [];
+  }
+}
+
+/** Remove a specific registered device */
+export async function removeDevice(docId: string): Promise<void> {
+  if (!db) return;
+  try {
+    await deleteDoc(doc(db, PUSH_TOKEN_COLLECTION, docId));
+    // If this is the current device, clear local tokens too
+    const currentToken = localStorage.getItem(PUSH_TOKEN_LOCAL_KEY);
+    const currentSub = localStorage.getItem(PUSH_SUB_LOCAL_KEY);
+    if (currentToken && docId.includes(tokenHash(currentToken))) {
+      localStorage.removeItem(PUSH_TOKEN_LOCAL_KEY);
+    }
+    if (currentSub) {
+      try {
+        const sub = JSON.parse(currentSub);
+        if (docId.includes(tokenHash(sub.endpoint || currentSub))) {
+          localStorage.removeItem(PUSH_SUB_LOCAL_KEY);
+          const swReg = await navigator.serviceWorker?.ready;
+          const existingSub = await swReg?.pushManager?.getSubscription();
+          if (existingSub) await existingSub.unsubscribe();
+        }
+      } catch {}
+    }
+    console.log('[ORBIT] Device removed:', docId);
+  } catch (err) {
+    console.error('[ORBIT] Failed to remove device:', err);
+  }
 }

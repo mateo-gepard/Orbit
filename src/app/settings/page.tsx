@@ -30,6 +30,11 @@ import {
   Zap,
   Send,
   Sparkles,
+  Smartphone,
+  MonitorSmartphone,
+  AlertTriangle,
+  Info,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -44,7 +49,7 @@ import {
   sendEveningBriefingNow,
   syncBriefingScheduleToSW,
 } from '@/lib/briefing-notifications';
-import { updateFCMSchedule, isFCMAvailable, hasFCMToken, registerFCMToken } from '@/lib/fcm';
+import { updateFCMSchedule, isFCMAvailable, hasFCMToken, registerFCMToken, getRegisteredDevices, removeDevice, getDeviceLabel, type RegisteredDevice } from '@/lib/fcm';
 import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -230,20 +235,42 @@ function NotificationsSection({
   const { t } = useTranslation();
   const items = useOrbitStore((s) => s.items);
   const { user } = useAuth();
-  const [permissionStatus, setPermissionStatus] = useState<string>('default');
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [testSent, setTestSent] = useState<'morning' | 'evening' | null>(null);
   const [fcmStatus, setFcmStatus] = useState<'unavailable' | 'unregistered' | 'registered'>('unavailable');
+  const [devices, setDevices] = useState<RegisteredDevice[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [removingDevice, setRemovingDevice] = useState<string | null>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isPWA, setIsPWA] = useState(false);
 
+  // Detect platform capabilities
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
+    if (typeof window === 'undefined') return;
+    if (!('Notification' in window)) {
+      setPermissionStatus('unsupported');
+    } else {
       setPermissionStatus(Notification.permission);
     }
     if (isFCMAvailable()) {
       setFcmStatus(hasFCMToken() ? 'registered' : 'unregistered');
     }
+    const ua = navigator.userAgent;
+    setIsIOS(/iPad|iPhone|iPod/.test(ua));
+    setIsPWA(window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && (navigator as unknown as { standalone: boolean }).standalone));
   }, []);
 
-  // Sync briefing schedule to Service Worker + Firestore whenever settings change
+  // Load registered devices
+  useEffect(() => {
+    if (!user) return;
+    setLoadingDevices(true);
+    getRegisteredDevices(user.uid).then((d) => {
+      setDevices(d);
+      setLoadingDevices(false);
+    });
+  }, [user, fcmStatus]);
+
+  // Sync briefing schedule to SW + Firestore whenever settings change
   useEffect(() => {
     syncBriefingScheduleToSW();
     if (user && hasFCMToken()) {
@@ -258,15 +285,29 @@ function NotificationsSection({
     settings.notifications.eveningBriefingTime,
   ]);
 
+  const handleRequestPermission = async () => {
+    if (permissionStatus === 'unsupported') return;
+    const granted = await requestNotificationPermission();
+    setPermissionStatus(granted ? 'granted' : 'denied');
+    if (granted) {
+      setNested('notifications', { enabled: true });
+    }
+  };
+
   const handleEnableBackgroundPush = async () => {
     if (!user) return;
     const token = await registerFCMToken(user.uid);
     setFcmStatus(token ? 'registered' : 'unregistered');
   };
 
-  const handleRequestPermission = async () => {
-    const granted = await requestNotificationPermission();
-    setPermissionStatus(granted ? 'granted' : 'denied');
+  const handleRemoveDevice = async (docId: string) => {
+    setRemovingDevice(docId);
+    await removeDevice(docId);
+    setDevices((prev) => prev.filter((d) => d.docId !== docId));
+    if (devices.find((d) => d.docId === docId)?.isCurrentDevice) {
+      setFcmStatus('unregistered');
+    }
+    setRemovingDevice(null);
   };
 
   const handleTestMorning = () => {
@@ -281,42 +322,87 @@ function NotificationsSection({
     setTimeout(() => setTestSent(null), 3000);
   };
 
+  const permGranted = permissionStatus === 'granted';
+  const permDenied = permissionStatus === 'denied';
+  const permDefault = permissionStatus === 'default';
+  const permUnsupported = permissionStatus === 'unsupported';
+
   return (
     <div>
       <SectionHeader icon={Bell} label={t('settings.notifications')} />
 
-      {/* Permission status */}
-      <div className="mb-4 rounded-xl border border-border/30 bg-muted/20 px-3 sm:px-4 py-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <BellRing className={cn(
-              'h-4 w-4',
-              permissionStatus === 'granted' ? 'text-green-500' : 'text-muted-foreground/40'
-            )} />
-            <span className="text-[12px] font-medium">
-              {permissionStatus === 'granted'
-                ? t('settings.enableNotif')
-                : permissionStatus === 'denied'
-                ? t('settings.enableNotif')
-                : t('settings.enableNotif')}
-            </span>
+      {/* ─── Permission Status Card ─── */}
+      <div className={cn(
+        'mb-5 rounded-xl border px-4 py-3.5',
+        permGranted
+          ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
+          : permDenied
+            ? 'border-red-500/20 bg-red-500/[0.04]'
+            : permUnsupported
+              ? 'border-amber-500/20 bg-amber-500/[0.04]'
+              : 'border-blue-500/20 bg-blue-500/[0.04]',
+      )}>
+        <div className="flex items-start gap-3">
+          <div className={cn(
+            'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+            permGranted ? 'bg-emerald-500/10' : permDenied ? 'bg-red-500/10' : permUnsupported ? 'bg-amber-500/10' : 'bg-blue-500/10',
+          )}>
+            {permGranted ? (
+              <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            ) : permDenied ? (
+              <AlertTriangle className="h-4 w-4 text-red-500 dark:text-red-400" />
+            ) : permUnsupported ? (
+              <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            ) : (
+              <BellRing className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            )}
           </div>
-          {permissionStatus !== 'granted' && (
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold">
+              {permGranted
+                ? 'Notifications enabled'
+                : permDenied
+                  ? 'Notifications blocked'
+                  : permUnsupported
+                    ? 'Notifications not supported'
+                    : 'Enable notifications'
+              }
+            </p>
+            <p className="text-[11px] text-muted-foreground/60 mt-0.5 leading-relaxed">
+              {permGranted
+                ? 'This browser can receive briefings and reminders.'
+                : permDenied
+                  ? isIOS
+                    ? 'Tap the share button → "Add to Home Screen", then open Orbit from the home screen and enable notifications again.'
+                    : 'Open browser settings → Site permissions → find Orbit → set Notifications to "Allow".'
+                  : permUnsupported
+                    ? isIOS && !isPWA
+                      ? 'On iOS, notifications only work when Orbit is installed as an app. Tap the share button → "Add to Home Screen".'
+                      : 'This browser does not support notifications.'
+                    : isIOS && !isPWA
+                      ? 'First add Orbit to your home screen (share → "Add to Home Screen"), then enable notifications.'
+                      : 'Allow Orbit to send you daily briefings and reminders.'
+              }
+            </p>
+          </div>
+          {!permGranted && !permUnsupported && !(isIOS && !isPWA) && (
             <button
               onClick={handleRequestPermission}
-              className="rounded-lg bg-foreground px-3 py-1 text-[11px] font-semibold text-background transition-opacity hover:opacity-80"
+              className={cn(
+                'shrink-0 rounded-lg px-3.5 py-1.5 text-[11px] font-semibold transition-all mt-0.5',
+                permDenied
+                  ? 'bg-muted/60 text-muted-foreground/40 cursor-not-allowed'
+                  : 'bg-foreground text-background hover:opacity-80 active:scale-95',
+              )}
+              disabled={permDenied}
             >
-              {permissionStatus === 'denied' ? 'Blocked' : 'Enable'}
+              {permDenied ? 'Blocked' : 'Allow'}
             </button>
           )}
         </div>
-        {permissionStatus === 'denied' && (
-          <p className="mt-1.5 text-[10px] text-muted-foreground/50">
-            Reset in browser settings: click the lock icon in the address bar.
-          </p>
-        )}
       </div>
 
+      {/* ─── Master Toggle ─── */}
       <SettingRow label={t('settings.enableNotif')} description={t('settings.enableNotifDesc')}>
         <Toggle
           checked={settings.notifications.enabled}
@@ -329,16 +415,13 @@ function NotificationsSection({
           onClick={() => setNested('notifications', { sound: !settings.notifications.sound })}
           className="flex items-center gap-1.5 text-[12px] text-muted-foreground/60"
         >
-          {settings.notifications.sound ? (
-            <Volume2 className="h-4 w-4" />
-          ) : (
-            <VolumeX className="h-4 w-4" />
-          )}
+          {settings.notifications.sound ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           {settings.notifications.sound ? t('common.on') : t('common.off')}
         </button>
       </SettingRow>
 
-      <div className="mt-4 mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
+      {/* ─── Briefings ─── */}
+      <div className="mt-5 mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
         {t('settings.briefings')}
       </div>
 
@@ -377,7 +460,7 @@ function NotificationsSection({
       </SettingRow>
 
       {/* Test buttons */}
-      {permissionStatus === 'granted' && (
+      {permGranted && (
         <div className="mt-3 flex items-center gap-2">
           <button
             onClick={handleTestMorning}
@@ -408,40 +491,104 @@ function NotificationsSection({
         </div>
       )}
 
-      {/* Background push status */}
-      {permissionStatus === 'granted' && (
-        <div className="mt-3 rounded-lg border border-border/40 bg-muted/20 px-3 py-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className={cn(
-                'h-2 w-2 rounded-full',
-                fcmStatus === 'registered' ? 'bg-green-500' : 'bg-amber-500'
-              )} />
-              <span className="text-[11px] font-medium text-muted-foreground">
-                {fcmStatus === 'registered'
-                  ? 'Background push active'
-                  : fcmStatus === 'unregistered'
-                    ? 'Background push available'
-                    : 'Background push not supported'}
-              </span>
-            </div>
-            {fcmStatus === 'unregistered' && user && (
-              <button
-                onClick={handleEnableBackgroundPush}
-                className="text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                Enable
-              </button>
-            )}
+      {/* ─── Background Push / Devices ─── */}
+      {permGranted && (
+        <div className="mt-5">
+          <div className="mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
+            Devices & Background Push
           </div>
-          <p className="text-[10px] text-muted-foreground/50 mt-1">
-            {fcmStatus === 'registered'
-              ? 'Briefings will be delivered even when the app is closed.'
-              : 'Enable to receive briefings when the app is closed or your phone is sleeping.'}
-          </p>
+
+          <div className="rounded-xl border border-border/30 bg-muted/10 overflow-hidden">
+            {/* This device status */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border/20">
+              <div className="flex items-center gap-2.5">
+                <MonitorSmartphone className="h-4 w-4 text-muted-foreground/40" />
+                <div>
+                  <p className="text-[12px] font-medium">This device</p>
+                  <p className="text-[10px] text-muted-foreground/40">
+                    {fcmStatus === 'registered'
+                      ? 'Receiving push notifications'
+                      : 'Not registered for push'}
+                  </p>
+                </div>
+              </div>
+              {fcmStatus === 'registered' ? (
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                  <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Active</span>
+                </div>
+              ) : fcmStatus === 'unregistered' && user ? (
+                <button
+                  onClick={handleEnableBackgroundPush}
+                  className="rounded-lg bg-foreground px-3 py-1.5 text-[10px] font-semibold text-background transition-opacity hover:opacity-80 active:scale-95"
+                >
+                  Enable push
+                </button>
+              ) : (
+                <span className="text-[10px] text-muted-foreground/30">Not available</span>
+              )}
+            </div>
+
+            {/* Registered devices list */}
+            {devices.length > 0 && (
+              <div>
+                <div className="px-4 py-2 border-b border-border/15">
+                  <p className="text-[10px] font-medium text-muted-foreground/35 uppercase tracking-wider">
+                    {devices.length} registered device{devices.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                {devices.map((device) => (
+                  <div key={device.docId} className={cn(
+                    'flex items-center justify-between px-4 py-2.5 border-b border-border/10 last:border-b-0',
+                    device.isCurrentDevice && 'bg-foreground/[0.02]',
+                  )}>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Smartphone className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-[11px] font-medium truncate">{getDeviceLabel(device.userAgent)}</p>
+                          {device.isCurrentDevice && (
+                            <span className="text-[8px] font-bold uppercase tracking-wider bg-foreground/10 text-foreground/50 px-1.5 py-0.5 rounded">This</span>
+                          )}
+                        </div>
+                        <p className="text-[9px] text-muted-foreground/30">
+                          {device.type === 'webpush' ? 'Web Push' : 'FCM'} · Last active {device.updatedAt ? new Date(device.updatedAt).toLocaleDateString() : 'Unknown'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveDevice(device.docId)}
+                      disabled={removingDevice === device.docId}
+                      className={cn(
+                        'shrink-0 ml-2 rounded-lg p-1.5 text-muted-foreground/25 hover:text-red-500 hover:bg-red-500/10 transition-all',
+                        removingDevice === device.docId && 'opacity-30 pointer-events-none',
+                      )}
+                      title="Remove device"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {loadingDevices && devices.length === 0 && (
+              <div className="px-4 py-3 text-[11px] text-muted-foreground/30">Loading devices...</div>
+            )}
+
+            {/* Help text */}
+            <div className="px-4 py-2.5 bg-muted/10">
+              <p className="text-[10px] text-muted-foreground/35 leading-relaxed">
+                {fcmStatus === 'registered'
+                  ? 'Briefings will be delivered even when Orbit is closed or your device is sleeping. Remove old devices you no longer use.'
+                  : 'Enable push to receive briefings when the app is closed. Each device must be registered separately.'}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
+      {/* ─── Reminders ─── */}
       <div className="mt-6 mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
         {t('settings.reminders')}
       </div>
