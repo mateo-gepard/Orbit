@@ -521,11 +521,11 @@ function PersonDetail({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full sm:w-[440px] max-h-[85vh] bg-card border border-border/50 shadow-2xl rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300"
+        className="relative w-full max-w-[440px] max-h-[85vh] bg-card border border-border/50 shadow-2xl rounded-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
