@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import {
   FolderKanban,
   Plus,
@@ -36,6 +36,10 @@ export default function ProjectsPage() {
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [collapsedTiers, setCollapsedTiers] = useState<Set<number>>(new Set());
+  const [isCreating, setIsCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   const projects = useMemo(
     () => items.filter((i) => i.type === "project" && i.status !== "archived"),
@@ -89,8 +93,9 @@ export default function ProjectsPage() {
     const id = await createItem({
       type: "project",
       status: "active",
-      title: "",
-      emoji: "🚀",
+      title: newTitle.trim() || 'Untitled Project',
+      content: newDescription.trim() || undefined,
+      emoji: "\ud83d\ude80",
       color: "#6366f1",
       tier,
       tags: [],
@@ -98,7 +103,21 @@ export default function ProjectsPage() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+    setIsCreating(false);
+    setNewTitle('');
+    setNewDescription('');
     setSelectedItemId(id);
+  };
+
+  const handleStartCreating = () => {
+    setIsCreating(true);
+    setTimeout(() => titleInputRef.current?.focus(), 50);
+  };
+
+  const handleCancelCreating = () => {
+    setIsCreating(false);
+    setNewTitle('');
+    setNewDescription('');
   };
 
   const handleNewTask = async (
@@ -436,6 +455,102 @@ export default function ProjectsPage() {
   };
 
   return (
+    <>
+      {/* Floating create dialog */}
+      {isCreating && (
+        <div
+          className="fixed inset-0 z-50 flex items-start bg-background/80 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCancelCreating();
+          }}
+        >
+          <div
+            className={cn(
+              'relative w-full',
+              'pt-[max(env(safe-area-inset-top,0px),8px)] px-3',
+              'lg:absolute lg:top-[18vh] lg:left-1/2 lg:-translate-x-1/2 lg:pt-0 lg:px-0',
+              'lg:max-w-[520px]',
+              'animate-slide-down-spring lg:animate-scale-in'
+            )}
+          >
+            <div className={cn(
+              'overflow-hidden bg-popover',
+              'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
+              'rounded-2xl lg:rounded-xl',
+              'border border-border/60'
+            )}>
+              {/* Title Input */}
+              <div className="flex items-center gap-3 px-4 py-3 lg:py-3">
+                <FolderKanban className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
+                <input
+                  ref={titleInputRef}
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') handleCancelCreating();
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleNewProject();
+                    }
+                  }}
+                  placeholder="Project name..."
+                  className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
+                  autoFocus
+                  autoComplete="off"
+                  autoCorrect="off"
+                />
+                <button
+                  onClick={handleCancelCreating}
+                  className="rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/50 hover:text-muted-foreground lg:hidden"
+                >
+                  Cancel
+                </button>
+                <kbd className="hidden lg:inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/60">
+                  esc
+                </kbd>
+              </div>
+
+              {/* Divider */}
+              <div className="h-px bg-border" />
+
+              {/* Description Input */}
+              <div className="px-4 py-3 lg:py-3">
+                <textarea
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') handleCancelCreating();
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleNewProject();
+                    }
+                  }}
+                  placeholder="Description (optional)..."
+                  className="w-full bg-transparent text-[14px] lg:text-[13px] text-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[80px] max-h-[30vh] overflow-y-auto leading-relaxed"
+                  rows={3}
+                />
+              </div>
+
+              {/* Divider */}
+              <div className="h-px bg-border" />
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-4 py-2.5 lg:py-2 bg-muted/30">
+                <p className="text-[10px] lg:text-[9px] text-muted-foreground/50 font-medium">
+                  <kbd className="font-mono">⌘↵</kbd> create · <kbd className="font-mono">esc</kbd> cancel
+                </p>
+                <button
+                  onClick={() => handleNewProject()}
+                  className="rounded-lg px-3 py-1.5 text-[12px] lg:text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors active:scale-95"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     <div className="p-4 lg:p-8 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
@@ -473,7 +588,7 @@ export default function ProjectsPage() {
             </button>
           </div>
           <button
-            onClick={() => handleNewProject()}
+            onClick={handleStartCreating}
             className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-2 text-[13px] lg:text-[12px] font-medium text-background transition-all hover:opacity-90 active:scale-[0.98]"
           >
             <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" /> {t('projects.newProject')}
@@ -502,5 +617,6 @@ export default function ProjectsPage() {
         </div>
       )}
     </div>
+    </>
   );
 }
