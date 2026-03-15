@@ -24,7 +24,7 @@ import {
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem } from '@/lib/firestore';
 import { useSettingsStore } from '@/lib/settings-store';
-import { useCirclesStore } from '@/lib/circles-store';
+
 import { syncEventToGoogle, requestCalendarPermission, hasCalendarPermission } from '@/lib/google-calendar';
 import { LinkManager } from '@/components/items/link-manager';
 import { LinkGraph } from '@/components/items/link-graph';
@@ -95,10 +95,6 @@ export function DetailPanel() {
   const [showLinkGraph, setShowLinkGraph] = useState(false);
 
   const allTags = getAllTags();
-  const circlePeople = useCirclesStore((s) => s.people);
-  const circleHabitLinks = useCirclesStore((s) => s.habitLinks);
-  const linkHabit = useCirclesStore((s) => s.linkHabit);
-  const unlinkHabit = useCirclesStore((s) => s.unlinkHabit);
 
   useEffect(() => {
     if (item) {
@@ -420,33 +416,7 @@ export function DetailPanel() {
                       <Input type="time" value={item.habitTime || ''} onChange={(e) => handleUpdate({ habitTime: e.target.value || undefined })} className="h-7 text-[11px]" placeholder="Time" />
                     </div>
 
-                    {/* Shared with person from Circles */}
-                    {circlePeople.length > 0 && (() => {
-                      const linkedPerson = circleHabitLinks.find((l) => l.habitId === item.id);
-                      return (
-                        <div className="mt-2">
-                          <FieldLabel>Shared with</FieldLabel>
-                          <Select
-                            value={linkedPerson?.personId || '_none'}
-                            onValueChange={(v) => {
-                              if (v === '_none') {
-                                unlinkHabit(item.id);
-                              } else {
-                                linkHabit(item.id, v);
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue placeholder="No one" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_none" className="text-[12px]">No one</SelectItem>
-                              {circlePeople.map((p) => (
-                                <SelectItem key={p.id} value={p.id} className="text-[12px]">{p.emoji} {p.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      );
-                    })()}
+
                   </div>
                 </>
               )}

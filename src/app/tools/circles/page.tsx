@@ -1,48 +1,34 @@
 'use client';
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { format, differenceInDays, isPast, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import {
   Plus,
   ArrowLeft,
-  Phone,
-  MessageCircle,
-  Users as UsersIcon,
-  Hand,
-  Pencil,
-  Trash2,
+  Copy,
+  Check,
   X,
-  Target,
-  ChevronRight,
+  Hand,
+  Trash2,
+  Share2,
+  UserPlus,
+  Loader2,
 } from 'lucide-react';
 import {
   useCirclesStore,
-  computeGravity,
-  getRecency,
-  type CirclePerson,
-  type CircleInteraction,
-  type InteractionType,
+  formatFriendCode,
+  type Connection,
+  type UserProfile,
 } from '@/lib/circles-store';
 import { useOrbitStore } from '@/lib/store';
+import { useAuth } from '@/components/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 // ═══════════════════════════════════════════════════════════
-// Circles — Relationship Gravity Map
+// Circles — Your People in Orbit
 // ═══════════════════════════════════════════════════════════
-
-const EMOJIS = ['👩', '👨', '👧', '👦', '👶', '👵', '👴', '🧑', '💃', '🕺', '🐱', '🐶', '❤️', '⭐', '🌙', '🌸'];
-
-const INTERACTION_META: Record<InteractionType, { label: string; icon: typeof Phone }> = {
-  nudge: { label: 'Nudged', icon: Hand },
-  called: { label: 'Called', icon: Phone },
-  texted: { label: 'Texted', icon: MessageCircle },
-  met: { label: 'Met up', icon: UsersIcon },
-  habit_done: { label: 'Habit', icon: Target },
-  note: { label: 'Note', icon: Pencil },
-};
-
-// ─── Helpers ───────────────────────────────────────────────
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -53,256 +39,281 @@ function timeAgo(ts: number): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
+  return `${Math.floor(days / 30)}mo ago`;
 }
 
-function birthdayLabel(bday: string): string | null {
-  const thisYear = new Date().getFullYear();
-  const next = parseISO(`${thisYear}-${bday.slice(5)}`);
-  if (isPast(next)) next.setFullYear(thisYear + 1);
-  const days = differenceInDays(next, new Date());
-  if (days === 0) return '🎂 Today!';
-  if (days === 1) return '🎂 Tomorrow';
-  if (days <= 14) return `🎂 in ${days} days`;
-  return null;
+function initial(name: string): string {
+  return name.charAt(0).toUpperCase();
 }
 
-function gravityLabel(score: number): string {
-  if (score >= 15) return 'Very close';
-  if (score >= 8) return 'Close';
-  if (score >= 3) return 'Warm';
-  if (score >= 1) return 'Distant';
-  return 'Drifting';
-}
+// ─── Friend Code Card ────────────────────────────────────
 
-// ─── Orbital Position Computation ──────────────────────────
+function FriendCodeCard({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
 
-const CX = 200;
-const CY = 200;
-const MIN_R = 45;
-const MAX_R = 165;
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [code]);
 
-interface PersonPosition {
-  person: CirclePerson;
-  x: number;
-  y: number;
-  score: number;
-  recency: number;
-}
-
-function getPositions(
-  people: CirclePerson[],
-  interactions: CircleInteraction[],
-  habitLinks: { habitId: string; personId: string }[],
-): PersonPosition[] {
-  if (people.length === 0) return [];
-
-  const scores = people.map((p) => ({
-    person: p,
-    score: computeGravity(p.id, interactions, habitLinks),
-    recency: getRecency(p.id, interactions),
-  }));
-
-  const maxScore = Math.max(...scores.map((s) => s.score), 1);
-
-  return scores.map((s, i) => {
-    const angle = (i / people.length) * 2 * Math.PI - Math.PI / 2;
-    const normalized = s.score / maxScore;
-    const r = MAX_R - normalized * (MAX_R - MIN_R);
-
-    return {
-      person: s.person,
-      x: CX + r * Math.cos(angle),
-      y: CY + r * Math.sin(angle),
-      score: s.score,
-      recency: s.recency,
-    };
-  });
-}
-
-// ═══════════════════════════════════════════════════════════
-// Orbital Map (SVG)
-// ═══════════════════════════════════════════════════════════
-
-function OrbitalMap({
-  positions,
-  habitLinks,
-  onSelect,
-  nudgingId,
-}: {
-  positions: PersonPosition[];
-  habitLinks: { habitId: string; personId: string }[];
-  onSelect: (id: string) => void;
-  nudgingId: string | null;
-}) {
-  // Find the nudge target position for the ripple animation
-  const nudgeTarget = nudgingId ? positions.find((p) => p.person.id === nudgingId) : null;
+  if (!code) return null;
 
   return (
-    <div className="relative w-full aspect-square max-w-[500px] mx-auto">
-      <svg viewBox="0 0 400 400" className="w-full h-full" style={{ filter: 'drop-shadow(0 0 40px rgba(255,255,255,0.02))' }}>
-        <defs>
-          <radialGradient id="center-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="currentColor" stopOpacity="0.06" />
-            <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
-          </radialGradient>
-          <filter id="soft-glow">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
+    <div className="rounded-xl border border-border/40 bg-foreground/[0.02] p-4">
+      <p className="text-[11px] text-muted-foreground/50 mb-1.5">Your friend code</p>
+      <div className="flex items-center justify-between">
+        <span className="text-[20px] font-mono font-semibold tracking-[0.15em]">
+          {formatFriendCode(code)}
+        </span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-medium bg-foreground/[0.06] hover:bg-foreground/[0.1] transition-colors"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground/30 mt-2">
+        Share this code so friends can add you to their orbit
+      </p>
+    </div>
+  );
+}
 
-        {/* Background glow */}
-        <circle cx={CX} cy={CY} r="190" fill="url(#center-glow)" />
+// ─── Nudge Banner ────────────────────────────────────────
 
-        {/* Guide rings */}
-        {[60, 110, 160].map((r) => (
-          <circle
-            key={r}
-            cx={CX}
-            cy={CY}
-            r={r}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="0.5"
-            opacity={0.06}
-            strokeDasharray="3 6"
-          />
-        ))}
+function NudgeBanner({
+  nudges,
+  friendProfiles,
+  onDismiss,
+}: {
+  nudges: { id: string; from: string; createdAt: number }[];
+  friendProfiles: Record<string, UserProfile>;
+  onDismiss: (id: string) => void;
+}) {
+  if (nudges.length === 0) return null;
 
-        {/* Connection lines for shared habits */}
-        {positions
-          .filter((p) => habitLinks.some((l) => l.personId === p.person.id))
-          .map((p) => (
-            <line
-              key={`line-${p.person.id}`}
-              x1={CX}
-              y1={CY}
-              x2={p.x}
-              y2={p.y}
-              stroke="currentColor"
-              strokeWidth="0.5"
-              opacity={0.08}
-              strokeDasharray="2 6"
-            />
-          ))}
-
-        {/* People */}
-        {positions.map((p) => {
-          const isNudging = nudgingId === p.person.id;
-          const glowOpacity = Math.max(0.04, p.recency * 0.15);
-          const dotOpacity = 0.12 + p.recency * 0.25;
-
-          return (
-            <g
-              key={p.person.id}
-              onClick={() => onSelect(p.person.id)}
-              className="cursor-pointer"
-              style={{
-                transition: 'transform 800ms cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-              }}
+  return (
+    <div className="space-y-1.5">
+      {nudges.map((n) => {
+        const from = friendProfiles[n.from];
+        return (
+          <div
+            key={n.id}
+            className="flex items-center gap-3 rounded-xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3 animate-in fade-in slide-in-from-top-2 duration-300"
+          >
+            <Hand className="h-4 w-4 text-foreground/40 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium">
+                {from?.displayName || 'Someone'} nudged you
+              </p>
+              <p className="text-[11px] text-muted-foreground/40">{timeAgo(n.createdAt)}</p>
+            </div>
+            <button
+              onClick={() => onDismiss(n.id)}
+              className="text-muted-foreground/30 hover:text-muted-foreground transition-colors"
             >
-              {/* Glow halo */}
-              <circle cx={p.x} cy={p.y} r="20" fill="currentColor" opacity={glowOpacity} filter="url(#soft-glow)" />
-              {/* Background dot */}
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r="14"
-                fill="currentColor"
-                opacity={dotOpacity}
-                className={cn(isNudging && 'animate-pulse')}
-              />
-              {/* Emoji */}
-              <text x={p.x} y={p.y + 1} textAnchor="middle" dominantBaseline="central" fontSize="13" className="select-none pointer-events-none">
-                {p.person.emoji}
-              </text>
-              {/* Name */}
-              <text x={p.x} y={p.y + 24} textAnchor="middle" fontSize="8" fill="currentColor" opacity="0.4" className="pointer-events-none">
-                {p.person.name}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Center — You */}
-        <circle cx={CX} cy={CY} r="16" fill="currentColor" opacity="0.1">
-          <animate attributeName="opacity" values="0.1;0.16;0.1" dur="4s" repeatCount="indefinite" />
-        </circle>
-        <circle cx={CX} cy={CY} r="12" fill="currentColor" opacity="0.06" />
-        <text x={CX} y={CY + 1} textAnchor="middle" dominantBaseline="central" fontSize="8" fill="currentColor" opacity="0.5" className="select-none">
-          You
-        </text>
-
-        {/* Nudge ripple animation */}
-        {nudgeTarget && (
-          <>
-            <circle cx={CX} cy={CY} fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0">
-              <animate attributeName="r" from="16" to={MAX_R} dur="0.7s" fill="freeze" />
-              <animate attributeName="opacity" from="0.25" to="0" dur="0.7s" fill="freeze" />
-            </circle>
-            <circle cx={CX} cy={CY} fill="none" stroke="currentColor" strokeWidth="0.8" opacity="0">
-              <animate attributeName="r" from="16" to={MAX_R} dur="0.7s" begin="0.15s" fill="freeze" />
-              <animate attributeName="opacity" from="0.15" to="0" dur="0.7s" begin="0.15s" fill="freeze" />
-            </circle>
-          </>
-        )}
-      </svg>
-
-      {/* Empty state */}
-      {positions.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center px-8">
-            <p className="text-[13px] text-muted-foreground/50">Add someone to your orbit</p>
-            <p className="text-[11px] text-muted-foreground/30 mt-1">They&apos;ll appear here, drawn closer by your interactions</p>
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Pending Requests ────────────────────────────────────
+
+function PendingRequests({
+  pending,
+  myUid,
+  friendProfiles,
+  onAccept,
+  onDecline,
+}: {
+  pending: Connection[];
+  myUid: string;
+  friendProfiles: Record<string, UserProfile>;
+  onAccept: (id: string) => void;
+  onDecline: (id: string) => void;
+}) {
+  // Only show requests sent TO me (i.e., I'm not the initiator)
+  const incoming = pending.filter((c) => c.initiator !== myUid);
+  const outgoing = pending.filter((c) => c.initiator === myUid);
+
+  if (incoming.length === 0 && outgoing.length === 0) return null;
+
+  return (
+    <div>
+      {incoming.length > 0 && (
+        <>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2 px-1">
+            Requests ({incoming.length})
+          </p>
+          <div className="space-y-1.5">
+            {incoming.map((c) => {
+              const friendUid = c.users.find((u) => u !== myUid)!;
+              const profile = friendProfiles[friendUid];
+              return (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-3 rounded-xl border border-border/40 bg-foreground/[0.02] px-4 py-3"
+                >
+                  <div className="h-9 w-9 rounded-full bg-foreground/[0.08] flex items-center justify-center text-[13px] font-semibold shrink-0">
+                    {profile?.photoURL ? (
+                      <img src={profile.photoURL} alt="" className="h-9 w-9 rounded-full object-cover" />
+                    ) : (
+                      initial(profile?.displayName || '?')
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium truncate">
+                      {profile?.displayName || 'Orbit User'}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/40">wants to connect</p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Button size="sm" onClick={() => onAccept(c.id)} className="h-7 text-[11px] px-3">
+                      Accept
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onDecline(c.id)}
+                      className="h-7 text-[11px] px-2"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {outgoing.length > 0 && (
+        <div className={cn(incoming.length > 0 && 'mt-3')}>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2 px-1">
+            Sent
+          </p>
+          {outgoing.map((c) => {
+            const friendUid = c.users.find((u) => u !== myUid)!;
+            const profile = friendProfiles[friendUid];
+            return (
+              <div
+                key={c.id}
+                className="flex items-center gap-3 rounded-xl bg-foreground/[0.02] px-4 py-2.5"
+              >
+                <div className="h-7 w-7 rounded-full bg-foreground/[0.06] flex items-center justify-center text-[11px] font-medium shrink-0">
+                  {initial(profile?.displayName || '?')}
+                </div>
+                <span className="text-[12px] text-muted-foreground/50 truncate flex-1">
+                  {profile?.displayName || 'Orbit User'} — pending
+                </span>
+                <button
+                  onClick={() => onDecline(c.id)}
+                  className="text-muted-foreground/30 hover:text-destructive transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-// Person Detail Panel
-// ═══════════════════════════════════════════════════════════
+// ─── Friend Row ──────────────────────────────────────────
 
-function PersonPanel({
-  person,
-  interactions,
-  sharedHabits,
+function FriendRow({
+  connection,
+  myUid,
+  profile,
+  onSelect,
+  onNudge,
+}: {
+  connection: Connection;
+  myUid: string;
+  profile: UserProfile | undefined;
+  onSelect: () => void;
+  onNudge: () => void;
+}) {
+  const sharedCount = (connection.sharedHabits || []).length;
+
+  return (
+    <div
+      onClick={onSelect}
+      className="flex items-center gap-3 rounded-xl px-4 py-3 hover:bg-foreground/[0.03] transition-colors cursor-pointer active:bg-foreground/[0.05]"
+    >
+      <div className="h-10 w-10 rounded-full bg-foreground/[0.07] flex items-center justify-center text-[14px] font-semibold shrink-0 overflow-hidden">
+        {profile?.photoURL ? (
+          <img src={profile.photoURL} alt="" className="h-10 w-10 rounded-full object-cover" />
+        ) : (
+          initial(profile?.displayName || '?')
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-medium truncate">{profile?.displayName || 'Orbit User'}</p>
+        <p className="text-[11px] text-muted-foreground/40">
+          {sharedCount > 0
+            ? `${sharedCount} shared habit${sharedCount > 1 ? 's' : ''}`
+            : 'No shared habits yet'}
+          {connection.since && ` · since ${format(connection.since, 'MMM yyyy')}`}
+        </p>
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onNudge();
+        }}
+        className="flex items-center justify-center h-8 w-8 rounded-lg bg-foreground/[0.05] hover:bg-foreground/[0.1] transition-colors shrink-0"
+        title="Nudge"
+      >
+        <Hand className="h-3.5 w-3.5 text-muted-foreground/60" />
+      </button>
+    </div>
+  );
+}
+
+// ─── Friend Detail ───────────────────────────────────────
+
+function FriendDetail({
+  connection,
+  myUid,
+  profile,
+  myItems,
   onClose,
   onNudge,
-  onLog,
-  onEdit,
-  onDelete,
+  onShareHabit,
+  onUnshareHabit,
+  onRemove,
 }: {
-  person: CirclePerson;
-  interactions: CircleInteraction[];
-  sharedHabits: { id: string; title: string; completions: Record<string, boolean> }[];
+  connection: Connection;
+  myUid: string;
+  profile: UserProfile | undefined;
+  myItems: { id: string; title: string; type: string; completions?: Record<string, boolean> }[];
   onClose: () => void;
   onNudge: () => void;
-  onLog: (type: InteractionType) => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  onShareHabit: () => void;
+  onUnshareHabit: (habitId: string) => void;
+  onRemove: () => void;
 }) {
-  const personInteractions = interactions
-    .filter((i) => i.personId === person.id)
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 20);
+  const friendUid = connection.users.find((u) => u !== myUid)!;
+  const sharedHabits = connection.sharedHabits || [];
+  const completions = connection.completions || {};
 
-  const score = computeGravity(person.id, interactions, []);
-  const bday = person.birthday ? birthdayLabel(person.birthday) : null;
-
-  // Build last 7 days for habit dots
-  const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    return format(d, 'yyyy-MM-dd');
-  });
+  // Build last 7 days
+  const last7 = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().slice(0, 10);
+    });
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -316,75 +327,124 @@ function PersonPanel({
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <span className="text-[13px] font-semibold">{person.name}</span>
-          <button onClick={onEdit} className="text-muted-foreground hover:text-foreground transition-colors">
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
+          <span className="text-[13px] font-semibold">{profile?.displayName || 'Friend'}</span>
+          <div className="w-4" />
         </div>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
           {/* Profile */}
           <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-foreground/[0.06] text-3xl">
-              {person.emoji}
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-foreground/[0.06] text-2xl font-semibold overflow-hidden">
+              {profile?.photoURL ? (
+                <img src={profile.photoURL} alt="" className="w-16 h-16 rounded-full object-cover" />
+              ) : (
+                initial(profile?.displayName || '?')
+              )}
             </div>
-            <h2 className="text-[15px] font-semibold mt-2">{person.name}</h2>
-            {bday && <p className="text-[12px] text-muted-foreground/60 mt-0.5">{bday}</p>}
-            {person.birthday && !bday && (
-              <p className="text-[11px] text-muted-foreground/40 mt-0.5">🎂 {format(parseISO(person.birthday), 'MMM d')}</p>
+            <h2 className="text-[15px] font-semibold mt-2">{profile?.displayName}</h2>
+            {connection.since && (
+              <p className="text-[11px] text-muted-foreground/40 mt-0.5">
+                Connected since {format(connection.since, 'MMMM yyyy')}
+              </p>
             )}
-            <p className="text-[11px] text-muted-foreground/40 mt-1">{gravityLabel(score)}</p>
           </div>
 
-          {/* Quick Notes */}
-          {person.notes && (
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-1.5">Notes</p>
-              <p className="text-[12px] text-muted-foreground/70 leading-relaxed whitespace-pre-wrap">{person.notes}</p>
-            </div>
-          )}
-
           {/* Shared Habits */}
-          {sharedHabits.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2">Shared Habits</p>
-              <div className="space-y-2">
-                {sharedHabits.map((habit) => (
-                  <div key={habit.id} className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-3 py-2">
-                    <span className="text-[12px] font-medium truncate flex-1">{habit.title}</span>
-                    <div className="flex gap-0.5 ml-2">
-                      {last7Days.map((d) => (
-                        <div
-                          key={d}
-                          className={cn(
-                            'w-2.5 h-2.5 rounded-full',
-                            habit.completions[d] ? 'bg-foreground/70' : 'bg-foreground/[0.08]'
-                          )}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Timeline */}
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2">Timeline</p>
-            {personInteractions.length === 0 ? (
-              <p className="text-[12px] text-muted-foreground/30">No interactions yet</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
+                Shared Habits
+              </p>
+              <button
+                onClick={onShareHabit}
+                className="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors flex items-center gap-1"
+              >
+                <Plus className="h-3 w-3" />
+                Share
+              </button>
+            </div>
+            {sharedHabits.length === 0 ? (
+              <p className="text-[12px] text-muted-foreground/30 py-2">
+                No shared habits yet. Share one to see each other&apos;s progress.
+              </p>
             ) : (
-              <div className="space-y-1.5">
-                {personInteractions.map((i) => {
-                  const meta = INTERACTION_META[i.type];
-                  const Icon = meta.icon;
+              <div className="space-y-2">
+                {sharedHabits.map((sh) => {
+                  const isMyHabit = sh.ownerUid === myUid;
+                  const ownerCompletions =
+                    completions[sh.ownerUid]?.[sh.habitId] || {};
+                  // If it's my habit, show my completions from items store instead (fresher)
+                  const myHabit = isMyHabit
+                    ? myItems.find((i) => i.id === sh.habitId)
+                    : null;
+                  const myCompletions = myHabit?.completions || ownerCompletions;
+                  const theirCompletions = isMyHabit
+                    ? {} // Friend's habits not shown as "theirs" if I own it
+                    : ownerCompletions;
+
                   return (
-                    <div key={i.id} className="flex items-center gap-2 text-[12px] text-muted-foreground/60">
-                      <Icon className="h-3 w-3 shrink-0" strokeWidth={1.5} />
-                      <span>{meta.label}{i.label ? ` — ${i.label}` : ''}</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground/30 shrink-0">{timeAgo(i.timestamp)}</span>
+                    <div
+                      key={`${sh.ownerUid}-${sh.habitId}`}
+                      className="rounded-lg bg-foreground/[0.03] px-3 py-2.5"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[12px] font-medium truncate">{sh.habitTitle}</span>
+                        {isMyHabit && (
+                          <button
+                            onClick={() => onUnshareHabit(sh.habitId)}
+                            className="text-muted-foreground/30 hover:text-destructive transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                      {/* My progress */}
+                      {isMyHabit && (
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-[10px] text-muted-foreground/40 w-8 shrink-0">You</span>
+                          <div className="flex gap-0.5">
+                            {last7.map((d) => (
+                              <div
+                                key={d}
+                                className={cn(
+                                  'w-3 h-3 rounded-[3px]',
+                                  myCompletions[d]
+                                    ? 'bg-foreground/60'
+                                    : 'bg-foreground/[0.06]',
+                                )}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground/30 ml-auto">
+                            {last7.filter((d) => myCompletions[d]).length}/7
+                          </span>
+                        </div>
+                      )}
+                      {/* Friend's progress */}
+                      {!isMyHabit && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-muted-foreground/40 w-8 shrink-0 truncate">
+                            {profile?.displayName?.split(' ')[0] || 'Them'}
+                          </span>
+                          <div className="flex gap-0.5">
+                            {last7.map((d) => (
+                              <div
+                                key={d}
+                                className={cn(
+                                  'w-3 h-3 rounded-[3px]',
+                                  theirCompletions[d]
+                                    ? 'bg-foreground/60'
+                                    : 'bg-foreground/[0.06]',
+                                )}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground/30 ml-auto">
+                            {last7.filter((d) => theirCompletions[d]).length}/7
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -393,7 +453,7 @@ function PersonPanel({
           </div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Actions */}
         <div className="border-t border-border/30 px-4 py-3 flex items-center gap-2">
           <button
             onClick={onNudge}
@@ -403,32 +463,19 @@ function PersonPanel({
             Nudge
           </button>
           <button
-            onClick={() => onLog('called')}
-            className="flex items-center justify-center w-9 h-9 rounded-lg bg-foreground/[0.06] hover:bg-foreground/[0.1] transition-colors"
-            title="Called"
+            onClick={onShareHabit}
+            className="flex items-center justify-center h-9 px-3 rounded-lg bg-foreground/[0.06] hover:bg-foreground/[0.1] transition-colors gap-1.5"
+            title="Share a habit"
           >
-            <Phone className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+            <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-[11px] text-muted-foreground">Share</span>
           </button>
           <button
-            onClick={() => onLog('texted')}
-            className="flex items-center justify-center w-9 h-9 rounded-lg bg-foreground/[0.06] hover:bg-foreground/[0.1] transition-colors"
-            title="Texted"
-          >
-            <MessageCircle className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
-          </button>
-          <button
-            onClick={() => onLog('met')}
-            className="flex items-center justify-center w-9 h-9 rounded-lg bg-foreground/[0.06] hover:bg-foreground/[0.1] transition-colors"
-            title="Met up"
-          >
-            <UsersIcon className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
-          </button>
-          <button
-            onClick={onDelete}
+            onClick={onRemove}
             className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-destructive/10 transition-colors"
             title="Remove"
           >
-            <Trash2 className="h-3.5 w-3.5 text-muted-foreground/40 hover:text-destructive" strokeWidth={1.5} />
+            <Trash2 className="h-3.5 w-3.5 text-muted-foreground/40" />
           </button>
         </div>
       </div>
@@ -436,33 +483,39 @@ function PersonPanel({
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-// Add / Edit Person Dialog
-// ═══════════════════════════════════════════════════════════
+// ─── Add Friend Dialog ───────────────────────────────────
 
-function PersonDialog({
-  initial,
-  onSave,
+function AddFriendDialog({
+  myCode,
+  onAdd,
   onClose,
 }: {
-  initial?: CirclePerson;
-  onSave: (data: { name: string; emoji: string; notes: string; birthday?: string }) => void;
+  myCode: string;
+  onAdd: (code: string) => Promise<{ success: boolean; error?: string }>;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(initial?.name || '');
-  const [emoji, setEmoji] = useState(initial?.emoji || '🧑');
-  const [notes, setNotes] = useState(initial?.notes || '');
-  const [birthday, setBirthday] = useState(initial?.birthday || '');
-  const nameRef = useRef<HTMLInputElement>(null);
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    nameRef.current?.focus();
+    inputRef.current?.focus();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    onSave({ name: name.trim(), emoji, notes, birthday: birthday || undefined });
+    if (!code.trim() || loading) return;
+    setError('');
+    setLoading(true);
+    const result = await onAdd(code.trim());
+    setLoading(false);
+    if (result.success) {
+      toast.success('Friend request sent');
+      onClose();
+    } else {
+      setError(result.error || 'Failed');
+    }
   };
 
   return (
@@ -474,66 +527,32 @@ function PersonDialog({
         className="relative w-full sm:w-[400px] bg-card border border-border/50 shadow-2xl rounded-t-2xl sm:rounded-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
-          <span className="text-[13px] font-semibold">{initial ? 'Edit Person' : 'Add to Orbit'}</span>
+          <span className="text-[13px] font-semibold">Add Friend</span>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="px-4 py-4 space-y-4">
-          {/* Emoji picker */}
+        <div className="px-4 py-5 space-y-4">
           <div>
-            <p className="text-[11px] text-muted-foreground/50 mb-1.5">Avatar</p>
-            <div className="flex flex-wrap gap-1.5">
-              {EMOJIS.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setEmoji(e)}
-                  className={cn(
-                    'w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-all',
-                    emoji === e ? 'bg-foreground/[0.1] ring-1 ring-foreground/20 scale-110' : 'bg-foreground/[0.03] hover:bg-foreground/[0.07]'
-                  )}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Name */}
-          <div>
-            <p className="text-[11px] text-muted-foreground/50 mb-1">Name</p>
+            <p className="text-[11px] text-muted-foreground/50 mb-1.5">Enter their friend code</p>
             <input
-              ref={nameRef}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Who are they?"
-              className="w-full rounded-lg border border-border/40 bg-background/50 px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-foreground/20"
+              ref={inputRef}
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value.toUpperCase());
+                setError('');
+              }}
+              placeholder="XXXX-XXXX"
+              maxLength={10}
+              className="w-full rounded-lg border border-border/40 bg-background/50 px-3 py-2.5 text-[15px] font-mono tracking-widest text-center outline-none focus:ring-1 focus:ring-foreground/20"
             />
+            {error && <p className="text-[11px] text-destructive mt-1.5">{error}</p>}
           </div>
 
-          {/* Birthday */}
-          <div>
-            <p className="text-[11px] text-muted-foreground/50 mb-1">Birthday</p>
-            <input
-              type="date"
-              value={birthday}
-              onChange={(e) => setBirthday(e.target.value)}
-              className="w-full rounded-lg border border-border/40 bg-background/50 px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-foreground/20"
-            />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <p className="text-[11px] text-muted-foreground/50 mb-1">Notes</p>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              placeholder="Things to remember..."
-              className="w-full rounded-lg border border-border/40 bg-background/50 px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-foreground/20 resize-none"
-            />
+          <div className="rounded-lg bg-foreground/[0.02] px-3 py-2.5">
+            <p className="text-[10px] text-muted-foreground/40 mb-1">Your code</p>
+            <p className="text-[13px] font-mono font-medium tracking-widest">{formatFriendCode(myCode)}</p>
           </div>
         </div>
 
@@ -541,8 +560,8 @@ function PersonDialog({
           <Button type="button" variant="ghost" size="sm" onClick={onClose} className="text-[12px]">
             Cancel
           </Button>
-          <Button type="submit" size="sm" className="text-[12px]" disabled={!name.trim()}>
-            {initial ? 'Save' : 'Add'}
+          <Button type="submit" size="sm" className="text-[12px]" disabled={code.replace(/[-\s]/g, '').length < 6 || loading}>
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Send Request'}
           </Button>
         </div>
       </form>
@@ -550,62 +569,63 @@ function PersonDialog({
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-// People List (below the map, quick-scan)
-// ═══════════════════════════════════════════════════════════
+// ─── Share Habit Picker ──────────────────────────────────
 
-function PeopleList({
-  positions,
-  interactions,
-  onSelect,
+function ShareHabitPicker({
+  connectionId,
+  existingHabitIds,
+  myHabits,
+  onShare,
+  onClose,
 }: {
-  positions: PersonPosition[];
-  interactions: CircleInteraction[];
-  onSelect: (id: string) => void;
+  connectionId: string;
+  existingHabitIds: string[];
+  myHabits: { id: string; title: string }[];
+  onShare: (connectionId: string, habitId: string, title: string) => void;
+  onClose: () => void;
 }) {
-  if (positions.length === 0) return null;
-
-  // Sort by gravity (closest first)
-  const sorted = [...positions].sort((a, b) => b.score - a.score);
+  const available = myHabits.filter((h) => !existingHabitIds.includes(h.id));
 
   return (
-    <div className="space-y-0.5">
-      {sorted.map((p) => {
-        const lastInteraction = interactions
-          .filter((i) => i.personId === p.person.id)
-          .sort((a, b) => b.timestamp - a.timestamp)[0];
-
-        return (
-          <button
-            key={p.person.id}
-            onClick={() => onSelect(p.person.id)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-foreground/[0.04] transition-colors text-left"
-          >
-            <span className="text-lg shrink-0">{p.person.emoji}</span>
-            <div className="flex-1 min-w-0">
-              <span className="text-[13px] font-medium block truncate">{p.person.name}</span>
-              <span className="text-[11px] text-muted-foreground/40 block truncate">
-                {lastInteraction ? `${INTERACTION_META[lastInteraction.type].label} · ${timeAgo(lastInteraction.timestamp)}` : 'No interactions yet'}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {/* Gravity dots */}
-              {[0, 1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'w-1.5 h-1.5 rounded-full',
-                    i < Math.min(5, Math.ceil(p.score / 3))
-                      ? 'bg-foreground/40'
-                      : 'bg-foreground/[0.08]'
-                  )}
-                />
-              ))}
-              <ChevronRight className="h-3 w-3 text-muted-foreground/20 ml-1" />
-            </div>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full sm:w-[400px] bg-card border border-border/50 shadow-2xl rounded-t-2xl sm:rounded-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+          <span className="text-[13px] font-semibold">Share a Habit</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
           </button>
-        );
-      })}
+        </div>
+
+        <div className="max-h-[50vh] overflow-y-auto">
+          {available.length === 0 ? (
+            <p className="px-4 py-8 text-center text-[12px] text-muted-foreground/40">
+              {myHabits.length === 0
+                ? 'No habits yet. Create one first.'
+                : 'All your habits are already shared.'}
+            </p>
+          ) : (
+            <div className="py-1">
+              {available.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => {
+                    onShare(connectionId, h.id, h.title);
+                    onClose();
+                  }}
+                  className="w-full text-left px-4 py-3 hover:bg-foreground/[0.04] transition-colors flex items-center gap-3"
+                >
+                  <div className="w-2 h-2 rounded-full bg-foreground/20 shrink-0" />
+                  <span className="text-[13px]">{h.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -615,147 +635,190 @@ function PeopleList({
 // ═══════════════════════════════════════════════════════════
 
 export default function CirclesPage() {
-  const people = useCirclesStore((s) => s.people);
-  const interactions = useCirclesStore((s) => s.interactions);
-  const habitLinks = useCirclesStore((s) => s.habitLinks);
-  const addPerson = useCirclesStore((s) => s.addPerson);
-  const updatePerson = useCirclesStore((s) => s.updatePerson);
-  const removePerson = useCirclesStore((s) => s.removePerson);
-  const logInteraction = useCirclesStore((s) => s.logInteraction);
+  const { isDemo } = useAuth();
+  const myProfile = useCirclesStore((s) => s.myProfile);
+  const connections = useCirclesStore((s) => s.connections);
+  const nudges = useCirclesStore((s) => s.nudges);
+  const friendProfiles = useCirclesStore((s) => s.friendProfiles);
+  const loading = useCirclesStore((s) => s.loading);
+  const addFriend = useCirclesStore((s) => s.addFriend);
+  const acceptRequest = useCirclesStore((s) => s.acceptRequest);
+  const declineRequest = useCirclesStore((s) => s.declineRequest);
+  const removeFriend = useCirclesStore((s) => s.removeFriend);
+  const nudgeFriend = useCirclesStore((s) => s.nudgeFriend);
+  const shareHabit = useCirclesStore((s) => s.shareHabit);
+  const unshareHabit = useCirclesStore((s) => s.unshareHabit);
+  const syncMyCompletions = useCirclesStore((s) => s.syncMyCompletions);
+  const dismissNudge = useCirclesStore((s) => s.dismissNudge);
+
   const items = useOrbitStore((s) => s.items);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingPerson, setEditingPerson] = useState<CirclePerson | null>(null);
-  const [nudgingId, setNudgingId] = useState<string | null>(null);
-  const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [shareForConnId, setShareForConnId] = useState<string | null>(null);
 
-  const positions = useMemo(() => getPositions(people, interactions, habitLinks), [people, interactions, habitLinks]);
+  const pending = useMemo(() => connections.filter((c) => c.status === 'pending'), [connections]);
+  const accepted = useMemo(() => connections.filter((c) => c.status === 'accepted'), [connections]);
+  const selectedConn = selectedConnId ? connections.find((c) => c.id === selectedConnId) : null;
 
-  const selectedPerson = selectedId ? people.find((p) => p.id === selectedId) : null;
+  const myHabits = useMemo(
+    () => items.filter((i) => i.type === 'habit' && i.status === 'active').map((i) => ({ id: i.id, title: i.title })),
+    [items],
+  );
 
-  // Get shared habits for selected person
-  const sharedHabits = useMemo(() => {
-    if (!selectedId) return [];
-    const linkedHabitIds = habitLinks.filter((l) => l.personId === selectedId).map((l) => l.habitId);
-    return items
-      .filter((item) => linkedHabitIds.includes(item.id) && item.type === 'habit')
-      .map((item) => ({
-        id: item.id,
-        title: item.title,
-        completions: item.completions || {},
-      }));
-  }, [selectedId, habitLinks, items]);
+  const myItems = useMemo(
+    () =>
+      items
+        .filter((i) => i.type === 'habit')
+        .map((i) => ({ id: i.id, title: i.title, type: i.type, completions: i.completions })),
+    [items],
+  );
 
-  const handleNudge = useCallback((personId: string) => {
-    logInteraction(personId, 'nudge');
-    setNudgingId(personId);
-    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
-    nudgeTimer.current = setTimeout(() => setNudgingId(null), 900);
-  }, [logInteraction]);
-
-  const handleLog = useCallback((personId: string, type: InteractionType) => {
-    logInteraction(personId, type);
-  }, [logInteraction]);
-
-  const handleAddPerson = useCallback((data: { name: string; emoji: string; notes: string; birthday?: string }) => {
-    const id = addPerson(data.name, data.emoji);
-    updatePerson(id, { notes: data.notes, birthday: data.birthday });
-    setShowAdd(false);
-  }, [addPerson, updatePerson]);
-
-  const handleEditPerson = useCallback((data: { name: string; emoji: string; notes: string; birthday?: string }) => {
-    if (!editingPerson) return;
-    updatePerson(editingPerson.id, data);
-    setEditingPerson(null);
-  }, [editingPerson, updatePerson]);
-
-  const handleDeletePerson = useCallback((id: string) => {
-    if (confirm('Remove this person from your orbit?')) {
-      removePerson(id);
-      setSelectedId(null);
+  // Sync completions on mount and when habits change
+  useEffect(() => {
+    if (myProfile && accepted.length > 0) {
+      syncMyCompletions(myItems);
     }
-  }, [removePerson]);
+  }, [myProfile, accepted.length, myItems, syncMyCompletions]);
 
-  // Upcoming birthdays
-  const upcomingBirthdays = useMemo(() => {
-    return people
-      .filter((p) => p.birthday)
-      .map((p) => ({ person: p, label: birthdayLabel(p.birthday!) }))
-      .filter((b) => b.label !== null)
-      .sort((a, b) => {
-        const daysA = parseInt(a.label!.match(/\d+/)?.[0] || '0');
-        const daysB = parseInt(b.label!.match(/\d+/)?.[0] || '0');
-        return daysA - daysB;
-      });
-  }, [people]);
+  // Demo mode
+  if (isDemo) {
+    return (
+      <div className="p-4 lg:p-8 max-w-3xl mx-auto" data-slot="page-content">
+        <h1 className="text-xl font-semibold tracking-tight">Circles</h1>
+        <div className="mt-12 text-center">
+          <UserPlus className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
+          <p className="text-[13px] text-muted-foreground/50">Sign in to connect with other Orbit users</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-6" data-slot="page-content">
+    <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-5" data-slot="page-content">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Circles</h1>
           <p className="text-[13px] text-muted-foreground/50 mt-0.5">
-            {people.length === 0 ? 'Your personal orbit' : `${people.length} ${people.length === 1 ? 'person' : 'people'} in orbit`}
+            {accepted.length === 0
+              ? 'Your people in orbit'
+              : `${accepted.length} ${accepted.length === 1 ? 'friend' : 'friends'} in orbit`}
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1.5 text-[12px]">
+        <Button size="sm" onClick={() => setShowAddDialog(true)} className="gap-1.5 text-[12px]">
           <Plus className="h-3.5 w-3.5" />
           Add
         </Button>
       </div>
 
-      {/* Birthday alerts */}
-      {upcomingBirthdays.length > 0 && (
-        <div className="space-y-1">
-          {upcomingBirthdays.map((b) => (
-            <button
-              key={b.person.id}
-              onClick={() => setSelectedId(b.person.id)}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-foreground/[0.03] hover:bg-foreground/[0.05] transition-colors text-left"
-            >
-              <span className="text-sm">{b.person.emoji}</span>
-              <span className="text-[12px] text-muted-foreground/60">{b.person.name}</span>
-              <span className="text-[11px] text-muted-foreground/40 ml-auto">{b.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Friend Code */}
+      {myProfile?.friendCode && <FriendCodeCard code={myProfile.friendCode} />}
 
-      {/* Orbital Map */}
-      <OrbitalMap positions={positions} habitLinks={habitLinks} onSelect={setSelectedId} nudgingId={nudgingId} />
+      {/* Nudge Banner */}
+      <NudgeBanner nudges={nudges} friendProfiles={friendProfiles} onDismiss={dismissNudge} />
 
-      {/* People List */}
-      {people.length > 0 && (
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2 px-1">People</p>
-          <PeopleList positions={positions} interactions={interactions} onSelect={setSelectedId} />
-        </div>
-      )}
-
-      {/* Person Detail Panel */}
-      {selectedPerson && (
-        <PersonPanel
-          person={selectedPerson}
-          interactions={interactions}
-          sharedHabits={sharedHabits}
-          onClose={() => setSelectedId(null)}
-          onNudge={() => handleNudge(selectedPerson.id)}
-          onLog={(type) => handleLog(selectedPerson.id, type)}
-          onEdit={() => {
-            setEditingPerson(selectedPerson);
-            setSelectedId(null);
-          }}
-          onDelete={() => handleDeletePerson(selectedPerson.id)}
+      {/* Pending Requests */}
+      {myProfile && (
+        <PendingRequests
+          pending={pending}
+          myUid={myProfile.uid}
+          friendProfiles={friendProfiles}
+          onAccept={acceptRequest}
+          onDecline={declineRequest}
         />
       )}
 
-      {/* Add Person Dialog */}
-      {showAdd && <PersonDialog onSave={handleAddPerson} onClose={() => setShowAdd(false)} />}
+      {/* Friends List */}
+      {accepted.length > 0 && myProfile && (
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-1 px-1">
+            In Orbit
+          </p>
+          <div className="space-y-0.5">
+            {accepted.map((conn) => {
+              const friendUid = conn.users.find((u) => u !== myProfile.uid)!;
+              return (
+                <FriendRow
+                  key={conn.id}
+                  connection={conn}
+                  myUid={myProfile.uid}
+                  profile={friendProfiles[friendUid]}
+                  onSelect={() => setSelectedConnId(conn.id)}
+                  onNudge={() => {
+                    nudgeFriend(conn.id);
+                    toast.success('Nudge sent');
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-      {/* Edit Person Dialog */}
-      {editingPerson && <PersonDialog initial={editingPerson} onSave={handleEditPerson} onClose={() => setEditingPerson(null)} />}
+      {/* Empty state */}
+      {!loading && accepted.length === 0 && pending.length === 0 && (
+        <div className="text-center py-12">
+          <UserPlus className="h-10 w-10 text-muted-foreground/15 mx-auto mb-3" />
+          <p className="text-[13px] text-muted-foreground/40">No friends yet</p>
+          <p className="text-[11px] text-muted-foreground/25 mt-1">
+            Share your code or add someone with theirs
+          </p>
+        </div>
+      )}
+
+      {loading && accepted.length === 0 && (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/30" />
+        </div>
+      )}
+
+      {/* Friend Detail Sheet */}
+      {selectedConn && selectedConn.status === 'accepted' && myProfile && (
+        <FriendDetail
+          connection={selectedConn}
+          myUid={myProfile.uid}
+          profile={friendProfiles[selectedConn.users.find((u) => u !== myProfile.uid)!]}
+          myItems={myItems}
+          onClose={() => setSelectedConnId(null)}
+          onNudge={() => {
+            nudgeFriend(selectedConn.id);
+            toast.success('Nudge sent');
+          }}
+          onShareHabit={() => setShareForConnId(selectedConn.id)}
+          onUnshareHabit={(habitId) => unshareHabit(selectedConn.id, habitId)}
+          onRemove={() => {
+            if (confirm('Remove this friend from your orbit?')) {
+              removeFriend(selectedConn.id);
+              setSelectedConnId(null);
+            }
+          }}
+        />
+      )}
+
+      {/* Add Friend Dialog */}
+      {showAddDialog && myProfile && (
+        <AddFriendDialog
+          myCode={myProfile.friendCode}
+          onAdd={addFriend}
+          onClose={() => setShowAddDialog(false)}
+        />
+      )}
+
+      {/* Share Habit Picker */}
+      {shareForConnId && myProfile && (
+        <ShareHabitPicker
+          connectionId={shareForConnId}
+          existingHabitIds={
+            (connections.find((c) => c.id === shareForConnId)?.sharedHabits || [])
+              .filter((h) => h.ownerUid === myProfile.uid)
+              .map((h) => h.habitId)
+          }
+          myHabits={myHabits}
+          onShare={shareHabit}
+          onClose={() => setShareForConnId(null)}
+        />
+      )}
     </div>
   );
 }

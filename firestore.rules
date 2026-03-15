@@ -145,6 +145,52 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────
+    // User Profiles (Circles — friend discovery)
+    // Any authenticated user can read (needed for friend code lookup)
+    // Only the owner can write their own profile
+    // ─────────────────────────────────────────────────────────
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isOwner(userId);
+      allow delete: if isSignedIn() && isOwner(userId);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Connections (Circles — friend relationships)
+    // Only users in the connection can read/write
+    // ─────────────────────────────────────────────────────────
+
+    match /connections/{connectionId} {
+      allow read: if isSignedIn()
+                  && request.auth.uid in resource.data.users;
+      allow create: if isSignedIn()
+                    && request.auth.uid in request.resource.data.users;
+      allow update: if isSignedIn()
+                    && request.auth.uid in resource.data.users;
+      allow delete: if isSignedIn()
+                    && request.auth.uid in resource.data.users;
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Nudges (Circles — motivational pings)
+    // Sender can create, recipient can read/update/delete
+    // ─────────────────────────────────────────────────────────
+
+    match /nudges/{nudgeId} {
+      allow read: if isSignedIn()
+                  && (resource.data.to == request.auth.uid
+                      || resource.data.from == request.auth.uid);
+      allow create: if isSignedIn()
+                    && request.resource.data.from == request.auth.uid;
+      allow update: if isSignedIn()
+                    && resource.data.to == request.auth.uid;
+      allow delete: if isSignedIn()
+                    && (resource.data.to == request.auth.uid
+                        || resource.data.from == request.auth.uid);
+    }
+
+    // ─────────────────────────────────────────────────────────
     // Deny all other paths
     // ─────────────────────────────────────────────────────────
     

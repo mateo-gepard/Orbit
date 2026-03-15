@@ -1,211 +1,242 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { saveToolData } from './firestore';
+import {
+  type UserProfile,
+  type Connection,
+  type Nudge,
+  type SharedHabit,
+  ensureUserProfile,
+  lookupUserByCode,
+  getUserProfile,
+  createConnectionRequest,
+  acceptConnection as acceptConn,
+  declineConnection as declineConn,
+  removeConnection as removeConn,
+  sendNudge as sendNudgeFn,
+  addSharedHabit,
+  removeSharedHabit,
+  syncHabitCompletions,
+  subscribeToConnections,
+  subscribeToNudges,
+  markNudgeRead as markRead,
+} from './circles';
+
+// Re-export types the page needs
+export type { UserProfile, Connection, Nudge, SharedHabit };
+export { formatFriendCode } from './circles';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Circles: Relationship Gravity Map
-// People orbit around you. Interactions pull them closer.
+// ORBIT — Circles Store (Real Users)
 // ═══════════════════════════════════════════════════════════
-
-// ─── Types ─────────────────────────────────────────────────
-
-export interface CirclePerson {
-  id: string;
-  name: string;
-  emoji: string;
-  notes: string;
-  birthday?: string; // YYYY-MM-DD
-  createdAt: number;
-}
-
-export type InteractionType = 'nudge' | 'met' | 'called' | 'texted' | 'habit_done' | 'note';
-
-export interface CircleInteraction {
-  id: string;
-  personId: string;
-  type: InteractionType;
-  label?: string;
-  timestamp: number;
-}
-
-export interface HabitLink {
-  habitId: string;
-  personId: string;
-}
-
-interface CirclesCloudData {
-  people: CirclePerson[];
-  interactions: CircleInteraction[];
-  habitLinks: HabitLink[];
-}
-
-// ─── Gravity Computation ───────────────────────────────────
-
-const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-
-export function computeGravity(
-  personId: string,
-  interactions: CircleInteraction[],
-  habitLinks: HabitLink[],
-): number {
-  const now = Date.now();
-  let score = 0;
-
-  for (const i of interactions) {
-    if (i.personId !== personId) continue;
-    const age = now - i.timestamp;
-    if (age < SEVEN_DAYS) score += 3;
-    else if (age < THIRTY_DAYS) score += 1;
-  }
-
-  // Each shared habit adds gravity
-  score += habitLinks.filter((l) => l.personId === personId).length * 4;
-
-  return score;
-}
-
-/** Recency from 0 (no interaction) to 1 (just now), exponential decay */
-export function getRecency(personId: string, interactions: CircleInteraction[]): number {
-  const last = interactions
-    .filter((i) => i.personId === personId)
-    .reduce((max, i) => Math.max(max, i.timestamp), 0);
-  if (!last) return 0;
-  const days = (Date.now() - last) / (24 * 60 * 60 * 1000);
-  return Math.max(0, Math.exp(-days / 10));
-}
-
-// ─── Helpers ───────────────────────────────────────────────
-
-function uid(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-function sanitize<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj));
-}
-
-// ─── Sync ──────────────────────────────────────────────────
-
-let _syncUserId: string | null = null;
-let _saveTimer: ReturnType<typeof setTimeout> | null = null;
-
-function scheduleSave(data: CirclesCloudData) {
-  if (!_syncUserId) return;
-  if (_saveTimer) clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(async () => {
-    if (!_syncUserId) return;
-    try {
-      await saveToolData(_syncUserId, 'circles', sanitize(data) as unknown as Record<string, unknown>);
-    } catch (err) {
-      console.error('[ORBIT] Circles: cloud save failed:', err);
-    }
-  }, 500);
-}
-
-// ─── Store ─────────────────────────────────────────────────
 
 interface CirclesState {
-  people: CirclePerson[];
-  interactions: CircleInteraction[];
-  habitLinks: HabitLink[];
+  myProfile: UserProfile | null;
+  connections: Connection[];
+  nudges: Nudge[];
+  friendProfiles: Record<string, UserProfile>;
+  loading: boolean;
 
-  addPerson: (name: string, emoji: string) => string;
-  updatePerson: (id: string, updates: Partial<Omit<CirclePerson, 'id' | 'createdAt'>>) => void;
-  removePerson: (id: string) => void;
+  // Actions
+  addFriend: (code: string) => Promise<{ success: boolean; error?: string }>;
+  acceptRequest: (connectionId: string) => Promise<void>;
+  declineRequest: (connectionId: string) => Promise<void>;
+  removeFriend: (connectionId: string) => Promise<void>;
+  nudgeFriend: (connectionId: string) => Promise<void>;
+  shareHabit: (connectionId: string, habitId: string, habitTitle: string) => Promise<void>;
+  unshareHabit: (connectionId: string, habitId: string) => Promise<void>;
+  syncMyCompletions: (items: { id: string; completions?: Record<string, boolean> }[]) => Promise<void>;
+  dismissNudge: (nudgeId: string) => Promise<void>;
 
-  logInteraction: (personId: string, type: InteractionType, label?: string) => void;
-
-  linkHabit: (habitId: string, personId: string) => void;
-  unlinkHabit: (habitId: string) => void;
-
-  _setSyncUserId: (uid: string | null) => void;
-  _setFromCloud: (data: CirclesCloudData) => void;
+  // Lifecycle (called by data-provider)
+  _setSyncUserId: (
+    uid: string | null,
+    profile?: { displayName: string; email: string; photoURL: string | null },
+  ) => void;
+  _cleanup: () => void;
 }
 
-export const useCirclesStore = create<CirclesState>()(
-  persist(
-    (set, get) => ({
-      people: [],
-      interactions: [],
-      habitLinks: [],
+let _unsubs: (() => void)[] = [];
 
-      addPerson: (name, emoji) => {
-        const id = uid();
-        const person: CirclePerson = { id, name, emoji, notes: '', createdAt: Date.now() };
-        set((s) => {
-          const people = [...s.people, person];
-          scheduleSave({ people, interactions: s.interactions, habitLinks: s.habitLinks });
-          return { people };
-        });
-        return id;
-      },
+export const useCirclesStore = create<CirclesState>()((set, get) => ({
+  myProfile: null,
+  connections: [],
+  nudges: [],
+  friendProfiles: {},
+  loading: false,
 
-      updatePerson: (id, updates) => {
-        set((s) => {
-          const people = s.people.map((p) => (p.id === id ? { ...p, ...updates } : p));
-          scheduleSave({ people, interactions: s.interactions, habitLinks: s.habitLinks });
-          return { people };
-        });
-      },
+  // ─── Add friend by code ────────────────────────────────
+  addFriend: async (code) => {
+    const me = get().myProfile;
+    if (!me) return { success: false, error: 'Not signed in' };
 
-      removePerson: (id) => {
-        set((s) => {
-          const people = s.people.filter((p) => p.id !== id);
-          const interactions = s.interactions.filter((i) => i.personId !== id);
-          const habitLinks = s.habitLinks.filter((l) => l.personId !== id);
-          scheduleSave({ people, interactions, habitLinks });
-          return { people, interactions, habitLinks };
-        });
-      },
+    try {
+      const target = await lookupUserByCode(code);
+      if (!target) return { success: false, error: 'No user found with that code' };
+      if (target.uid === me.uid) return { success: false, error: "That's your own code" };
 
-      logInteraction: (personId, type, label) => {
-        set((s) => {
-          const interaction: CircleInteraction = {
-            id: uid(),
-            personId,
-            type,
-            label,
-            timestamp: Date.now(),
-          };
-          // Keep last 500 interactions to prevent unbounded growth
-          const interactions = [...s.interactions, interaction].slice(-500);
-          scheduleSave({ people: s.people, interactions, habitLinks: s.habitLinks });
-          return { interactions };
-        });
-      },
+      // Check existing connection
+      const existing = get().connections.find((c) => c.users.includes(target.uid));
+      if (existing) return { success: false, error: 'Already connected' };
 
-      linkHabit: (habitId, personId) => {
-        set((s) => {
-          // Replace existing link for this habit
-          const habitLinks = [...s.habitLinks.filter((l) => l.habitId !== habitId), { habitId, personId }];
-          scheduleSave({ people: s.people, interactions: s.interactions, habitLinks });
-          return { habitLinks };
-        });
-      },
+      await createConnectionRequest(me.uid, target.uid);
+      return { success: true };
+    } catch (err) {
+      console.error('[ORBIT] Circles: add friend failed:', err);
+      return { success: false, error: (err as Error).message || 'Failed to send request' };
+    }
+  },
 
-      unlinkHabit: (habitId) => {
-        set((s) => {
-          const habitLinks = s.habitLinks.filter((l) => l.habitId !== habitId);
-          scheduleSave({ people: s.people, interactions: s.interactions, habitLinks });
-          return { habitLinks };
-        });
-      },
+  // ─── Accept / Decline / Remove ─────────────────────────
+  acceptRequest: async (connectionId) => {
+    try {
+      await acceptConn(connectionId);
+    } catch (err) {
+      console.error('[ORBIT] Circles: accept failed:', err);
+    }
+  },
 
-      _setSyncUserId: (uid) => {
-        _syncUserId = uid;
-      },
+  declineRequest: async (connectionId) => {
+    try {
+      await declineConn(connectionId);
+    } catch (err) {
+      console.error('[ORBIT] Circles: decline failed:', err);
+    }
+  },
 
-      _setFromCloud: (data) => {
-        if (data) {
-          set({
-            people: data.people || [],
-            interactions: data.interactions || [],
-            habitLinks: data.habitLinks || [],
-          });
+  removeFriend: async (connectionId) => {
+    try {
+      await removeConn(connectionId);
+    } catch (err) {
+      console.error('[ORBIT] Circles: remove failed:', err);
+    }
+  },
+
+  // ─── Nudge ─────────────────────────────────────────────
+  nudgeFriend: async (connectionId) => {
+    const me = get().myProfile;
+    if (!me) return;
+
+    const conn = get().connections.find((c) => c.id === connectionId);
+    if (!conn || conn.status !== 'accepted') return;
+
+    const friendUid = conn.users.find((u) => u !== me.uid);
+    if (!friendUid) return;
+
+    try {
+      await sendNudgeFn(me.uid, friendUid, connectionId);
+    } catch (err) {
+      console.error('[ORBIT] Circles: nudge failed:', err);
+    }
+  },
+
+  // ─── Shared Habits ────────────────────────────────────
+  shareHabit: async (connectionId, habitId, habitTitle) => {
+    const me = get().myProfile;
+    if (!me) return;
+    try {
+      await addSharedHabit(connectionId, { ownerUid: me.uid, habitId, habitTitle });
+    } catch (err) {
+      console.error('[ORBIT] Circles: share habit failed:', err);
+    }
+  },
+
+  unshareHabit: async (connectionId, habitId) => {
+    const me = get().myProfile;
+    if (!me) return;
+    try {
+      await removeSharedHabit(connectionId, habitId, me.uid);
+    } catch (err) {
+      console.error('[ORBIT] Circles: unshare habit failed:', err);
+    }
+  },
+
+  // Sync my habit completions to all connections that share them
+  syncMyCompletions: async (items) => {
+    const me = get().myProfile;
+    if (!me) return;
+    const accepted = get().connections.filter((c) => c.status === 'accepted');
+
+    for (const conn of accepted) {
+      const myHabits = (conn.sharedHabits || []).filter((h) => h.ownerUid === me.uid);
+      for (const sh of myHabits) {
+        const item = items.find((i) => i.id === sh.habitId);
+        if (!item) continue;
+        try {
+          await syncHabitCompletions(conn.id, me.uid, sh.habitId, item.completions || {});
+        } catch {
+          // Non-critical, silently skip
         }
-      },
-    }),
-    { name: 'orbit-circles' },
-  ),
-);
+      }
+    }
+  },
+
+  // ─── Nudge dismiss ────────────────────────────────────
+  dismissNudge: async (nudgeId) => {
+    try {
+      await markRead(nudgeId);
+    } catch (err) {
+      console.error('[ORBIT] Circles: dismiss nudge failed:', err);
+    }
+  },
+
+  // ─── Lifecycle ─────────────────────────────────────────
+  _setSyncUserId: (uid, profile) => {
+    // Cleanup previous
+    get()._cleanup();
+
+    if (!uid || !profile) {
+      set({ myProfile: null, connections: [], nudges: [], friendProfiles: {}, loading: false });
+      return;
+    }
+
+    set({ loading: true });
+
+    // Ensure profile exists in Firestore
+    ensureUserProfile(uid, profile)
+      .then((prof) => set({ myProfile: prof }))
+      .catch((err) => {
+        console.error('[ORBIT] Circles: profile init failed:', err);
+        // Still set a local profile so the page can show friend code
+        set({
+          myProfile: {
+            uid,
+            displayName: profile.displayName,
+            email: profile.email,
+            photoURL: profile.photoURL,
+            friendCode: '',
+            createdAt: Date.now(),
+          },
+        });
+      });
+
+    // Subscribe to connections
+    const unsubConn = subscribeToConnections(uid, async (connections) => {
+      set({ connections, loading: false });
+
+      // Fetch friend profiles for all connections
+      const profiles = { ...get().friendProfiles };
+      const friendUids = connections
+        .flatMap((c) => c.users)
+        .filter((u) => u !== uid && !profiles[u]);
+
+      const unique = [...new Set(friendUids)];
+      const fetched = await Promise.all(unique.map((u) => getUserProfile(u)));
+      for (const p of fetched) {
+        if (p) profiles[p.uid] = p;
+      }
+      set({ friendProfiles: profiles });
+    });
+
+    // Subscribe to nudges
+    const unsubNudge = subscribeToNudges(uid, (nudges) => {
+      set({ nudges });
+    });
+
+    _unsubs = [unsubConn, unsubNudge];
+  },
+
+  _cleanup: () => {
+    for (const unsub of _unsubs) unsub();
+    _unsubs = [];
+  },
+}));
+
