@@ -223,26 +223,13 @@ export function DetailPanel() {
   // Filter item tags to only show valid tags (remove deleted custom tags)
   const validItemTags = (item?.tags || []).filter(tag => allTags.includes(tag));
 
-  if (!item) return null;
-
-  // Project Dashboard View — extracted to dedicated component
-  if (item.type === 'project') {
-    return <ProjectDashboard />;
-  }
-
-  // Regular detail panel for non-project items
-  const parentItem = item.parentId ? items.find(i => i.id === item.parentId) : undefined;
-  const childItems = items.filter((i) => i.parentId === item.id);
-  const linkedItems = (item.linkedIds || [])
-    .map(id => items.find(i => i.id === id))
-    .filter((i): i is OrbitItem => i !== undefined);
+  // Compute parent/relations before early return (hooks can't be after returns)
+  const parentItem = item?.parentId ? items.find(i => i.id === item.parentId) : undefined;
 
   // Milestone selector: find the owning project and its milestones
   const owningProject = useMemo(() => {
     if (!parentItem) return undefined;
-    // Direct child of project
     if (parentItem.type === 'project') return parentItem;
-    // Child of milestone (goal) → grandchild of project
     if (parentItem.type === 'goal' && parentItem.parentId) {
       const grandParent = items.find(i => i.id === parentItem.parentId);
       if (grandParent?.type === 'project') return grandParent;
@@ -255,12 +242,24 @@ export function DetailPanel() {
     return items.filter(i => i.parentId === owningProject.id && i.type === 'goal');
   }, [owningProject, items]);
 
+  if (!item) return null;
+
+  // Project Dashboard View — extracted to dedicated component
+  if (item.type === 'project') {
+    return <ProjectDashboard />;
+  }
+
+  // Regular detail panel for non-project items
+  const childItems = items.filter((i) => i.parentId === item.id);
+  const linkedItems = (item.linkedIds || [])
+    .map(id => items.find(i => i.id === id))
+    .filter((i): i is OrbitItem => i !== undefined);
+
   // Current milestone: if parent is a goal under the project
   const currentMilestoneId = (parentItem?.type === 'goal' && owningProject) ? parentItem.id : '';
 
   const handleMilestoneChange = (milestoneId: string) => {
     if (!owningProject) return;
-    // 'none' means move task directly under project
     const newParentId = milestoneId === 'none' ? owningProject.id : milestoneId;
     handleUpdate({ parentId: newParentId });
   };

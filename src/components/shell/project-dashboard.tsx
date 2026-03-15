@@ -60,12 +60,28 @@ export function ProjectDashboard() {
 
   const allTags = getAllTags();
 
+  const projectMilestones = useMemo(
+    () => item ? items.filter((i) => i.parentId === item.id && i.type === 'goal') : [],
+    [item?.id, items],
+  );
+  const milestoneIds = useMemo(() => new Set(projectMilestones.map((m) => m.id)), [projectMilestones]);
+  const projectTasks = useMemo(() => {
+    if (!item) return [];
+    const direct = items.filter((i) => i.parentId === item.id && i.type === 'task');
+    const nested = milestoneIds.size > 0
+      ? items.filter((i) => i.type === 'task' && milestoneIds.has(i.parentId!))
+      : [];
+    return [...direct, ...nested];
+  }, [items, item?.id, milestoneIds]);
+
   // Sync title when item changes
   if (item && title !== item.title && !document.activeElement?.closest('input')) {
     setTitle(item.title);
   }
 
   if (!item || item.type !== 'project') return null;
+
+  const projectNotes = items.filter((i) => i.parentId === item.id && i.type === 'note');
 
   const handleUpdate = async (updates: Partial<OrbitItem>) => {
     try {
@@ -132,17 +148,6 @@ export function ProjectDashboard() {
     });
     setSelectedItemId(id);
   };
-
-  const projectMilestones = items.filter((i) => i.parentId === item.id && i.type === 'goal');
-  const milestoneIds = useMemo(() => new Set(projectMilestones.map((m) => m.id)), [projectMilestones]);
-  const projectTasks = useMemo(() => {
-    const direct = items.filter((i) => i.parentId === item.id && i.type === 'task');
-    const nested = milestoneIds.size > 0
-      ? items.filter((i) => i.type === 'task' && milestoneIds.has(i.parentId!))
-      : [];
-    return [...direct, ...nested];
-  }, [items, item.id, milestoneIds]);
-  const projectNotes = items.filter((i) => i.parentId === item.id && i.type === 'note');
 
   const stats = {
     total: projectTasks.length,
