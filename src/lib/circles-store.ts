@@ -146,6 +146,12 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     if (!me) return;
     try {
       await addSharedHabit(connectionId, { ownerUid: me.uid, habitId, habitTitle });
+      // Notify friend
+      const conn = get().connections.find((c) => c.id === connectionId);
+      const friendUid = conn?.users.find((u) => u !== me.uid);
+      if (friendUid) {
+        await sendNudgeFn(me.uid, friendUid, connectionId, `shared a habit: ${habitTitle}`);
+      }
     } catch (err) {
       console.error('[ORBIT] Circles: share habit failed:', err);
     }
@@ -254,6 +260,12 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     if (!me) return;
     try {
       await addLinkedFn(connectionId, { ownerUid: me.uid, itemId, itemTitle: title, itemType: type });
+      // Notify friend
+      const conn = get().connections.find((c) => c.id === connectionId);
+      const friendUid = conn?.users.find((u) => u !== me.uid);
+      if (friendUid) {
+        await sendNudgeFn(me.uid, friendUid, connectionId, `linked a ${type}: ${title}`);
+      }
     } catch (err) {
       console.error('[ORBIT] Circles: link item failed:', err);
     }

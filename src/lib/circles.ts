@@ -55,6 +55,7 @@ export interface Nudge {
   from: string;
   to: string;
   connectionId: string;
+  message?: string;
   read: boolean;
   createdAt: number;
 }
@@ -260,12 +261,13 @@ export async function syncHabitCompletions(
 
 // ─── Nudges ────────────────────────────────────────────────
 
-export async function sendNudge(fromUid: string, toUid: string, connectionId: string): Promise<void> {
+export async function sendNudge(fromUid: string, toUid: string, connectionId: string, message?: string): Promise<void> {
   if (!ok() || !db) return;
   await addDoc(collection(db, 'nudges'), {
     from: fromUid,
     to: toUid,
     connectionId,
+    ...(message ? { message } : {}),
     read: false,
     createdAt: Date.now(),
   });

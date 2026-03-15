@@ -96,6 +96,17 @@ const ITEM_TYPE_ICONS: Record<string, typeof CalendarDays> = {
 
 // ─── Orbit Map ───────────────────────────────────────────
 
+const ORBIT_COLORS = [
+  'rgba(244,63,94,0.55)',   // rose
+  'rgba(168,85,247,0.55)',  // purple
+  'rgba(59,130,246,0.55)',  // blue
+  'rgba(16,185,129,0.55)',  // emerald
+  'rgba(245,158,11,0.55)',  // amber
+  'rgba(236,72,153,0.55)',  // pink
+  'rgba(99,102,241,0.55)',  // indigo
+  'rgba(20,184,166,0.55)',  // teal
+];
+
 function OrbitMap({
   friends,
   myProfile,
@@ -107,73 +118,189 @@ function OrbitMap({
   selectedId: string | null;
   onSelect: (connectionId: string) => void;
 }) {
-  const size = 400;
+  const size = 500;
   const cx = size / 2;
   const cy = size / 2;
-  const rings = [70, 115, 160];
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const rings = [80, 130, 185];
   const maxScore = Math.max(...friends.map((f) => f.score), 1);
 
-  const nodes = useMemo(
-    () =>
-      friends.map((f, i) => {
-        const norm = f.score / maxScore;
-        const radius = 155 - norm * 95;
-        const angle = i * goldenAngle - Math.PI / 2;
-        const nodeR = 19 + norm * 7;
-        return {
-          ...f,
-          x: cx + radius * Math.cos(angle),
-          y: cy + radius * Math.sin(angle),
-          nodeR,
-        };
-      }),
-    [friends, maxScore, cx, cy, goldenAngle],
-  );
-
-  const selected = nodes.find((n) => n.connection.id === selectedId);
+  // Assign each friend a stable orbit ring + angle with slow animation
+  const nodes = useMemo(() => {
+    const count = friends.length;
+    return friends.map((f, i) => {
+      const norm = f.score / maxScore;
+      // Inner ring for high score, outer for low
+      const ringRadius = rings[2] - norm * (rings[2] - rings[0]);
+      // Evenly spread friends around the circle, offset by golden angle for visual interest
+      const baseAngle = count === 1
+        ? -Math.PI / 2
+        : (2 * Math.PI * i) / count - Math.PI / 2;
+      const nodeR = 24 + norm * 10;
+      // Orbit animation: each friend gets a different speed & direction
+      const duration = 45 + i * 12 + (1 - norm) * 30;
+      const direction = i % 2 === 0 ? 1 : -1;
+      const color = ORBIT_COLORS[i % ORBIT_COLORS.length];
+      return {
+        ...f,
+        ringRadius,
+        baseAngle,
+        nodeR,
+        duration,
+        direction,
+        color,
+      };
+    });
+  }, [friends, maxScore]);
 
   return (
-    <div className="relative w-full max-w-[360px] mx-auto">
+    <div className="relative w-full max-w-[460px] mx-auto">
+      {/* CSS keyframes for orbital rotation */}
+      <style>{`
+        @keyframes orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes orbit-spin-rev { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+        @keyframes center-pulse { 0%,100% { r: 30; opacity: 0.06; } 50% { r: 34; opacity: 0.1; } }
+        @keyframes node-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+      `}</style>
       <svg viewBox={`0 0 ${size} ${size}`} className="w-full" role="img" aria-label="Orbit map">
-        {/* Orbit rings */}
-        {rings.map((r) => (
-          <circle key={r} cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth={0.7} opacity={0.06} strokeDasharray="3 6" />
+        <defs>
+          {/* Subtle radial gradient for the field */}
+          <radialGradient id="orbit-field" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="currentColor" stopOpacity={0.03} />
+            <stop offset="70%" stopColor="currentColor" stopOpacity={0.01} />
+            <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
+          </radialGradient>
+          {/* Glow filter for selected node */}
+          <filter id="node-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+
+        {/* Background field */}
+        <circle cx={cx} cy={cy} r={220} fill="url(#orbit-field)" />
+
+        {/* Orbit rings — solid, more visible */}
+        {rings.map((r, ri) => (
+          <circle
+            key={r}
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={ri === 0 ? 1.5 : 1}
+            opacity={ri === 0 ? 0.1 : ri === 1 ? 0.07 : 0.05}
+          />
         ))}
-        {/* Line to selected */}
-        {selected && (
-          <line x1={cx} y1={cy} x2={selected.x} y2={selected.y} stroke="currentColor" strokeWidth={1} opacity={0.08} strokeDasharray="4 4" />
+        {/* Dashed tick marks on each ring */}
+        {rings.map((r) =>
+          Array.from({ length: 24 }).map((_, ti) => {
+            const a = (2 * Math.PI * ti) / 24;
+            return (
+              <circle
+                key={`tick-${r}-${ti}`}
+                cx={cx + r * Math.cos(a)}
+                cy={cy + r * Math.sin(a)}
+                r={1}
+                fill="currentColor"
+                opacity={0.06}
+              />
+            );
+          })
         )}
-        {/* Friend nodes */}
+
+        {/* Connection lines from center to each friend's orbit ring */}
+        {nodes.map((n) => {
+          const isSelected = n.connection.id === selectedId;
+          if (!isSelected) return null;
+          return (
+            <circle
+              key={`ring-hl-${n.connection.id}`}
+              cx={cx}
+              cy={cy}
+              r={n.ringRadius}
+              fill="none"
+              stroke={n.color}
+              strokeWidth={1.5}
+              opacity={0.2}
+              strokeDasharray="6 4"
+            />
+          );
+        })}
+
+        {/* Center pulse */}
+        <circle cx={cx} cy={cy} r={30} fill="currentColor" opacity={0.06}>
+          <animate attributeName="r" values="30;34;30" dur="4s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.06;0.1;0.06" dur="4s" repeatCount="indefinite" />
+        </circle>
+
+        {/* Orbiting friend nodes — each wrapped in a rotating group */}
         {nodes.map((n) => {
           const isSelected = n.connection.id === selectedId;
           const name = n.profile?.displayName || '?';
           const firstName = name.split(' ')[0];
+          const angleDeg = (n.baseAngle * 180) / Math.PI;
+          const anim = n.direction === 1 ? 'orbit-spin' : 'orbit-spin-rev';
           return (
-            <g key={n.connection.id} onClick={() => onSelect(n.connection.id)} className="cursor-pointer" role="button" tabIndex={0}>
-              <circle cx={n.x} cy={n.y} r={n.nodeR + 10} fill="transparent" />
-              {isSelected && <circle cx={n.x} cy={n.y} r={n.nodeR + 5} fill="none" stroke="currentColor" strokeWidth={1.5} opacity={0.15} />}
-              <circle cx={n.x} cy={n.y} r={n.nodeR} fill="currentColor" opacity={isSelected ? 0.12 : 0.06} />
-              <text x={n.x} y={n.y + 1} textAnchor="middle" dominantBaseline="central" fontSize={n.nodeR * 0.6} fontWeight={600} fill="currentColor" opacity={isSelected ? 0.7 : 0.45}>
-                {name.charAt(0).toUpperCase()}
-              </text>
-              <text x={n.x} y={n.y + n.nodeR + 13} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.3} className="pointer-events-none select-none">
-                {firstName.length > 8 ? firstName.slice(0, 7) + '\u2026' : firstName}
-              </text>
+            <g
+              key={n.connection.id}
+              style={{
+                transformOrigin: `${cx}px ${cy}px`,
+                animation: `${anim} ${n.duration}s linear infinite`,
+              }}
+            >
+              {/* Position at the orbit radius from center */}
+              <g
+                transform={`translate(${cx + n.ringRadius * Math.cos(n.baseAngle)}, ${cy + n.ringRadius * Math.sin(n.baseAngle)})`}
+                onClick={() => onSelect(n.connection.id)}
+                className="cursor-pointer"
+                role="button"
+                tabIndex={0}
+                style={{
+                  // Counter-rotate text/circle so they stay upright
+                  transformOrigin: '0 0',
+                  animation: `${n.direction === 1 ? 'orbit-spin-rev' : 'orbit-spin'} ${n.duration}s linear infinite`,
+                }}
+              >
+                {/* Tap target */}
+                <circle cx={0} cy={0} r={n.nodeR + 14} fill="transparent" />
+                {/* Selected glow */}
+                {isSelected && (
+                  <circle cx={0} cy={0} r={n.nodeR + 6} fill={n.color} opacity={0.12} filter="url(#node-glow)" />
+                )}
+                {/* Selection ring */}
+                {isSelected && (
+                  <circle cx={0} cy={0} r={n.nodeR + 4} fill="none" stroke={n.color} strokeWidth={2} opacity={0.35} />
+                )}
+                {/* Node body */}
+                <circle cx={0} cy={0} r={n.nodeR} fill={n.color} opacity={isSelected ? 0.22 : 0.12} />
+                <circle cx={0} cy={0} r={n.nodeR} fill="none" stroke={n.color} strokeWidth={1.2} opacity={isSelected ? 0.4 : 0.2} />
+                {/* Initial */}
+                <text x={0} y={1} textAnchor="middle" dominantBaseline="central" fontSize={n.nodeR * 0.55} fontWeight={700} fill="currentColor" opacity={isSelected ? 0.75 : 0.5}>
+                  {name.charAt(0).toUpperCase()}
+                </text>
+                {/* Name label below */}
+                <text x={0} y={n.nodeR + 16} textAnchor="middle" fontSize={11} fontWeight={500} fill="currentColor" opacity={isSelected ? 0.5 : 0.3} className="pointer-events-none select-none">
+                  {firstName.length > 9 ? firstName.slice(0, 8) + '\u2026' : firstName}
+                </text>
+              </g>
             </g>
           );
         })}
+
         {/* Center node */}
-        <circle cx={cx} cy={cy} r={28} fill="currentColor" opacity={0.03} />
-        <circle cx={cx} cy={cy} r={25} fill="currentColor" opacity={0.07} stroke="currentColor" strokeWidth={1} strokeOpacity={0.12} />
-        <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600} fill="currentColor" opacity={0.45}>
+        <circle cx={cx} cy={cy} r={32} fill="currentColor" opacity={0.04} />
+        <circle cx={cx} cy={cy} r={28} fill="currentColor" opacity={0.08} stroke="currentColor" strokeWidth={1.5} strokeOpacity={0.15} />
+        <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="currentColor" opacity={0.5}>
           You
         </text>
       </svg>
       {friends.length === 0 && (
-        <p className="absolute inset-x-0 bottom-4 text-center text-[11px] text-muted-foreground/25">
-          Share your code to grow your orbit
-        </p>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <p className="text-[12px] text-muted-foreground/30 mt-24">
+            Share your code to grow your orbit
+          </p>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { Wrench, Plus, Check, Plane, Route, FileBarChart, GraduationCap, Gem } from 'lucide-react';
+import { Wrench, Plus, Check, Plane, Route, FileBarChart, GraduationCap, Gem, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToolboxStore, TOOLS, type ToolId } from '@/lib/toolbox-store';
 
@@ -10,6 +10,7 @@ const ICON_MAP: Record<string, typeof Plane> = {
   FileBarChart,
   GraduationCap,
   Gem,
+  Users,
 };
 
 export default function ToolboxPage() {
