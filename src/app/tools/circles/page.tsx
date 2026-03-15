@@ -468,7 +468,9 @@ function PersonDetail({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 lg:pb-0"
+      style={{ paddingBottom: 'calc(var(--bottom-nav-height, 44px) + env(safe-area-inset-bottom, 0px) + 8px)' }}
+      onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
       <div
         onClick={(e) => e.stopPropagation()}
