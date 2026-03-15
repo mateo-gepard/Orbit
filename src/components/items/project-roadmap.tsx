@@ -3,7 +3,6 @@
 import { useMemo, useCallback, useState } from 'react';
 import {
   ReactFlow,
-  MiniMap,
   Controls,
   Background,
   BackgroundVariant,
@@ -207,18 +206,7 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
                   position="bottom-right"
                   className="!bg-background !border-border/60 !rounded-xl !shadow-lg [&>button]:!bg-background [&>button]:!border-border/40 [&>button]:!rounded-lg [&>button]:hover:!bg-foreground/[0.05]"
                 />
-                <MiniMap
-                  position="bottom-left"
-                  className="!bg-background/90 !border-border/40 !rounded-xl !shadow-md"
-                  maskColor="rgba(0,0,0,0.08)"
-                  nodeColor={(n) => {
-                    if (n.type === 'projectRoadmapNode') return project.color || '#6366f1';
-                    if (n.type === 'milestoneRoadmapNode') return '#f97316';
-                    return '#94a3b8';
-                  }}
-                  pannable
-                  zoomable
-                />
+
                 <Background
                   variant={BackgroundVariant.Dots}
                   gap={20}

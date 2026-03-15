@@ -3,7 +3,6 @@
 import { useMemo, useCallback } from 'react';
 import {
   ReactFlow,
-  MiniMap,
   Controls,
   Background,
   BackgroundVariant,
@@ -152,13 +151,7 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                   showInteractive={false}
                   className="!bg-card !border-border/60 !shadow-lg !rounded-xl [&>button]:!bg-card [&>button]:!border-border/40 [&>button]:!text-foreground [&>button:hover]:!bg-muted"
                 />
-                <MiniMap
-                  nodeStrokeWidth={3}
-                  zoomable
-                  pannable
-                  className="!bg-card !border-border/60 !rounded-xl !shadow-lg"
-                  maskColor="rgba(0,0,0,0.1)"
-                />
+
               </ReactFlow>
 
               {/* Legend */}
