@@ -89,7 +89,7 @@ export default function ProjectsPage() {
     const id = await createItem({
       type: "project",
       status: "active",
-      title: "New Project",
+      title: "",
       emoji: "🚀",
       color: "#6366f1",
       tier,

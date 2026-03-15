@@ -71,8 +71,8 @@ export function parseCommand(input: string): ParsedCommand {
   }
   text = text.replace(tagRegex, '').trim();
 
-  // Extract links (@item title)
-  const linkRegex = /@([a-zA-Z0-9 ]+?)(?=\s@|\s!|\s#|$)/g;
+  // Extract links (@item title) — supports any characters except # and !
+  const linkRegex = /@([^@#!]+?)(?=\s@|\s!|\s#|$)/g;
   let linkMatch;
   while ((linkMatch = linkRegex.exec(text)) !== null) {
     const linkedTitle = linkMatch[1].trim();

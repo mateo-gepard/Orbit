@@ -82,6 +82,7 @@ export function DetailPanel() {
   const [newChecklistText, setNewChecklistText] = useState('');
   const [syncingCalendar, setSyncingCalendar] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Swipe-to-close
   const { isDragging, swipeStyles, handlers: swipeHandlers } = useSwipeToClose({
@@ -96,6 +97,13 @@ export function DetailPanel() {
   useEffect(() => {
     if (item) {
       setTitle(item.title);
+      // Auto-focus title for newly created items with empty/default title
+      if (!item.title || item.title === 'New Task' || item.title === 'New Habit') {
+        setTimeout(() => {
+          titleInputRef.current?.focus();
+          titleInputRef.current?.select();
+        }, 100);
+      }
     }
   }, [item?.id]);
 
@@ -506,6 +514,7 @@ export function DetailPanel() {
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4">
         {/* Title - Large and prominent */}
         <input
+          ref={titleInputRef}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => handleUpdate({ title })}

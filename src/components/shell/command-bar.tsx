@@ -47,6 +47,7 @@ export function CommandBar() {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [resolvedLink, setResolvedLink] = useState<OrbitItem | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -73,16 +74,18 @@ export function CommandBar() {
     ? priorities.filter(p => p.toLowerCase().startsWith(priorityQuery))
     : [];
 
-  // Linking (@)
+  // Linking (@) — check that everything after last @ is a valid query (no special command chars like # or !)
   const lastAtIndex = input.lastIndexOf('@');
+  const afterAt = lastAtIndex !== -1 ? input.slice(lastAtIndex + 1) : '';
   const isTypingLink = lastAtIndex !== -1 && 
-    (lastAtIndex === input.length - 1 || /^[a-zA-Z0-9 ]*$/.test(input.slice(lastAtIndex + 1)));
-  const linkQuery = isTypingLink ? input.slice(lastAtIndex + 1).toLowerCase() : '';
+    (lastAtIndex === input.length - 1 || !/[#!]/.test(afterAt));
+  const linkQuery = isTypingLink ? afterAt.toLowerCase().trim() : '';
   
   // Exclude only archived items to keep autocomplete clean
   const linkableItems = items.filter(i => i.status !== 'archived');
 
-  const suggestedLinks = isTypingLink && (linkQuery || lastAtIndex === input.length - 1)
+  // Don't show suggestions if we already resolved a link (user selected from autocomplete)
+  const suggestedLinks = isTypingLink && !resolvedLink && (linkQuery || lastAtIndex === input.length - 1)
     ? linkableItems.filter(item => 
         item.title.toLowerCase().includes(linkQuery)
       ).slice(0, 10)
@@ -129,6 +132,7 @@ export function CommandBar() {
     if (commandBarOpen) {
       setInput('');
       setSelectedIndex(0);
+      setResolvedLink(null);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [commandBarOpen]);
@@ -146,7 +150,7 @@ export function CommandBar() {
         .slice(0, 6)
     : [];
 
-  const handleSubmit = async (resolvedLinkItem?: OrbitItem) => {
+  const handleSubmit = async () => {
     if (!input.trim() || !user) return;
 
     const parsed = parseCommand(input);
@@ -178,15 +182,13 @@ export function CommandBar() {
       }
     });
 
-    // Find linked items by title (fuzzy matching)
-    // Use parentId for ALL @ links (unified linking - no distinction between types)
+    // Find linked items by title
     let parentItemId: string | undefined;
     
-    // If a resolved link item was passed directly (from autocomplete), use it
-    if (resolvedLinkItem) {
-      parentItemId = resolvedLinkItem.id;
+    // If a resolved link item was stored from autocomplete, use it
+    if (resolvedLink) {
+      parentItemId = resolvedLink.id;
     } else if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
-      // Only use the FIRST @ link as the parent
       const firstLinkTitle = parsed.linkedItemTitles[0];
       const linkTitleLower = firstLinkTitle.toLowerCase();
       
@@ -205,6 +207,11 @@ export function CommandBar() {
       if (matchedItem) {
         parentItemId = matchedItem.id;
       }
+    }
+
+    // Strip any leftover @... text from the title
+    if (parsed.title.includes('@')) {
+      parsed.title = parsed.title.replace(/@[^#!]*/g, '').trim();
     }
 
     let noteSubtype: NoteSubtype | undefined;
@@ -268,6 +275,7 @@ export function CommandBar() {
       }
       
       setInput('');
+      setResolvedLink(null);
       setCommandBarOpen(false);
     } catch {
       // Item still appears via optimistic update
@@ -299,6 +307,7 @@ export function CommandBar() {
     const beforeAt = input.slice(0, atIndex);
     const newInput = `${beforeAt}@${item.title} `;
     setInput(newInput);
+    setResolvedLink(item);
     setSelectedIndex(0);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
@@ -307,6 +316,8 @@ export function CommandBar() {
 
   const TypeIcon = TYPE_ICONS[parsed.type] || CheckSquare;
   const isCreateMode = input.startsWith('/') || (input.trim() && filteredItems.length === 0);
+  // Clean @ text from preview title
+  const previewTitle = parsed.title.includes('@') ? parsed.title.replace(/@[^#!]*/g, '').trim() : parsed.title;
 
   return (
     <div className="fixed inset-0 z-[100]">
@@ -341,7 +352,7 @@ export function CommandBar() {
             <input
               ref={inputRef}
               value={input}
-              onChange={(e) => { setInput(e.target.value); setSelectedIndex(0); }}
+              onChange={(e) => { setInput(e.target.value); setSelectedIndex(0); setResolvedLink(null); }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -349,10 +360,8 @@ export function CommandBar() {
                     handleSelectTag(suggestedTags[Math.min(selectedIndex, suggestedTags.length - 1)]);
                   } else if (suggestedPriorities.length > 0) {
                     handleSelectPriority(suggestedPriorities[Math.min(selectedIndex, suggestedPriorities.length - 1)]);
-                  } else if (suggestedLinks.length > 0 && isCreateMode) {
-                    // In create mode: submit immediately, resolving the highlighted @link
-                    handleSubmit(suggestedLinks[Math.min(selectedIndex, suggestedLinks.length - 1)]);
                   } else if (suggestedLinks.length > 0) {
+                    // Always select the link first (fill in title), user presses Enter again to submit
                     handleSelectLink(suggestedLinks[Math.min(selectedIndex, suggestedLinks.length - 1)]);
                   } else if (filteredItems.length > 0 && !input.startsWith('/')) {
                     handleSelectItem(filteredItems[selectedIndex]?.id || filteredItems[0].id);
@@ -520,7 +529,7 @@ export function CommandBar() {
             )}
 
             {/* Create preview for items with titles */}
-            {input.trim() && isCreateMode && !suggestedTags.length && parsed.title.trim() && (
+            {input.trim() && isCreateMode && !suggestedTags.length && (previewTitle || resolvedLink) && (
               <div>
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
                   Create new {TYPE_LABELS[parsed.type].toLowerCase()}
@@ -531,9 +540,12 @@ export function CommandBar() {
                 >
                   <TypeIcon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[14px] lg:text-[13px] font-medium truncate">{parsed.title}</div>
-                    {(parsed.tags.length > 0 || parsed.priority || parsed.dueDate) && (
+                    <div className="text-[14px] lg:text-[13px] font-medium truncate">{previewTitle || parsed.title}</div>
+                    {(parsed.tags.length > 0 || parsed.priority || parsed.dueDate || resolvedLink) && (
                       <div className="flex items-center gap-2 mt-0.5">
+                        {resolvedLink && (
+                          <span className="text-[10px] text-blue-500/60">@{resolvedLink.title}</span>
+                        )}
                         {parsed.tags.map((tag) => (
                           <span key={tag} className="text-[10px] text-muted-foreground/50">#{tag}</span>
                         ))}
