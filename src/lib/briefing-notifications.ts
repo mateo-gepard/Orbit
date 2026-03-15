@@ -510,6 +510,15 @@ function getDateStr(): string {
   return format(new Date(), 'yyyy-MM-dd');
 }
 
+// Check if we're within a window after the target time (handles timer drift)
+function isWithinWindow(targetHHMM: string, windowMinutes: number): boolean {
+  const [h, m] = targetHHMM.split(':').map(Number);
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+  const diff = now.getTime() - target.getTime();
+  return diff >= 0 && diff <= windowMinutes * 60 * 1000;
+}
+
 export function startBriefingScheduler(getItems: () => OrbitItem[]) {
   if (schedulerInterval) clearInterval(schedulerInterval);
 
@@ -564,9 +573,10 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
     const lastFired = getLastFired();
 
     // Morning briefing — only if SW/BRIEFING_FIRE didn't already handle it
+    // Use 5-minute window so timer drift doesn't cause misses
     if (
       settings.notifications.dailyBriefing &&
-      now === settings.notifications.dailyBriefingTime &&
+      isWithinWindow(settings.notifications.dailyBriefingTime, 5) &&
       lastFired.morning !== today
     ) {
       setLastFired('morning');
@@ -576,10 +586,10 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       console.log('[ORBIT] Morning briefing sent (in-app fallback timer)');
     }
 
-    // Evening briefing
+    // Evening briefing — use 5-minute window
     if (
       settings.notifications.eveningBriefing &&
-      now === settings.notifications.eveningBriefingTime &&
+      isWithinWindow(settings.notifications.eveningBriefingTime, 5) &&
       lastFired.evening !== today
     ) {
       setLastFired('evening');

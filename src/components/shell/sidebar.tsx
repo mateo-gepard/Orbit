@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
+  Sun,
   FolderKanban,
   Repeat,
   Target,
@@ -49,6 +50,7 @@ const NAV_SECTIONS: { labelKey?: TranslationKey; items: { href: string; labelKey
   {
     items: [
       { href: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+      { href: '/today', labelKey: 'nav.today', icon: Sun },
       { href: '/tasks', labelKey: 'nav.tasks', icon: CheckSquare },
     ],
   },

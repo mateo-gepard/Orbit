@@ -10,7 +10,7 @@ import { useWishlistStore } from '@/lib/wishlist-store';
 import { useSettingsStore } from '@/lib/settings-store';
 import { subscribeToFlightLogs } from '@/lib/flight';
 import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
-import { registerFCMToken, unregisterFCMToken, setupForegroundMessageHandler, isFCMAvailable } from '@/lib/fcm';
+import { registerFCMToken, unregisterFCMToken, setupForegroundMessageHandler, isFCMAvailable, refreshPushSubscription } from '@/lib/fcm';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
 import type { ToolId } from '@/lib/toolbox-store';
@@ -179,6 +179,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       // Register FCM for background push notifications
       if (isFCMAvailable()) {
+        // First, silently refresh if subscription was lost (e.g. iOS killed it)
+        refreshPushSubscription(user.uid).catch(() => {});
+
         registerFCMToken(user.uid).then((token) => {
           if (token) {
             setupForegroundMessageHandler();

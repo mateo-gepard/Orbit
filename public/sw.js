@@ -162,18 +162,28 @@ function msUntilTime(targetHHMM) {
   return diff;
 }
 
+// Check if current time is within a window after the target time.
+// This handles iOS killing the SW — when it wakes up a few minutes late,
+// the briefing can still fire instead of being missed entirely.
+function isWithinWindow(targetHHMM, windowMinutes) {
+  const [h, m] = targetHHMM.split(':').map(Number);
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+  const diff = now.getTime() - target.getTime();
+  return diff >= 0 && diff <= windowMinutes * 60 * 1000;
+}
+
 async function checkAndFireBriefings() {
   const config = await getSchedule();
   if (!config) return;
 
-  const now = getTimeStr();
   const today = getDateStr();
   const lastFired = await getLastFired();
 
-  // Morning briefing
+  // Morning briefing — use 5-minute window instead of exact match
   if (
     config.morningEnabled &&
-    config.morningTime === now &&
+    isWithinWindow(config.morningTime, 5) &&
     lastFired.morning !== today
   ) {
     await setLastFired({ morning: today });
@@ -188,10 +198,10 @@ async function checkAndFireBriefings() {
     }
   }
 
-  // Evening briefing
+  // Evening briefing — use 5-minute window instead of exact match
   if (
     config.eveningEnabled &&
-    config.eveningTime === now &&
+    isWithinWindow(config.eveningTime, 5) &&
     lastFired.evening !== today
   ) {
     await setLastFired({ evening: today });
@@ -234,6 +244,15 @@ function scheduleNextCheck() {
     await checkAndFireBriefings();
     scheduleNextCheck();
   }, 30_000);
+}
+
+// Restart the briefing timer and do an immediate check.
+// Called on every SW event (fetch, push, message, notificationclick)
+// so that iOS waking the SW for ANY reason revives the briefing scheduler.
+function restartBriefingCheck() {
+  scheduleNextCheck();
+  // Do an immediate check in case we missed a window while SW was asleep
+  checkAndFireBriefings().catch(() => {});
 }
 
 async function notifyClients(message) {
@@ -282,6 +301,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
   if (!event.data) return;
 
+  // Any message from the app wakes up the briefing scheduler
+  restartBriefingCheck();
+
   if (event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
@@ -311,6 +333,9 @@ self.addEventListener('message', (event) => {
 
 // ─── Push events (FCM / web push) ──────────────────────────
 self.addEventListener('push', (event) => {
+  // Any push wakes up the briefing scheduler
+  restartBriefingCheck();
+
   const data = event.data ? event.data.json() : {};
   const title = data.title || 'ORBIT';
   const tag = data.tag || 'orbit-push';
@@ -340,6 +365,8 @@ self.addEventListener('push', (event) => {
 // ─── Notification click ────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  // Revive the briefing scheduler on interaction
+  restartBriefingCheck();
   const url = event.notification.data?.url || '/';
 
   event.waitUntil(
@@ -367,6 +394,9 @@ self.addEventListener('periodicsync', (event) => {
 
 // ─── Fetch — network-first with cache fallback ────────────
 self.addEventListener('fetch', (event) => {
+  // Any fetch wakes up the briefing scheduler (helps on iOS)
+  restartBriefingCheck();
+
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith(self.location.origin)) return;
   if (event.request.url.includes('/api/') || event.request.url.includes('firestore')) return;

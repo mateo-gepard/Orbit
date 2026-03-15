@@ -375,6 +375,34 @@ export function hasFCMToken(): boolean {
   );
 }
 
+/**
+ * Re-check push subscription on app launch.
+ * On iOS, the OS can terminate the PWA and its SW, losing the push subscription.
+ * This silently re-subscribes if needed (only if permission was already granted).
+ */
+export async function refreshPushSubscription(userId: string): Promise<void> {
+  if (!isFCMAvailable()) return;
+  if (Notification.permission !== 'granted') return;
+  if (!hasFCMToken()) return; // User never registered — don't auto-register
+
+  try {
+    const swReg = await navigator.serviceWorker.ready;
+    const existingSub = await swReg.pushManager.getSubscription();
+
+    if (existingSub) {
+      // Subscription still alive — just update the Firestore doc timestamp
+      await updateFCMSchedule(userId);
+      return;
+    }
+
+    // Subscription was lost (iOS killed it) — re-register silently
+    console.log('[ORBIT] Push subscription lost, re-registering...');
+    await registerFCMToken(userId);
+  } catch (err) {
+    console.warn('[ORBIT] Push: refresh check failed:', err);
+  }
+}
+
 // ── Device Management ─────────────────────────────────────
 
 export interface RegisteredDevice {
