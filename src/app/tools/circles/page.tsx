@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
@@ -33,9 +33,9 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
-// ═══════════════════════════════════════════════════════════
-// Circles — Your People in Orbit
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Circles â€” Your People in Orbit
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -75,17 +75,6 @@ function calculateInteractionScore(conn: Connection, myUid: string): number {
   return score;
 }
 
-function relativeDate(dateStr: string): string {
-  const today = new Date().toISOString().slice(0, 10);
-  if (dateStr === today) return 'Today';
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (dateStr === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
-  const diff = Math.floor((Date.now() - new Date(dateStr + 'T12:00:00').getTime()) / 86400000);
-  if (diff < 7) return `${diff}d ago`;
-  return format(new Date(dateStr + 'T12:00:00'), 'MMM d');
-}
-
 const ITEM_TYPE_ICONS: Record<string, typeof CalendarDays> = {
   event: CalendarDays,
   project: FolderOpen,
@@ -95,7 +84,7 @@ const ITEM_TYPE_ICONS: Record<string, typeof CalendarDays> = {
   task: CheckSquare,
 };
 
-// ─── Orbit Map ───────────────────────────────────────────
+// â”€â”€â”€ Orbit Map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ORBIT_COLORS = [
   'rgba(244,63,94,0.55)',   // rose
@@ -158,12 +147,12 @@ function OrbitMap({
 
   return (
     <div className="relative w-full max-w-[400px] mx-auto overflow-hidden">
-      {/* CSS keyframes for orbital rotation */}
+      {/* CSS keyframes for gentle float */}
       <style>{`
-        @keyframes orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes orbit-spin-rev { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-        @keyframes center-pulse { 0%,100% { r: 30; opacity: 0.06; } 50% { r: 34; opacity: 0.1; } }
-        @keyframes node-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+        @keyframes orbit-float-0 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(6px,-4px); } 50% { transform: translate(-3px,-7px); } 75% { transform: translate(-6px,3px); } }
+        @keyframes orbit-float-1 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-5px,5px); } 50% { transform: translate(4px,7px); } 75% { transform: translate(6px,-4px); } }
+        @keyframes orbit-float-2 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(7px,3px); } 50% { transform: translate(-5px,5px); } 75% { transform: translate(3px,-6px); } }
+        @keyframes orbit-float-3 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-4px,-6px); } 50% { transform: translate(6px,4px); } 75% { transform: translate(-7px,2px); } }
       `}</style>
       <svg viewBox={`0 0 ${size} ${size}`} className="w-full" overflow="hidden" role="img" aria-label="Orbit map">
         <defs>
@@ -185,7 +174,7 @@ function OrbitMap({
         {/* Background field */}
         <circle cx={cx} cy={cy} r={185} fill="url(#orbit-field)" />
 
-        {/* Orbit rings — solid, more visible */}
+        {/* Orbit rings â€” solid, more visible */}
         {rings.map((r, ri) => (
           <circle
             key={r}
@@ -240,32 +229,22 @@ function OrbitMap({
           <animate attributeName="opacity" values="0.06;0.1;0.06" dur="4s" repeatCount="indefinite" />
         </circle>
 
-        {/* Orbiting friend nodes — each wrapped in a rotating group */}
-        {nodes.map((n) => {
+        {/* Friend nodes â€” gentle floating animation */}
+        {nodes.map((n, idx) => {
           const isSelected = n.connection.id === selectedId;
           const name = n.profile?.displayName || '?';
           const firstName = name.split(' ')[0];
-          const angleDeg = (n.baseAngle * 180) / Math.PI;
-          const anim = n.direction === 1 ? 'orbit-spin' : 'orbit-spin-rev';
+          const floatAnim = `orbit-float-${idx % 4}`;
           return (
-            <g
-              key={n.connection.id}
-              style={{
-                transformOrigin: `${cx}px ${cy}px`,
-                animation: `${anim} ${n.duration}s linear infinite`,
-              }}
-            >
-              {/* Position at the orbit radius from center */}
               <g
+                key={n.connection.id}
                 transform={`translate(${cx + n.ringRadius * Math.cos(n.baseAngle)}, ${cy + n.ringRadius * Math.sin(n.baseAngle)})`}
                 onClick={() => onSelect(n.connection.id)}
                 className="cursor-pointer"
                 role="button"
                 tabIndex={0}
                 style={{
-                  // Counter-rotate text/circle so they stay upright
-                  transformOrigin: '0 0',
-                  animation: `${n.direction === 1 ? 'orbit-spin-rev' : 'orbit-spin'} ${n.duration}s linear infinite`,
+                  animation: `${floatAnim} ${n.duration * 0.4}s ease-in-out infinite`,
                 }}
               >
                 {/* Tap target */}
@@ -290,7 +269,6 @@ function OrbitMap({
                   {firstName.length > 9 ? firstName.slice(0, 8) + '\u2026' : firstName}
                 </text>
               </g>
-            </g>
           );
         })}
 
@@ -313,7 +291,7 @@ function OrbitMap({
   );
 }
 
-// ─── Friend Code Card ────────────────────────────────────
+// â”€â”€â”€ Friend Code Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function FriendCodeCard({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
@@ -349,7 +327,7 @@ function FriendCodeCard({ code }: { code: string }) {
   );
 }
 
-// ─── Nudge Banner ────────────────────────────────────────
+// â”€â”€â”€ Nudge Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function NudgeBanner({
   nudges,
@@ -391,7 +369,7 @@ function NudgeBanner({
   );
 }
 
-// ─── Pending Requests ────────────────────────────────────
+// â”€â”€â”€ Pending Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PendingRequests({
   pending,
@@ -477,7 +455,7 @@ function PendingRequests({
                   {initial(profile?.displayName || '?')}
                 </div>
                 <span className="text-[12px] text-muted-foreground/50 truncate flex-1">
-                  {profile?.displayName || 'Orbit User'} — pending
+                  {profile?.displayName || 'Orbit User'} â€” pending
                 </span>
                 <button
                   onClick={() => onDecline(c.id)}
@@ -494,7 +472,7 @@ function PendingRequests({
   );
 }
 
-// ─── Person Detail ───────────────────────────────────────
+// â”€â”€â”€ Person Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PersonDetail({
   connection,
@@ -543,7 +521,7 @@ function PersonDetail({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
       <div
         onClick={(e) => e.stopPropagation()}
@@ -611,29 +589,41 @@ function PersonDetail({
             </div>
           </div>
 
-          {/* Their Activity */}
+          {/* Their Activity â€” compact summary */}
           <div>
             <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2">
               {profile?.displayName?.split(' ')[0]}&apos;s Activity
             </p>
             {friendActivity.length === 0 ? (
               <p className="text-[12px] text-muted-foreground/30 py-2">No recent activity yet. Nudge them!</p>
-            ) : (
-              <div className="space-y-1">
-                {friendActivity.map((a, i) => {
-                  const parts: string[] = [];
-                  if (a.tasksDone > 0) parts.push(`${a.tasksDone} task${a.tasksDone > 1 ? 's' : ''}`);
-                  if (a.habitsDone > 0) parts.push(`${a.habitsDone} habit${a.habitsDone > 1 ? 's' : ''}`);
-                  return (
-                    <div key={i} className="flex items-center gap-2 py-1">
-                      <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-foreground/30" />
-                      <span className="text-[12px] truncate flex-1">{parts.join(', ')} done</span>
-                      <span className="text-[10px] text-muted-foreground/30 shrink-0">{relativeDate(a.date)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            ) : (() => {
+              const totalTasks = friendActivity.reduce((s, a) => s + a.tasksDone, 0);
+              const totalHabits = friendActivity.reduce((s, a) => s + a.habitsDone, 0);
+              const todayStr = new Date().toISOString().slice(0, 10);
+              const todayEntry = friendActivity.find((a) => a.date === todayStr);
+              const todayTasks = todayEntry?.tasksDone || 0;
+              const todayHabits = todayEntry?.habitsDone || 0;
+              const todayTotal = todayTasks + todayHabits;
+              const weekTotal = totalTasks + totalHabits;
+              return (
+                <div className="rounded-lg bg-foreground/[0.03] px-3 py-2.5">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[20px] font-semibold tabular-nums">{todayTotal}</span>
+                    <span className="text-[11px] text-muted-foreground/40">today</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/50 mt-0.5">
+                    {todayTasks > 0 && `${todayTasks} task${todayTasks > 1 ? 's' : ''}`}
+                    {todayTasks > 0 && todayHabits > 0 && ', '}
+                    {todayHabits > 0 && `${todayHabits} habit${todayHabits > 1 ? 's' : ''}`}
+                    {todayTotal === 0 && 'Nothing yet'}
+                    {todayTotal > 0 && ' done'}
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-border/20 flex items-baseline justify-between">
+                    <span className="text-[11px] text-muted-foreground/40">{weekTotal} done this week</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Shared Habits */}
@@ -801,7 +791,7 @@ function PersonDetail({
   );
 }
 
-// ─── Add Friend Dialog ───────────────────────────────────
+// â”€â”€â”€ Add Friend Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AddFriendDialog({
   myCode,
@@ -837,7 +827,7 @@ function AddFriendDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
       <form
         onClick={(e) => e.stopPropagation()}
@@ -887,7 +877,7 @@ function AddFriendDialog({
   );
 }
 
-// ─── Share Habit Picker ──────────────────────────────────
+// â”€â”€â”€ Share Habit Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ShareHabitPicker({
   connectionId,
@@ -905,7 +895,7 @@ function ShareHabitPicker({
   const available = myHabits.filter((h) => !existingHabitIds.includes(h.id));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
       <div
         onClick={(e) => e.stopPropagation()}
@@ -948,7 +938,7 @@ function ShareHabitPicker({
   );
 }
 
-// ─── Link Item Picker ────────────────────────────────────
+// â”€â”€â”€ Link Item Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function LinkItemPicker({
   connectionId,
@@ -966,7 +956,7 @@ function LinkItemPicker({
   const available = items.filter((i) => !existingItemIds.includes(i.id));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
       <div
         onClick={(e) => e.stopPropagation()}
@@ -1010,9 +1000,9 @@ function LinkItemPicker({
   );
 }
 
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Main Page
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export default function CirclesPage() {
   const { isDemo } = useAuth();
