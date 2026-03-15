@@ -24,7 +24,7 @@ import { updateItem, deleteItem, createItem } from '@/lib/firestore';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { LinkGraph } from '@/components/items/link-graph';
-import type { OrbitItem, ItemStatus } from '@/lib/types';
+import type { OrbitItem, ItemStatus, ProjectTier } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -215,6 +215,30 @@ export function ProjectDashboard() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="mb-3">
+                  <label className="text-[10px] text-muted-foreground/50 block mb-1">Tier</label>
+                  <div className="flex gap-1">
+                    {([1, 2, 3] as ProjectTier[]).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => handleUpdate({ tier: t })}
+                        className={cn(
+                          'flex-1 h-7 rounded-md text-[11px] font-medium transition-all',
+                          (item.tier ?? 3) === t
+                            ? t === 1
+                              ? 'bg-foreground text-background'
+                              : t === 2
+                                ? 'bg-foreground/80 text-background'
+                                : 'bg-foreground/60 text-background'
+                            : 'bg-foreground/[0.06] text-muted-foreground/60 hover:bg-foreground/[0.1]'
+                        )}
+                      >
+                        T{t}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div>

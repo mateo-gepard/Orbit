@@ -10,6 +10,8 @@ export type Priority = 'low' | 'medium' | 'high';
 
 export type GoalTimeframe = 'quarterly' | 'yearly' | 'longterm';
 
+export type ProjectTier = 1 | 2 | 3;
+
 export type HabitFrequency = 'daily' | 'weekly' | 'custom';
 
 export type NoteSubtype = 'idea' | 'principle' | 'plan' | 'journal' | 'general';
@@ -46,6 +48,7 @@ export interface OrbitItem {
   // Project fields
   emoji?: string;
   color?: string;
+  tier?: ProjectTier;
 
   // Habit fields
   frequency?: HabitFrequency;
