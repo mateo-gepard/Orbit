@@ -111,13 +111,21 @@ function OrbitMap({
   onSelect: (connectionId: string) => void;
 }) {
   // viewBox 300x300, center 150,150
-  // worst case: ring 85 + nodeR 18 + label 13 = 116 < 150 (safe on all sides)
+  // safe bound: ring 112 + nodeR 18 + label 11 + anim 3 = 144 < 150 ✓
   const cx = 150;
   const cy = 150;
-  const rings = [40, 65, 85];
-  const maxOrbit = 85;
-  const minOrbit = 40;
+  const rings = [60, 90, 112];
+  const maxOrbit = 112;
+  const minOrbit = 60;
   const maxScore = Math.max(...friends.map((f) => f.score), 1);
+
+  // Per-node float keyframes (SVG units, small deltas so we stay in bounds)
+  const FLOAT_KEYFRAMES = [
+    '0,0; 3,-2; -2,-3; -3,2; 2,3; 0,0',
+    '0,0; -3,3; 2,-3; 3,-2; -2,3; 0,0',
+    '0,0; 2,3; -3,2; -2,-3; 3,-2; 0,0',
+    '0,0; -2,-3; 3,2; -3,3; 2,-2; 0,0',
+  ];
 
   const nodes = useMemo(() => {
     const count = friends.length;
@@ -127,11 +135,13 @@ function OrbitMap({
       const baseAngle = count === 1
         ? -Math.PI / 2
         : (2 * Math.PI * i) / count - Math.PI / 2;
-      const nodeR = 14 + norm * 4;
+      const nodeR = 16 + norm * 5;
       const color = ORBIT_COLORS[i % ORBIT_COLORS.length];
       const nx = cx + ringRadius * Math.cos(baseAngle);
       const ny = cy + ringRadius * Math.sin(baseAngle);
-      return { ...f, nx, ny, nodeR, color };
+      const floatDur = 9 + i * 4;
+      const floatKf = FLOAT_KEYFRAMES[i % FLOAT_KEYFRAMES.length];
+      return { ...f, nx, ny, nodeR, color, floatDur, floatKf };
     });
   }, [friends, maxScore]);
 
@@ -181,29 +191,36 @@ function OrbitMap({
           const name = n.profile?.displayName || '?';
           const firstName = name.split(' ')[0];
           return (
-            <g key={n.connection.id} onClick={() => onSelect(n.connection.id)}
+            <g key={n.connection.id}
+              transform={`translate(${n.nx},${n.ny})`}
+              onClick={() => onSelect(n.connection.id)}
               className="cursor-pointer" role="button" tabIndex={0}>
-              <circle cx={n.nx} cy={n.ny} r={n.nodeR + 10} fill="transparent" />
+              {/* SVG-native float — additive="sum" adds tiny offsets to the base translate,
+                  stays entirely within SVG coordinate space, can never escape the viewBox */}
+              <animateTransform attributeName="transform" type="translate"
+                values={n.floatKf} dur={`${n.floatDur}s`}
+                repeatCount="indefinite" additive="sum" />
+              <circle cx={0} cy={0} r={n.nodeR + 10} fill="transparent" />
               {isSelected && (
-                <circle cx={n.nx} cy={n.ny} r={n.nodeR + 5} fill={n.color} opacity={0.15} filter="url(#node-glow)" />
+                <circle cx={0} cy={0} r={n.nodeR + 5} fill={n.color} opacity={0.15} filter="url(#node-glow)" />
               )}
               {isSelected && (
-                <circle cx={n.nx} cy={n.ny} r={n.nodeR + 3} fill="none" stroke={n.color} strokeWidth={1.5} opacity={0.4} />
+                <circle cx={0} cy={0} r={n.nodeR + 3} fill="none" stroke={n.color} strokeWidth={1.5} opacity={0.4} />
               )}
               {isSelected && (
-                <circle cx={n.nx} cy={n.ny} r={n.nodeR} fill="none" stroke={n.color} strokeWidth={1} opacity={0.3}>
+                <circle cx={0} cy={0} r={n.nodeR} fill="none" stroke={n.color} strokeWidth={1} opacity={0.3}>
                   <animate attributeName="r" values={`${n.nodeR};${n.nodeR + 4};${n.nodeR}`} dur="2s" repeatCount="indefinite" />
                   <animate attributeName="opacity" values="0.3;0;0.3" dur="2s" repeatCount="indefinite" />
                 </circle>
               )}
-              <circle cx={n.nx} cy={n.ny} r={n.nodeR} fill={n.color} opacity={isSelected ? 0.22 : 0.12} />
-              <circle cx={n.nx} cy={n.ny} r={n.nodeR} fill="none" stroke={n.color} strokeWidth={1} opacity={isSelected ? 0.45 : 0.22} />
-              <text x={n.nx} y={n.ny + 1} textAnchor="middle" dominantBaseline="central"
+              <circle cx={0} cy={0} r={n.nodeR} fill={n.color} opacity={isSelected ? 0.22 : 0.12} />
+              <circle cx={0} cy={0} r={n.nodeR} fill="none" stroke={n.color} strokeWidth={1} opacity={isSelected ? 0.45 : 0.22} />
+              <text x={0} y={1} textAnchor="middle" dominantBaseline="central"
                 fontSize={n.nodeR * 0.65} fontWeight={700} fill="currentColor"
                 opacity={isSelected ? 0.8 : 0.55} className="pointer-events-none select-none">
                 {name.charAt(0).toUpperCase()}
               </text>
-              <text x={n.nx} y={n.ny + n.nodeR + 11} textAnchor="middle" fontSize={9} fontWeight={500}
+              <text x={0} y={n.nodeR + 11} textAnchor="middle" fontSize={9} fontWeight={500}
                 fill="currentColor" opacity={isSelected ? 0.55 : 0.32} className="pointer-events-none select-none">
                 {firstName.length > 9 ? firstName.slice(0, 8) + '\u2026' : firstName}
               </text>
