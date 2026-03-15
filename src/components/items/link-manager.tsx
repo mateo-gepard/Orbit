@@ -1,9 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, X, Link as LinkIcon, FolderOpen, Target, Calendar, StickyNote, CheckSquare } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Plus, X, Link as LinkIcon, FolderOpen, Target, Calendar, StickyNote, CheckSquare, ChevronLeft, Search, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { OrbitItem, ItemType } from '@/lib/types';
 import { useLinks } from '@/lib/hooks/use-links';
@@ -15,40 +14,66 @@ interface LinkManagerProps {
 }
 
 const ITEM_TYPE_CONFIG = {
-  project: { label: 'Project', icon: FolderOpen, color: 'text-blue-600' },
-  task: { label: 'Task', icon: CheckSquare, color: 'text-green-600' },
-  event: { label: 'Event', icon: Calendar, color: 'text-purple-600' },
-  goal: { label: 'Goal', icon: Target, color: 'text-orange-600' },
-  note: { label: 'Note', icon: StickyNote, color: 'text-yellow-600' },
-  habit: { label: 'Habit', icon: CheckSquare, color: 'text-pink-600' },
+  project: { label: 'Projects', icon: FolderOpen, color: 'text-blue-600', bg: 'bg-blue-500/10' },
+  task: { label: 'Tasks', icon: CheckSquare, color: 'text-green-600', bg: 'bg-green-500/10' },
+  event: { label: 'Events', icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-500/10' },
+  goal: { label: 'Goals', icon: Target, color: 'text-orange-600', bg: 'bg-orange-500/10' },
+  note: { label: 'Notes', icon: StickyNote, color: 'text-yellow-600', bg: 'bg-yellow-500/10' },
+  habit: { label: 'Habits', icon: Repeat, color: 'text-pink-600', bg: 'bg-pink-500/10' },
 } as const;
 
-export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
-  const [showAddLink, setShowAddLink] = useState(false);
-  const [selectedType, setSelectedType] = useState<ItemType | 'none'>('none');
-  const [selectedItemId, setSelectedItemId] = useState<string>('none');
+type PickerMode = 'closed' | 'link' | 'parent';
 
-  // Use unified linking system
+export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
+  const [pickerMode, setPickerMode] = useState<PickerMode>('closed');
+  const [selectedType, setSelectedType] = useState<ItemType | null>(null);
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+
   const links = useLinks({ item, allItems, onUpdate });
 
-  // Filter linkable items by selected type
-  const linkableItems = selectedType === 'none' 
-    ? []
-    : links.getLinkableByType(selectedType);
+  // Auto-focus search when entering item list
+  useEffect(() => {
+    if (selectedType && searchRef.current) {
+      searchRef.current.focus();
+    }
+  }, [selectedType]);
 
-  const handleAddLink = () => {
-    if (selectedItemId === 'none') return;
-    
-    links.handleAddLink(selectedItemId);
-    
-    // Reset
-    setSelectedType('none');
-    setSelectedItemId('none');
-    setShowAddLink(false);
+  const resetPicker = () => {
+    setPickerMode('closed');
+    setSelectedType(null);
+    setSearch('');
   };
 
-  const handleRemoveParent = () => {
-    links.handleSetParent(undefined);
+  const handlePickItem = (targetId: string) => {
+    if (pickerMode === 'link') {
+      links.handleAddLink(targetId);
+    } else if (pickerMode === 'parent') {
+      links.handleSetParent(targetId);
+    }
+    resetPicker();
+  };
+
+  // Get items for the selected category, filtered by search
+  const getCategoryItems = (): OrbitItem[] => {
+    if (!selectedType) return [];
+    const items = pickerMode === 'parent'
+      ? links.linkableItems.filter(i => i.type === selectedType)
+      : links.getLinkableByType(selectedType);
+    if (!search.trim()) return items;
+    const q = search.toLowerCase();
+    return items.filter(i =>
+      i.title.toLowerCase().includes(q) ||
+      (i.emoji && i.emoji.toLowerCase().includes(q))
+    );
+  };
+
+  // Count available items per type
+  const getTypeCount = (type: ItemType): number => {
+    if (pickerMode === 'parent') {
+      return links.linkableItems.filter(i => i.type === type).length;
+    }
+    return links.getLinkableByType(type).length;
   };
 
   const renderItemBadge = (linkedItem: OrbitItem, onRemove?: () => void) => {
@@ -76,6 +101,97 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
     );
   };
 
+  // Category grid (step 1)
+  const renderCategoryGrid = () => (
+    <div className="grid grid-cols-3 gap-1.5">
+      {(Object.entries(ITEM_TYPE_CONFIG) as [ItemType, typeof ITEM_TYPE_CONFIG[ItemType]][]).map(([type, config]) => {
+        const Icon = config.icon;
+        const count = getTypeCount(type);
+        return (
+          <button
+            key={type}
+            onClick={() => { setSelectedType(type); setSearch(''); }}
+            disabled={count === 0}
+            className={cn(
+              'flex flex-col items-center gap-1 rounded-lg p-2.5 transition-all text-center',
+              'border border-transparent',
+              count > 0
+                ? 'hover:border-border/60 hover:bg-foreground/[0.04] cursor-pointer'
+                : 'opacity-30 cursor-not-allowed',
+            )}
+          >
+            <div className={cn('rounded-md p-1.5', config.bg)}>
+              <Icon className={cn('h-4 w-4', config.color)} />
+            </div>
+            <span className="text-[10px] font-medium text-foreground/70">{config.label}</span>
+            <span className="text-[9px] text-muted-foreground/50">{count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // Item list (step 2)
+  const renderItemList = () => {
+    const items = getCategoryItems();
+    const config = ITEM_TYPE_CONFIG[selectedType!];
+    const Icon = config.icon;
+
+    return (
+      <div className="space-y-2">
+        {/* Back + category header */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => { setSelectedType(null); setSearch(''); }}
+            className="rounded-md p-1 hover:bg-foreground/[0.06] transition-colors"
+          >
+            <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground/60" />
+          </button>
+          <Icon className={cn('h-3.5 w-3.5', config.color)} />
+          <span className="text-[11px] font-medium text-foreground/80">{config.label}</span>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/40" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${config.label.toLowerCase()}...`}
+            className="w-full h-7 pl-7 pr-2 rounded-md border border-border/60 bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring/30"
+          />
+        </div>
+
+        {/* Items */}
+        <div className="max-h-[180px] overflow-y-auto -mx-0.5 px-0.5 space-y-0.5">
+          {items.map(i => {
+            const itemConfig = ITEM_TYPE_CONFIG[i.type];
+            const ItemIcon = itemConfig.icon;
+            return (
+              <button
+                key={i.id}
+                onClick={() => handlePickItem(i.id)}
+                className="flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-left hover:bg-foreground/[0.06] transition-colors group"
+              >
+                <ItemIcon className={cn('h-3.5 w-3.5 shrink-0', itemConfig.color)} />
+                <span className="text-[11px] text-foreground/80 truncate">
+                  {i.emoji && `${i.emoji} `}{i.title || 'Untitled'}
+                </span>
+              </button>
+            );
+          })}
+          {items.length === 0 && (
+            <div className="text-[11px] text-muted-foreground/50 text-center py-3">
+              {search ? 'No matches' : `No ${config.label.toLowerCase()} available`}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3">
       {/* Parent Link */}
@@ -88,7 +204,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            {renderItemBadge(links.relationships.parent, handleRemoveParent)}
+            {renderItemBadge(links.relationships.parent, () => links.handleSetParent(undefined))}
           </div>
         </div>
       )}
@@ -125,125 +241,41 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
         </div>
       )}
 
-      {/* Add Link Interface */}
-      {!showAddLink ? (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setShowAddLink(true)}
-          className="h-7 text-[11px] gap-1.5"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Link
-        </Button>
-      ) : (
-        <div className="space-y-2 rounded-md border border-border/60 bg-foreground/[0.02] p-2">
+      {/* Picker (for both Link and Parent) */}
+      {pickerMode !== 'closed' ? (
+        <div className="rounded-md border border-border/60 bg-foreground/[0.02] p-2.5 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-foreground/80">Add New Link</span>
-            <button
-              onClick={() => {
-                setShowAddLink(false);
-                setSelectedType('none');
-                setSelectedItemId('none');
-              }}
-              className="text-muted-foreground/50 hover:text-foreground"
-            >
+            <span className="text-[11px] font-medium text-foreground/80">
+              {pickerMode === 'link' ? 'Link to...' : 'Set Parent...'}
+            </span>
+            <button onClick={resetPicker} className="text-muted-foreground/50 hover:text-foreground">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-
-          {/* Step 1: Select Type */}
-          <div>
-            <label className="text-[10px] text-muted-foreground/60 block mb-1">Link Type</label>
-            <Select value={selectedType} onValueChange={(v) => {
-              setSelectedType(v as ItemType);
-              setSelectedItemId('none');
-            }}>
-              <SelectTrigger className="h-7 text-[11px]">
-                <SelectValue placeholder="Choose type..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none" className="text-[11px]">Choose type...</SelectItem>
-                {(Object.entries(ITEM_TYPE_CONFIG) as [ItemType, typeof ITEM_TYPE_CONFIG[ItemType]][]).map(([type, config]) => {
-                  const Icon = config.icon;
-                  return (
-                    <SelectItem key={type} value={type} className="text-[11px]">
-                      <div className="flex items-center gap-2">
-                        <Icon className={cn('h-3.5 w-3.5', config.color)} />
-                        {config.label}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Step 2: Select Item (only if type selected) */}
-          {selectedType !== 'none' && (
-            <div>
-              <label className="text-[10px] text-muted-foreground/60 block mb-1">
-                Select {ITEM_TYPE_CONFIG[selectedType].label}
-              </label>
-              <Select value={selectedItemId} onValueChange={setSelectedItemId}>
-                <SelectTrigger className="h-7 text-[11px]">
-                  <SelectValue placeholder="Choose item..." />
-                </SelectTrigger>
-                <SelectContent className="max-h-[200px]">
-                  <SelectItem value="none" className="text-[11px]">Choose item...</SelectItem>
-                  {linkableItems.map(linkItem => (
-                    <SelectItem key={linkItem.id} value={linkItem.id} className="text-[11px]">
-                      {linkItem.emoji && `${linkItem.emoji} `}{linkItem.title}
-                    </SelectItem>
-                  ))}
-                  {linkableItems.length === 0 && (
-                    <div className="px-2 py-1.5 text-[11px] text-muted-foreground/60">
-                      No {ITEM_TYPE_CONFIG[selectedType as ItemType]?.label.toLowerCase()}s available
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Add Button */}
-          {selectedItemId !== 'none' && (
+          {selectedType ? renderItemList() : renderCategoryGrid()}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPickerMode('link')}
+            className="h-7 text-[11px] gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Link
+          </Button>
+          {!links.relationships.parent && (
             <Button
               size="sm"
-              onClick={handleAddLink}
-              className="h-7 text-[11px] w-full"
+              variant="outline"
+              onClick={() => setPickerMode('parent')}
+              className="h-7 text-[11px] gap-1.5"
             >
-              <LinkIcon className="h-3.5 w-3.5 mr-1.5" />
-              Add Link
+              <FolderOpen className="h-3.5 w-3.5" />
+              Set Parent
             </Button>
           )}
-        </div>
-      )}
-
-      {/* Set Parent (if no parent) */}
-      {!links.relationships.parent && (
-        <div className="pt-2 border-t border-border/40">
-          <div className="text-[10px] text-muted-foreground/60 mb-1.5">Set Parent</div>
-          <Select value={item.parentId || 'none'} onValueChange={(value) => links.handleSetParent(value === 'none' ? undefined : value)}>
-            <SelectTrigger className="h-7 text-[11px]">
-              <SelectValue placeholder="No parent" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[200px]">
-              <SelectItem value="none" className="text-[11px]">No parent</SelectItem>
-              {links.linkableItems.map((linkableItem: OrbitItem) => {
-                  const config = ITEM_TYPE_CONFIG[linkableItem.type];
-                  const Icon = config.icon;
-                  return (
-                    <SelectItem key={linkableItem.id} value={linkableItem.id} className="text-[11px]">
-                      <div className="flex items-center gap-2">
-                        <Icon className={cn('h-3.5 w-3.5', config.color)} />
-                        {linkableItem.emoji && `${linkableItem.emoji} `}{linkableItem.title}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-            </SelectContent>
-          </Select>
         </div>
       )}
     </div>
