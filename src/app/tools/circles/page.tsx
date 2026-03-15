@@ -70,9 +70,11 @@ function calculateInteractionScore(conn: Connection, myUid: string): number {
     score += act.reduce((s: number, e: { tasksDone?: number; habitsDone?: number }) => s + (e.tasksDone || 0) + (e.habitsDone || 0), 0) * 0.5;
   }
   if (conn.since) {
-    score += Math.min((Date.now() - conn.since) / 604800000, 20);
+    // conn.since may come back as a Firestore Timestamp; coerce to number safely
+    const sinceMs = typeof conn.since === 'number' ? conn.since : (conn.since as unknown as { toMillis?: () => number })?.toMillis?.() ?? 0;
+    if (sinceMs > 0) score += Math.min((Date.now() - sinceMs) / 604800000, 20);
   }
-  return score;
+  return isNaN(score) ? 0 : score;
 }
 
 const ITEM_TYPE_ICONS: Record<string, typeof CalendarDays> = {
@@ -121,7 +123,7 @@ function OrbitMap({
   const nodes = useMemo(() => {
     const count = friends.length;
     return friends.map((f, i) => {
-      const norm = f.score / maxScore;
+      const norm = Math.min(Math.max(f.score / maxScore, 0), 1);
       // Inner ring for high score, outer for low
       const ringRadius = maxOrbit - norm * (maxOrbit - minOrbit);
       // Evenly spread friends around the circle, offset by golden angle for visual interest
@@ -133,9 +135,10 @@ function OrbitMap({
       const duration = 45 + i * 12 + (1 - norm) * 30;
       const direction = i % 2 === 0 ? 1 : -1;
       const color = ORBIT_COLORS[i % ORBIT_COLORS.length];
+      const safeRadius = isNaN(ringRadius) ? rings[1] : ringRadius;
       return {
         ...f,
-        ringRadius,
+        ringRadius: safeRadius,
         baseAngle,
         nodeR,
         duration,
