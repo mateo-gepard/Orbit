@@ -51,7 +51,7 @@ interface CirclesState {
   shareHabit: (connectionId: string, habitId: string, habitTitle: string) => Promise<void>;
   unshareHabit: (connectionId: string, habitId: string) => Promise<void>;
   syncMyCompletions: (items: { id: string; completions?: Record<string, boolean> }[]) => Promise<void>;
-  syncMyActivity: (items: { type: string; title: string; status: string; completions?: Record<string, boolean>; completedAt?: number }[]) => Promise<void>;
+  syncMyActivity: (items: { type: string; status: string; completions?: Record<string, boolean>; completedAt?: number }[]) => Promise<void>;
   dismissNudge: (nudgeId: string) => Promise<void>;
   addNote: (connectionId: string, note: string) => Promise<void>;
   removeNote: (connectionId: string, noteIndex: number) => Promise<void>;
@@ -224,28 +224,33 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     const accepted = get().connections.filter((c) => c.status === 'accepted');
     if (accepted.length === 0) return;
 
-    const entries: ActivityEntry[] = [];
     const now = new Date();
     const cutoff = now.getTime() - 7 * 86400000;
+    const dayMap: Record<string, { tasks: number; habits: number }> = {};
 
     for (const item of items) {
       if (item.type === 'task' && item.status === 'done' && item.completedAt && item.completedAt > cutoff) {
-        entries.push({ type: 'task_done', title: item.title, date: new Date(item.completedAt).toISOString().slice(0, 10) });
+        const d = new Date(item.completedAt).toISOString().slice(0, 10);
+        if (!dayMap[d]) dayMap[d] = { tasks: 0, habits: 0 };
+        dayMap[d].tasks++;
       }
       if (item.type === 'habit' && item.completions) {
-        for (let d = 0; d < 7; d++) {
+        for (let i = 0; i < 7; i++) {
           const dt = new Date(now);
-          dt.setDate(dt.getDate() - d);
+          dt.setDate(dt.getDate() - i);
           const dateStr = dt.toISOString().slice(0, 10);
           if (item.completions[dateStr]) {
-            entries.push({ type: 'habit_done', title: item.title, date: dateStr });
+            if (!dayMap[dateStr]) dayMap[dateStr] = { tasks: 0, habits: 0 };
+            dayMap[dateStr].habits++;
           }
         }
       }
     }
 
-    entries.sort((a, b) => b.date.localeCompare(a.date));
-    const capped = entries.slice(0, 20);
+    const entries: ActivityEntry[] = Object.entries(dayMap)
+      .map(([date, counts]) => ({ type: 'daily_summary' as const, date, tasksDone: counts.tasks, habitsDone: counts.habits }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const capped = entries.slice(0, 7);
 
     for (const conn of accepted) {
       try {

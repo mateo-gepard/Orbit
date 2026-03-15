@@ -61,9 +61,10 @@ export interface Nudge {
 }
 
 export interface ActivityEntry {
-  type: 'habit_done' | 'task_done';
-  title: string;
+  type: 'daily_summary';
   date: string;
+  tasksDone: number;
+  habitsDone: number;
 }
 
 export interface LinkedItem {

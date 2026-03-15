@@ -66,7 +66,8 @@ function calculateInteractionScore(conn: Connection, myUid: string): number {
   if ((conn.personNotes?.[myUid] || []).length > 0) score += 2;
   const activity = conn.activity || {};
   for (const uid of Object.keys(activity)) {
-    score += (activity[uid]?.length || 0) * 0.5;
+    const act = activity[uid] || [];
+    score += act.reduce((s: number, e: { tasksDone?: number; habitsDone?: number }) => s + (e.tasksDone || 0) + (e.habitsDone || 0), 0) * 0.5;
   }
   if (conn.since) {
     score += Math.min((Date.now() - conn.since) / 604800000, 20);
@@ -121,9 +122,8 @@ function OrbitMap({
   const size = 500;
   const cx = size / 2;
   const cy = size / 2;
-  // Rings must leave room for largest node (34r) + label (~20px) + padding
-  // Max safe orbit: cx - 34 - 20 - 10 = 186, but keep it tighter for comfort
-  const rings = [75, 120, 165];
+  // Safe bounds: cx(250) - nodeR_max(30) - label(18) - glow(6) - pad(16) = 180
+  const rings = [65, 110, 150];
   const maxOrbit = rings[2]; // outermost orbit radius
   const minOrbit = rings[0]; // innermost orbit radius
   const maxScore = Math.max(...friends.map((f) => f.score), 1);
@@ -157,7 +157,7 @@ function OrbitMap({
   }, [friends, maxScore]);
 
   return (
-    <div className="relative w-full max-w-[460px] mx-auto overflow-hidden">
+    <div className="relative w-full max-w-[400px] mx-auto overflow-hidden">
       {/* CSS keyframes for orbital rotation */}
       <style>{`
         @keyframes orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -165,8 +165,9 @@ function OrbitMap({
         @keyframes center-pulse { 0%,100% { r: 30; opacity: 0.06; } 50% { r: 34; opacity: 0.1; } }
         @keyframes node-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
       `}</style>
-      <svg viewBox={`0 0 ${size} ${size}`} className="w-full" role="img" aria-label="Orbit map">
+      <svg viewBox={`0 0 ${size} ${size}`} className="w-full" overflow="hidden" role="img" aria-label="Orbit map">
         <defs>
+          <clipPath id="orbit-clip"><rect x="0" y="0" width={size} height={size} /></clipPath>
           {/* Subtle radial gradient for the field */}
           <radialGradient id="orbit-field" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="currentColor" stopOpacity={0.03} />
@@ -179,9 +180,10 @@ function OrbitMap({
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
         </defs>
+        <g clipPath="url(#orbit-clip)">
 
         {/* Background field */}
-        <circle cx={cx} cy={cy} r={200} fill="url(#orbit-field)" />
+        <circle cx={cx} cy={cy} r={185} fill="url(#orbit-field)" />
 
         {/* Orbit rings — solid, more visible */}
         {rings.map((r, ri) => (
@@ -284,7 +286,7 @@ function OrbitMap({
                   {name.charAt(0).toUpperCase()}
                 </text>
                 {/* Name label below */}
-                <text x={0} y={n.nodeR + 16} textAnchor="middle" fontSize={11} fontWeight={500} fill="currentColor" opacity={isSelected ? 0.5 : 0.3} className="pointer-events-none select-none">
+                <text x={0} y={n.nodeR + 14} textAnchor="middle" fontSize={10} fontWeight={500} fill="currentColor" opacity={isSelected ? 0.5 : 0.3} className="pointer-events-none select-none">
                   {firstName.length > 9 ? firstName.slice(0, 8) + '\u2026' : firstName}
                 </text>
               </g>
@@ -298,6 +300,7 @@ function OrbitMap({
         <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="currentColor" opacity={0.5}>
           You
         </text>
+        </g>
       </svg>
       {friends.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -617,13 +620,18 @@ function PersonDetail({
               <p className="text-[12px] text-muted-foreground/30 py-2">No recent activity yet. Nudge them!</p>
             ) : (
               <div className="space-y-1">
-                {friendActivity.map((a, i) => (
-                  <div key={i} className="flex items-center gap-2 py-1">
-                    <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', a.type === 'habit_done' ? 'bg-foreground/40' : 'bg-foreground/25')} />
-                    <span className="text-[12px] truncate flex-1">{a.title}</span>
-                    <span className="text-[10px] text-muted-foreground/30 shrink-0">{relativeDate(a.date)}</span>
-                  </div>
-                ))}
+                {friendActivity.map((a, i) => {
+                  const parts: string[] = [];
+                  if (a.tasksDone > 0) parts.push(`${a.tasksDone} task${a.tasksDone > 1 ? 's' : ''}`);
+                  if (a.habitsDone > 0) parts.push(`${a.habitsDone} habit${a.habitsDone > 1 ? 's' : ''}`);
+                  return (
+                    <div key={i} className="flex items-center gap-2 py-1">
+                      <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-foreground/30" />
+                      <span className="text-[12px] truncate flex-1">{parts.join(', ')} done</span>
+                      <span className="text-[10px] text-muted-foreground/30 shrink-0">{relativeDate(a.date)}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1083,7 +1091,7 @@ export default function CirclesPage() {
   useEffect(() => {
     if (!activitySyncedRef.current && myProfile && accepted.length > 0) {
       activitySyncedRef.current = true;
-      syncMyActivity(items.map((i) => ({ type: i.type, title: i.title, status: i.status, completions: i.completions, completedAt: i.completedAt })));
+      syncMyActivity(items.map((i) => ({ type: i.type, status: i.status, completions: i.completions, completedAt: i.completedAt })));
     }
   }, [myProfile, accepted.length, items, syncMyActivity]);
 
