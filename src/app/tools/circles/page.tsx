@@ -472,7 +472,8 @@ function PersonDetail({
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-[440px] max-h-[85vh] bg-card border border-border/50 shadow-2xl rounded-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
+        className="relative w-full max-w-[440px] bg-card border border-border/50 shadow-2xl rounded-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
+        style={{ maxHeight: 'min(85vh, calc(100dvh - 32px))' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
@@ -484,7 +485,7 @@ function PersonDetail({
         </div>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 space-y-5">
           {/* Profile */}
           <div className="text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-foreground/[0.06] text-2xl font-semibold overflow-hidden">
