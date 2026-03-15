@@ -121,7 +121,11 @@ function OrbitMap({
   const size = 500;
   const cx = size / 2;
   const cy = size / 2;
-  const rings = [80, 130, 185];
+  // Rings must leave room for largest node (34r) + label (~20px) + padding
+  // Max safe orbit: cx - 34 - 20 - 10 = 186, but keep it tighter for comfort
+  const rings = [75, 120, 165];
+  const maxOrbit = rings[2]; // outermost orbit radius
+  const minOrbit = rings[0]; // innermost orbit radius
   const maxScore = Math.max(...friends.map((f) => f.score), 1);
 
   // Assign each friend a stable orbit ring + angle with slow animation
@@ -130,12 +134,12 @@ function OrbitMap({
     return friends.map((f, i) => {
       const norm = f.score / maxScore;
       // Inner ring for high score, outer for low
-      const ringRadius = rings[2] - norm * (rings[2] - rings[0]);
+      const ringRadius = maxOrbit - norm * (maxOrbit - minOrbit);
       // Evenly spread friends around the circle, offset by golden angle for visual interest
       const baseAngle = count === 1
         ? -Math.PI / 2
         : (2 * Math.PI * i) / count - Math.PI / 2;
-      const nodeR = 24 + norm * 10;
+      const nodeR = 22 + norm * 8;
       // Orbit animation: each friend gets a different speed & direction
       const duration = 45 + i * 12 + (1 - norm) * 30;
       const direction = i % 2 === 0 ? 1 : -1;
@@ -153,7 +157,7 @@ function OrbitMap({
   }, [friends, maxScore]);
 
   return (
-    <div className="relative w-full max-w-[460px] mx-auto">
+    <div className="relative w-full max-w-[460px] mx-auto overflow-hidden">
       {/* CSS keyframes for orbital rotation */}
       <style>{`
         @keyframes orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -177,7 +181,7 @@ function OrbitMap({
         </defs>
 
         {/* Background field */}
-        <circle cx={cx} cy={cy} r={220} fill="url(#orbit-field)" />
+        <circle cx={cx} cy={cy} r={200} fill="url(#orbit-field)" />
 
         {/* Orbit rings — solid, more visible */}
         {rings.map((r, ri) => (
