@@ -117,7 +117,9 @@ function OrbitMap({
   const rings = [60, 90, 112];
   const maxOrbit = 112;
   const minOrbit = 60;
-  const maxScore = Math.max(...friends.map((f) => f.score), 1);
+  // Use a fixed scale so a lone friend with few interactions stays far out.
+  // ~30 pts = inner ring (shared habits + regular completions).
+  const SCORE_SCALE = 30;
 
   // Per-node float keyframes (SVG units, small deltas so we stay in bounds)
   const FLOAT_KEYFRAMES = [
@@ -130,7 +132,7 @@ function OrbitMap({
   const nodes = useMemo(() => {
     const count = friends.length;
     return friends.map((f, i) => {
-      const norm = Math.min(Math.max(f.score / maxScore, 0), 1);
+      const norm = Math.min(f.score / SCORE_SCALE, 1);
       const ringRadius = maxOrbit - norm * (maxOrbit - minOrbit);
       const baseAngle = count === 1
         ? -Math.PI / 2
