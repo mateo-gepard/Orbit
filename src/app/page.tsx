@@ -443,7 +443,7 @@ function Section({
 }) {
   const { t } = useTranslation();
   return (
-    <div>
+    <div data-slot="section">
       <div className="flex items-center justify-between mb-2 px-1">
         <div className="flex items-center gap-2">
           <Icon className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
@@ -670,7 +670,7 @@ export default function DashboardPage() {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
 
   return (
-    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6 lg:space-y-8">
+    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6 lg:space-y-8" data-slot="page-content">
       {/* ── Header with Date Navigation ── */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">

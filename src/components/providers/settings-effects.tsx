@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 import { useSettingsStore } from '@/lib/settings-store';
+import { useOrbitStore } from '@/lib/store';
+import { updateItem } from '@/lib/firestore';
 
 /**
  * Applies user settings as global CSS classes / variables on the document.
@@ -9,7 +11,7 @@ import { useSettingsStore } from '@/lib/settings-store';
  *
  * Handles: accentColor, compactMode, animationsEnabled,
  *          accessibility.reduceMotion, highContrast, fontSize,
- *          language (html lang attribute)
+ *          language (html lang attribute), autoArchive
  */
 export function SettingsEffects() {
   const settings = useSettingsStore((s) => s.settings);
@@ -62,6 +64,26 @@ export function SettingsEffects() {
     settings.accessibility.fontSize,
     settings.language,
   ]);
+
+  // ── Auto-archive completed items ─────────────────────────
+  const items = useOrbitStore((s) => s.items);
+  const autoArchiveDays = settings.autoArchiveDays;
+
+  useEffect(() => {
+    if (!autoArchiveDays || autoArchiveDays <= 0) return;
+
+    const cutoff = Date.now() - autoArchiveDays * 24 * 60 * 60 * 1000;
+    const toArchive = items.filter(
+      (item) =>
+        item.status === 'done' &&
+        item.updatedAt &&
+        item.updatedAt < cutoff
+    );
+
+    for (const item of toArchive) {
+      updateItem(item.id, { status: 'archived' });
+    }
+  }, [items, autoArchiveDays]);
 
   return null;
 }

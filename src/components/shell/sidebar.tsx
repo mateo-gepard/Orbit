@@ -93,6 +93,9 @@ export function Sidebar() {
   const allTags = getAllTags();
   const showBadges = useSettingsStore((s) => s.settings.showSidebarBadges);
   const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
+  const settingsDisplayName = useSettingsStore((s) => s.settings.displayName);
+  const showProfilePhoto = useSettingsStore((s) => s.settings.privacy.showProfilePhoto);
+  const accentColor = useSettingsStore((s) => s.settings.accentColor);
   const { t } = useTranslation();
   const storeItems = useOrbitStore((s) => s.items);
 
@@ -231,6 +234,8 @@ export function Sidebar() {
                       href={item.href}
                       onClick={() => setSidebarOpen(false)}
                       data-slot="nav-item"
+                      data-active={isActive ? 'true' : undefined}
+                      style={isActive && accentColor ? { color: accentColor, borderColor: accentColor } : undefined}
                       className={cn(
                         'group flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-all',
                         isActive
@@ -243,6 +248,7 @@ export function Sidebar() {
                           'h-[15px] w-[15px] shrink-0 transition-colors',
                           isActive ? 'text-foreground' : 'text-muted-foreground/70'
                         )}
+                        style={isActive && accentColor ? { color: accentColor } : undefined}
                         strokeWidth={isActive ? 2 : 1.5}
                       />
                       <span className="flex-1">{t(item.labelKey)}</span>
@@ -467,15 +473,17 @@ export function Sidebar() {
             {user && (
               <>
                 <div className="flex flex-1 items-center gap-2 min-w-0">
-                  <Avatar className="h-6 w-6 shrink-0">
-                    <AvatarImage src={user.photoURL || undefined} />
-                    <AvatarFallback className="text-[10px] bg-foreground/10">
-                      {user.displayName?.charAt(0) || 'U'}
-                    </AvatarFallback>
-                  </Avatar>
+                  {showProfilePhoto !== false && (
+                    <Avatar className="h-6 w-6 shrink-0">
+                      <AvatarImage src={user.photoURL || undefined} />
+                      <AvatarFallback className="text-[10px] bg-foreground/10">
+                        {(settingsDisplayName || user.displayName)?.charAt(0) || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
                   <div className="flex-1 min-w-0">
                     <span className="block truncate text-[12px] font-medium leading-tight">
-                      {user.displayName || user.email}
+                      {settingsDisplayName || user.displayName || user.email}
                     </span>
                     {isDemo && (
                       <span className="text-[10px] leading-tight text-muted-foreground/70">{t('sidebar.localMode')}</span>

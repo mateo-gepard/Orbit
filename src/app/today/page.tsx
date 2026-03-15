@@ -48,7 +48,7 @@ export default function TodayPage() {
   };
 
   return (
-    <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-3xl mx-auto">
+    <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-3xl mx-auto" data-slot="page-content">
       {/* Header */}
       <div>
         <p className="text-[13px] text-muted-foreground/60">{format(today, 'EEEE', { locale })}</p>

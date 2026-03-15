@@ -109,19 +109,25 @@ function SettingRow({
   description,
   children,
   border = true,
+  comingSoon = false,
 }: {
   label: string;
   description?: string;
   children: React.ReactNode;
   border?: boolean;
+  comingSoon?: boolean;
 }) {
   return (
     <div className={cn(
       'flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4',
-      border && 'border-b border-border/30'
+      border && 'border-b border-border/30',
+      comingSoon && 'opacity-50 pointer-events-none'
     )}>
       <div className="min-w-0">
-        <p className="text-[13px] font-medium text-foreground/90">{label}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-[13px] font-medium text-foreground/90">{label}</p>
+          {comingSoon && <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60 bg-muted/40 px-1.5 py-0.5 rounded-full">soon</span>}
+        </div>
         {description && <p className="text-[11px] text-muted-foreground/50 mt-0.5 leading-relaxed">{description}</p>}
       </div>
       <div className="shrink-0">{children}</div>
@@ -593,7 +599,7 @@ function NotificationsSection({
         {t('settings.reminders')}
       </div>
 
-      <SettingRow label={t('settings.taskReminders')} description={t('settings.taskRemindersDesc')}>
+      <SettingRow label={t('settings.taskReminders')} description={t('settings.taskRemindersDesc')} comingSoon>
         <div className="flex items-center gap-2">
           <Toggle
             checked={settings.notifications.taskReminders}
@@ -611,14 +617,14 @@ function NotificationsSection({
         </div>
       </SettingRow>
 
-      <SettingRow label={t('settings.habitReminders')} description={t('settings.habitRemindersDesc')}>
+      <SettingRow label={t('settings.habitReminders')} description={t('settings.habitRemindersDesc')} comingSoon>
         <Toggle
           checked={settings.notifications.habitReminders}
           onChange={(v) => setNested('notifications', { habitReminders: v })}
         />
       </SettingRow>
 
-      <SettingRow label={t('settings.weeklyReview')} description={t('settings.weeklyReviewDesc')} border={false}>
+      <SettingRow label={t('settings.weeklyReview')} description={t('settings.weeklyReviewDesc')} border={false} comingSoon>
         <div className="flex items-center gap-2">
           <Toggle
             checked={settings.notifications.weeklyReview}
@@ -1112,7 +1118,7 @@ export default function SettingsPage() {
                 />
               </SettingRow>
 
-              <SettingRow label={t('settings.showDeclined')} description={t('settings.showDeclinedDesc')} border={false}>
+              <SettingRow label={t('settings.showDeclined')} description={t('settings.showDeclinedDesc')} border={false} comingSoon>
                 <Toggle
                   checked={settings.calendar.showDeclinedEvents}
                   onChange={(v) => setNested('calendar', { showDeclinedEvents: v })}
@@ -1159,14 +1165,14 @@ export default function SettingsPage() {
             <div>
               <SectionHeader icon={Shield} label={t('settings.privacy')} />
 
-              <SettingRow label={t('settings.analytics')} description={t('settings.analyticsDesc')}>
+              <SettingRow label={t('settings.analytics')} description={t('settings.analyticsDesc')} comingSoon>
                 <Toggle
                   checked={settings.privacy.analyticsEnabled}
                   onChange={(v) => setNested('privacy', { analyticsEnabled: v })}
                 />
               </SettingRow>
 
-              <SettingRow label={t('settings.crashReports')} description={t('settings.crashReportsDesc')}>
+              <SettingRow label={t('settings.crashReports')} description={t('settings.crashReportsDesc')} comingSoon>
                 <Toggle
                   checked={settings.privacy.crashReportsEnabled}
                   onChange={(v) => setNested('privacy', { crashReportsEnabled: v })}
@@ -1325,7 +1331,7 @@ export default function SettingsPage() {
             <div>
               <SectionHeader icon={Database} label={t('settings.dataStorage')} />
 
-              <SettingRow label={t('settings.autoBackup')} description={t('settings.autoBackupDesc')}>
+              <SettingRow label={t('settings.autoBackup')} description={t('settings.autoBackupDesc')} comingSoon>
                 <Toggle
                   checked={settings.data.autoBackup}
                   onChange={(v) => setNested('data', { autoBackup: v })}

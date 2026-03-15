@@ -235,7 +235,7 @@ export default function NotesPage() {
 				</div>
 			)}
 
-			<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto pb-safe">
+		<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto pb-safe" data-slot="page-content">
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-xl font-semibold tracking-tight">{t('nav.notes')}</h1>

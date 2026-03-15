@@ -208,11 +208,15 @@ function getRelativeDayLabel(date: Date, loc: Locale): string | null {
 function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Date; time?: string; onClose: () => void; userId: string; locale: Locale }) {
   const [title, setTitle] = useState('');
   const [type, setType] = useState<'event' | 'task'>('event');
+  const defaultDuration = useSettingsStore((s) => s.settings.calendar.defaultEventDuration);
   const [startTime, setStartTime] = useState(time || '09:00');
   const [endTime, setEndTime] = useState(() => {
-    if (!time) return '10:00';
-    const [h, m] = time.split(':').map(Number);
-    return `${Math.min((h || 0) + 1, 23).toString().padStart(2, '0')}:${(m || 0).toString().padStart(2, '0')}`;
+    const base = time || '09:00';
+    const [h, m] = base.split(':').map(Number);
+    const totalMin = (h || 0) * 60 + (m || 0) + (defaultDuration || 60);
+    const endH = Math.min(Math.floor(totalMin / 60), 23);
+    const endM = totalMin % 60;
+    return `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
   });
   const inputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();

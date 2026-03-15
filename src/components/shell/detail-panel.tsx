@@ -513,7 +513,7 @@ export function DetailPanel() {
       </div>
 
       {/* ── Body ── */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4" data-slot="detail-body">
         {/* Title - Large and prominent */}
         <input
           ref={titleInputRef}

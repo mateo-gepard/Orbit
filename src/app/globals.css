@@ -542,6 +542,29 @@
   --border: oklch(0.6 0 0);
 }
 
+/* Accent color — applied via --accent-color CSS variable from settings */
+:root[style*="--accent-color"] [data-slot="nav-item"].active,
+:root[style*="--accent-color"] [data-slot="nav-item"][data-active="true"] {
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+:root[style*="--accent-color"] [data-slot="checkbox-accent"]:checked {
+  accent-color: var(--accent-color);
+}
+
+:root[style*="--accent-color"] [data-slot="toggle-accent"][data-state="checked"] {
+  background-color: var(--accent-color);
+}
+
+:root[style*="--accent-color"] [data-accent="true"] {
+  color: var(--accent-color);
+}
+
+:root[style*="--accent-color"] [data-accent-bg="true"] {
+  background-color: var(--accent-color);
+}
+
 /* Compact density — tighter spacing throughout */
 [data-density="compact"] .setting-row,
 [data-density="compact"] [data-slot="item-row"] {
@@ -594,9 +617,12 @@
   padding-bottom: 0.25rem;
 }
 
-/* Detail panel fields */
-[data-density="compact"] [data-slot="detail-field"] {
-  margin-bottom: 0.5rem;
+/* Detail panel body */
+[data-density="compact"] [data-slot="detail-body"] {
+  padding: 0.5rem 1rem;
+}
+[data-density="compact"] [data-slot="detail-body"] > * + * {
+  margin-top: 0.5rem;
 }
 
 /* Font size overrides */

@@ -38,7 +38,7 @@ export default function InboxPage() {
   };
 
   return (
-    <div className="p-4 lg:p-8 space-y-5 max-w-3xl mx-auto">
+    <div className="p-4 lg:p-8 space-y-5 max-w-3xl mx-auto" data-slot="page-content">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">{t('nav.inbox')}</h1>
         <p className="text-[13px] text-muted-foreground/60 mt-0.5">

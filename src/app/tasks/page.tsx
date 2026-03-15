@@ -305,7 +305,7 @@ export default function TasksPage() {
   const activeFilters = [tagFilter, priorityFilter].filter(Boolean).length;
 
   return (
-    <div className="p-4 lg:p-8 space-y-4 lg:space-y-5 max-w-3xl mx-auto">
+    <div className="p-4 lg:p-8 space-y-4 lg:space-y-5 max-w-3xl mx-auto" data-slot="page-content">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">

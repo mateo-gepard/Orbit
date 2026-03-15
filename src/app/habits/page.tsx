@@ -68,7 +68,7 @@ export default function HabitsPage() {
   };
 
   return (
-    <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto">
+    <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto" data-slot="page-content">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{t('nav.habits')}</h1>
@@ -357,6 +357,7 @@ export default function HabitsPage() {
               <div
                 key={habit.id}
                 className="grid grid-cols-[1fr_repeat(7,40px)_56px] gap-px items-center px-4 py-2 border-b border-border/30 last:border-0 hover:bg-foreground/[0.02] transition-colors"
+                data-slot="habit-row"
               >
                 <button
                   onClick={() => setSelectedItemId(habit.id)}
