@@ -7,6 +7,7 @@ import { useOrbitStore } from '@/lib/store';
 import { useAbiturStore } from '@/lib/abitur-store';
 import { useToolboxStore } from '@/lib/toolbox-store';
 import { useWishlistStore } from '@/lib/wishlist-store';
+import { useCirclesStore } from '@/lib/circles-store';
 import { useSettingsStore } from '@/lib/settings-store';
 import { subscribeToFlightLogs } from '@/lib/flight';
 import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
@@ -49,10 +50,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       useToolboxStore.getState()._setSyncUserId(null);
       useWishlistStore.getState()._setSyncUserId(null);
       useSettingsStore.getState()._setSyncUserId(null);
+      useCirclesStore.getState()._setSyncUserId(null);
       // Rehydrate persisted stores from localStorage even in demo mode
       useToolboxStore.persist.rehydrate();
       useAbiturStore.persist.rehydrate();
       useWishlistStore.persist.rehydrate();
+      useCirclesStore.persist.rehydrate();
       useSettingsStore.persist.rehydrate();
       // Start briefing scheduler for demo mode too
       startBriefingScheduler(() => useOrbitStore.getState().items);
@@ -69,6 +72,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       useToolboxStore.persist.rehydrate();
       useAbiturStore.persist.rehydrate();
       useWishlistStore.persist.rehydrate();
+      useCirclesStore.persist.rehydrate();
       useSettingsStore.persist.rehydrate();
 
       // Set sync user ID for tag cloud sync
@@ -79,6 +83,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       useAbiturStore.getState()._setSyncUserId(user.uid);
       useToolboxStore.getState()._setSyncUserId(user.uid);
       useWishlistStore.getState()._setSyncUserId(user.uid);
+      useCirclesStore.getState()._setSyncUserId(user.uid);
       useSettingsStore.getState()._setSyncUserId(user.uid);
 
       // Cleanup previous subscriptions
@@ -150,6 +155,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       );
       unsubToolDataRefs.current.push(unsubWishlist);
+
+      // Subscribe to Circles tool data
+      const unsubCircles = subscribeToToolData<{ people: unknown[]; interactions: unknown[]; habitLinks: unknown[] }>(
+        user.uid,
+        'circles',
+        (data) => {
+          if (data) {
+            useCirclesStore.getState()._setFromCloud(data as { people: never[]; interactions: never[]; habitLinks: never[] });
+          }
+        },
+        () => {
+          const { people, interactions, habitLinks } = useCirclesStore.getState();
+          return people.length > 0 ? JSON.parse(JSON.stringify({ people, interactions, habitLinks })) : null;
+        }
+      );
+      unsubToolDataRefs.current.push(unsubCircles);
 
       // Subscribe to Flight Logs — ensures cloud sync even when flight page isn't open
       const unsubFlightLogs = subscribeToFlightLogs(user.uid, () => {

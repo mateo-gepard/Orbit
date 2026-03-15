@@ -7,7 +7,7 @@ import { saveToolData } from './firestore';
 // Tools are high-quality extensions that behave like native tabs.
 // ═══════════════════════════════════════════════════════════
 
-export type ToolId = 'flight' | 'dispatch' | 'briefing' | 'abitur' | 'wishlist';
+export type ToolId = 'flight' | 'dispatch' | 'briefing' | 'abitur' | 'wishlist' | 'circles';
 
 export interface ToolDefinition {
   id: ToolId;
@@ -75,6 +75,17 @@ export const TOOLS: ToolDefinition[] = [
     href: '/tools/wishlist',
     color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-500/10 dark:bg-amber-400/10',
+  },
+  {
+    id: 'circles',
+    name: 'Circles',
+    tagline: 'Your people, drawn closer by gravity.',
+    description:
+      'A relationship gravity map. Add people to your orbit — interactions, shared habits, and nudges pull them closer. The more connected, the closer they orbit.',
+    icon: 'Users',
+    href: '/tools/circles',
+    color: 'text-rose-600 dark:text-rose-400',
+    bgColor: 'bg-rose-500/10 dark:bg-rose-400/10',
   },
 ];
 

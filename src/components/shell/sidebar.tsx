@@ -27,6 +27,7 @@ import {
   GraduationCap,
   Heart,
   Gem,
+  Users,
   Settings,
 } from 'lucide-react';
 import { useToolboxStore, TOOLS, type ToolId } from '@/lib/toolbox-store';
@@ -118,6 +119,7 @@ export function Sidebar() {
     briefing: FileBarChart,
     abitur: GraduationCap,
     wishlist: Gem,
+    circles: Users,
   };
   const enabledToolIds = useToolboxStore((s) => s.enabledTools);
   const enabledTools = useMemo(
