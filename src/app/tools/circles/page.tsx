@@ -13,6 +13,13 @@ import {
   Share2,
   UserPlus,
   Loader2,
+  CalendarDays,
+  FolderOpen,
+  FileText,
+  Target,
+  Repeat,
+  CheckSquare,
+  Link2,
 } from 'lucide-react';
 import {
   useCirclesStore,
@@ -44,6 +51,132 @@ function timeAgo(ts: number): string {
 
 function initial(name: string): string {
   return name.charAt(0).toUpperCase();
+}
+
+function calculateInteractionScore(conn: Connection, myUid: string): number {
+  let score = 0;
+  score += (conn.sharedHabits?.length || 0) * 5;
+  const completions = conn.completions || {};
+  for (const uid of Object.keys(completions)) {
+    for (const habitId of Object.keys(completions[uid])) {
+      score += Object.values(completions[uid][habitId]).filter(Boolean).length * 0.5;
+    }
+  }
+  score += ((conn.linkedItems || []).length) * 3;
+  if ((conn.personNotes?.[myUid] || []).length > 0) score += 2;
+  const activity = conn.activity || {};
+  for (const uid of Object.keys(activity)) {
+    score += (activity[uid]?.length || 0) * 0.5;
+  }
+  if (conn.since) {
+    score += Math.min((Date.now() - conn.since) / 604800000, 20);
+  }
+  return score;
+}
+
+function relativeDate(dateStr: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  if (dateStr === today) return 'Today';
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dateStr === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
+  const diff = Math.floor((Date.now() - new Date(dateStr + 'T12:00:00').getTime()) / 86400000);
+  if (diff < 7) return `${diff}d ago`;
+  return format(new Date(dateStr + 'T12:00:00'), 'MMM d');
+}
+
+const ITEM_TYPE_ICONS: Record<string, typeof CalendarDays> = {
+  event: CalendarDays,
+  project: FolderOpen,
+  note: FileText,
+  goal: Target,
+  habit: Repeat,
+  task: CheckSquare,
+};
+
+// ─── Orbit Map ───────────────────────────────────────────
+
+function OrbitMap({
+  friends,
+  myProfile,
+  selectedId,
+  onSelect,
+}: {
+  friends: { connection: Connection; profile: UserProfile | undefined; score: number }[];
+  myProfile: UserProfile;
+  selectedId: string | null;
+  onSelect: (connectionId: string) => void;
+}) {
+  const size = 400;
+  const cx = size / 2;
+  const cy = size / 2;
+  const rings = [70, 115, 160];
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const maxScore = Math.max(...friends.map((f) => f.score), 1);
+
+  const nodes = useMemo(
+    () =>
+      friends.map((f, i) => {
+        const norm = f.score / maxScore;
+        const radius = 155 - norm * 95;
+        const angle = i * goldenAngle - Math.PI / 2;
+        const nodeR = 19 + norm * 7;
+        return {
+          ...f,
+          x: cx + radius * Math.cos(angle),
+          y: cy + radius * Math.sin(angle),
+          nodeR,
+        };
+      }),
+    [friends, maxScore, cx, cy, goldenAngle],
+  );
+
+  const selected = nodes.find((n) => n.connection.id === selectedId);
+
+  return (
+    <div className="relative w-full max-w-[360px] mx-auto">
+      <svg viewBox={`0 0 ${size} ${size}`} className="w-full" role="img" aria-label="Orbit map">
+        {/* Orbit rings */}
+        {rings.map((r) => (
+          <circle key={r} cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth={0.7} opacity={0.06} strokeDasharray="3 6" />
+        ))}
+        {/* Line to selected */}
+        {selected && (
+          <line x1={cx} y1={cy} x2={selected.x} y2={selected.y} stroke="currentColor" strokeWidth={1} opacity={0.08} strokeDasharray="4 4" />
+        )}
+        {/* Friend nodes */}
+        {nodes.map((n) => {
+          const isSelected = n.connection.id === selectedId;
+          const name = n.profile?.displayName || '?';
+          const firstName = name.split(' ')[0];
+          return (
+            <g key={n.connection.id} onClick={() => onSelect(n.connection.id)} className="cursor-pointer" role="button" tabIndex={0}>
+              <circle cx={n.x} cy={n.y} r={n.nodeR + 10} fill="transparent" />
+              {isSelected && <circle cx={n.x} cy={n.y} r={n.nodeR + 5} fill="none" stroke="currentColor" strokeWidth={1.5} opacity={0.15} />}
+              <circle cx={n.x} cy={n.y} r={n.nodeR} fill="currentColor" opacity={isSelected ? 0.12 : 0.06} />
+              <text x={n.x} y={n.y + 1} textAnchor="middle" dominantBaseline="central" fontSize={n.nodeR * 0.6} fontWeight={600} fill="currentColor" opacity={isSelected ? 0.7 : 0.45}>
+                {name.charAt(0).toUpperCase()}
+              </text>
+              <text x={n.x} y={n.y + n.nodeR + 13} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.3} className="pointer-events-none select-none">
+                {firstName.length > 8 ? firstName.slice(0, 7) + '\u2026' : firstName}
+              </text>
+            </g>
+          );
+        })}
+        {/* Center node */}
+        <circle cx={cx} cy={cy} r={28} fill="currentColor" opacity={0.03} />
+        <circle cx={cx} cy={cy} r={25} fill="currentColor" opacity={0.07} stroke="currentColor" strokeWidth={1} strokeOpacity={0.12} />
+        <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600} fill="currentColor" opacity={0.45}>
+          You
+        </text>
+      </svg>
+      {friends.length === 0 && (
+        <p className="absolute inset-x-0 bottom-4 text-center text-[11px] text-muted-foreground/25">
+          Share your code to grow your orbit
+        </p>
+      )}
+    </div>
+  );
 }
 
 // ─── Friend Code Card ────────────────────────────────────
@@ -227,61 +360,9 @@ function PendingRequests({
   );
 }
 
-// ─── Friend Row ──────────────────────────────────────────
+// ─── Person Detail ───────────────────────────────────────
 
-function FriendRow({
-  connection,
-  myUid,
-  profile,
-  onSelect,
-  onNudge,
-}: {
-  connection: Connection;
-  myUid: string;
-  profile: UserProfile | undefined;
-  onSelect: () => void;
-  onNudge: () => void;
-}) {
-  const sharedCount = (connection.sharedHabits || []).length;
-
-  return (
-    <div
-      onClick={onSelect}
-      className="flex items-center gap-3 rounded-xl px-4 py-3 hover:bg-foreground/[0.03] transition-colors cursor-pointer active:bg-foreground/[0.05]"
-    >
-      <div className="h-10 w-10 rounded-full bg-foreground/[0.07] flex items-center justify-center text-[14px] font-semibold shrink-0 overflow-hidden">
-        {profile?.photoURL ? (
-          <img src={profile.photoURL} alt="" className="h-10 w-10 rounded-full object-cover" />
-        ) : (
-          initial(profile?.displayName || '?')
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium truncate">{profile?.displayName || 'Orbit User'}</p>
-        <p className="text-[11px] text-muted-foreground/40">
-          {sharedCount > 0
-            ? `${sharedCount} shared habit${sharedCount > 1 ? 's' : ''}`
-            : 'No shared habits yet'}
-          {connection.since && ` · since ${format(connection.since, 'MMM yyyy')}`}
-        </p>
-      </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onNudge();
-        }}
-        className="flex items-center justify-center h-8 w-8 rounded-lg bg-foreground/[0.05] hover:bg-foreground/[0.1] transition-colors shrink-0"
-        title="Nudge"
-      >
-        <Hand className="h-3.5 w-3.5 text-muted-foreground/60" />
-      </button>
-    </div>
-  );
-}
-
-// ─── Friend Detail ───────────────────────────────────────
-
-function FriendDetail({
+function PersonDetail({
   connection,
   myUid,
   profile,
@@ -291,6 +372,10 @@ function FriendDetail({
   onShareHabit,
   onUnshareHabit,
   onRemove,
+  onAddNote,
+  onRemoveNote,
+  onLinkItem,
+  onUnlinkItem,
 }: {
   connection: Connection;
   myUid: string;
@@ -301,10 +386,18 @@ function FriendDetail({
   onShareHabit: () => void;
   onUnshareHabit: (habitId: string) => void;
   onRemove: () => void;
+  onAddNote: (note: string) => void;
+  onRemoveNote: (index: number) => void;
+  onLinkItem: () => void;
+  onUnlinkItem: (itemId: string) => void;
 }) {
   const friendUid = connection.users.find((u) => u !== myUid)!;
   const sharedHabits = connection.sharedHabits || [];
   const completions = connection.completions || {};
+  const myNotes = connection.personNotes?.[myUid] || [];
+  const friendActivity = (connection.activity?.[friendUid] || []).slice(0, 15);
+  const linkedItems = connection.linkedItems || [];
+  const [noteInput, setNoteInput] = useState('');
 
   // Build last 7 days
   const last7 = useMemo(() => {
@@ -347,6 +440,60 @@ function FriendDetail({
               <p className="text-[11px] text-muted-foreground/40 mt-0.5">
                 Connected since {format(connection.since, 'MMMM yyyy')}
               </p>
+            )}
+          </div>
+
+          {/* Quick Notes */}
+          <div>
+            <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2">Notes</p>
+            {myNotes.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {myNotes.map((note, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.05] px-2.5 py-1 text-[11px]">
+                    {note}
+                    <button onClick={() => onRemoveNote(i)} className="text-muted-foreground/30 hover:text-muted-foreground ml-0.5">
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-1.5">
+              <input
+                value={noteInput}
+                onChange={(e) => setNoteInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && noteInput.trim()) { onAddNote(noteInput.trim()); setNoteInput(''); } }}
+                placeholder="Add a note..."
+                className="flex-1 rounded-lg border border-border/30 bg-background/50 px-2.5 py-1.5 text-[12px] outline-none focus:ring-1 focus:ring-foreground/20"
+                maxLength={100}
+              />
+              <button
+                onClick={() => { if (noteInput.trim()) { onAddNote(noteInput.trim()); setNoteInput(''); } }}
+                disabled={!noteInput.trim()}
+                className="rounded-lg bg-foreground/[0.06] px-2.5 py-1.5 hover:bg-foreground/[0.1] transition-colors disabled:opacity-30"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Their Activity */}
+          <div>
+            <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2">
+              {profile?.displayName?.split(' ')[0]}&apos;s Activity
+            </p>
+            {friendActivity.length === 0 ? (
+              <p className="text-[12px] text-muted-foreground/30 py-2">No recent activity yet. Nudge them!</p>
+            ) : (
+              <div className="space-y-1">
+                {friendActivity.map((a, i) => (
+                  <div key={i} className="flex items-center gap-2 py-1">
+                    <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', a.type === 'habit_done' ? 'bg-foreground/40' : 'bg-foreground/25')} />
+                    <span className="text-[12px] truncate flex-1">{a.title}</span>
+                    <span className="text-[10px] text-muted-foreground/30 shrink-0">{relativeDate(a.date)}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
@@ -444,6 +591,38 @@ function FriendDetail({
                             {last7.filter((d) => theirCompletions[d]).length}/7
                           </span>
                         </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Linked Items */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">Linked Items</p>
+              <button onClick={onLinkItem} className="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors flex items-center gap-1">
+                <Plus className="h-3 w-3" /> Link
+              </button>
+            </div>
+            {linkedItems.length === 0 ? (
+              <p className="text-[12px] text-muted-foreground/30 py-2">Link events, projects, or notes.</p>
+            ) : (
+              <div className="space-y-1">
+                {linkedItems.map((li) => {
+                  const Icon = ITEM_TYPE_ICONS[li.itemType] || FileText;
+                  const isMine = li.ownerUid === myUid;
+                  return (
+                    <div key={`${li.ownerUid}-${li.itemId}`} className="flex items-center gap-2.5 py-1.5 rounded-lg px-2">
+                      <Icon className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                      <span className="text-[12px] truncate flex-1">{li.itemTitle}</span>
+                      {!isMine && <span className="text-[10px] text-muted-foreground/30">{profile?.displayName?.split(' ')[0]}</span>}
+                      {isMine && (
+                        <button onClick={() => onUnlinkItem(li.itemId)} className="text-muted-foreground/30 hover:text-destructive">
+                          <X className="h-3 w-3" />
+                        </button>
                       )}
                     </div>
                   );
@@ -630,6 +809,68 @@ function ShareHabitPicker({
   );
 }
 
+// ─── Link Item Picker ────────────────────────────────────
+
+function LinkItemPicker({
+  connectionId,
+  existingItemIds,
+  items,
+  onLink,
+  onClose,
+}: {
+  connectionId: string;
+  existingItemIds: string[];
+  items: { id: string; title: string; type: string }[];
+  onLink: (connectionId: string, itemId: string, title: string, type: string) => void;
+  onClose: () => void;
+}) {
+  const available = items.filter((i) => !existingItemIds.includes(i.id));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full sm:w-[400px] bg-card border border-border/50 shadow-2xl rounded-t-2xl sm:rounded-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+          <span className="text-[13px] font-semibold">Link an Item</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="max-h-[50vh] overflow-y-auto">
+          {available.length === 0 ? (
+            <p className="px-4 py-8 text-center text-[12px] text-muted-foreground/40">
+              {items.length === 0 ? 'No items to link.' : 'All items are already linked.'}
+            </p>
+          ) : (
+            <div className="py-1">
+              {available.map((item) => {
+                const Icon = ITEM_TYPE_ICONS[item.type] || FileText;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      onLink(connectionId, item.id, item.title, item.type);
+                      onClose();
+                    }}
+                    className="w-full text-left px-4 py-3 hover:bg-foreground/[0.04] transition-colors flex items-center gap-3"
+                  >
+                    <Icon className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+                    <span className="text-[13px] truncate">{item.title}</span>
+                    <span className="text-[10px] text-muted-foreground/30 ml-auto">{item.type}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 // Main Page
 // ═══════════════════════════════════════════════════════════
@@ -650,12 +891,18 @@ export default function CirclesPage() {
   const unshareHabit = useCirclesStore((s) => s.unshareHabit);
   const syncMyCompletions = useCirclesStore((s) => s.syncMyCompletions);
   const dismissNudge = useCirclesStore((s) => s.dismissNudge);
+  const addNote = useCirclesStore((s) => s.addNote);
+  const removeNote = useCirclesStore((s) => s.removeNote);
+  const syncMyActivity = useCirclesStore((s) => s.syncMyActivity);
+  const linkItem = useCirclesStore((s) => s.linkItem);
+  const unlinkItem = useCirclesStore((s) => s.unlinkItem);
 
   const items = useOrbitStore((s) => s.items);
 
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [shareForConnId, setShareForConnId] = useState<string | null>(null);
+  const [linkForConnId, setLinkForConnId] = useState<string | null>(null);
 
   const pending = useMemo(() => connections.filter((c) => c.status === 'pending'), [connections]);
   const accepted = useMemo(() => connections.filter((c) => c.status === 'accepted'), [connections]);
@@ -674,12 +921,40 @@ export default function CirclesPage() {
     [items],
   );
 
-  // Sync completions on mount and when habits change
+  const linkableItems = useMemo(
+    () => items
+      .filter((i) => ['event', 'project', 'note', 'goal'].includes(i.type) && i.status === 'active')
+      .map((i) => ({ id: i.id, title: i.title, type: i.type })),
+    [items],
+  );
+
+  const scoredFriends = useMemo(() => {
+    if (!myProfile) return [];
+    return accepted.map((conn) => {
+      const friendUid = conn.users.find((u) => u !== myProfile.uid)!;
+      return {
+        connection: conn,
+        profile: friendProfiles[friendUid],
+        score: calculateInteractionScore(conn, myProfile.uid),
+      };
+    }).sort((a, b) => b.score - a.score);
+  }, [accepted, friendProfiles, myProfile]);
+
+  // Sync completions when habits change
   useEffect(() => {
     if (myProfile && accepted.length > 0) {
       syncMyCompletions(myItems);
     }
   }, [myProfile, accepted.length, myItems, syncMyCompletions]);
+
+  // Sync activity feed once on page load
+  const activitySyncedRef = useRef(false);
+  useEffect(() => {
+    if (!activitySyncedRef.current && myProfile && accepted.length > 0) {
+      activitySyncedRef.current = true;
+      syncMyActivity(items.map((i) => ({ type: i.type, title: i.title, status: i.status, completions: i.completions, completedAt: i.completedAt })));
+    }
+  }, [myProfile, accepted.length, items, syncMyActivity]);
 
   // Demo mode
   if (isDemo) {
@@ -712,6 +987,16 @@ export default function CirclesPage() {
         </Button>
       </div>
 
+      {/* Orbital Visualization */}
+      {myProfile && (
+        <OrbitMap
+          friends={scoredFriends}
+          myProfile={myProfile}
+          selectedId={selectedConnId}
+          onSelect={(id) => setSelectedConnId(selectedConnId === id ? null : id)}
+        />
+      )}
+
       {/* Friend Code */}
       {myProfile?.friendCode && <FriendCodeCard code={myProfile.friendCode} />}
 
@@ -729,36 +1014,9 @@ export default function CirclesPage() {
         />
       )}
 
-      {/* Friends List */}
-      {accepted.length > 0 && myProfile && (
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-1 px-1">
-            In Orbit
-          </p>
-          <div className="space-y-0.5">
-            {accepted.map((conn) => {
-              const friendUid = conn.users.find((u) => u !== myProfile.uid)!;
-              return (
-                <FriendRow
-                  key={conn.id}
-                  connection={conn}
-                  myUid={myProfile.uid}
-                  profile={friendProfiles[friendUid]}
-                  onSelect={() => setSelectedConnId(conn.id)}
-                  onNudge={() => {
-                    nudgeFriend(conn.id);
-                    toast.success('Nudge sent');
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Empty state */}
       {!loading && accepted.length === 0 && pending.length === 0 && (
-        <div className="text-center py-12">
+        <div className="text-center py-6">
           <UserPlus className="h-10 w-10 text-muted-foreground/15 mx-auto mb-3" />
           <p className="text-[13px] text-muted-foreground/40">No friends yet</p>
           <p className="text-[11px] text-muted-foreground/25 mt-1">
@@ -773,9 +1031,9 @@ export default function CirclesPage() {
         </div>
       )}
 
-      {/* Friend Detail Sheet */}
+      {/* Person Detail Panel */}
       {selectedConn && selectedConn.status === 'accepted' && myProfile && (
-        <FriendDetail
+        <PersonDetail
           connection={selectedConn}
           myUid={myProfile.uid}
           profile={friendProfiles[selectedConn.users.find((u) => u !== myProfile.uid)!]}
@@ -793,6 +1051,10 @@ export default function CirclesPage() {
               setSelectedConnId(null);
             }
           }}
+          onAddNote={(note) => addNote(selectedConn.id, note)}
+          onRemoveNote={(index) => removeNote(selectedConn.id, index)}
+          onLinkItem={() => setLinkForConnId(selectedConn.id)}
+          onUnlinkItem={(itemId) => unlinkItem(selectedConn.id, itemId)}
         />
       )}
 
@@ -817,6 +1079,21 @@ export default function CirclesPage() {
           myHabits={myHabits}
           onShare={shareHabit}
           onClose={() => setShareForConnId(null)}
+        />
+      )}
+
+      {/* Link Item Picker */}
+      {linkForConnId && myProfile && (
+        <LinkItemPicker
+          connectionId={linkForConnId}
+          existingItemIds={
+            (connections.find((c) => c.id === linkForConnId)?.linkedItems || [])
+              .filter((l) => l.ownerUid === myProfile.uid)
+              .map((l) => l.itemId)
+          }
+          items={linkableItems}
+          onLink={linkItem}
+          onClose={() => setLinkForConnId(null)}
         />
       )}
     </div>

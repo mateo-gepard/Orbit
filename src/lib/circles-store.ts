@@ -4,6 +4,8 @@ import {
   type Connection,
   type Nudge,
   type SharedHabit,
+  type ActivityEntry,
+  type LinkedItem,
   ensureUserProfile,
   lookupUserByCode,
   getUserProfile,
@@ -18,10 +20,15 @@ import {
   subscribeToConnections,
   subscribeToNudges,
   markNudgeRead as markRead,
+  addPersonNote as addNoteFn,
+  removePersonNote as removeNoteFn,
+  syncActivity as syncActivityFn,
+  addLinkedItem as addLinkedFn,
+  removeLinkedItem as removeLinkedFn,
 } from './circles';
 
 // Re-export types the page needs
-export type { UserProfile, Connection, Nudge, SharedHabit };
+export type { UserProfile, Connection, Nudge, SharedHabit, ActivityEntry, LinkedItem };
 export { formatFriendCode } from './circles';
 
 // ═══════════════════════════════════════════════════════════
@@ -44,7 +51,12 @@ interface CirclesState {
   shareHabit: (connectionId: string, habitId: string, habitTitle: string) => Promise<void>;
   unshareHabit: (connectionId: string, habitId: string) => Promise<void>;
   syncMyCompletions: (items: { id: string; completions?: Record<string, boolean> }[]) => Promise<void>;
+  syncMyActivity: (items: { type: string; title: string; status: string; completions?: Record<string, boolean>; completedAt?: number }[]) => Promise<void>;
   dismissNudge: (nudgeId: string) => Promise<void>;
+  addNote: (connectionId: string, note: string) => Promise<void>;
+  removeNote: (connectionId: string, noteIndex: number) => Promise<void>;
+  linkItem: (connectionId: string, itemId: string, title: string, type: string) => Promise<void>;
+  unlinkItem: (connectionId: string, itemId: string) => Promise<void>;
 
   // Lifecycle (called by data-provider)
   _setSyncUserId: (
@@ -175,6 +187,85 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
       await markRead(nudgeId);
     } catch (err) {
       console.error('[ORBIT] Circles: dismiss nudge failed:', err);
+    }
+  },
+
+  // ─── Person Notes ───────────────────────────────────
+  addNote: async (connectionId, note) => {
+    const me = get().myProfile;
+    if (!me) return;
+    try {
+      await addNoteFn(connectionId, me.uid, note);
+    } catch (err) {
+      console.error('[ORBIT] Circles: add note failed:', err);
+    }
+  },
+
+  removeNote: async (connectionId, noteIndex) => {
+    const me = get().myProfile;
+    if (!me) return;
+    try {
+      await removeNoteFn(connectionId, me.uid, noteIndex);
+    } catch (err) {
+      console.error('[ORBIT] Circles: remove note failed:', err);
+    }
+  },
+
+  // ─── Activity Sync ───────────────────────────────────
+  syncMyActivity: async (items) => {
+    const me = get().myProfile;
+    if (!me) return;
+    const accepted = get().connections.filter((c) => c.status === 'accepted');
+    if (accepted.length === 0) return;
+
+    const entries: ActivityEntry[] = [];
+    const now = new Date();
+    const cutoff = now.getTime() - 7 * 86400000;
+
+    for (const item of items) {
+      if (item.type === 'task' && item.status === 'done' && item.completedAt && item.completedAt > cutoff) {
+        entries.push({ type: 'task_done', title: item.title, date: new Date(item.completedAt).toISOString().slice(0, 10) });
+      }
+      if (item.type === 'habit' && item.completions) {
+        for (let d = 0; d < 7; d++) {
+          const dt = new Date(now);
+          dt.setDate(dt.getDate() - d);
+          const dateStr = dt.toISOString().slice(0, 10);
+          if (item.completions[dateStr]) {
+            entries.push({ type: 'habit_done', title: item.title, date: dateStr });
+          }
+        }
+      }
+    }
+
+    entries.sort((a, b) => b.date.localeCompare(a.date));
+    const capped = entries.slice(0, 20);
+
+    for (const conn of accepted) {
+      try {
+        await syncActivityFn(conn.id, me.uid, capped);
+      } catch { /* non-critical */ }
+    }
+  },
+
+  // ─── Linked Items ────────────────────────────────────
+  linkItem: async (connectionId, itemId, title, type) => {
+    const me = get().myProfile;
+    if (!me) return;
+    try {
+      await addLinkedFn(connectionId, { ownerUid: me.uid, itemId, itemTitle: title, itemType: type });
+    } catch (err) {
+      console.error('[ORBIT] Circles: link item failed:', err);
+    }
+  },
+
+  unlinkItem: async (connectionId, itemId) => {
+    const me = get().myProfile;
+    if (!me) return;
+    try {
+      await removeLinkedFn(connectionId, itemId, me.uid);
+    } catch (err) {
+      console.error('[ORBIT] Circles: unlink item failed:', err);
     }
   },
 

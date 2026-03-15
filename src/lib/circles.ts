@@ -39,6 +39,9 @@ export interface Connection {
   sharedHabits: SharedHabit[];
   // completions[uid][habitId][date] = true
   completions: Record<string, Record<string, Record<string, boolean>>>;
+  personNotes: Record<string, string[]>;
+  activity: Record<string, ActivityEntry[]>;
+  linkedItems: LinkedItem[];
 }
 
 export interface SharedHabit {
@@ -54,6 +57,19 @@ export interface Nudge {
   connectionId: string;
   read: boolean;
   createdAt: number;
+}
+
+export interface ActivityEntry {
+  type: 'habit_done' | 'task_done';
+  title: string;
+  date: string;
+}
+
+export interface LinkedItem {
+  ownerUid: string;
+  itemId: string;
+  itemTitle: string;
+  itemType: string;
 }
 
 // ─── Helpers ───────────────────────────────────────────────
@@ -275,4 +291,66 @@ export function subscribeToNudges(
 export async function markNudgeRead(nudgeId: string): Promise<void> {
   if (!ok() || !db) return;
   await updateDoc(doc(db, 'nudges', nudgeId), { read: true });
+}
+
+// ─── Person Notes ──────────────────────────────────────────
+
+export async function addPersonNote(connectionId: string, uid: string, note: string): Promise<void> {
+  if (!ok() || !db) return;
+  const ref = doc(db, 'connections', connectionId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  const notes = data.personNotes?.[uid] || [];
+  await updateDoc(ref, { [`personNotes.${uid}`]: [...notes, note] });
+}
+
+export async function removePersonNote(connectionId: string, uid: string, index: number): Promise<void> {
+  if (!ok() || !db) return;
+  const ref = doc(db, 'connections', connectionId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  const notes = [...(data.personNotes?.[uid] || [])];
+  notes.splice(index, 1);
+  await updateDoc(ref, { [`personNotes.${uid}`]: notes });
+}
+
+// ─── Activity Sync ─────────────────────────────────────────
+
+export async function syncActivity(
+  connectionId: string,
+  uid: string,
+  entries: ActivityEntry[],
+): Promise<void> {
+  if (!ok() || !db) return;
+  await updateDoc(doc(db, 'connections', connectionId), {
+    [`activity.${uid}`]: entries.slice(0, 20),
+  });
+}
+
+// ─── Linked Items ──────────────────────────────────────────
+
+export async function addLinkedItem(connectionId: string, item: LinkedItem): Promise<void> {
+  if (!ok() || !db) return;
+  const ref = doc(db, 'connections', connectionId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data() as Connection;
+  const existing = data.linkedItems || [];
+  if (existing.some((l) => l.itemId === item.itemId && l.ownerUid === item.ownerUid)) return;
+  await updateDoc(ref, { linkedItems: [...existing, item] });
+}
+
+export async function removeLinkedItem(connectionId: string, itemId: string, ownerUid: string): Promise<void> {
+  if (!ok() || !db) return;
+  const ref = doc(db, 'connections', connectionId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data() as Connection;
+  await updateDoc(ref, {
+    linkedItems: (data.linkedItems || []).filter(
+      (l) => !(l.itemId === itemId && l.ownerUid === ownerUid),
+    ),
+  });
 }
