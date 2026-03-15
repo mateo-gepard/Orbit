@@ -145,7 +145,7 @@ function OrbitMap({
       const floatKf = FLOAT_KEYFRAMES[i % FLOAT_KEYFRAMES.length];
       return { ...f, nx, ny, nodeR, color, floatDur, floatKf };
     });
-  }, [friends, maxScore]);
+  }, [friends]);
 
   return (
     <div className="relative w-full max-w-[340px] mx-auto">
