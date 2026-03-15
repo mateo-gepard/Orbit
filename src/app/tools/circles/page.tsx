@@ -111,8 +111,8 @@ function OrbitMap({
   const size = 500;
   const cx = size / 2;
   const cy = size / 2;
-  // Safe bounds: cx(250) - nodeR_max(30) - label(18) - glow(6) - pad(16) = 180
-  const rings = [65, 110, 150];
+  // Safe bounds: cx(250) - nodeR_max(30) - label(14) - float(4) - pad(12) = 200; keep rings well inside
+  const rings = [55, 85, 110];
   const maxOrbit = rings[2]; // outermost orbit radius
   const minOrbit = rings[0]; // innermost orbit radius
   const maxScore = Math.max(...friends.map((f) => f.score), 1);
@@ -149,10 +149,10 @@ function OrbitMap({
     <div className="relative w-full max-w-[400px] mx-auto overflow-hidden">
       {/* CSS keyframes for gentle float */}
       <style>{`
-        @keyframes orbit-float-0 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(6px,-4px); } 50% { transform: translate(-3px,-7px); } 75% { transform: translate(-6px,3px); } }
-        @keyframes orbit-float-1 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-5px,5px); } 50% { transform: translate(4px,7px); } 75% { transform: translate(6px,-4px); } }
-        @keyframes orbit-float-2 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(7px,3px); } 50% { transform: translate(-5px,5px); } 75% { transform: translate(3px,-6px); } }
-        @keyframes orbit-float-3 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-4px,-6px); } 50% { transform: translate(6px,4px); } 75% { transform: translate(-7px,2px); } }
+        @keyframes orbit-float-0 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(3px,-2px); } 50% { transform: translate(-2px,-4px); } 75% { transform: translate(-3px,2px); } }
+        @keyframes orbit-float-1 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-3px,3px); } 50% { transform: translate(2px,4px); } 75% { transform: translate(3px,-2px); } }
+        @keyframes orbit-float-2 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(4px,2px); } 50% { transform: translate(-3px,3px); } 75% { transform: translate(2px,-3px); } }
+        @keyframes orbit-float-3 { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-2px,-3px); } 50% { transform: translate(3px,2px); } 75% { transform: translate(-4px,1px); } }
       `}</style>
       <svg viewBox={`0 0 ${size} ${size}`} className="w-full" overflow="hidden" role="img" aria-label="Orbit map">
         <defs>
