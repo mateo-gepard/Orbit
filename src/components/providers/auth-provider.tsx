@@ -11,6 +11,7 @@ import {
   sendSignInLinkToEmail,
   isSignInWithEmailLink,
   signInWithEmailLink,
+  sendPasswordResetEmail,
   deleteUser as firebaseDeleteUser,
   type User,
   type IdTokenResult,
@@ -31,6 +32,7 @@ interface AuthContextType {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
   sendEmailLink: (email: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   isDemo: boolean;
@@ -43,6 +45,7 @@ const AuthContext = createContext<AuthContextType>({
   signInWithEmail: async () => {},
   signUpWithEmail: async () => {},
   sendEmailLink: async () => {},
+  resetPassword: async () => {},
   deleteAccount: async () => {},
   signOut: async () => {},
   isDemo: false,
@@ -176,6 +179,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     console.info('[ORBIT Auth] Email link sent to', email);
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    if (!auth) throw new Error('Firebase not available');
+    await sendPasswordResetEmail(auth, email);
+    console.info('[ORBIT Auth] Password reset email sent to', email);
+  }, []);
+
   // Handle email link completion when user returns to the app
   useEffect(() => {
     if (!auth) return;
@@ -238,7 +247,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isDemo]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink: sendEmailLinkFn, deleteAccount, signOut, isDemo }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink: sendEmailLinkFn, resetPassword, deleteAccount, signOut, isDemo }}>
       {children}
     </AuthContext.Provider>
   );

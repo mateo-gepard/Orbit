@@ -45,13 +45,14 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 
 /* ── Login ── */
-function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }: {
+function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, onResetPassword }: {
   onSignIn: () => void;
   onEmailSignIn: (email: string, password: string) => Promise<void>;
   onEmailSignUp: (email: string, password: string, displayName?: string) => Promise<void>;
   onSendEmailLink: (email: string) => Promise<void>;
+  onResetPassword: (email: string) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<'choice' | 'login' | 'signup' | 'email-link' | 'email-link-sent'>('choice');
+  const [mode, setMode] = useState<'choice' | 'login' | 'signup' | 'email-link' | 'email-link-sent' | 'reset-password' | 'reset-sent'>('choice');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -117,6 +118,8 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
             {mode === 'signup' ? t('login.createAccount')
               : mode === 'email-link' ? t('login.signInEmailLink')
               : mode === 'email-link-sent' ? t('login.checkInbox')
+              : mode === 'reset-password' ? t('login.resetPassword')
+              : mode === 'reset-sent' ? t('login.resetLinkSent')
               : t('login.welcome')}
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
@@ -126,6 +129,10 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
               ? t('login.emailLinkDesc')
               : mode === 'email-link-sent'
               ? t('login.checkInboxFor').replace('{email}', email)
+              : mode === 'reset-password'
+              ? t('login.resetPasswordDesc')
+              : mode === 'reset-sent'
+              ? t('login.resetLinkSentDesc')
               : t('login.tagline')}
           </p>
         </div>
@@ -236,6 +243,72 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
               </button>
             </div>
           </form>
+        ) : mode === 'reset-password' ? (
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            setError('');
+            setSubmitting(true);
+            try {
+              await onResetPassword(email);
+              setMode('reset-sent');
+            } catch (err: unknown) {
+              const code = (err as { code?: string })?.code || '';
+              setError(firebaseErrorMessage(code));
+            } finally {
+              setSubmitting(false);
+            }
+          }} className="space-y-3">
+            <input
+              type="email"
+              placeholder={t('login.emailPlaceholder')}
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(''); }}
+              required
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
+              autoComplete="email"
+              autoFocus
+            />
+            {error && (
+              <p className="text-[12px] text-destructive font-medium px-1">{error}</p>
+            )}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+            >
+              {submitting ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+              ) : (
+                t('login.sendResetLink')
+              )}
+            </button>
+            <div className="flex items-center justify-center pt-1">
+              <button
+                type="button"
+                onClick={() => { setMode('login'); setError(''); }}
+                className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
+              >
+                {t('login.back')}
+              </button>
+            </div>
+          </form>
+        ) : mode === 'reset-sent' ? (
+          <div className="space-y-4 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.06]">
+              <svg className="h-5 w-5 text-foreground/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+              </svg>
+            </div>
+            <p className="text-[13px] text-muted-foreground">
+              {t('login.resetLinkSentDesc')}
+            </p>
+            <button
+              onClick={() => { setMode('login'); setEmail(''); setError(''); }}
+              className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
+            >
+              {t('login.backToLogin')}
+            </button>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
@@ -295,13 +368,24 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink }
               >
                 {t('login.back')}
               </button>
-              <button
-                type="button"
-                onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
-                className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
-              >
-                {mode === 'login' ? t('login.dontHaveAccount') : t('login.alreadyHaveAccount')}
-              </button>
+              <div className="flex items-center gap-3">
+                {mode === 'login' && (
+                  <button
+                    type="button"
+                    onClick={() => { setMode('reset-password'); setError(''); }}
+                    className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
+                  >
+                    {t('login.forgotPassword')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
+                  className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
+                >
+                  {mode === 'login' ? t('login.dontHaveAccount') : t('login.alreadyHaveAccount')}
+                </button>
+              </div>
             </div>
           </form>
         )}
@@ -444,7 +528,7 @@ function HockeyQuote() {
 
 /* ── Dashboard ── */
 export default function DashboardPage() {
-  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink } = useAuth();
+  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink, resetPassword } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const defaultView = useSettingsStore((s) => s.settings.defaultView);
   const { weekStart: weekStartSetting, language, dateFormat } = useSettingsStore((s) => s.settings);
@@ -549,7 +633,7 @@ export default function DashboardPage() {
   }
 
   if (!user) {
-    return <LoginScreen onSignIn={signInWithGoogle} onEmailSignIn={signInWithEmail} onEmailSignUp={signUpWithEmail} onSendEmailLink={sendEmailLink} />;
+    return <LoginScreen onSignIn={signInWithGoogle} onEmailSignIn={signInWithEmail} onEmailSignUp={signUpWithEmail} onSendEmailLink={sendEmailLink} onResetPassword={resetPassword} />;
   }
 
   // Show onboarding if empty

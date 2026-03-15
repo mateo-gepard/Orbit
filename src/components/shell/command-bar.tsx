@@ -22,6 +22,7 @@ import type { ItemType, NoteSubtype, OrbitItem } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n';
+import { toast } from 'sonner';
 
 const TYPE_ICONS: Record<ItemType, typeof CheckSquare> = {
   task: CheckSquare,
@@ -278,7 +279,7 @@ export function CommandBar() {
       setResolvedLink(null);
       setCommandBarOpen(false);
     } catch {
-      // Item still appears via optimistic update
+      toast.error('Failed to create item');
     }
   };
 

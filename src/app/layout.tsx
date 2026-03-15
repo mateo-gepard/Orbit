@@ -30,6 +30,21 @@ export const metadata: Metadata = {
   title: "ORBIT — Personal Productivity OS",
   description: "One system, one dashboard, everything connected.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
+  openGraph: {
+    title: "ORBIT — Personal Productivity OS",
+    description: "One system, one dashboard, everything connected.",
+    siteName: "ORBIT",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "ORBIT — Personal Productivity OS",
+    description: "One system, one dashboard, everything connected.",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

@@ -717,6 +717,12 @@ const en = {
   'login.emailLinkSentDesc': 'Open the link in the email to sign in. You can close this tab.',
   'login.emailLinkSentNote': 'The sign-in link expires after a short time.',
   'login.checkInboxFor': 'We sent a sign-in link to {email}. Click the link in the email to sign in.',
+  'login.forgotPassword': 'Forgot password?',
+  'login.resetPassword': 'Reset Password',
+  'login.resetPasswordDesc': 'Enter your email and we\'ll send a password reset link.',
+  'login.sendResetLink': 'Send Reset Link',
+  'login.resetLinkSent': 'Reset link sent! Check your email.',
+  'login.resetLinkSentDesc': 'Open the link in the email to reset your password.',
 } as const;
 
 // ── German ─────────────────────────────────────────────────
@@ -1181,6 +1187,12 @@ const de: Record<TranslationKey, string> = {
   'login.emailLinkSentDesc': 'Öffnen Sie den Link in der E-Mail, um sich anzumelden. Sie können diesen Tab schließen.',
   'login.emailLinkSentNote': 'Der Anmelde-Link läuft nach kurzer Zeit ab.',
   'login.checkInboxFor': 'Wir haben einen Anmelde-Link an {email} gesendet. Klicken Sie auf den Link in der E-Mail.',
+  'login.forgotPassword': 'Passwort vergessen?',
+  'login.resetPassword': 'Passwort zurücksetzen',
+  'login.resetPasswordDesc': 'Gib deine E-Mail ein und wir senden dir einen Link zum Zurücksetzen.',
+  'login.sendResetLink': 'Link senden',
+  'login.resetLinkSent': 'Link gesendet! Prüfe deine E-Mail.',
+  'login.resetLinkSentDesc': 'Öffne den Link in der E-Mail, um dein Passwort zurückzusetzen.',
 };
 
 // ── Translation map ────────────────────────────────────────

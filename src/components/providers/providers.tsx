@@ -7,6 +7,7 @@ import { DataProvider } from './data-provider';
 import { PWAProvider } from './pwa-provider';
 import { SettingsEffects } from './settings-effects';
 import { AppShell } from '@/components/shell/app-shell';
+import { Toaster } from '@/components/ui/sonner';
 
 // ── Error Boundary ──
 interface ErrorBoundaryProps {
@@ -74,6 +75,7 @@ export function Providers({ children }: { children: ReactNode }) {
             <DataProvider>
               <SettingsEffects />
               <AppShell>{children}</AppShell>
+              <Toaster />
             </DataProvider>
           </AuthProvider>
         </PWAProvider>

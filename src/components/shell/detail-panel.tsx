@@ -41,6 +41,7 @@ import { calculateStreak } from '@/lib/habits';
 import { cn, formatTimestamp, fullTimestampPattern, getLocale } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useTranslation } from '@/lib/i18n';
+import { toast } from 'sonner';
 
 const STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
 const STATUS_DESCRIPTIONS: Record<ItemStatus, string> = {
@@ -144,7 +145,7 @@ export function DetailPanel() {
         calendarSynced: true 
       });
     } catch {
-      alert('Failed to sync with Google Calendar.');
+      toast.error('Failed to sync with Google Calendar');
     } finally {
       setSyncingCalendar(false);
     }
@@ -280,6 +281,7 @@ export function DetailPanel() {
           {(item.type === 'task' || item.type === 'habit') && (
             <button
               onClick={handleComplete}
+              aria-label={item.status === 'done' ? 'Mark as incomplete' : 'Mark as complete'}
               className={cn(
                 'relative flex h-5 w-5 items-center justify-center rounded-full border-2 transition-all',
                 'before:absolute before:inset-[-6px]',
@@ -499,12 +501,12 @@ export function DetailPanel() {
           </DropdownMenu>
           
           {/* Close button - Desktop only */}
-          <button onClick={() => setDetailPanelOpen(false)} className="hidden lg:flex rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+          <button onClick={() => setDetailPanelOpen(false)} aria-label="Close detail panel" className="hidden lg:flex rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
             <X className="h-4 w-4" />
           </button>
           
           {/* Close button - Mobile only */}
-          <button onClick={() => setDetailPanelOpen(false)} className="lg:hidden rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+          <button onClick={() => setDetailPanelOpen(false)} aria-label="Close detail panel" className="lg:hidden rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>

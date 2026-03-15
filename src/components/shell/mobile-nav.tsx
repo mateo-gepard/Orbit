@@ -33,6 +33,7 @@ export function MobileNav() {
       {/* Floating Action Button */}
       <button
         onClick={() => setCommandBarOpen(true)}
+        aria-label="Create new item"
         className={cn(
           'lg:hidden',
           'flex h-14 w-14 items-center justify-center',
@@ -77,6 +78,7 @@ export function MobileNav() {
               <Link
                 key={tab.href}
                 href={tab.href}
+                aria-label={t(tab.labelKey)}
                 className={cn(
                   'relative flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-all duration-200',
                   'active:scale-90',
