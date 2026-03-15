@@ -60,20 +60,28 @@ export default function ProjectsPage() {
     });
   };
 
+  const getProjectMilestones = (projectId: string) => {
+    return items.filter((i) => i.parentId === projectId && i.type === "goal");
+  };
+
+  // Collect all tasks: direct children + tasks under milestones
+  const getAllProjectTasks = (projectId: string) => {
+    const direct = items.filter((i) => i.parentId === projectId && i.type === "task");
+    const milestoneIds = new Set(getProjectMilestones(projectId).map((m) => m.id));
+    const nested = milestoneIds.size > 0
+      ? items.filter((i) => i.type === "task" && milestoneIds.has(i.parentId!))
+      : [];
+    return [...direct, ...nested];
+  };
+
   const getProjectStats = (projectId: string) => {
-    const tasks = items.filter(
-      (i) => i.parentId === projectId && i.type === "task",
-    );
+    const tasks = getAllProjectTasks(projectId);
     const total = tasks.length;
     const done = tasks.filter((i) => i.status === "done").length;
     const inProgress = tasks.filter((i) => i.status === "active").length;
     const waiting = tasks.filter((i) => i.status === "waiting").length;
     const progress = total > 0 ? Math.round((done / total) * 100) : 0;
     return { total, done, inProgress, waiting, progress };
-  };
-
-  const getProjectMilestones = (projectId: string) => {
-    return items.filter((i) => i.parentId === projectId && i.type === "goal");
   };
 
   const handleNewProject = async (tier: ProjectTier = 3) => {
@@ -112,12 +120,8 @@ export default function ProjectsPage() {
   };
 
   const getProjectTasks = (projectId: string, status?: string) => {
-    return items.filter(
-      (i) =>
-        i.parentId === projectId &&
-        i.type === "task" &&
-        (status ? i.status === status : true),
-    );
+    const all = getAllProjectTasks(projectId);
+    return status ? all.filter((i) => i.status === status) : all;
   };
 
   // ═══ Tier 1 Card — Large & Prominent ═══

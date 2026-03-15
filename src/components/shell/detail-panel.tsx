@@ -237,6 +237,34 @@ export function DetailPanel() {
     .map(id => items.find(i => i.id === id))
     .filter((i): i is OrbitItem => i !== undefined);
 
+  // Milestone selector: find the owning project and its milestones
+  const owningProject = useMemo(() => {
+    if (!parentItem) return undefined;
+    // Direct child of project
+    if (parentItem.type === 'project') return parentItem;
+    // Child of milestone (goal) → grandchild of project
+    if (parentItem.type === 'goal' && parentItem.parentId) {
+      const grandParent = items.find(i => i.id === parentItem.parentId);
+      if (grandParent?.type === 'project') return grandParent;
+    }
+    return undefined;
+  }, [parentItem, items]);
+
+  const projectMilestones = useMemo(() => {
+    if (!owningProject) return [];
+    return items.filter(i => i.parentId === owningProject.id && i.type === 'goal');
+  }, [owningProject, items]);
+
+  // Current milestone: if parent is a goal under the project
+  const currentMilestoneId = (parentItem?.type === 'goal' && owningProject) ? parentItem.id : '';
+
+  const handleMilestoneChange = (milestoneId: string) => {
+    if (!owningProject) return;
+    // 'none' means move task directly under project
+    const newParentId = milestoneId === 'none' ? owningProject.id : milestoneId;
+    handleUpdate({ parentId: newParentId });
+  };
+
   const content = (
     <div className="flex h-full flex-col">
       {/* ── Header ── */}
@@ -670,6 +698,26 @@ export function DetailPanel() {
                     </span>
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Milestone selector for tasks under a project */}
+            {item.type === 'task' && owningProject && projectMilestones.length > 0 && (
+              <div>
+                <FieldLabel>Milestone</FieldLabel>
+                <Select value={currentMilestoneId || 'none'} onValueChange={handleMilestoneChange}>
+                  <SelectTrigger className="mt-1.5 h-8 text-[12px]">
+                    <SelectValue placeholder="No milestone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none" className="text-[12px]">No milestone</SelectItem>
+                    {projectMilestones.map((ms) => (
+                      <SelectItem key={ms.id} value={ms.id} className="text-[12px]">
+                        {ms.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 

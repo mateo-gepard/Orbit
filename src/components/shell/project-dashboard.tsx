@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useSwipeToClose } from '@/lib/hooks/use-swipe-to-close';
 import {
   X,
@@ -18,12 +18,14 @@ import {
   Files,
   Network,
   ChevronDown,
+  GanttChart,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { LinkGraph } from '@/components/items/link-graph';
+import { ProjectRoadmap } from '@/components/items/project-roadmap';
 import type { OrbitItem, ItemStatus, ProjectTier } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -49,6 +51,7 @@ export function ProjectDashboard() {
   const [title, setTitle] = useState(item?.title || '');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showLinkGraph, setShowLinkGraph] = useState(false);
+  const [showRoadmap, setShowRoadmap] = useState(false);
   const [doneCollapsed, setDoneCollapsed] = useState(true);
 
   const { isDragging, swipeStyles, handlers: swipeHandlers } = useSwipeToClose({
@@ -130,8 +133,15 @@ export function ProjectDashboard() {
     setSelectedItemId(id);
   };
 
-  const projectTasks = items.filter((i) => i.parentId === item.id && i.type === 'task');
   const projectMilestones = items.filter((i) => i.parentId === item.id && i.type === 'goal');
+  const milestoneIds = useMemo(() => new Set(projectMilestones.map((m) => m.id)), [projectMilestones]);
+  const projectTasks = useMemo(() => {
+    const direct = items.filter((i) => i.parentId === item.id && i.type === 'task');
+    const nested = milestoneIds.size > 0
+      ? items.filter((i) => i.type === 'task' && milestoneIds.has(i.parentId!))
+      : [];
+    return [...direct, ...nested];
+  }, [items, item.id, milestoneIds]);
   const projectNotes = items.filter((i) => i.parentId === item.id && i.type === 'note');
 
   const stats = {
@@ -158,6 +168,16 @@ export function ProjectDashboard() {
           <span className="text-[13px] font-semibold">{title || 'Project'}</span>
         </div>
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowRoadmap(true); }}
+            onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setShowRoadmap(true); }}
+            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors active:scale-95"
+            title="View roadmap"
+            aria-label="View roadmap"
+            type="button"
+          >
+            <GanttChart className="h-4 w-4" />
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowLinkGraph(true); }}
             onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setShowLinkGraph(true); }}
@@ -550,6 +570,17 @@ export function ProjectDashboard() {
           currentItem={item}
           allItems={items}
           onNavigate={(id) => setSelectedItemId(id)}
+        />
+      )}
+
+      {/* Roadmap */}
+      {showRoadmap && (
+        <ProjectRoadmap
+          open={showRoadmap}
+          onClose={() => setShowRoadmap(false)}
+          project={item}
+          allItems={items}
+          onNavigate={(id) => { setSelectedItemId(id); setShowRoadmap(false); }}
         />
       )}
     </div>
