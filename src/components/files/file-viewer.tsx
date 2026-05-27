@@ -41,6 +41,24 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
     setTouchEnd(e.targetTouches[0].clientX);
   };
 
+  function handlePrevious() {
+    if (currentIndex > 0) {
+      setCurrentIndex(currentIndex - 1);
+      setZoom(100);
+      setRotation(0);
+      setLoading(true);
+    }
+  }
+
+  function handleNext() {
+    if (currentIndex < files.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+      setZoom(100);
+      setRotation(0);
+      setLoading(true);
+    }
+  }
+
   const handleTouchEnd = () => {
     if (!touchStart || !touchEnd || !canNavigate) return;
     
@@ -68,24 +86,6 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentIndex, canNavigate, isImage]);
-
-  const handlePrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-      setZoom(100);
-      setRotation(0);
-      setLoading(true);
-    }
-  };
-
-  const handleNext = () => {
-    if (currentIndex < files.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      setZoom(100);
-      setRotation(0);
-      setLoading(true);
-    }
-  };
 
   const handleDownload = () => {
     const link = document.createElement('a');
@@ -245,7 +245,7 @@ export function FileViewer({ file, files = [], onClose }: FileViewerProps) {
             <div className="text-6xl mb-4">📄</div>
             <h3 className="text-lg font-medium text-white mb-2">Preview not available</h3>
             <p className="text-sm text-white/60 mb-6">
-              This file type can't be previewed in the browser.
+              This file type can&apos;t be previewed in the browser.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button onClick={handleDownload} className="gap-2">

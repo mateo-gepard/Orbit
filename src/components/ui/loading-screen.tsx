@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
 
@@ -17,15 +17,17 @@ const HOCKEY_LOADING = [
 
 export function LoadingScreen() {
   const [mounted, setMounted] = useState(false);
+  const [loadingIndex, setLoadingIndex] = useState(0);
   const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
 
-  const loadingText = useMemo(
-    () => HOCKEY_LOADING[Math.floor(Math.random() * HOCKEY_LOADING.length)],
-    []
-  );
+  const loadingText = HOCKEY_LOADING[loadingIndex];
 
   useEffect(() => {
-    setMounted(true);
+    const frame = requestAnimationFrame(() => {
+      setMounted(true);
+      setLoadingIndex(Math.floor(Math.random() * HOCKEY_LOADING.length));
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   if (hockeyMode) {

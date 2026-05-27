@@ -30,6 +30,10 @@ const TIER_CONFIG = {
   3: { label: "Backlog", description: "Lower priority", icon: Archive },
 } as const;
 
+function getTimestamp() {
+  return Date.now();
+}
+
 export default function ProjectsPage() {
   const { items, setSelectedItemId } = useOrbitStore();
   const { user } = useAuth();
@@ -90,6 +94,7 @@ export default function ProjectsPage() {
 
   const handleNewProject = async (tier: ProjectTier = 3) => {
     if (!user) return;
+    const now = getTimestamp();
     const id = await createItem({
       type: "project",
       status: "active",
@@ -100,8 +105,8 @@ export default function ProjectsPage() {
       tier,
       tags: [],
       userId: user.uid,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     });
     setIsCreating(false);
     setNewTitle('');
@@ -125,6 +130,7 @@ export default function ProjectsPage() {
     status: "active" | "waiting" | "done" = "active",
   ) => {
     if (!user) return;
+    const now = getTimestamp();
     const id = await createItem({
       type: "task",
       status,
@@ -132,8 +138,8 @@ export default function ProjectsPage() {
       parentId: projectId,
       tags: [],
       userId: user.uid,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     });
     setSelectedItemId(id);
   };
@@ -144,12 +150,13 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier 1 Card — Large & Prominent ═══
-  const Tier1Card = ({ project }: { project: OrbitItem }) => {
+  const renderTier1Card = (project: OrbitItem) => {
     const stats = getProjectStats(project.id);
     const milestones = getProjectMilestones(project.id);
 
     return (
       <button
+        key={project.id}
         onClick={() => setSelectedItemId(project.id)}
         className="w-full text-left rounded-xl lg:rounded-2xl border border-foreground/15 bg-card overflow-hidden hover:border-foreground/25 transition-all hover:shadow-lg group"
       >
@@ -212,12 +219,13 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier 2 Card — Standard ═══
-  const Tier2Card = ({ project }: { project: OrbitItem }) => {
+  const renderTier2Card = (project: OrbitItem) => {
     const stats = getProjectStats(project.id);
     const milestones = getProjectMilestones(project.id);
 
     return (
       <button
+        key={project.id}
         onClick={() => setSelectedItemId(project.id)}
         className="w-full text-left rounded-xl lg:rounded-2xl border border-border/60 bg-card overflow-hidden hover:border-border/80 transition-all hover:shadow-md group"
       >
@@ -275,11 +283,12 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier 3 Row — Compact ═══
-  const Tier3Row = ({ project }: { project: OrbitItem }) => {
+  const renderTier3Row = (project: OrbitItem) => {
     const stats = getProjectStats(project.id);
 
     return (
       <button
+        key={project.id}
         onClick={() => setSelectedItemId(project.id)}
         className="w-full flex items-center gap-3 text-left px-3 py-2.5 rounded-lg border border-border/40 bg-card hover:border-border/60 hover:bg-foreground/[0.01] transition-all group"
       >
@@ -305,7 +314,7 @@ export default function ProjectsPage() {
   };
 
   // ═══ Kanban Project Section ═══
-  const KanbanProject = ({ project }: { project: OrbitItem }) => {
+  const renderKanbanProject = (project: OrbitItem) => {
     const stats = getProjectStats(project.id);
     const columns = [
       { id: "active", label: "In Progress", tasks: getProjectTasks(project.id, "active") },
@@ -314,7 +323,7 @@ export default function ProjectsPage() {
     ];
 
     return (
-      <div className="space-y-3">
+      <div key={project.id} className="space-y-3">
         <div className="flex items-center justify-between">
           <button
             onClick={() => setSelectedItemId(project.id)}
@@ -378,7 +387,7 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier Section Renderer ═══
-  const TierSection = ({ tier }: { tier: 1 | 2 | 3 }) => {
+  const renderTierSection = (tier: 1 | 2 | 3) => {
     const config = TIER_CONFIG[tier];
     const Icon = config.icon;
     const tierProjects = projectsByTier[tier];
@@ -420,7 +429,7 @@ export default function ProjectsPage() {
                 // Tier 3: compact rows
                 <div className="space-y-1.5">
                   {tierProjects.map((project) => (
-                    <Tier3Row key={project.id} project={project} />
+                    renderTier3Row(project)
                   ))}
                 </div>
               ) : (
@@ -433,9 +442,9 @@ export default function ProjectsPage() {
                 )}>
                   {tierProjects.map((project) =>
                     tier === 1 ? (
-                      <Tier1Card key={project.id} project={project} />
+                      renderTier1Card(project)
                     ) : (
-                      <Tier2Card key={project.id} project={project} />
+                      renderTier2Card(project)
                     )
                   )}
                 </div>
@@ -444,7 +453,7 @@ export default function ProjectsPage() {
               // Kanban view
               <div className="space-y-8">
                 {tierProjects.map((project) => (
-                  <KanbanProject key={project.id} project={project} />
+                  renderKanbanProject(project)
                 ))}
               </div>
             )}
@@ -599,9 +608,9 @@ export default function ProjectsPage() {
       {/* Tier Sections */}
       {projects.length > 0 ? (
         <div className="space-y-8">
-          <TierSection tier={1} />
-          <TierSection tier={2} />
-          <TierSection tier={3} />
+          {renderTierSection(1)}
+          {renderTierSection(2)}
+          {renderTierSection(3)}
         </div>
       ) : (
         <div className="py-16 text-center">

@@ -13,7 +13,7 @@ export type DateFormat = 'DD.MM.YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
 export type TimeFormat = '24h' | '12h';
 export type WeekStart = 'monday' | 'sunday';
 export type Language = 'en' | 'de';
-export type DefaultView = 'dashboard' | 'today' | 'tasks' | 'inbox';
+export type DefaultView = 'dashboard' | 'tasks' | 'inbox';
 export type CompactMode = 'comfortable' | 'compact';
 
 export interface NotificationSettings {
@@ -203,6 +203,14 @@ function scheduleSave(settings: UserSettings) {
   }, 500);
 }
 
+function normalizeSettings(settings: Partial<UserSettings> = {}): UserSettings {
+  const next = { ...DEFAULT_SETTINGS, ...settings };
+  if ((next.defaultView as string) === 'today') {
+    next.defaultView = 'dashboard';
+  }
+  return next;
+}
+
 // ── Store ──────────────────────────────────────────────────
 
 interface SettingsStore {
@@ -249,7 +257,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       _setFromCloud: (settings) => {
-        set({ settings: { ...DEFAULT_SETTINGS, ...settings } });
+        set({ settings: normalizeSettings(settings) });
       },
 
       _setSyncUserId: (userId) => {
@@ -259,6 +267,10 @@ export const useSettingsStore = create<SettingsStore>()(
     {
       name: 'orbit-settings',
       partialize: (state) => ({ settings: state.settings }),
+      merge: (persisted, current) => {
+        const persistedSettings = (persisted as { settings?: Partial<UserSettings> } | undefined)?.settings;
+        return { ...current, settings: normalizeSettings(persistedSettings) };
+      },
       skipHydration: true,
     }
   )

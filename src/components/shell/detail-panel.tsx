@@ -41,10 +41,18 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { calculateStreak } from '@/lib/habits';
 import { cn, formatTimestamp, fullTimestampPattern, getLocale } from '@/lib/utils';
 import { format } from 'date-fns';
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { toast } from 'sonner';
 
 const STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
+const ITEM_TYPE_KEYS: Record<ItemType, TranslationKey> = {
+  task: 'type.task',
+  project: 'type.project',
+  habit: 'type.habit',
+  event: 'type.event',
+  goal: 'type.goal',
+  note: 'type.note',
+};
 const STATUS_DESCRIPTIONS: Record<ItemStatus, string> = {
   active: 'Currently working on this',
   waiting: 'Blocked or waiting for someone',
@@ -95,6 +103,20 @@ export function DetailPanel() {
   const [showLinkGraph, setShowLinkGraph] = useState(false);
 
   const allTags = getAllTags();
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const isMyDay = item?.myDay === todayStr;
+  const hasManualMyDay = Boolean(item?.myDay);
+  const isAutoScheduledByDueDate =
+    item?.type === 'task' &&
+    item.status !== 'done' &&
+    item.status !== 'archived' &&
+    Boolean(item.dueDate && item.dueDate <= todayStr);
+  const shouldClearMyDay = Boolean(isMyDay || (isAutoScheduledByDueDate && hasManualMyDay));
+  const canToggleToday =
+    item?.type === 'task' &&
+    item.status !== 'done' &&
+    item.status !== 'archived' &&
+    (!isAutoScheduledByDueDate || hasManualMyDay);
 
   useEffect(() => {
     if (item) {
@@ -191,14 +213,13 @@ export function DetailPanel() {
   };
 
   const handleAddToToday = () => {
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const isMyDay = item?.myDay === today;
+    if (!item || !canToggleToday) return;
     
     // If already in My Day, remove it, otherwise add it
-    if (isMyDay) {
+    if (shouldClearMyDay) {
       handleUpdate({ myDay: undefined });
     } else {
-      handleUpdate({ myDay: today });
+      handleUpdate({ myDay: todayStr });
     }
   };
 
@@ -294,7 +315,7 @@ export function DetailPanel() {
               {item.status === 'done' && <Check className="h-3 w-3 text-white" />}
             </button>
           )}
-          <span className="text-[11px] text-muted-foreground/50 capitalize">{t((`type.${item.type}`) as any)}</span>
+          <span className="text-[11px] text-muted-foreground/50 capitalize">{t(ITEM_TYPE_KEYS[item.type])}</span>
           {item.status === 'done' && (
             <>
               <span className="text-[11px] text-muted-foreground/30">·</span>
@@ -566,13 +587,13 @@ export function DetailPanel() {
           )}
 
           {/* Add to Today (Task) */}
-          {item.type === 'task' && item.status !== 'done' && item.myDay !== format(new Date(), 'yyyy-MM-dd') && (
+          {canToggleToday && (
             <button
               onClick={handleAddToToday}
               className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 h-9 text-[13px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              {t('detail.addToToday')}
+              {shouldClearMyDay ? t('itemRow.removeBtn') : t('detail.addToToday')}
             </button>
           )}
         </div>

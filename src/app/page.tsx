@@ -2,14 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Inbox,
   CheckSquare,
   CalendarDays,
-  Target,
   FolderKanban,
   Repeat,
   Flame,
-  ArrowRight,
   Plus,
   Sparkles,
   ChevronLeft,
@@ -20,15 +17,11 @@ import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useSettingsStore } from '@/lib/settings-store';
 import { ItemRow } from '@/components/items/item-row';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { cn, getLocale, getWeekStartsOn } from '@/lib/utils';
 import {
   format,
   isToday,
   isPast,
-  parseISO,
   startOfWeek,
   addDays,
   subDays,
@@ -443,24 +436,68 @@ function Section({
 }) {
   const { t } = useTranslation();
   return (
-    <div data-slot="section">
-      <div className="flex items-center justify-between mb-2 px-1">
-        <div className="flex items-center gap-2">
-          <Icon className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
-          <span className="text-[13px] font-semibold">{title}</span>
+    <section data-slot="section" className="group/section">
+      <div className="mb-2 flex items-center justify-between gap-3 px-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.04] text-muted-foreground transition-colors group-hover/section:bg-foreground/[0.07] group-hover/section:text-foreground">
+            <Icon className="h-3.5 w-3.5" strokeWidth={1.7} />
+          </span>
+          <span className="truncate text-[13px] font-semibold">{title}</span>
           {count !== undefined && (
-            <span className="text-[11px] text-muted-foreground/50 tabular-nums">{count}</span>
+            <span className="rounded-full bg-foreground/[0.05] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+              {count}
+            </span>
           )}
         </div>
-        {href && (
-          <Link href={href} className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors">
-            {t('common.viewAll')}
-          </Link>
-        )}
-        {action}
+        <div className="flex shrink-0 items-center gap-2">
+          {href && (
+            <Link
+              href={href}
+              className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+            >
+              {t('common.viewAll')}
+            </Link>
+          )}
+          {action}
+        </div>
       </div>
-      <div className="rounded-xl border border-border/60 bg-card">
+      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/80 shadow-sm shadow-black/[0.02] backdrop-blur-sm transition-colors group-hover/section:border-border">
         {children}
+      </div>
+    </section>
+  );
+}
+
+function OverviewTile({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  icon: typeof CheckSquare;
+  tone: 'slate' | 'amber' | 'emerald' | 'sky';
+}) {
+  const toneClasses = {
+    slate: 'border-border/60 bg-card/80 text-foreground',
+    amber: 'border-amber-500/20 bg-amber-500/[0.05] text-amber-700 dark:text-amber-300',
+    emerald: 'border-emerald-500/20 bg-emerald-500/[0.05] text-emerald-700 dark:text-emerald-300',
+    sky: 'border-sky-500/20 bg-sky-500/[0.05] text-sky-700 dark:text-sky-300',
+  };
+
+  return (
+    <div className={cn('rounded-2xl border p-3.5 shadow-sm shadow-black/[0.02]', toneClasses[tone])}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-medium text-muted-foreground">{label}</p>
+          <p className="mt-1 text-2xl font-semibold leading-none tracking-normal tabular-nums text-foreground">
+            {value}
+          </p>
+        </div>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background/70 text-current">
+          <Icon className="h-4 w-4" strokeWidth={1.8} />
+        </span>
       </div>
     </div>
   );
@@ -490,11 +527,23 @@ const HOCKEY_QUOTES = [
   { text: 'Im dritten Drittel zeigt sich der wahre Charakter.', emoji: '⏱️' },
 ];
 
+function stableIndex(seed: string, length: number) {
+  if (length === 0) return -1;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return hash % length;
+}
+
 function HockeyQuote() {
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
-    setIdx(Math.floor(Math.random() * HOCKEY_QUOTES.length));
+    const frame = requestAnimationFrame(() => {
+      setIdx(Math.floor(Math.random() * HOCKEY_QUOTES.length));
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const quote = HOCKEY_QUOTES[idx];
@@ -531,7 +580,7 @@ export default function DashboardPage() {
   const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink, resetPassword } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const defaultView = useSettingsStore((s) => s.settings.defaultView);
-  const { weekStart: weekStartSetting, language, dateFormat } = useSettingsStore((s) => s.settings);
+  const { weekStart: weekStartSetting, language } = useSettingsStore((s) => s.settings);
   const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const locale = getLocale(language);
   const weekStartsOn = getWeekStartsOn(weekStartSetting);
@@ -543,14 +592,14 @@ export default function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
 
   useEffect(() => {
-    setMounted(true);
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   // Redirect to the configured start page if not dashboard
   useEffect(() => {
     if (!mounted || loading || !user) return;
     const viewRoutes: Record<string, string> = {
-      today: '/today',
       tasks: '/tasks',
       inbox: '/inbox',
     };
@@ -572,10 +621,16 @@ export default function DashboardPage() {
     todayEvents,
     habits,
     activeProjects,
-    goals,
     principles,
     totalActive,
   } = useMemo(() => {
+    const isOpenTask = (i: typeof items[number]) =>
+      i.type === 'task' && i.status !== 'done' && i.status !== 'archived';
+
+    const overdueItems = isViewingToday
+      ? items.filter((i) => isOpenTask(i) && Boolean(i.dueDate && i.dueDate < todayStr))
+      : [];
+
     // For current/future dates, show active tasks
     // For past dates, also show tasks that were completed on that day (archived)
     const todayTasks = items.filter((i) => {
@@ -591,21 +646,19 @@ export default function DashboardPage() {
       return i.status !== 'done' && i.status !== 'archived';
     });
 
-    // My Day tasks: myDay is set to the selected date
+    const scheduledTaskIds = new Set([...overdueItems, ...todayTasks].map((i) => i.id));
+
+    // My Day tasks are manually planned. Due/overdue tasks already appear automatically.
     const myDayTasks = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay === selectedDateStr
+      (i) => isOpenTask(i) && i.myDay === selectedDateStr && !scheduledTaskIds.has(i.id)
     );
 
-    // Not done from before: myDay was set to a past date (accumulated)
+    const visibleTaskIds = new Set([...scheduledTaskIds, ...myDayTasks.map((i) => i.id)]);
+
+    // Not done from before: myDay was set to a past date (accumulated), excluding deadline-scheduled tasks.
     const notDoneFromBefore = isViewingToday
       ? items.filter(
-          (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay && i.myDay < todayStr
-        )
-      : [];
-
-    const overdueItems = isViewingToday
-      ? items.filter(
-          (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate && isPast(parseISO(i.dueDate)) && !isToday(parseISO(i.dueDate))
+          (i) => isOpenTask(i) && Boolean(i.myDay && i.myDay < todayStr && !visibleTaskIds.has(i.id))
         )
       : [];
 
@@ -616,12 +669,11 @@ export default function DashboardPage() {
 
     const habits = items.filter((i) => i.type === 'habit' && i.status === 'active');
     const activeProjects = items.filter((i) => i.type === 'project' && i.status === 'active');
-    const goals = items.filter((i) => i.type === 'goal' && i.status === 'active');
     const principles = items.filter(
       (i) => i.type === 'note' && (i.noteSubtype === 'principle' || i.tags?.includes('principle')) && i.status !== 'archived'
     );
     const totalActive = items.filter((i) => i.status !== 'archived').length;
-    return { todayTasks, myDayTasks, notDoneFromBefore, overdueItems, todayEvents, habits, activeProjects, goals, principles, totalActive };
+    return { todayTasks, myDayTasks, notDoneFromBefore, overdueItems, todayEvents, habits, activeProjects, principles, totalActive };
   }, [items, selectedDateStr, isViewingPast, isViewingToday, todayStr]);
 
   if (loading || !mounted) {
@@ -659,6 +711,8 @@ export default function DashboardPage() {
 
   const todayHabits = habits.filter((h) => isHabitScheduledForDate(h, selectedDate));
   const completedHabitsToday = todayHabits.filter((h) => isHabitCompletedForDate(h, selectedDate)).length;
+  const principleIndex = stableIndex(selectedDateStr, principles.length);
+  const principle = principleIndex >= 0 ? principles[principleIndex] : undefined;
 
   const toggleHabit = async (habit: typeof items[0]) => {
     const completions = { ...(habit.completions || {}) };
@@ -668,12 +722,14 @@ export default function DashboardPage() {
 
   const weekStartDate = startOfWeek(selectedDate, { weekStartsOn });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
+  const focusTaskCount = overdueItems.length + todayTasks.length + myDayTasks.length;
+  const habitProgressLabel = todayHabits.length > 0 ? `${completedHabitsToday}/${todayHabits.length}` : '0';
 
   return (
-    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6 lg:space-y-8" data-slot="page-content">
+    <div className="mx-auto max-w-6xl space-y-6 p-4 lg:space-y-8 lg:p-8" data-slot="page-content">
       {/* ── Header with Date Navigation ── */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1">
+      <div className="flex flex-col gap-4 border-b border-border/60 pb-4 lg:flex-row lg:items-center lg:justify-between lg:pb-5">
+        <div className="min-w-0 flex-1">
           <p className="text-[13px] text-muted-foreground">
             {format(selectedDate, 'EEEE, d MMMM yyyy', { locale })}
             {!isViewingToday && (
@@ -699,10 +755,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Date Navigation Controls */}
-        <div className="flex items-center gap-1">
+        <div className="flex w-full items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-1 lg:w-auto">
           <button
             onClick={() => setSelectedDate(subDays(selectedDate, 1))}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-foreground/[0.05] active:scale-95 transition-all"
+            className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:bg-foreground/[0.05] active:scale-95"
             title={t('date.previousDay')}
           >
             <ChevronLeft className="h-4 w-4 text-muted-foreground" />
@@ -711,7 +767,7 @@ export default function DashboardPage() {
           {!isViewingToday && (
             <button
               onClick={() => setSelectedDate(new Date())}
-              className="rounded-lg px-3 py-1.5 text-[11px] font-medium bg-foreground/[0.08] hover:bg-foreground/[0.12] active:scale-95 transition-all"
+              className="rounded-xl bg-foreground/[0.08] px-3 py-2 text-[11px] font-medium transition-all hover:bg-foreground/[0.12] active:scale-95"
             >
               {t('date.today')}
             </button>
@@ -719,7 +775,7 @@ export default function DashboardPage() {
           
           <button
             onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-foreground/[0.05] active:scale-95 transition-all"
+            className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:bg-foreground/[0.05] active:scale-95"
             title={t('date.nextDay')}
           >
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -730,10 +786,10 @@ export default function DashboardPage() {
       {/* ── Principles / Hockey Quotes ── */}
       {hockeyMode ? (
         <HockeyQuote />
-      ) : principles.length > 0 ? (
+      ) : principle ? (
         <div className="rounded-xl bg-foreground/[0.02] border border-border/40 px-4 py-3">
           <p className="text-[13px] italic text-foreground/70 leading-relaxed">
-            &ldquo;{principles[Math.floor(Math.random() * principles.length)]?.title}&rdquo;
+            &ldquo;{principle.title}&rdquo;
           </p>
         </div>
       ) : null}
@@ -770,7 +826,7 @@ export default function DashboardPage() {
               <div className="text-right">
                 <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Offen</p>
                 <p className="text-2xl font-black tabular-nums text-foreground/50 leading-none mt-0.5">
-                  {todayTasks.length + myDayTasks.length + overdueItems.length}
+                  {focusTaskCount}
                 </p>
               </div>
               <span className="text-lg">🩺</span>
@@ -782,7 +838,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-center gap-2 mt-2 pt-2 border-t border-cyan-500/10">
               <span className="text-[10px] text-muted-foreground/50">Training</span>
               <div className="flex gap-0.5">
-                {todayHabits.map((h, i) => (
+                {todayHabits.map((h) => (
                   <div
                     key={h.id}
                     className={cn(
@@ -798,31 +854,16 @@ export default function DashboardPage() {
           )}
         </div>
       ) : (
-      <div className="flex items-center gap-4 lg:gap-6 text-[13px] overflow-x-auto -mx-4 px-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
-        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
-          <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-          <span className="tabular-nums font-medium">{todayTasks.length + myDayTasks.length + overdueItems.length}</span>
-          <span className="text-muted-foreground/60">{t('dashboard.tasks')}</span>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <OverviewTile label={t('dashboard.tasks')} value={focusTaskCount} icon={CheckSquare} tone="slate" />
+          <OverviewTile label={t('today.notDoneFromBefore')} value={notDoneFromBefore.length} icon={Clock3} tone="amber" />
+          <OverviewTile label={t('nav.habits')} value={habitProgressLabel} icon={Repeat} tone="emerald" />
+          <OverviewTile label={t('nav.projects')} value={activeProjects.length} icon={FolderKanban} tone="sky" />
         </div>
-        {todayHabits.length > 0 && (
-          <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
-            <Repeat className="h-3.5 w-3.5" strokeWidth={1.5} />
-            <span className="tabular-nums font-medium">{completedHabitsToday}/{todayHabits.length}</span>
-            <span className="text-muted-foreground/60">{t('dashboard.habitsLabel')}</span>
-          </div>
-        )}
-        {isViewingToday && (
-          <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
-            <FolderKanban className="h-3.5 w-3.5" strokeWidth={1.5} />
-            <span className="tabular-nums font-medium">{activeProjects.length}</span>
-            <span className="text-muted-foreground/60">{t('dashboard.projectsLabel')}</span>
-          </div>
-        )}
-      </div>
       )}
 
       {/* ── Week strip — larger touch targets on mobile ── */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 rounded-2xl border border-border/60 bg-card/50 p-1">
         {weekDays.map((day) => {
           const dayStr = format(day, 'yyyy-MM-dd');
           const dayItems = items.filter(
@@ -884,17 +925,17 @@ export default function DashboardPage() {
         <Section
           title={isViewingToday ? t('nav.today') : format(selectedDate, 'MMM d', { locale })}
           icon={CheckSquare}
-          count={todayTasks.length + myDayTasks.length + overdueItems.length}
-          href="/today"
+          count={focusTaskCount}
+          href="/tasks"
         >
           <div className="py-1">
             {overdueItems.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
-            {myDayTasks.map((item) => (
+            {todayTasks.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
-            {todayTasks.map((item) => (
+            {myDayTasks.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
             {overdueItems.length === 0 && todayTasks.length === 0 && myDayTasks.length === 0 && (
@@ -1031,17 +1072,17 @@ export default function DashboardPage() {
           <Section
             title={isViewingToday ? t('nav.today') : format(selectedDate, 'MMM d', { locale })}
             icon={CheckSquare}
-            count={todayTasks.length + myDayTasks.length + overdueItems.length}
-            href="/today"
+            count={focusTaskCount}
+            href="/tasks"
           >
             <div className="py-1">
               {overdueItems.map((item) => (
                 <ItemRow key={item.id} item={item} showProject compact />
               ))}
-              {myDayTasks.map((item) => (
+              {todayTasks.map((item) => (
                 <ItemRow key={item.id} item={item} showProject compact />
               ))}
-              {todayTasks.map((item) => (
+              {myDayTasks.map((item) => (
                 <ItemRow key={item.id} item={item} showProject compact />
               ))}
               {overdueItems.length === 0 && todayTasks.length === 0 && myDayTasks.length === 0 && (

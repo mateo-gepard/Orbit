@@ -421,7 +421,7 @@ export default function TasksPage() {
                   onMouseEnter={() => setTagToDelete(tag)}
                   onMouseLeave={() => setTagToDelete(null)}
                 >
-                  <p className="text-[11px] text-muted-foreground/80 mb-2">Delete tag "{tag}"?</p>
+                  <p className="text-[11px] text-muted-foreground/80 mb-2">Delete tag &ldquo;{tag}&rdquo;?</p>
                   <div className="flex gap-1">
                     <button
                       onClick={(e) => {

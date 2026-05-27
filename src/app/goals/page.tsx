@@ -5,13 +5,12 @@ import { Target, Plus } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
-import { cn } from '@/lib/utils';
 import { computeBadges } from '@/lib/badges';
 import { BadgesSection } from '@/components/ui/badge-stack';
 import type { GoalTimeframe } from '@/lib/types';
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
 
-const TIMEFRAME_KEYS: Record<GoalTimeframe, string> = {
+const TIMEFRAME_KEYS: Record<GoalTimeframe, TranslationKey> = {
   quarterly: 'goals.thisQuarter',
   yearly: 'goals.thisYear',
   longterm: 'goals.longterm',
@@ -95,7 +94,7 @@ export default function GoalsPage() {
         return (
           <div key={timeframe}>
             <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 px-1">
-              {t(TIMEFRAME_KEYS[timeframe] as any)}
+              {t(TIMEFRAME_KEYS[timeframe])}
             </span>
             <div className="grid gap-2.5 sm:grid-cols-2 mt-2">
               {group.map((goal) => {

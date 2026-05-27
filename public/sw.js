@@ -37,7 +37,7 @@ try {
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag,
-        data: { url: payload.data?.url || '/today' },
+        data: { url: payload.data?.url || '/' },
         renotify: true,
       });
     }
@@ -50,7 +50,7 @@ try {
 
 const CACHE_VERSION = 7; // Increment this to force cache refresh
 const CACHE_NAME = `orbit-v${CACHE_VERSION}`;
-const OFFLINE_URLS = ['/', '/today', '/inbox', '/tasks', '/habits', '/briefing'];
+const OFFLINE_URLS = ['/', '/inbox', '/tasks', '/habits', '/briefing'];
 
 // ─── Briefing notification state ───────────────────────────
 // Stored in IndexedDB so it persists across SW restarts
@@ -325,7 +325,7 @@ self.addEventListener('message', (event) => {
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       tag,
-      data: { url: '/today' },
+      data: { url: '/' },
       renotify: false,
     }).catch((e) => console.error('[SW] showNotification failed:', e));
   }

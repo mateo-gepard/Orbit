@@ -79,9 +79,11 @@ function BriefingContent() {
     [items, todayStr]
   );
 
+  const tasksDueTodayIds = useMemo(() => new Set(tasksDueToday.map((task) => task.id)), [tasksDueToday]);
+
   const myDayTasks = useMemo(() =>
-    items.filter(i => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay === todayStr),
-    [items, todayStr]
+    items.filter(i => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay === todayStr && !tasksDueTodayIds.has(i.id)),
+    [items, todayStr, tasksDueTodayIds]
   );
 
   const overdue = useMemo(() =>
@@ -548,7 +550,7 @@ function BriefingContent() {
           mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8',
         )}>
           <button
-            onClick={() => router.push('/today')}
+            onClick={() => router.push('/')}
             className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-[14px] font-semibold bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98]"
           >
             {phase === 'morning' ? (hockeyMode ? 'Ab aufs Spielfeld' : 'Start My Day') : (hockeyMode ? 'Gute Nacht, Dr.' : 'Good Night')}

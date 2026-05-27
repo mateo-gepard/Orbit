@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Paperclip, Image, FileText, File, FileCode, FileSpreadsheet } from 'lucide-react';
+import { Paperclip, Image as ImageIcon, FileText, File, FileCode, FileSpreadsheet } from 'lucide-react';
 import type { ProjectFile } from '@/lib/types';
 
 interface FileNodeData {
@@ -10,13 +10,14 @@ interface FileNodeData {
   [key: string]: unknown;
 }
 
-function getFileIcon(mimeType: string) {
-  if (mimeType.startsWith('image/')) return Image;
-  if (mimeType === 'application/pdf') return FileText;
-  if (mimeType.includes('spreadsheet') || mimeType.includes('csv')) return FileSpreadsheet;
-  if (mimeType.includes('javascript') || mimeType.includes('json') || mimeType.includes('html') || mimeType.includes('css')) return FileCode;
-  if (mimeType.startsWith('text/')) return FileText;
-  return File;
+function renderFileIcon(mimeType: string) {
+  const className = "h-3 w-3 text-slate-500 dark:text-slate-400";
+  if (mimeType.startsWith('image/')) return <ImageIcon className={className} />;
+  if (mimeType === 'application/pdf') return <FileText className={className} />;
+  if (mimeType.includes('spreadsheet') || mimeType.includes('csv')) return <FileSpreadsheet className={className} />;
+  if (mimeType.includes('javascript') || mimeType.includes('json') || mimeType.includes('html') || mimeType.includes('css')) return <FileCode className={className} />;
+  if (mimeType.startsWith('text/')) return <FileText className={className} />;
+  return <File className={className} />;
 }
 
 function formatFileSize(bytes: number): string {
@@ -27,7 +28,6 @@ function formatFileSize(bytes: number): string {
 
 function FileNodeComponent({ data }: { data: FileNodeData }) {
   const { file } = data;
-  const Icon = getFileIcon(file.type);
 
   return (
     <div className="px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/50 min-w-[120px] max-w-[160px] shadow-sm hover:shadow-md transition-all cursor-pointer opacity-80 hover:opacity-100">
@@ -39,7 +39,7 @@ function FileNodeComponent({ data }: { data: FileNodeData }) {
 
       <div className="flex items-center gap-2">
         <div className="flex items-center justify-center h-6 w-6 rounded bg-slate-200/80 dark:bg-slate-700/60 shrink-0">
-          <Icon className="h-3 w-3 text-slate-500 dark:text-slate-400" />
+          {renderFileIcon(file.type)}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-medium truncate leading-tight text-foreground">

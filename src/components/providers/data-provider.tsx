@@ -30,14 +30,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
   const reconnectAttempt = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const unsubSettingsRef = useRef<(() => void) | null>(null);
   const unsubToolDataRefs = useRef<(() => void)[]>([]);
-  const loadingStartTime = useRef(Date.now());
+  const loadingStartTime = useRef(0);
   const prevUserIdRef = useRef<string | null>(null);
 
   const connect = useCallback(() => {
+    if (loadingStartTime.current === 0) {
+      loadingStartTime.current = Date.now();
+    }
+
     if (!user) {
       // Unregister FCM token on sign-out
       if (prevUserIdRef.current) {
@@ -224,15 +230,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         reconnectAttempt.current++;
         const delay = RECONNECT_DELAY_MS * Math.pow(1.5, reconnectAttempt.current);
         console.warn(`[ORBIT] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt.current})`);
-        setTimeout(connect, delay);
+        reconnectTimerRef.current = setTimeout(() => {
+          setReconnectNonce((nonce) => nonce + 1);
+        }, delay);
       } else {
         setError('Unable to connect. Your data is saved locally.');
       }
     }
-  }, [user, setItems, setTagsFromCloud, setSyncUserId]);
+  }, [user, dataLoaded, setItems, setTagsFromCloud, setSyncUserId]);
 
   useEffect(() => {
-    connect();
+    const connectFrame = requestAnimationFrame(() => {
+      connect();
+    });
 
     // Safety timeout — never stay on loading screen forever
     const safetyTimer = setTimeout(() => {
@@ -244,6 +254,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }, MAX_LOADING_TIME);
 
     return () => {
+      cancelAnimationFrame(connectFrame);
       clearTimeout(safetyTimer);
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
@@ -257,9 +268,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         unsub();
       }
       unsubToolDataRefs.current = [];
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       stopBriefingScheduler();
     };
-  }, [connect]);
+  }, [connect, reconnectNonce]);
 
   // Listen for online/offline events for reconnection
   useEffect(() => {

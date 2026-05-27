@@ -1,11 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
-import { CheckSquare, Flame, Repeat, Clock3, CalendarPlus, Sun } from 'lucide-react';
+import { CheckSquare, Flame, Repeat, Clock3, Sun } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { ItemRow } from '@/components/items/item-row';
 import { cn } from '@/lib/utils';
-import { format, isToday, isPast, parseISO, isBefore, startOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate } from '@/lib/habits';
 import { updateItem } from '@/lib/firestore';
 import { useTranslation } from '@/lib/i18n';
@@ -20,26 +19,33 @@ export default function TodayPage() {
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
 
-  const { overdue, todayTasks, notDoneFromBefore, todayEvents, todayHabits } = useMemo(() => {
-    const overdue = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate && isPast(parseISO(i.dueDate)) && !isToday(parseISO(i.dueDate))
-    );
-    // My Day tasks: myDay is set to today
-    const todayTasks = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay === todayStr
-    );
-    // Not done from before: myDay was set to a past date (accumulated, not just yesterday)
-    const notDoneFromBefore = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay && i.myDay < todayStr
-    );
-    const todayEvents = items.filter(
-      (i) => i.type === 'event' && i.status !== 'archived' && i.startDate === todayStr
-    );
-    const todayHabits = items.filter(
-      (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
-    );
-    return { overdue, todayTasks, notDoneFromBefore, todayEvents, todayHabits };
-  }, [items, todayStr]);
+  const isOpenTask = (i: typeof items[number]) =>
+    i.type === 'task' && i.status !== 'done' && i.status !== 'archived';
+
+  const overdue = items.filter(
+    (i) => isOpenTask(i) && Boolean(i.dueDate && i.dueDate < todayStr)
+  );
+  const dueToday = items.filter(
+    (i) => isOpenTask(i) && i.dueDate === todayStr
+  );
+  const scheduledTaskIds = new Set([...overdue, ...dueToday].map((i) => i.id));
+
+  // My Day tasks: myDay is set to today, excluding deadline-scheduled tasks
+  const todayTasks = items.filter(
+    (i) => isOpenTask(i) && i.myDay === todayStr && !scheduledTaskIds.has(i.id)
+  );
+  const visibleTaskIds = new Set([...scheduledTaskIds, ...todayTasks.map((i) => i.id)]);
+
+  // Not done from before: myDay was set to a past date, excluding deadline-scheduled tasks
+  const notDoneFromBefore = items.filter(
+    (i) => isOpenTask(i) && Boolean(i.myDay && i.myDay < todayStr && !visibleTaskIds.has(i.id))
+  );
+  const todayEvents = items.filter(
+    (i) => i.type === 'event' && i.status !== 'archived' && i.startDate === todayStr
+  );
+  const todayHabits = items.filter(
+    (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
+  );
 
   const toggleHabit = async (habit: typeof items[0]) => {
     const completions = { ...(habit.completions || {}) };
@@ -89,19 +95,22 @@ export default function TodayPage() {
         </div>
       )}
 
-      {/* My Day Tasks */}
+      {/* Today tasks */}
       <div>
         <div className="flex items-center gap-2 mb-2 px-1">
           <Sun className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
           <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
-              {t('today.myDay')} · {todayTasks.length}
+              {t('nav.today')} · {dueToday.length + todayTasks.length}
           </span>
         </div>
         <div className="rounded-xl border border-border/60 bg-card py-1">
+          {dueToday.map((item) => (
+            <ItemRow key={item.id} item={item} showProject compact />
+          ))}
           {todayTasks.map((item) => (
             <ItemRow key={item.id} item={item} showProject compact />
           ))}
-          {todayTasks.length === 0 && (
+          {dueToday.length === 0 && todayTasks.length === 0 && (
             <p className="px-4 py-6 text-center text-[12px] text-muted-foreground/40">
               {t('today.noTasks')}
             </p>

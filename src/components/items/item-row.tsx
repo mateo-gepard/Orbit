@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, CalendarDays, Flag, Circle, Clock, CalendarClock, CalendarPlus, CalendarX } from 'lucide-react';
+import { Check, Clock, CalendarClock, CalendarPlus, CalendarX } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import type { OrbitItem, Priority } from '@/lib/types';
@@ -80,11 +80,20 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const isMyDay = item.myDay === todayStr;
+  const hasManualMyDay = Boolean(item.myDay);
+  const isAutoScheduledByDueDate = item.type === 'task' && (Boolean(isDueToday) || Boolean(isOverdue));
+  const shouldClearMyDay = isMyDay || (isAutoScheduledByDueDate && hasManualMyDay);
+  const canToggleToday = item.type === 'task' && item.status !== 'done' && item.status !== 'archived' && (!isAutoScheduledByDueDate || hasManualMyDay);
 
   const handleSwipeToday = async () => {
-    haptic(isMyDay ? 'light' : 'success');
+    if (!canToggleToday) {
+      haptic('light');
+      return;
+    }
+
+    haptic(shouldClearMyDay ? 'light' : 'success');
     
-    if (isMyDay) {
+    if (shouldClearMyDay) {
       await updateItem(item.id, { myDay: undefined });
     } else {
       await updateItem(item.id, { myDay: todayStr });
@@ -197,7 +206,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       </div>
 
       {/* Add/Remove Today button - desktop hover only */}
-      {item.type === 'task' && item.status !== 'done' && (
+      {canToggleToday && (
         <button
           onClick={handleAddToToday}
           className={cn(
@@ -209,7 +218,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           )}
         >
           <CalendarClock className="h-3 w-3" />
-          <span>{isMyDay ? (hockeyMode ? 'Rausnehmen' : 'Remove') : t('nav.today')}</span>
+          <span>{shouldClearMyDay ? (hockeyMode ? 'Rausnehmen' : 'Remove') : t('nav.today')}</span>
         </button>
       )}
 
@@ -235,11 +244,11 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     return (
       <SwipeableRow
         onSwipeRight={item.type === 'task' || item.type === 'habit' ? handleSwipeComplete : undefined}
-        onSwipeLeft={item.type === 'task' ? handleSwipeToday : undefined}
+        onSwipeLeft={canToggleToday ? handleSwipeToday : undefined}
         rightLabel={hockeyMode ? 'TOR!' : 'Done'}
-        leftLabel={isMyDay ? (hockeyMode ? 'Raus' : 'Remove') : (hockeyMode ? 'Aufstellung' : 'Today')}
+        leftLabel={shouldClearMyDay ? (hockeyMode ? 'Raus' : 'Remove') : (hockeyMode ? 'Aufstellung' : 'Today')}
         rightIcon={Check}
-        leftIcon={isMyDay ? CalendarX : CalendarPlus}
+        leftIcon={shouldClearMyDay ? CalendarX : CalendarPlus}
       >
         {row}
       </SwipeableRow>

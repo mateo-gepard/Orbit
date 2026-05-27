@@ -253,27 +253,40 @@ function NotificationsSection({
   // Detect platform capabilities
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!('Notification' in window)) {
-      setPermissionStatus('unsupported');
-    } else {
-      setPermissionStatus(Notification.permission);
-    }
-    if (isFCMAvailable()) {
-      setFcmStatus(hasFCMToken() ? 'registered' : 'unregistered');
-    }
-    const ua = navigator.userAgent;
-    setIsIOS(/iPad|iPhone|iPod/.test(ua));
-    setIsPWA(window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && (navigator as unknown as { standalone: boolean }).standalone));
+
+    const frame = requestAnimationFrame(() => {
+      if (!('Notification' in window)) {
+        setPermissionStatus('unsupported');
+      } else {
+        setPermissionStatus(Notification.permission);
+      }
+      if (isFCMAvailable()) {
+        setFcmStatus(hasFCMToken() ? 'registered' : 'unregistered');
+      }
+      const ua = navigator.userAgent;
+      setIsIOS(/iPad|iPhone|iPod/.test(ua));
+      setIsPWA(window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && (navigator as unknown as { standalone: boolean }).standalone));
+    });
+
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   // Load registered devices
   useEffect(() => {
     if (!user) return;
-    setLoadingDevices(true);
-    getRegisteredDevices(user.uid).then((d) => {
+
+    let cancelled = false;
+    Promise.resolve().then(async () => {
+      setLoadingDevices(true);
+      const d = await getRegisteredDevices(user.uid);
+      if (cancelled) return;
       setDevices(d);
       setLoadingDevices(false);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [user, fcmStatus]);
 
   // Sync briefing schedule to SW + Firestore whenever settings change
@@ -665,7 +678,10 @@ export default function SettingsPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   // Flash "saved" indicator on any settings change
   const flashSaved = useCallback(() => {
@@ -1039,7 +1055,6 @@ export default function SettingsPage() {
                   value={settings.defaultView}
                   options={[
                     { value: 'dashboard', label: t('nav.dashboard') },
-                    { value: 'today', label: t('nav.today') },
                     { value: 'tasks', label: t('nav.tasks') },
                     { value: 'inbox', label: t('nav.inbox') },
                   ]}

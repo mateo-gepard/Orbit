@@ -81,6 +81,10 @@ interface FlightSession {
   seatLetter: string;
 }
 
+function createTurbulenceLog(type: TurbulenceLog['type']): TurbulenceLog {
+  return { timestamp: Date.now(), type };
+}
+
 function saveFlightSession(session: FlightSession | null) {
   try {
     if (session) {
@@ -157,39 +161,42 @@ export default function FlightPage() {
 
   // Generate random values on mount OR restore active session
   useEffect(() => {
-    const session = loadFlightSession();
-    if (session && (session.status === 'inflight' || session.status === 'paused')) {
-      // Check if the flight should have ended while we were away
-      const sessionElapsed = getSessionElapsed(session);
-      if (sessionElapsed >= session.duration * 60) {
+    const frame = requestAnimationFrame(() => {
+      const session = loadFlightSession();
+      if (session && (session.status === 'inflight' || session.status === 'paused')) {
+        // Check if the flight should have ended while we were away
+        const sessionElapsed = getSessionElapsed(session);
+        if (sessionElapsed >= session.duration * 60) {
         // Flight ended while app was closed — go straight to debrief
-        setStatus('debrief');
-        setElapsed(session.duration * 60);
-        setPausedElapsed(session.duration * 60);
-        setCompletedNormally(true);
+          setStatus('debrief');
+          setElapsed(session.duration * 60);
+          setPausedElapsed(session.duration * 60);
+          setCompletedNormally(true);
+        } else {
+          setStatus(session.status);
+          setElapsed(sessionElapsed);
+          setPausedElapsed(session.accumulatedBeforePause);
+        }
+        setStartTimestamp(session.startTimestamp);
+        setDuration(session.duration);
+        setRoute(session.route);
+        setFlightNumber(session.flightNumber);
+        setFlightClass(session.flightClass);
+        setTasks(session.tasks);
+        setTurbulence(session.turbulence);
+        setGateNumber(session.gateNumber);
+        setSeatRow(session.seatRow);
+        setSeatLetter(session.seatLetter);
       } else {
-        setStatus(session.status);
-        setElapsed(sessionElapsed);
-        setPausedElapsed(session.accumulatedBeforePause);
+        setFlightNumber(generateFlightNumber());
+        setGateNumber(Math.floor(Math.random() * 40) + 1);
+        setSeatRow(Math.floor(Math.random() * 30) + 1);
+        setSeatLetter(['A', 'B', 'C', 'D', 'E', 'F'][Math.floor(Math.random() * 6)]);
       }
-      setStartTimestamp(session.startTimestamp);
-      setDuration(session.duration);
-      setRoute(session.route);
-      setFlightNumber(session.flightNumber);
-      setFlightClass(session.flightClass);
-      setTasks(session.tasks);
-      setTurbulence(session.turbulence);
-      setGateNumber(session.gateNumber);
-      setSeatRow(session.seatRow);
-      setSeatLetter(session.seatLetter);
-    } else {
-      setFlightNumber(generateFlightNumber());
-      setGateNumber(Math.floor(Math.random() * 40) + 1);
-      setSeatRow(Math.floor(Math.random() * 30) + 1);
-      setSeatLetter(['A', 'B', 'C', 'D', 'E', 'F'][Math.floor(Math.random() * 6)]);
-    }
-    setFlightLogs(loadFlightLogsLocal());
-    setMounted(true);
+      setFlightLogs(loadFlightLogsLocal());
+      setMounted(true);
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const isPrivate = flightClass === 'private';
@@ -365,7 +372,7 @@ export default function FlightPage() {
   };
 
   const handleLogTurbulence = (type: TurbulenceLog['type']) => {
-    const newEntry = { timestamp: Date.now(), type };
+    const newEntry = createTurbulenceLog(type);
     setTurbulence((prev) => {
       const updated = [...prev, newEntry];
       // Persist turbulence to session

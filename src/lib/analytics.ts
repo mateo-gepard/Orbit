@@ -38,7 +38,7 @@ const MAX_LOCAL_EVENTS = 5_000;   // Cap local storage
 
 let _sessionId: string | null = null;
 let _userId: string | null = null;
-let _eventQueue: Omit<AnalyticsEvent, 'id'>[] = [];
+const _eventQueue: Omit<AnalyticsEvent, 'id'>[] = [];
 let _flushTimer: ReturnType<typeof setInterval> | null = null;
 let _sessionStart: number | null = null;
 

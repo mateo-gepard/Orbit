@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSwipeToClose } from '@/lib/hooks/use-swipe-to-close';
 import {
   X,
@@ -48,7 +48,9 @@ export function ProjectDashboard() {
   const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags } = useOrbitStore();
   const { user } = useAuth();
   const item = selectedItemId ? items.find(i => i.id === selectedItemId) : undefined;
+  const itemId = item?.id;
   const [title, setTitle] = useState(item?.title || '');
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showLinkGraph, setShowLinkGraph] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
@@ -60,24 +62,20 @@ export function ProjectDashboard() {
 
   const allTags = getAllTags();
 
-  const projectMilestones = useMemo(
-    () => item ? items.filter((i) => i.parentId === item.id && i.type === 'goal') : [],
-    [item?.id, items],
-  );
-  const milestoneIds = useMemo(() => new Set(projectMilestones.map((m) => m.id)), [projectMilestones]);
-  const projectTasks = useMemo(() => {
-    if (!item) return [];
-    const direct = items.filter((i) => i.parentId === item.id && i.type === 'task');
-    const nested = milestoneIds.size > 0
-      ? items.filter((i) => i.type === 'task' && milestoneIds.has(i.parentId!))
-      : [];
-    return [...direct, ...nested];
-  }, [items, item?.id, milestoneIds]);
+  const projectMilestones = itemId ? items.filter((i) => i.parentId === itemId && i.type === 'goal') : [];
+  const milestoneIds = new Set(projectMilestones.map((m) => m.id));
+  const directProjectTasks = itemId ? items.filter((i) => i.parentId === itemId && i.type === 'task') : [];
+  const nestedProjectTasks = milestoneIds.size > 0
+    ? items.filter((i) => i.type === 'task' && milestoneIds.has(i.parentId!))
+    : [];
+  const projectTasks = [...directProjectTasks, ...nestedProjectTasks];
 
   // Sync title when item changes
-  if (item && title !== item.title && !document.activeElement?.closest('input')) {
-    setTitle(item.title);
-  }
+  useEffect(() => {
+    if (!item || isEditingTitle) return;
+    const frame = requestAnimationFrame(() => setTitle(item.title));
+    return () => cancelAnimationFrame(frame);
+  }, [item, isEditingTitle]);
 
   if (!item || item.type !== 'project') return null;
 
@@ -320,7 +318,11 @@ export function ProjectDashboard() {
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => handleUpdate({ title })}
+            onFocus={() => setIsEditingTitle(true)}
+            onBlur={() => {
+              setIsEditingTitle(false);
+              handleUpdate({ title });
+            }}
             onKeyDown={(e) => e.key === 'Enter' && handleUpdate({ title })}
             className="w-full bg-transparent text-[20px] font-bold leading-tight outline-none placeholder:text-muted-foreground/30"
             placeholder="Project name…"

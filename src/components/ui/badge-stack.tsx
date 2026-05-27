@@ -42,12 +42,22 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
 
   // When `open` becomes true, trigger enter animation on next frame
   useEffect(() => {
+    let frame: number | null = null;
+    let nestedFrame: number | null = null;
+
     if (open) {
       // Double rAF so the DOM mounts with opacity-0, then transitions to opacity-100
-      requestAnimationFrame(() => requestAnimationFrame(() => setMounted(true)));
+      frame = requestAnimationFrame(() => {
+        nestedFrame = requestAnimationFrame(() => setMounted(true));
+      });
     } else {
-      setMounted(false);
+      frame = requestAnimationFrame(() => setMounted(false));
     }
+
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      if (nestedFrame !== null) cancelAnimationFrame(nestedFrame);
+    };
   }, [open]);
 
   // Cleanup

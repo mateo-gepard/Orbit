@@ -30,7 +30,7 @@ function isIOSorSafari(): boolean {
     (ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Firefox'));
 }
 
-function useNativeWebPush(): boolean {
+function shouldUseNativeWebPush(): boolean {
   // On iOS/Safari, Firebase messaging doesn't work — use native Web Push
   return isIOSorSafari();
 }
@@ -72,7 +72,7 @@ export async function registerFCMToken(userId: string): Promise<string | null> {
 
     const swRegistration = await navigator.serviceWorker.ready;
 
-    if (useNativeWebPush()) {
+    if (shouldUseNativeWebPush()) {
       // Native Web Push uses the web push VAPID key (for iOS/Safari)
       const vapidKey = process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY || process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
       if (!vapidKey) {
@@ -297,7 +297,7 @@ export async function updateFCMSchedule(userId: string): Promise<void> {
  * go through the SW push event handler.
  */
 export function setupForegroundMessageHandler(): void {
-  if (useNativeWebPush()) {
+  if (shouldUseNativeWebPush()) {
     // On iOS/Safari, foreground messages come through SW push event
     // which already calls showNotification. Nothing extra needed.
     console.log('[ORBIT] Push: foreground handler skipped (native Web Push — handled by SW)');
@@ -319,7 +319,7 @@ export function setupForegroundMessageHandler(): void {
             icon: '/icons/icon-192.png',
             badge: '/icons/icon-192.png',
             tag: (payload.data?.tag as string) || 'orbit-push',
-            data: { url: (payload.data?.url as string) || '/today' },
+            data: { url: (payload.data?.url as string) || '/' },
           });
         }).catch(() => {
           if ('Notification' in window && Notification.permission === 'granted') {

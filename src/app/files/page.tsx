@@ -7,6 +7,7 @@ import { formatFileSize, getFileIcon, isPreviewable } from '@/lib/storage';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import type { OrbitItem, ProjectFile } from '@/lib/types';
 
 export default function FilesPage() {
   const { items, setSelectedItemId, setDetailPanelOpen } = useOrbitStore();
@@ -27,8 +28,8 @@ export default function FilesPage() {
   // Get all files across all projects
   const allFiles = useMemo(() => {
     const files: Array<{
-      file: any;
-      project: any;
+      file: ProjectFile;
+      project: OrbitItem;
     }> = [];
 
     items.forEach(item => {

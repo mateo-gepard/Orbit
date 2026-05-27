@@ -45,15 +45,14 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
   useEffect(() => {
     if (title === note.title && content === note.content) return;
     
-    setIsSaving(true);
     const timer = setTimeout(async () => {
+      setIsSaving(true);
       await updateItem(note.id, { title, content });
       setIsSaving(false);
     }, 800);
     
     return () => {
       clearTimeout(timer);
-      setIsSaving(false);
     };
   }, [title, content, note.id, note.title, note.content]);
 
