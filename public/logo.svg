@@ -1,19 +1,6 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <title>Threadmap T Logo</title>
-  <rect width="1024" height="1024" fill="#ffffff"/>
-  <defs>
-    <linearGradient id="orbit-t-gradient" x1="225" y1="209" x2="811" y2="829" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#001A44"/>
-      <stop offset="0.42" stop-color="#003869"/>
-      <stop offset="0.72" stop-color="#005887"/>
-      <stop offset="1" stop-color="#00163D"/>
-    </linearGradient>
-    <filter id="orbit-t-shadow" x="189" y="177" width="646" height="704" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#001533" flood-opacity="0.14"/>
-    </filter>
-  </defs>
-  <g filter="url(#orbit-t-shadow)">
-    <rect x="194" y="212" width="636" height="164" rx="82" fill="url(#orbit-t-gradient)"/>
-    <path d="M424 331H600V754C600 802.601 560.601 842 512 842C463.399 842 424 802.601 424 754V331Z" fill="url(#orbit-t-gradient)"/>
-  </g>
+  <rect width="1024" height="1024" fill="#000000"/>
+  <rect x="194" y="212" width="636" height="164" rx="82" fill="#ffffff"/>
+  <path d="M424 331H600V754C600 802.601 560.601 842 512 842C463.399 842 424 802.601 424 754V331Z" fill="#ffffff"/>
 </svg>
