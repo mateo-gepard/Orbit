@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { saveToolData } from './firestore';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Personal Settings Store (cloud-synced)
+// Threadmap — Personal Settings Store (cloud-synced)
 // ═══════════════════════════════════════════════════════════
 
 // ── Types ──────────────────────────────────────────────────
@@ -13,7 +13,7 @@ export type DateFormat = 'DD.MM.YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
 export type TimeFormat = '24h' | '12h';
 export type WeekStart = 'monday' | 'sunday';
 export type Language = 'en' | 'de';
-export type DefaultView = 'dashboard' | 'tasks' | 'inbox';
+export type DefaultView = 'dashboard' | 'tasks';
 export type CompactMode = 'comfortable' | 'compact';
 
 export interface NotificationSettings {
@@ -198,14 +198,14 @@ function scheduleSave(settings: UserSettings) {
   if (_saveTimeout) clearTimeout(_saveTimeout);
   _saveTimeout = setTimeout(() => {
     saveToolData(_syncUserId!, 'settings', { settings }).catch((err) => {
-      console.error('[ORBIT] Failed to save settings:', err);
+      console.error('[THREADMAP] Failed to save settings:', err);
     });
   }, 500);
 }
 
 function normalizeSettings(settings: Partial<UserSettings> = {}): UserSettings {
   const next = { ...DEFAULT_SETTINGS, ...settings };
-  if ((next.defaultView as string) === 'today') {
+  if ((next.defaultView as string) === 'today' || (next.defaultView as string) === 'inbox') {
     next.defaultView = 'dashboard';
   }
   return next;

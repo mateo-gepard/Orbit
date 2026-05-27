@@ -1,7 +1,7 @@
 'use client';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Push Notification Registration (FCM + Web Push)
+// Threadmap — Push Notification Registration (FCM + Web Push)
 //
 // Two strategies:
 //  1. FCM (Firebase Cloud Messaging) — works on Chrome, Edge, Firefox
@@ -47,7 +47,7 @@ async function getMessagingInstance() {
     fcmMessaging = getMessaging(app);
     return fcmMessaging;
   } catch (err) {
-    console.warn('[ORBIT] FCM: getMessaging failed:', err);
+    console.warn('[THREADMAP] FCM: getMessaging failed:', err);
     return null;
   }
 }
@@ -65,7 +65,7 @@ export async function registerFCMToken(userId: string): Promise<string | null> {
     if (Notification.permission !== 'granted') {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') {
-        console.warn('[ORBIT] Push: permission denied');
+        console.warn('[THREADMAP] Push: permission denied');
         return null;
       }
     }
@@ -76,7 +76,7 @@ export async function registerFCMToken(userId: string): Promise<string | null> {
       // Native Web Push uses the web push VAPID key (for iOS/Safari)
       const vapidKey = process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY || process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
       if (!vapidKey) {
-        console.warn('[ORBIT] Push: no VAPID key configured');
+        console.warn('[THREADMAP] Push: no VAPID key configured');
         return null;
       }
       return await registerNativeWebPush(userId, vapidKey, swRegistration);
@@ -84,13 +84,13 @@ export async function registerFCMToken(userId: string): Promise<string | null> {
       // FCM uses the Firebase VAPID key
       const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
       if (!vapidKey) {
-        console.warn('[ORBIT] Push: Firebase VAPID key not set');
+        console.warn('[THREADMAP] Push: Firebase VAPID key not set');
         return null;
       }
       return await registerFCM(userId, vapidKey, swRegistration);
     }
   } catch (err) {
-    console.error('[ORBIT] Push: registration failed:', err);
+    console.error('[THREADMAP] Push: registration failed:', err);
     return null;
   }
 }
@@ -103,7 +103,7 @@ async function registerFCM(
 ): Promise<string | null> {
   const msg = await getMessagingInstance();
   if (!msg) {
-    console.warn('[ORBIT] FCM: messaging not available, falling back to native Web Push');
+    console.warn('[THREADMAP] FCM: messaging not available, falling back to native Web Push');
     return registerNativeWebPush(userId, vapidKey, swRegistration);
   }
 
@@ -115,7 +115,7 @@ async function registerFCM(
     });
 
     if (!token) {
-      console.warn('[ORBIT] FCM: no token returned');
+      console.warn('[THREADMAP] FCM: no token returned');
       return null;
     }
 
@@ -123,10 +123,10 @@ async function registerFCM(
     localStorage.removeItem(PUSH_SUB_LOCAL_KEY);
 
     await saveTokenToFirestore(userId, token);
-    console.log('[ORBIT] FCM token registered');
+    console.log('[THREADMAP] FCM token registered');
     return token;
   } catch (err) {
-    console.error('[ORBIT] FCM: getToken failed, falling back to native Web Push:', err);
+    console.error('[THREADMAP] FCM: getToken failed, falling back to native Web Push:', err);
     return registerNativeWebPush(userId, vapidKey, swRegistration);
   }
 }
@@ -151,10 +151,10 @@ async function registerNativeWebPush(
     localStorage.removeItem(PUSH_TOKEN_LOCAL_KEY);
 
     await saveSubscriptionToFirestore(userId, subscription);
-    console.log('[ORBIT] Native Web Push subscription registered');
+    console.log('[THREADMAP] Native Web Push subscription registered');
     return subJson;
   } catch (err) {
-    console.error('[ORBIT] Native Web Push: subscribe failed:', err);
+    console.error('[THREADMAP] Native Web Push: subscribe failed:', err);
     return null;
   }
 }
@@ -172,7 +172,7 @@ export async function unregisterFCMToken(userId: string): Promise<void> {
       const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${tokenHash(token)}`);
       await deleteDoc(docRef);
       localStorage.removeItem(PUSH_TOKEN_LOCAL_KEY);
-      console.log('[ORBIT] FCM token unregistered');
+      console.log('[THREADMAP] FCM token unregistered');
       return;
     }
 
@@ -190,10 +190,10 @@ export async function unregisterFCMToken(userId: string): Promise<void> {
       const existingSub = await swReg?.pushManager?.getSubscription();
       if (existingSub) await existingSub.unsubscribe();
 
-      console.log('[ORBIT] Web Push subscription unregistered');
+      console.log('[THREADMAP] Web Push subscription unregistered');
     }
   } catch (err) {
-    console.error('[ORBIT] Push: unregister failed:', err);
+    console.error('[THREADMAP] Push: unregister failed:', err);
   }
 }
 
@@ -283,9 +283,9 @@ export async function updateFCMSchedule(userId: string): Promise<void> {
       timezoneOffset: new Date().getTimezoneOffset(),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }, { merge: true });
-    console.log('[ORBIT] Push schedule updated in Firestore');
+    console.log('[THREADMAP] Push schedule updated in Firestore');
   } catch (err) {
-    console.error('[ORBIT] Push: schedule update failed:', err);
+    console.error('[THREADMAP] Push: schedule update failed:', err);
   }
 }
 
@@ -300,7 +300,7 @@ export function setupForegroundMessageHandler(): void {
   if (shouldUseNativeWebPush()) {
     // On iOS/Safari, foreground messages come through SW push event
     // which already calls showNotification. Nothing extra needed.
-    console.log('[ORBIT] Push: foreground handler skipped (native Web Push — handled by SW)');
+    console.log('[THREADMAP] Push: foreground handler skipped (native Web Push — handled by SW)');
     return;
   }
 
@@ -308,9 +308,9 @@ export function setupForegroundMessageHandler(): void {
     if (!msg) return;
     import('firebase/messaging').then(({ onMessage }) => {
       onMessage(msg, (payload) => {
-        console.log('[ORBIT] FCM foreground message:', payload);
+        console.log('[THREADMAP] FCM foreground message:', payload);
 
-        const title = payload.notification?.title || 'ORBIT';
+        const title = payload.notification?.title || 'Threadmap';
         const body = payload.notification?.body || '';
 
         navigator.serviceWorker?.ready.then((reg) => {
@@ -318,7 +318,7 @@ export function setupForegroundMessageHandler(): void {
             body,
             icon: '/icons/icon-192.png',
             badge: '/icons/icon-192.png',
-            tag: (payload.data?.tag as string) || 'orbit-push',
+            tag: (payload.data?.tag as string) || 'threadmap-push',
             data: { url: (payload.data?.url as string) || '/' },
           });
         }).catch(() => {
@@ -396,10 +396,10 @@ export async function refreshPushSubscription(userId: string): Promise<void> {
     }
 
     // Subscription was lost (iOS killed it) — re-register silently
-    console.log('[ORBIT] Push subscription lost, re-registering...');
+    console.log('[THREADMAP] Push subscription lost, re-registering...');
     await registerFCMToken(userId);
   } catch (err) {
-    console.warn('[ORBIT] Push: refresh check failed:', err);
+    console.warn('[THREADMAP] Push: refresh check failed:', err);
   }
 }
 
@@ -472,7 +472,7 @@ export async function getRegisteredDevices(userId: string): Promise<RegisteredDe
       };
     });
   } catch (err) {
-    console.error('[ORBIT] Failed to list devices:', err);
+    console.error('[THREADMAP] Failed to list devices:', err);
     return [];
   }
 }
@@ -499,8 +499,8 @@ export async function removeDevice(docId: string): Promise<void> {
         }
       } catch {}
     }
-    console.log('[ORBIT] Device removed:', docId);
+    console.log('[THREADMAP] Device removed:', docId);
   } catch (err) {
-    console.error('[ORBIT] Failed to remove device:', err);
+    console.error('[THREADMAP] Failed to remove device:', err);
   }
 }

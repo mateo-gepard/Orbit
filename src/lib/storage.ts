@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Firebase Storage for File Uploads
+// Threadmap — Firebase Storage for File Uploads
 // ═══════════════════════════════════════════════════════════
 
 import {

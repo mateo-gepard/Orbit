@@ -3,7 +3,7 @@ import { checkRateLimit } from '@/lib/server/rate-limit';
 import { fetchPublicUrl } from '@/lib/server/url-safety';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — URL Metadata Scraper
+// Threadmap — URL Metadata Scraper
 // Fetches Open Graph / meta tags from a URL for quick-add.
 // Runs server-side to avoid CORS issues.
 // ═══════════════════════════════════════════════════════════
@@ -243,7 +243,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[ORBIT] Scrape error:', message);
+    console.error('[THREADMAP] Scrape error:', message);
     if (
       message.includes('Local network') ||
       message.includes('Only http') ||

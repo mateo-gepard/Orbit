@@ -66,9 +66,9 @@ export function ProjectDashboard() {
 
   const projectMilestones = itemId ? items.filter((i) => i.parentId === itemId && i.type === 'goal') : [];
   const milestoneIds = new Set(projectMilestones.map((m) => m.id));
-  const directProjectTasks = itemId ? items.filter((i) => i.parentId === itemId && i.type === 'task' && i.status !== 'inbox') : [];
+  const directProjectTasks = itemId ? items.filter((i) => i.parentId === itemId && i.type === 'task') : [];
   const nestedProjectTasks = milestoneIds.size > 0
-    ? items.filter((i) => i.type === 'task' && i.status !== 'inbox' && milestoneIds.has(i.parentId!))
+    ? items.filter((i) => i.type === 'task' && milestoneIds.has(i.parentId!))
     : [];
   const projectTasks = [...directProjectTasks, ...nestedProjectTasks];
 

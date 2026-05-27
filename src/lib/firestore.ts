@@ -67,7 +67,7 @@ async function withRetry<T>(
     } catch (err) {
       lastError = err;
       console.warn(
-        `[ORBIT] ${context} failed (attempt ${attempt + 1}/${retries}):`,
+        `[THREADMAP] ${context} failed (attempt ${attempt + 1}/${retries}):`,
         err
       );
       if (attempt < retries - 1) {
@@ -75,7 +75,7 @@ async function withRetry<T>(
       }
     }
   }
-  console.error(`[ORBIT] ${context} failed after ${retries} attempts`);
+  console.error(`[THREADMAP] ${context} failed after ${retries} attempts`);
   throw lastError;
 }
 
@@ -84,7 +84,7 @@ async function withRetry<T>(
 // ═══════════════════════════════════════════════════════════
 
 const VALID_TYPES = new Set(['task', 'project', 'habit', 'event', 'goal', 'note']);
-const VALID_STATUSES = new Set(['inbox', 'active', 'waiting', 'done', 'archived']);
+const VALID_STATUSES = new Set<string>(['active', 'waiting', 'done', 'archived']);
 
 function validateItem(item: Partial<OrbitItem>): boolean {
   if (!item.title || typeof item.title !== 'string') return false;
@@ -111,7 +111,12 @@ function sanitizeItem(item: OrbitItem): OrbitItem {
   sanitized.id = item.id || crypto.randomUUID();
   sanitized.title = (item.title || '').trim() || 'Untitled';
   sanitized.type = VALID_TYPES.has(item.type) ? item.type : 'task';
-  sanitized.status = VALID_STATUSES.has(item.status) ? item.status : 'active';
+  sanitized.status =
+    (item.status as string) === 'inbox'
+      ? 'active'
+      : VALID_STATUSES.has(item.status)
+        ? item.status
+        : 'active';
   sanitized.createdAt = typeof item.createdAt === 'number' ? item.createdAt : Date.now();
   sanitized.updatedAt = typeof item.updatedAt === 'number' ? item.updatedAt : Date.now();
   sanitized.userId = item.userId || 'demo-user';
@@ -132,14 +137,14 @@ function loadLocalItems(): OrbitItem[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
-      console.warn('[ORBIT] Corrupted localStorage data — resetting');
+      console.warn('[THREADMAP] Corrupted localStorage data — resetting');
       localStorage.removeItem(LOCAL_STORAGE_KEY);
       return [];
     }
     // Sanitize each item to handle any schema drift
     return parsed.map(sanitizeItem);
   } catch (err) {
-    console.warn('[ORBIT] Failed to load local data, resetting:', err);
+    console.warn('[THREADMAP] Failed to load local data, resetting:', err);
     try {
       localStorage.removeItem(LOCAL_STORAGE_KEY);
     } catch { /* noop */ }
@@ -155,15 +160,15 @@ function saveLocalItems(items: OrbitItem[]): boolean {
     // Verify write succeeded by reading back
     const verification = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (verification !== serialized) {
-      console.error('[ORBIT] localStorage write verification failed');
+      console.error('[THREADMAP] localStorage write verification failed');
       return false;
     }
     return true;
   } catch (err) {
-    console.error('[ORBIT] Failed to save local data:', err);
+    console.error('[THREADMAP] Failed to save local data:', err);
     // If storage is full, try to recover by compacting
     if (err instanceof DOMException && err.name === 'QuotaExceededError') {
-      console.warn('[ORBIT] Storage quota exceeded — compacting old archived items');
+      console.warn('[THREADMAP] Storage quota exceeded — compacting old archived items');
       try {
         const compacted = items.filter(
           (i) => i.status !== 'archived' || Date.now() - i.updatedAt < 30 * 24 * 60 * 60 * 1000
@@ -198,7 +203,7 @@ function optimisticLocalUpdate(
   const saved = saveLocalItems(newItems);
   if (!saved) {
     // Rollback on failure
-    console.warn('[ORBIT] Persistence failed — rolling back optimistic update');
+    console.warn('[THREADMAP] Persistence failed — rolling back optimistic update');
     useOrbitStore.getState().setItems(oldItems);
     return false;
   }
@@ -252,16 +257,16 @@ export function subscribeToItems(
       callback(items);
     },
     (error) => {
-      console.error('[ORBIT] Firestore subscription error:', error);
+      console.error('[THREADMAP] Firestore subscription error:', error);
       // Fallback: load from local cache backup
       const cached = loadLocalItems();
       if (cached.length > 0) {
-        console.warn('[ORBIT] Using local cache as fallback (' + cached.length + ' items)');
+        console.warn('[THREADMAP] Using local cache as fallback (' + cached.length + ' items)');
         callback(cached);
       } else {
         // No cache available — still call callback so loading screen dismisses
         // and user sees an error state rather than infinite loading
-        console.error('[ORBIT] No local cache available — showing empty state');
+        console.error('[THREADMAP] No local cache available — showing empty state');
         callback([]);
       }
     }
@@ -280,7 +285,7 @@ export async function createItem(
   const id = crypto.randomUUID();
 
   if (!validateItem(item as Partial<OrbitItem>)) {
-    console.error('[ORBIT] Invalid item data, creating with defaults');
+    console.error('[THREADMAP] Invalid item data, creating with defaults');
   }
 
   if (!isFirebaseAvailable(item.userId)) {
@@ -331,7 +336,7 @@ export async function updateItem(
     const success = optimisticLocalUpdate((items) => {
       const idx = items.findIndex((i) => i.id === id);
       if (idx === -1) {
-        console.warn(`[ORBIT] Item ${id} not found for update`);
+        console.warn(`[THREADMAP] Item ${id} not found for update`);
         return items;
       }
       items[idx] = { ...items[idx], ...updates, updatedAt: now };
@@ -366,7 +371,7 @@ export async function updateItem(
     _trackUpdateAnalytics(existingItem, updates);
   } catch (err) {
     // Rollback optimistic update
-    console.warn('[ORBIT] Rolling back optimistic update for', id);
+    console.warn('[THREADMAP] Rolling back optimistic update for', id);
     useOrbitStore.getState().setItems(prevItems);
     throw err;
   }
@@ -397,7 +402,7 @@ export async function deleteItem(id: string): Promise<void> {
     if (existingItem) trackItemEvent('item_deleted', existingItem);
   } catch (err) {
     // Rollback
-    console.warn('[ORBIT] Rolling back delete for', id);
+    console.warn('[THREADMAP] Rolling back delete for', id);
     useOrbitStore.getState().setItems(prevItems);
     throw err;
   }
@@ -651,7 +656,7 @@ export function subscribeToUserSettings(
       isFirstSnapshot = false;
     },
     (error) => {
-      console.error('[ORBIT] User settings subscription error:', error);
+      console.error('[THREADMAP] User settings subscription error:', error);
       // Don't reset — just keep whatever is in the store
     }
   );
@@ -752,11 +757,11 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
     (snapshot) => {
       if (snapshot.exists()) {
         // Cloud document exists — always push to store (cloud first)
-        console.log(`[ORBIT] Tool data received from cloud (${toolId})`);
+        console.log(`[THREADMAP] Tool data received from cloud (${toolId})`);
         callback(snapshot.data() as T);
       } else if (isFirstSnapshot) {
         // No cloud document yet — seed from local state so it syncs up
-        console.log(`[ORBIT] No cloud data for ${toolId} — seeding from local`);
+        console.log(`[THREADMAP] No cloud data for ${toolId} — seeding from local`);
         const local = getLocalState?.();
         if (local) {
           saveToolData(userId, toolId, local).catch(() => { /* ignore seed error */ });
@@ -765,7 +770,7 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
       isFirstSnapshot = false;
     },
     (error) => {
-      console.error(`[ORBIT] Tool data subscription error (${toolId}):`, error);
+      console.error(`[THREADMAP] Tool data subscription error (${toolId}):`, error);
     }
   );
 
@@ -829,5 +834,5 @@ export async function deleteAllUserData(userId: string): Promise<void> {
   const toolKeys = Object.keys(localStorage).filter((k) => k.startsWith('orbit-'));
   toolKeys.forEach((k) => localStorage.removeItem(k));
 
-  console.info('[ORBIT] All user data deleted for', userId);
+  console.info('[THREADMAP] All user data deleted for', userId);
 }

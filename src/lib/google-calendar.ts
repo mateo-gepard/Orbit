@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Google Calendar API Integration
+// Threadmap — Google Calendar API Integration
 // ═══════════════════════════════════════════════════════════
 
 import type { OrbitItem } from './types';
@@ -160,7 +160,7 @@ async function calendarFetch<T = unknown>(
 }
 
 // ═══════════════════════════════════════════════════════════
-// Convert ORBIT Event ↔ Google Calendar Event
+// Convert Threadmap Event ↔ Google Calendar Event
 // ═══════════════════════════════════════════════════════════
 
 function orbitToGoogleEvent(item: OrbitItem): GCalEvent {

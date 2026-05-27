@@ -40,8 +40,7 @@ import { format } from 'date-fns';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { toast } from 'sonner';
 
-const TASK_STATUS_OPTIONS: ItemStatus[] = ['inbox', 'active', 'waiting', 'done', 'archived'];
-const STANDARD_STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
+const STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
 const ITEM_TYPE_KEYS: Record<ItemType, TranslationKey> = {
   task: 'type.task',
   project: 'type.project',
@@ -66,10 +65,6 @@ const TYPE_ICONS: Record<ItemType, typeof CheckCircle2> = {
   note: FileText,
 };
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function getStatusOptions(type: ItemType): ItemStatus[] {
-  return type === 'task' ? TASK_STATUS_OPTIONS : STANDARD_STATUS_OPTIONS;
-}
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -132,20 +127,12 @@ export function DetailPanel() {
     async (updates: Partial<OrbitItem>) => {
       if (!item) return;
       try {
-        const promotesInbox =
-          item.type === 'task' &&
-          item.status === 'inbox' &&
-          (Boolean(updates.dueDate) || Boolean(updates.myDay) || Boolean(updates.parentId));
-        const normalizedUpdates: Partial<OrbitItem> = promotesInbox
-          ? { ...updates, status: 'active' }
-          : updates;
-
-        await updateItem(item.id, normalizedUpdates);
+        await updateItem(item.id, updates);
         
         // Auto-sync event changes to Google Calendar
         if (item.type === 'event' && item.googleCalendarId && hasCalendarPermission()) {
           try {
-            const updatedItem = { ...item, ...normalizedUpdates };
+            const updatedItem = { ...item, ...updates };
             await syncEventToGoogle(updatedItem as OrbitItem);
           } catch {
             // Auto-sync is non-blocking — swallow errors
@@ -157,12 +144,6 @@ export function DetailPanel() {
     },
     [item]
   );
-
-  useEffect(() => {
-    if (item && item.type !== 'task' && item.status === 'inbox') {
-      void handleUpdate({ status: 'active' });
-    }
-  }, [item, handleUpdate]);
 
   const handleSyncToGoogleCalendar = async () => {
     if (!item || item.type !== 'event') return;
@@ -311,7 +292,6 @@ export function DetailPanel() {
   const handleTypeChange = (nextType: ItemType) => {
     handleUpdate({
       type: nextType,
-      ...(nextType !== 'task' && item.status === 'inbox' ? { status: 'active' as const } : {}),
     });
   };
 
@@ -396,7 +376,7 @@ export function DetailPanel() {
                 <Select value={item.status} onValueChange={(v) => handleUpdate({ status: v as ItemStatus, completedAt: v === 'done' ? Date.now() : undefined })}>
                   <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {getStatusOptions(item.type).map((s) => (
+                    {STATUS_OPTIONS.map((s) => (
                       <SelectItem key={s} value={s} className="capitalize text-[12px]">{t(`status.${s}`)}</SelectItem>
                     ))}
                   </SelectContent>

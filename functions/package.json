@@ -1,6 +1,6 @@
 {
-  "name": "orbit-functions",
-  "description": "ORBIT Cloud Functions — scheduled briefing push notifications",
+  "name": "threadmap-functions",
+  "description": "Threadmap Cloud Functions — scheduled briefing push notifications",
   "scripts": {
     "build": "tsc",
     "serve": "npm run build && firebase emulators:start --only functions",

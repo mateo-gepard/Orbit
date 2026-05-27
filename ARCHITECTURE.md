@@ -1,12 +1,12 @@
-# 🏗️ ORBIT — System Architecture
+# 🏗️ Threadmap — System Architecture
 
 ## Übersicht
 
-ORBIT ist **hybrid**: Läuft komplett offline (localStorage) UND mit Cloud-Sync (Firebase).
+Threadmap ist **hybrid**: Läuft komplett offline (localStorage) UND mit Cloud-Sync (Firebase).
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         ORBIT App                            │
+│                         Threadmap App                            │
 │                      (Next.js 16 / React)                    │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -80,7 +80,7 @@ function sanitizeItem(item: OrbitItem): OrbitItem {
     id: item.id || crypto.randomUUID(),
     title: (item.title || '').trim() || 'Untitled',
     type: VALID_TYPES.has(item.type) ? item.type : 'task',
-    status: VALID_STATUSES.has(item.status) ? item.status : 'inbox',
+    status: VALID_STATUSES.has(item.status) ? item.status : 'active',
     // ... validates all fields
   };
 }
@@ -165,7 +165,7 @@ export const useOrbitStore = create<OrbitStore>((set, get) => ({
   // Guard: Nur Arrays akzeptieren
   setItems: (items) => {
     if (!Array.isArray(items)) {
-      console.error('[ORBIT] Invalid items:', typeof items);
+      console.error('[THREADMAP] Invalid items:', typeof items);
       return;
     }
     set({ items });
@@ -195,12 +195,12 @@ export const useOrbitStore = create<OrbitStore>((set, get) => ({
 ```typescript
 // Online/Offline Detection
 window.addEventListener('online', () => {
-  console.info('[ORBIT] Network back — reconnecting');
+  console.info('[THREADMAP] Network back — reconnecting');
   reconnect();
 });
 
 window.addEventListener('offline', () => {
-  console.warn('[ORBIT] Network offline — using local cache');
+  console.warn('[THREADMAP] Network offline — using local cache');
 });
 ```
 
@@ -215,7 +215,7 @@ const unsubscribe = onSnapshot(
   },
   (error) => {
     // Error: Use local cache
-    console.error('[ORBIT] Firestore error:', error);
+    console.error('[THREADMAP] Firestore error:', error);
     const cached = loadLocalItems();
     if (cached.length > 0) {
       callback(cached);
@@ -236,7 +236,7 @@ const unsubscribe = onSnapshot(
 ```typescript
 class ErrorBoundary extends Component {
   componentDidCatch(error, errorInfo) {
-    console.error('[ORBIT] Uncaught error:', error);
+    console.error('[THREADMAP] Uncaught error:', error);
   }
   
   render() {
@@ -254,7 +254,7 @@ const handleUpdate = async (updates) => {
   try {
     await updateItem(item.id, updates);
   } catch (err) {
-    console.error('[ORBIT] Update failed:', err);
+    console.error('[THREADMAP] Update failed:', err);
     // UI bleibt stabil dank optimistischem Update
   }
 };
@@ -373,12 +373,12 @@ npx vercel
 
 ## 📈 Monitoring & Logging
 
-Alle kritischen Operationen loggen mit `[ORBIT]` Prefix:
+Alle kritischen Operationen loggen mit `[THREADMAP]` Prefix:
 
 ```typescript
-console.info('[ORBIT Auth] Firebase available — using cloud mode');
-console.warn('[ORBIT] Network offline — using local data');
-console.error('[ORBIT] Update failed:', err);
+console.info('[THREADMAP Auth] Firebase available — using cloud mode');
+console.warn('[THREADMAP] Network offline — using local data');
+console.error('[THREADMAP] Update failed:', err);
 ```
 
 **In Production:**
@@ -423,6 +423,6 @@ Demo-Modus ohne Setup. Firebase ist optional.
 
 **Fazit:**
 
-ORBIT ist gebaut wie Microsoft To Do oder Todoist — **bulletproof, zuverlässig, performant**.
+Threadmap ist gebaut wie Microsoft To Do oder Todoist — **bulletproof, zuverlässig, performant**.
 
 Jede Design-Entscheidung folgt Production-Best-Practices. 🚀

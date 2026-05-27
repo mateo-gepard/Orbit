@@ -17,7 +17,6 @@ import type { OrbitItem } from '@/lib/types';
 // ─── Status config ──────────────────────────────────────
 
 const STATUS_CONFIG = {
-  inbox: { icon: Circle, label: 'Inbox', color: 'text-muted-foreground', ring: 'ring-muted-foreground/10' },
   active: { icon: Circle, label: 'Active', color: 'text-blue-500', ring: 'ring-blue-500/20' },
   waiting: { icon: Clock, label: 'Waiting', color: 'text-amber-500', ring: 'ring-amber-500/20' },
   done: { icon: CheckCircle2, label: 'Done', color: 'text-emerald-500', ring: 'ring-emerald-500/20' },

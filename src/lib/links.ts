@@ -1,5 +1,5 @@
 /**
- * Unified Linking System for ORBIT
+ * Unified Linking System for Threadmap
  * 
  * This module provides bulletproof utilities for managing bidirectional links
  * between items, parent-child relationships, and graph traversal.

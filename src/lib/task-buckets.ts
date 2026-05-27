@@ -16,7 +16,7 @@ export interface TaskBuckets {
 }
 
 function isOpenTask(item: OrbitItem) {
-  return item.type === 'task' && item.status !== 'inbox' && item.status !== 'done' && item.status !== 'archived';
+  return item.type === 'task' && item.status !== 'done' && item.status !== 'archived';
 }
 
 export function getTaskBuckets({

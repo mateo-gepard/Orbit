@@ -1,6 +1,6 @@
-# ORBIT Production Readiness
+# Threadmap Production Readiness
 
-This is the practical checklist for taking ORBIT from local mode to a production deployment. The codebase now runs without Firebase credentials by default; cloud sign-in and sync only activate when real `NEXT_PUBLIC_FIREBASE_*` values are present.
+This is the practical checklist for taking Threadmap from local mode to a production deployment. The codebase now runs without Firebase credentials by default; cloud sign-in and sync only activate when real `NEXT_PUBLIC_FIREBASE_*` values are present.
 
 ## Implemented Locally
 

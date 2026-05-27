@@ -101,7 +101,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         useToolboxStore.getState()._setSyncUserId(user.uid);
         useWishlistStore.getState()._setSyncUserId(user.uid);
         useCirclesStore.getState()._setSyncUserId(user.uid, {
-          displayName: user.displayName || 'Orbit User',
+          displayName: user.displayName || 'Threadmap User',
           email: user.email || '',
           photoURL: user.photoURL || null,
         });
@@ -213,10 +213,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         registerFCMToken(user.uid).then((token) => {
           if (token) {
             setupForegroundMessageHandler();
-            console.log('[ORBIT] FCM registered for background briefings');
+            console.log('[THREADMAP] FCM registered for background briefings');
           }
         }).catch((err) => {
-          console.warn('[ORBIT] FCM registration skipped:', err);
+          console.warn('[THREADMAP] FCM registration skipped:', err);
         });
       }
 
@@ -239,12 +239,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       unsubscribeRef.current = unsubscribe;
     } catch (err) {
-      console.error('[ORBIT] DataProvider subscription error:', err);
+      console.error('[THREADMAP] DataProvider subscription error:', err);
 
       if (reconnectAttempt.current < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempt.current++;
         const delay = RECONNECT_DELAY_MS * Math.pow(1.5, reconnectAttempt.current);
-        console.warn(`[ORBIT] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt.current})`);
+        console.warn(`[THREADMAP] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt.current})`);
         reconnectTimerRef.current = setTimeout(() => {
           setReconnectNonce((nonce) => nonce + 1);
         }, delay);
@@ -262,7 +262,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // Safety timeout — never stay on loading screen forever
     const safetyTimer = setTimeout(() => {
       if (isLoading) {
-        console.warn('[ORBIT] Loading safety timeout reached — dismissing loading screen');
+        console.warn('[THREADMAP] Loading safety timeout reached — dismissing loading screen');
         setDataLoaded(true);
         setIsLoading(false);
       }
@@ -294,13 +294,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Listen for online/offline events for reconnection
   useEffect(() => {
     const handleOnline = () => {
-      console.info('[ORBIT] Network back online — reconnecting');
+      console.info('[THREADMAP] Network back online — reconnecting');
       reconnectAttempt.current = 0;
       connect();
     };
 
     const handleOffline = () => {
-      console.warn('[ORBIT] Network offline — using local data');
+      console.warn('[THREADMAP] Network offline — using local data');
     };
 
     window.addEventListener('online', handleOnline);

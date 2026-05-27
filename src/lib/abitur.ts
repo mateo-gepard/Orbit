@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Abitur Engine (Bavarian G9)
+// Threadmap — Abitur Engine (Bavarian G9)
 // Complete calculation engine for the Qualifikationsphase
 // ═══════════════════════════════════════════════════════════
 

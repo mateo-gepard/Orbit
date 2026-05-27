@@ -32,7 +32,7 @@ export type { UserProfile, Connection, Nudge, SharedHabit, ActivityEntry, Linked
 export { formatFriendCode } from './circles';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Circles Store (Real Users)
+// Threadmap — Circles Store (Real Users)
 // ═══════════════════════════════════════════════════════════
 
 interface CirclesState {
@@ -92,7 +92,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
       await createConnectionRequest(me.uid, target.uid);
       return { success: true };
     } catch (err) {
-      console.error('[ORBIT] Circles: add friend failed:', err);
+      console.error('[THREADMAP] Circles: add friend failed:', err);
       return { success: false, error: (err as Error).message || 'Failed to send request' };
     }
   },
@@ -102,7 +102,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await acceptConn(connectionId);
     } catch (err) {
-      console.error('[ORBIT] Circles: accept failed:', err);
+      console.error('[THREADMAP] Circles: accept failed:', err);
     }
   },
 
@@ -110,7 +110,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await declineConn(connectionId);
     } catch (err) {
-      console.error('[ORBIT] Circles: decline failed:', err);
+      console.error('[THREADMAP] Circles: decline failed:', err);
     }
   },
 
@@ -118,7 +118,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await removeConn(connectionId);
     } catch (err) {
-      console.error('[ORBIT] Circles: remove failed:', err);
+      console.error('[THREADMAP] Circles: remove failed:', err);
     }
   },
 
@@ -136,7 +136,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await sendNudgeFn(me.uid, friendUid, connectionId);
     } catch (err) {
-      console.error('[ORBIT] Circles: nudge failed:', err);
+      console.error('[THREADMAP] Circles: nudge failed:', err);
     }
   },
 
@@ -153,7 +153,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
         await sendNudgeFn(me.uid, friendUid, connectionId, `shared a habit: ${habitTitle}`);
       }
     } catch (err) {
-      console.error('[ORBIT] Circles: share habit failed:', err);
+      console.error('[THREADMAP] Circles: share habit failed:', err);
     }
   },
 
@@ -163,7 +163,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await removeSharedHabit(connectionId, habitId, me.uid);
     } catch (err) {
-      console.error('[ORBIT] Circles: unshare habit failed:', err);
+      console.error('[THREADMAP] Circles: unshare habit failed:', err);
     }
   },
 
@@ -192,7 +192,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await markRead(nudgeId);
     } catch (err) {
-      console.error('[ORBIT] Circles: dismiss nudge failed:', err);
+      console.error('[THREADMAP] Circles: dismiss nudge failed:', err);
     }
   },
 
@@ -203,7 +203,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await addNoteFn(connectionId, me.uid, note);
     } catch (err) {
-      console.error('[ORBIT] Circles: add note failed:', err);
+      console.error('[THREADMAP] Circles: add note failed:', err);
     }
   },
 
@@ -213,7 +213,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await removeNoteFn(connectionId, me.uid, noteIndex);
     } catch (err) {
-      console.error('[ORBIT] Circles: remove note failed:', err);
+      console.error('[THREADMAP] Circles: remove note failed:', err);
     }
   },
 
@@ -272,7 +272,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
         await sendNudgeFn(me.uid, friendUid, connectionId, `linked a ${type}: ${title}`);
       }
     } catch (err) {
-      console.error('[ORBIT] Circles: link item failed:', err);
+      console.error('[THREADMAP] Circles: link item failed:', err);
     }
   },
 
@@ -282,7 +282,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     try {
       await removeLinkedFn(connectionId, itemId, me.uid);
     } catch (err) {
-      console.error('[ORBIT] Circles: unlink item failed:', err);
+      console.error('[THREADMAP] Circles: unlink item failed:', err);
     }
   },
 
@@ -302,7 +302,7 @@ export const useCirclesStore = create<CirclesState>()((set, get) => ({
     ensureUserProfile(uid, profile)
       .then((prof) => set({ myProfile: prof }))
       .catch((err) => {
-        console.error('[ORBIT] Circles: profile init failed:', err);
+        console.error('[THREADMAP] Circles: profile init failed:', err);
         // Still set a local profile so the page can show friend code
         set({
           myProfile: {

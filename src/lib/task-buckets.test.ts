@@ -63,25 +63,4 @@ describe('getTaskBuckets', () => {
     expect(buckets.overdueItems).toHaveLength(0);
   });
 
-  it('keeps inbox tasks out of dashboard schedule buckets', () => {
-    const item = task({
-      id: 'stale-inbox-schedule',
-      status: 'inbox',
-      dueDate: '2026-05-27',
-      myDay: '2026-05-26',
-    });
-
-    const buckets = getTaskBuckets({
-      items: [item],
-      selectedDateStr: '2026-05-27',
-      todayStr: '2026-05-27',
-      isViewingPast: false,
-      isViewingToday: true,
-    });
-
-    expect(buckets.todayTasks).toHaveLength(0);
-    expect(buckets.myDayTasks).toHaveLength(0);
-    expect(buckets.notDoneFromBefore).toHaveLength(0);
-    expect(buckets.overdueItems).toHaveLength(0);
-  });
 });

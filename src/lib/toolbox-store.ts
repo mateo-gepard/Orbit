@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { saveToolData } from './firestore';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Toolbox Store
+// Threadmap — Toolbox Store
 // Tools are high-quality extensions that behave like native tabs.
 // ═══════════════════════════════════════════════════════════
 
@@ -81,7 +81,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'Circles',
     tagline: 'Your people, drawn closer by gravity.',
     description:
-      'A relationship gravity map. Add people to your orbit — interactions, shared habits, and nudges pull them closer. The more connected, the closer they orbit.',
+      'A relationship gravity map. Add people to your circle — interactions, shared habits, and nudges pull them closer. The more connected, the closer they feel.',
     icon: 'Users',
     href: '/tools/circles',
     color: 'text-rose-600 dark:text-rose-400',
@@ -98,7 +98,7 @@ let _syncUserId: string | null = null;
 function scheduleSave(enabledTools: ToolId[]) {
   if (!_syncUserId) return;
   saveToolData(_syncUserId, 'toolbox', { enabledTools }).catch((err) => {
-    console.error('[ORBIT] Failed to save Toolbox data:', err);
+    console.error('[THREADMAP] Failed to save Toolbox data:', err);
   });
 }
 

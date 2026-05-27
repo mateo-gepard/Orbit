@@ -1,6 +1,6 @@
 # Backend Setup
 
-ORBIT works locally without a backend. Firebase is only needed for real accounts, cross-device sync, file uploads, push notifications, and Google Calendar integration.
+Threadmap works locally without a backend. Firebase is only needed for real accounts, cross-device sync, file uploads, push notifications, and Google Calendar integration.
 
 ## 1. Client Environment
 

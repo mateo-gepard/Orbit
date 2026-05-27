@@ -28,7 +28,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "ORBIT - Personal Productivity OS",
+  title: "Threadmap - Personal Productivity OS",
   description: "One system, one dashboard, everything connected.",
   manifest: "/manifest.json",
   icons: {
@@ -36,20 +36,20 @@ export const metadata: Metadata = {
     apple: "/icons/icon-192.png",
   },
   openGraph: {
-    title: "ORBIT - Personal Productivity OS",
+    title: "Threadmap - Personal Productivity OS",
     description: "One system, one dashboard, everything connected.",
-    siteName: "ORBIT",
+    siteName: "Threadmap",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "ORBIT - Personal Productivity OS",
+    title: "Threadmap - Personal Productivity OS",
     description: "One system, one dashboard, everything connected.",
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "ORBIT",
+    title: "Threadmap",
   },
 };
 
@@ -68,7 +68,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="ORBIT" />
+        <meta name="apple-mobile-web-app-title" content="Threadmap" />
         {/* Splash screens for iOS standalone */}
         <meta name="format-detection" content="telephone=no" />
       </head>

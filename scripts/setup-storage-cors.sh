@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ═══════════════════════════════════════════════════════════
-# ORBIT — Firebase Storage CORS Configuration
+# Threadmap — Firebase Storage CORS Configuration
 # ═══════════════════════════════════════════════════════════
 
 echo "🔧 Configuring Firebase Storage CORS..."

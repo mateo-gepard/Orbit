@@ -1067,7 +1067,7 @@ export default function FlightPage() {
               <div className="flex items-center gap-2.5">
                 <Crown className="h-4 w-4 text-purple-400/80" />
                 <div>
-                  <span className="text-[11px] font-bold text-zinc-300 tracking-[0.15em] uppercase">Orbit Private</span>
+                  <span className="text-[11px] font-bold text-zinc-300 tracking-[0.15em] uppercase">Threadmap Private</span>
                   <p className="text-[7px] text-zinc-600 tracking-[0.2em] uppercase mt-0.5">Charter Manifest</p>
                 </div>
               </div>
@@ -1142,7 +1142,7 @@ export default function FlightPage() {
             <div className="bg-sky-600 dark:bg-sky-700 px-5 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Plane className="h-3.5 w-3.5 text-white/90" />
-                <span className="text-[13px] font-bold text-white tracking-wide">ORBIT AIR</span>
+                <span className="text-[13px] font-bold text-white tracking-wide">THREADMAP AIR</span>
               </div>
               <span className="text-[11px] font-mono text-white/70 tracking-wider">{flightNumber}</span>
             </div>
@@ -1663,7 +1663,7 @@ function LogbookCard({ log }: { log: FlightLog }) {
       )}>
         <div className="flex items-center gap-2">
           <Plane className={cn('h-3 w-3', log.completedNormally ? 'text-sky-500' : 'text-amber-500')} />
-          <span className="text-[10px] font-bold text-sky-600/70 dark:text-sky-400/70 tracking-wider">ORBIT AIR</span>
+          <span className="text-[10px] font-bold text-sky-600/70 dark:text-sky-400/70 tracking-wider">THREADMAP AIR</span>
           <span className="text-[10px] font-mono font-bold text-muted-foreground/50">{log.flightNumber}</span>
         </div>
         <span className="text-[9px] text-muted-foreground/30 font-mono">{dateStr}</span>

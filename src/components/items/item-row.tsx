@@ -98,7 +98,6 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     } else {
       await updateItem(item.id, {
         myDay: todayStr,
-        ...(item.status === 'inbox' ? { status: 'active' as const } : {}),
       });
     }
   };

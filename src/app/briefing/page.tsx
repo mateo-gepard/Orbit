@@ -33,7 +33,7 @@ import type { OrbitItem } from '@/lib/types';
 type Phase = 'morning' | 'evening';
 
 function isOpenScheduledTask(item: OrbitItem) {
-  return item.type === 'task' && item.status !== 'inbox' && item.status !== 'done' && item.status !== 'archived';
+  return item.type === 'task' && item.status !== 'done' && item.status !== 'archived';
 }
 
 export default function BriefingPage() {

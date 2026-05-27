@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Universal Item Types
+// Threadmap — Universal Item Types
 // ═══════════════════════════════════════════════════════════
 
 export type ItemType = 'task' | 'project' | 'habit' | 'event' | 'goal' | 'note';
 
-export type ItemStatus = 'inbox' | 'active' | 'waiting' | 'done' | 'archived';
+export type ItemStatus = 'active' | 'waiting' | 'done' | 'archived';
 
 export type Priority = 'low' | 'medium' | 'high';
 

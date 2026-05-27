@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-// ORBIT — Service Worker for PWA
+// Threadmap — Service Worker for PWA
 // Handles caching, push notifications, and scheduled briefings
 
 // ─── Firebase Cloud Messaging (background push) ───────────
@@ -32,9 +32,9 @@ try {
   fcmMessaging.onBackgroundMessage((payload) => {
     swLog('[SW] FCM background message:', payload);
 
-    const title = payload.notification?.title || payload.data?.title || 'ORBIT';
+    const title = payload.notification?.title || payload.data?.title || 'Threadmap';
     const body = payload.notification?.body || payload.data?.body || '';
-    const tag = payload.data?.tag || 'orbit-push';
+    const tag = payload.data?.tag || 'threadmap-push';
 
     if (!payload.notification) {
       self.registration.showNotification(title, {
@@ -53,9 +53,9 @@ try {
   console.warn('[SW] Firebase Messaging init failed (push will use generic handler):', e);
 }
 
-const CACHE_VERSION = 8; // Increment this to force cache refresh
+const CACHE_VERSION = 9; // Increment this to force cache refresh
 const CACHE_NAME = `orbit-v${CACHE_VERSION}`;
-const OFFLINE_URLS = ['/', '/inbox', '/tasks', '/habits', '/briefing'];
+const OFFLINE_URLS = ['/', '/tasks', '/habits', '/briefing'];
 
 // ─── Briefing notification state ───────────────────────────
 // Stored in IndexedDB so it persists across SW restarts
@@ -231,7 +231,7 @@ async function showBriefingNotification(type, config) {
       body,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
-      tag: isMorning ? 'orbit-morning-briefing' : 'orbit-evening-briefing',
+      tag: isMorning ? 'threadmap-morning-briefing' : 'threadmap-evening-briefing',
       data: { url: `/briefing?type=${type}`, type: 'briefing', briefingType: type },
       renotify: false,
       requireInteraction: false,
@@ -342,8 +342,8 @@ self.addEventListener('push', (event) => {
   restartBriefingCheck();
 
   const data = event.data ? event.data.json() : {};
-  const title = data.title || 'ORBIT';
-  const tag = data.tag || 'orbit-push';
+  const title = data.title || 'Threadmap';
+  const tag = data.tag || 'threadmap-push';
   const options = {
     body: data.body || 'You have a notification.',
     icon: '/icons/icon-192.png',
@@ -357,9 +357,9 @@ self.addEventListener('push', (event) => {
     (async () => {
       // Mark lastFired so SW timer doesn't double-fire
       const today = getDateStr();
-      if (tag === 'orbit-morning-briefing') {
+      if (tag === 'threadmap-morning-briefing') {
         await setLastFired({ morning: today });
-      } else if (tag === 'orbit-evening-briefing') {
+      } else if (tag === 'threadmap-evening-briefing') {
         await setLastFired({ evening: today });
       }
       await self.registration.showNotification(title, options);

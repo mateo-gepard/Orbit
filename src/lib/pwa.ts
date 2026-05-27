@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — PWA Utilities
+// Threadmap — PWA Utilities
 // ═══════════════════════════════════════════════════════════
 
 import { isStandalone, isIOS } from './mobile';
@@ -46,9 +46,9 @@ export function registerServiceWorker() {
   window.addEventListener('load', async () => {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
-      console.log('[ORBIT] Service worker registered:', registration.scope);
+      console.log('[THREADMAP] Service worker registered:', registration.scope);
     } catch (err) {
-      console.warn('[ORBIT] SW registration failed:', err);
+      console.warn('[THREADMAP] SW registration failed:', err);
     }
   });
 }

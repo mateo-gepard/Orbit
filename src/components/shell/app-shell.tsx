@@ -83,10 +83,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Menu className="h-4 w-4" />
             </Button>
             <div className={`flex h-6 w-6 items-center justify-center rounded-md font-semibold text-[10px] ${hockeyMode ? 'bg-cyan-600 text-white' : 'bg-foreground text-background'}`}>
-              {hockeyMode ? '\u{1F3D2}' : 'O'}
+              {hockeyMode ? '\u{1F3D2}' : 'T'}
             </div>
             <span className="min-w-0 truncate text-sm font-semibold tracking-tight">
-              {hockeyMode ? 'ORBIT \u{1FA7A}' : 'ORBIT'}
+              {hockeyMode ? 'THREADMAP \u{1FA7A}' : 'THREADMAP'}
             </span>
             <div className="flex-1" />
             <Button

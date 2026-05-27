@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Firestore Security Rules
+// Threadmap — Firestore Security Rules
 // ═══════════════════════════════════════════════════════════
 //
 // Diese Rules sorgen für:
@@ -35,7 +35,7 @@ service cloud.firestore {
       return data.userId is string
           && data.title is string
           && data.type in ['task', 'project', 'habit', 'event', 'goal', 'note']
-          && data.status in ['inbox', 'active', 'waiting', 'done', 'archived']
+          && data.status in ['active', 'waiting', 'done', 'archived']
           && data.createdAt is int
           && data.updatedAt is int;
       // Note: files field is optional and not validated here

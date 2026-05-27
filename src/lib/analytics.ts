@@ -14,7 +14,7 @@ import { db } from './firebase';
 import type { AnalyticsEvent, AnalyticsAction, OrbitItem } from './types';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT Analytics — Lightweight Event Tracker
+// Threadmap Analytics — Lightweight Event Tracker
 // ═══════════════════════════════════════════════════════════
 //
 // Design principles:

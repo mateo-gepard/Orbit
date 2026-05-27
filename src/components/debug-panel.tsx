@@ -62,7 +62,7 @@ export function DebugPanel() {
   }, [entries, open]);
 
   const runDiagnostics = useCallback(async () => {
-    addDebug('env', `🔧 ORBIT Debug Panel initialized`);
+    addDebug('env', `🔧 Threadmap Debug Panel initialized`);
     addDebug('env', `URL: ${window.location.href}`);
     addDebug('env', `UA: ${navigator.userAgent.slice(0, 80)}...`);
     addDebug('env', `Viewport: ${window.innerWidth}x${window.innerHeight}`);
@@ -178,7 +178,7 @@ export function DebugPanel() {
     try {
       const lsKeys = Object.keys(localStorage);
       const relevantKeys = lsKeys.filter(k => k.includes('orbit') || k.includes('firebase') || k.includes('zustand'));
-      addDebug('cache', `LocalStorage keys: ${lsKeys.length} total, ${relevantKeys.length} orbit-related`);
+      addDebug('cache', `LocalStorage keys: ${lsKeys.length} total, ${relevantKeys.length} app-related`);
       for (const key of relevantKeys.slice(0, 10)) {
         const val = localStorage.getItem(key);
         addDebug('cache', `  LS "${key}": ${val ? `${val.length} chars` : 'empty'}`);
@@ -290,7 +290,7 @@ export function DebugPanel() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
         <div className="flex items-center gap-2">
           <Bug className="h-4 w-4 text-red-400" />
-          <span className="text-[12px] font-bold tracking-wider">ORBIT DEBUG</span>
+          <span className="text-[12px] font-bold tracking-wider">THREADMAP DEBUG</span>
           {buildId && (
             <span className="text-[9px] text-white/30 font-mono">build: {buildId.slice(0, 12)}</span>
           )}

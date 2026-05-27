@@ -15,7 +15,6 @@ import {
   LogOut,
   Plus,
   CheckSquare,
-  Inbox,
   Files,
   Pencil,
   Trash2,
@@ -50,7 +49,6 @@ const NAV_SECTIONS: { labelKey?: TranslationKey; items: { href: string; labelKey
   {
     items: [
       { href: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
-      { href: '/inbox', labelKey: 'nav.inbox', icon: Inbox },
       { href: '/tasks', labelKey: 'nav.tasks', icon: CheckSquare },
     ],
   },
@@ -104,11 +102,10 @@ export function Sidebar() {
     if (!showBadges) return {} as Record<string, number>;
     const active = storeItems.filter((i) => i.status !== 'archived' && i.status !== 'done');
     return {
-      '/tasks': active.filter((i) => i.type === 'task' && i.status !== 'inbox').length,
+      '/tasks': active.filter((i) => i.type === 'task').length,
       '/projects': active.filter((i) => i.type === 'project').length,
       '/habits': active.filter((i) => i.type === 'habit').length,
       '/goals': active.filter((i) => i.type === 'goal').length,
-      '/inbox': storeItems.filter((i) => i.type === 'task' && i.status === 'inbox').length,
     } as Record<string, number>;
   }, [showBadges, storeItems]);
 
@@ -185,10 +182,10 @@ export function Sidebar() {
               "flex h-7 w-7 items-center justify-center rounded-lg font-semibold text-xs tracking-tight shadow-[var(--shadow-hairline)]",
               hockeyMode ? "bg-cyan-600 text-white" : "bg-foreground text-background"
             )}>
-              {hockeyMode ? '🏒' : 'O'}
+              {hockeyMode ? '🏒' : 'T'}
             </div>
             <span className="text-[15px] font-semibold tracking-tight">
-              {hockeyMode ? 'ORBIT 🩺' : 'ORBIT'}
+              {hockeyMode ? 'THREADMAP 🩺' : 'THREADMAP'}
             </span>
           </div>
           <Button

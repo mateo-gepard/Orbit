@@ -113,7 +113,7 @@ function debouncedSyncTags(get: () => OrbitStore) {
         removedDefaultTags: get().removedDefaultTags,
       });
     } catch (err) {
-      console.error('[ORBIT] Failed to sync tags:', err);
+      console.error('[THREADMAP] Failed to sync tags:', err);
       _ignoreCloudUntil = 0; // allow cloud updates on error
     }
   }, 300);
@@ -131,12 +131,12 @@ export const useOrbitStore = create<OrbitStore>()(
       setItems: (items) => {
         // Guard: only accept valid arrays
         if (!Array.isArray(items)) {
-          console.error('[ORBIT Store] setItems received non-array:', typeof items);
+          console.error('[THREADMAP Store] setItems received non-array:', typeof items);
           return;
         }
         const currentCount = get().items.length;
         if (currentCount > 0 && items.length === 0) {
-          console.warn(`[ORBIT Store] setItems: ${currentCount} items → 0. Potential data wipe detected.`);
+          console.warn(`[THREADMAP Store] setItems: ${currentCount} items → 0. Potential data wipe detected.`);
         }
         set({ items });
       },
@@ -228,7 +228,7 @@ export const useOrbitStore = create<OrbitStore>()(
     if (id !== null) {
       const exists = get().items.some((i) => i.id === id);
       if (!exists) {
-        console.warn(`[ORBIT Store] Item ${id} not found, ignoring selection`);
+        console.warn(`[THREADMAP Store] Item ${id} not found, ignoring selection`);
         return;
       }
     }

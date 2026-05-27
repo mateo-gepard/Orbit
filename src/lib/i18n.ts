@@ -3,7 +3,7 @@
 import { useSettingsStore, type Language } from './settings-store';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Lightweight i18n
+// Threadmap — Lightweight i18n
 // ═══════════════════════════════════════════════════════════
 
 export type TranslationKey = keyof typeof en;
@@ -26,14 +26,8 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'type.goal': 'Meisterschaft',
   'type.note': 'Rezept',
 
-  // ── Inbox ────────────────────────────────────────────────
-  'inbox.zero': 'Sauberes Feld! 🏒',
-  'inbox.zeroDesc': 'Alles verarbeitet. Das Feld ist frei für neue Spielzüge.',
-  'inbox.activate': 'Aufstellen',
-  'inbox.swipeHint': '← Aufstellen · Vom Feld nehmen →',
 
   // ── Status ───────────────────────────────────────────────
-  'status.inbox': 'Kabine',
   'status.active': 'Im Spiel',
   'status.waiting': 'Auf der Bank',
   'status.done': 'Tor! ✓',
@@ -152,7 +146,6 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
 
   // ── Navigation (fun labels) ──────────────────────────────
   'nav.dashboard': 'Spielfeld',
-  'nav.inbox': 'Kabine',
   'nav.tasks': 'Spielzüge',
   'nav.habits': 'Training',
   'nav.goals': 'Pokale',
@@ -252,7 +245,7 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'settings.deleteAccount': 'Karriereende',
   'settings.deleteAccountDesc': 'Endgültiger Rücktritt — alle Daten werden gelöscht',
   'settings.yesDeleteEverything': 'Ja, Karriere beenden',
-  'settings.version': 'ORBIT v1.0.0 · Made with Hockeygeist 🏒',
+  'settings.version': 'Threadmap v1.0.0 · Made with Hockeygeist 🏒',
 };
 
 // ── English (default) ──────────────────────────────────────
@@ -262,7 +255,6 @@ const en = {
   'nav.dashboard': 'Dashboard',
   'nav.today': 'Today',
   'nav.tasks': 'Tasks',
-  'nav.inbox': 'Inbox',
   'nav.organize': 'Organize',
   'nav.projects': 'Projects',
   'nav.habits': 'Habits',
@@ -326,7 +318,6 @@ const en = {
   'type.note': 'Note',
 
   // ── Status ───────────────────────────────────────────────
-  'status.inbox': 'Inbox',
   'status.active': 'Active',
   'status.waiting': 'Waiting',
   'status.done': 'Done',
@@ -380,7 +371,7 @@ const en = {
   'date.nextDay': 'Next day',
 
   // ── Onboarding ───────────────────────────────────────────
-  'onboarding.title': 'Start your orbit',
+  'onboarding.title': 'Start your Threadmap',
   'onboarding.description': 'Your first task, habit, or project starts here.',
   'onboarding.cta': 'Create something',
 
@@ -416,11 +407,6 @@ const en = {
   'group.mediumPriority': 'Medium Priority',
   'group.lowPriority': 'Low Priority',
 
-  // ── Inbox ────────────────────────────────────────────────
-  'inbox.swipeHint': '← Swipe right to activate · Swipe left to delete →',
-  'inbox.activate': 'Activate',
-  'inbox.zero': 'Inbox zero',
-  'inbox.zeroDesc': 'All items processed.',
 
   // ── Today page ───────────────────────────────────────────
   'today.overdue': 'Overdue',
@@ -544,7 +530,7 @@ const en = {
   'commandBar.tip': 'Tip: Use #tag !high @project and dates like tomorrow or 15.03',
 
   // ── Login screen ─────────────────────────────────────────
-  'login.welcome': 'Welcome to ORBIT',
+  'login.welcome': 'Welcome to Threadmap',
   'login.tagline': 'Your personal system for tasks, habits, goals, and ideas.',
   'login.continueGoogle': 'Continue with Google',
   'login.signInEmail': 'Sign in with Email',
@@ -603,7 +589,7 @@ const en = {
   'settings.timezoneDesc': 'Used for scheduling and due dates',
   'settings.signOut': 'Sign out',
   'settings.theme': 'Theme',
-  'settings.themeDesc': 'Choose how Orbit looks',
+  'settings.themeDesc': 'Choose how Threadmap looks',
   'settings.light': 'Light',
   'settings.dark': 'Dark',
   'settings.system': 'System',
@@ -626,7 +612,7 @@ const en = {
   'settings.monday': 'Monday',
   'settings.sunday': 'Sunday',
   'settings.startPage': 'Start Page',
-  'settings.startPageDesc': 'Which page to show when you open Orbit',
+  'settings.startPageDesc': 'Which page to show when you open Threadmap',
   'settings.confirmDelete': 'Confirm Before Delete',
   'settings.confirmDeleteDesc': 'Show a warning before deleting items',
   'settings.archiveInstead': 'Archive Instead of Delete',
@@ -634,7 +620,7 @@ const en = {
   'settings.autoArchive': 'Auto-Archive Completed',
   'settings.autoArchiveDesc': 'Archive tasks after a set number of days',
   'settings.enableNotif': 'Enable Notifications',
-  'settings.enableNotifDesc': 'Allow Orbit to send push notifications',
+  'settings.enableNotifDesc': 'Allow Threadmap to send push notifications',
   'settings.notifSound': 'Notification Sound',
   'settings.morningBriefing': 'Morning Briefing',
   'settings.morningBriefingDesc': 'Your day at a glance — tasks, events, habits',
@@ -667,12 +653,12 @@ const en = {
   'settings.toggleDarkMode': 'Toggle dark mode',
   'settings.shortcutsComingSoon': 'Custom shortcut configuration coming soon.',
   'settings.analytics': 'Usage Analytics',
-  'settings.analyticsDesc': 'Help improve Orbit by sharing anonymous usage data',
+  'settings.analyticsDesc': 'Help improve Threadmap by sharing anonymous usage data',
   'settings.crashReports': 'Crash Reports',
   'settings.crashReportsDesc': 'Automatically send crash logs for debugging',
   'settings.showPhoto': 'Show Profile Photo',
   'settings.showPhotoDesc': 'Display your Google profile picture in the sidebar',
-  'settings.privacyNote': 'Your data is stored securely in Firebase with end-to-end authentication. Only you can access your items. Orbit never sells or shares personal data.',
+  'settings.privacyNote': 'Your data is stored securely in Firebase with end-to-end authentication. Only you can access your items. Threadmap never sells or shares personal data.',
   'settings.reduceMotion': 'Reduce Motion',
   'settings.reduceMotionDesc': 'Minimize animations and transitions',
   'settings.highContrast': 'High Contrast',
@@ -699,14 +685,14 @@ const en = {
   'settings.deleteAccountDesc': 'Permanently delete your account and all data',
   'settings.deleting': 'Deleting...',
   'settings.yesDeleteEverything': 'Yes, delete everything',
-  'settings.version': 'ORBIT v1.0.0 · Made with focus',
+  'settings.version': 'Threadmap v1.0.0 · Made with focus',
   'settings.syncedLocally': 'Settings synced locally',
   'settings.syncedFirebase': 'Settings synced with Firebase',
 
   // ── Easter Eggs ──────────────────────────────────────────
   'settings.easterEggs': 'Easter Eggs',
   'settings.hockeyMode': 'Hockey & Medizin Mode',
-  'settings.hockeyModeDesc': 'Transform Orbit into a hockey field meets hospital. Tasks become plays, habits become training, and completions trigger goal celebrations.',
+  'settings.hockeyModeDesc': 'Transform Threadmap into a hockey field meets hospital. Tasks become plays, habits become training, and completions trigger goal celebrations.',
   'settings.hockeyPreview': 'Active changes',
   'settings.hockeyFeature1': 'TOR! animation when completing tasks (+ Hat-Trick bonus)',
   'settings.hockeyFeature2': 'Medical triage priority labels (Notfall, Dringend, Wartezimmer)',
@@ -732,7 +718,6 @@ const de: Record<TranslationKey, string> = {
   'nav.dashboard': 'Dashboard',
   'nav.today': 'Heute',
   'nav.tasks': 'Aufgaben',
-  'nav.inbox': 'Eingang',
   'nav.organize': 'Organisieren',
   'nav.projects': 'Projekte',
   'nav.habits': 'Gewohnheiten',
@@ -796,7 +781,6 @@ const de: Record<TranslationKey, string> = {
   'type.note': 'Notiz',
 
   // ── Status ───────────────────────────────────────────────
-  'status.inbox': 'Eingang',
   'status.active': 'Aktiv',
   'status.waiting': 'Wartend',
   'status.done': 'Erledigt',
@@ -850,7 +834,7 @@ const de: Record<TranslationKey, string> = {
   'date.nextDay': 'Nächster Tag',
 
   // ── Onboarding ───────────────────────────────────────────
-  'onboarding.title': 'Starte deinen Orbit',
+  'onboarding.title': 'Starte deine Threadmap',
   'onboarding.description': 'Deine erste Aufgabe, Gewohnheit oder dein erstes Projekt beginnt hier.',
   'onboarding.cta': 'Etwas erstellen',
 
@@ -886,11 +870,6 @@ const de: Record<TranslationKey, string> = {
   'group.mediumPriority': 'Mittlere Priorität',
   'group.lowPriority': 'Niedrige Priorität',
 
-  // ── Inbox ────────────────────────────────────────────────
-  'inbox.swipeHint': '← Nach rechts wischen: aktivieren · Nach links: löschen →',
-  'inbox.activate': 'Aktivieren',
-  'inbox.zero': 'Eingang leer',
-  'inbox.zeroDesc': 'Alle Einträge verarbeitet.',
 
   // ── Today page ───────────────────────────────────────────
   'today.overdue': 'Überfällig',
@@ -1014,7 +993,7 @@ const de: Record<TranslationKey, string> = {
   'commandBar.tip': 'Tipp: Nutze #tag !hoch @projekt und Daten wie morgen oder 15.03',
 
   // ── Login screen ─────────────────────────────────────────
-  'login.welcome': 'Willkommen bei ORBIT',
+  'login.welcome': 'Willkommen bei Threadmap',
   'login.tagline': 'Dein persönliches System für Aufgaben, Gewohnheiten, Ziele und Ideen.',
   'login.continueGoogle': 'Weiter mit Google',
   'login.signInEmail': 'Mit E-Mail anmelden',
@@ -1073,7 +1052,7 @@ const de: Record<TranslationKey, string> = {
   'settings.timezoneDesc': 'Für Planung und Fälligkeitsdaten',
   'settings.signOut': 'Abmelden',
   'settings.theme': 'Design',
-  'settings.themeDesc': 'Wähle das Aussehen von Orbit',
+  'settings.themeDesc': 'Wähle das Aussehen von Threadmap',
   'settings.light': 'Hell',
   'settings.dark': 'Dunkel',
   'settings.system': 'System',
@@ -1104,7 +1083,7 @@ const de: Record<TranslationKey, string> = {
   'settings.autoArchive': 'Erledigte automatisch archivieren',
   'settings.autoArchiveDesc': 'Aufgaben nach einer bestimmten Anzahl Tage archivieren',
   'settings.enableNotif': 'Benachrichtigungen aktivieren',
-  'settings.enableNotifDesc': 'Orbit erlauben Push-Benachrichtigungen zu senden',
+  'settings.enableNotifDesc': 'Threadmap erlauben Push-Benachrichtigungen zu senden',
   'settings.notifSound': 'Benachrichtigungston',
   'settings.morningBriefing': 'Morgen-Briefing',
   'settings.morningBriefingDesc': 'Dein Tag auf einen Blick — Aufgaben, Termine, Gewohnheiten',
@@ -1137,12 +1116,12 @@ const de: Record<TranslationKey, string> = {
   'settings.toggleDarkMode': 'Dunkelmodus umschalten',
   'settings.shortcutsComingSoon': 'Benutzerdefinierte Tastenkürzel kommen bald.',
   'settings.analytics': 'Nutzungsanalyse',
-  'settings.analyticsDesc': 'Hilf Orbit mit anonymen Nutzungsdaten zu verbessern',
+  'settings.analyticsDesc': 'Hilf Threadmap mit anonymen Nutzungsdaten zu verbessern',
   'settings.crashReports': 'Absturzberichte',
   'settings.crashReportsDesc': 'Automatisch Fehlerprotokolle zur Analyse senden',
   'settings.showPhoto': 'Profilbild anzeigen',
   'settings.showPhotoDesc': 'Google-Profilbild in der Seitenleiste anzeigen',
-  'settings.privacyNote': 'Deine Daten werden sicher in Firebase mit End-to-End-Authentifizierung gespeichert. Nur du hast Zugriff auf deine Einträge. Orbit verkauft oder teilt niemals persönliche Daten.',
+  'settings.privacyNote': 'Deine Daten werden sicher in Firebase mit End-to-End-Authentifizierung gespeichert. Nur du hast Zugriff auf deine Einträge. Threadmap verkauft oder teilt niemals persönliche Daten.',
   'settings.reduceMotion': 'Bewegung reduzieren',
   'settings.reduceMotionDesc': 'Animationen und Übergänge minimieren',
   'settings.highContrast': 'Hoher Kontrast',
@@ -1169,14 +1148,14 @@ const de: Record<TranslationKey, string> = {
   'settings.deleteAccountDesc': 'Konto und alle Daten dauerhaft löschen',
   'settings.deleting': 'Lösche...',
   'settings.yesDeleteEverything': 'Ja, alles löschen',
-  'settings.version': 'ORBIT v1.0.0 · Made with focus',
+  'settings.version': 'Threadmap v1.0.0 · Made with focus',
   'settings.syncedLocally': 'Einstellungen lokal gespeichert',
   'settings.syncedFirebase': 'Einstellungen mit Firebase synchronisiert',
 
   // ── Easter Eggs ──────────────────────────────────────────
   'settings.easterEggs': 'Easter Eggs',
   'settings.hockeyMode': 'Hockey & Medizin Modus',
-  'settings.hockeyModeDesc': 'Verwandle Orbit in ein Hockeyfeld trifft Krankenhaus. Aufgaben werden Spielzüge, Gewohnheiten werden Training, und abgeschlossene Aufgaben lösen Tor-Jubel aus.',
+  'settings.hockeyModeDesc': 'Verwandle Threadmap in ein Hockeyfeld trifft Krankenhaus. Aufgaben werden Spielzüge, Gewohnheiten werden Training, und abgeschlossene Aufgaben lösen Tor-Jubel aus.',
   'settings.hockeyPreview': 'Aktive Änderungen',
   'settings.hockeyFeature1': 'TOR!-Animation beim Abschließen von Aufgaben (+ Hat-Trick Bonus)',
   'settings.hockeyFeature2': 'Medizinische Triage-Prioritäten (Notfall, Dringend, Wartezimmer)',

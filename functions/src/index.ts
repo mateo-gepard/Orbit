@@ -6,7 +6,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import * as webpush from 'web-push';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Briefing Push Notification Cloud Function
+// Threadmap — Briefing Push Notification Cloud Function
 //
 // Runs every minute via Cloud Scheduler.
 // Queries fcmTokens collection for users whose briefing time
@@ -27,7 +27,7 @@ const messaging = getMessaging();
 const vapidPublicKey = defineSecret('VAPID_PUBLIC_KEY');
 const vapidPrivateKey = defineSecret('VAPID_PRIVATE_KEY');
 
-const VAPID_SUBJECT = 'mailto:orbit@orbit-app.com';
+const VAPID_SUBJECT = 'mailto:notifications@threadmap.app';
 
 /**
  * Get current HH:mm in a given IANA timezone.
@@ -105,14 +105,14 @@ export const sendBriefingNotifications = onSchedule(
     try {
       const pubKey = (vapidPublicKey.value() || process.env.VAPID_PUBLIC_KEY || '').trim();
       const privKey = (vapidPrivateKey.value() || process.env.VAPID_PRIVATE_KEY || '').trim();
-      console.log(`[ORBIT] VAPID keys: pub=${pubKey ? 'set (' + pubKey.length + ' chars)' : 'MISSING'}, priv=${privKey ? 'set (' + privKey.length + ' chars)' : 'MISSING'}`);
+      console.log(`[THREADMAP] VAPID keys: pub=${pubKey ? 'set (' + pubKey.length + ' chars)' : 'MISSING'}, priv=${privKey ? 'set (' + privKey.length + ' chars)' : 'MISSING'}`);
       if (pubKey && privKey) {
         webpush.setVapidDetails(VAPID_SUBJECT, pubKey, privKey);
         webPushReady = true;
-        console.log('[ORBIT] web-push configured with VAPID keys');
+        console.log('[THREADMAP] web-push configured with VAPID keys');
       }
     } catch (e) {
-      console.warn('[ORBIT] VAPID secrets not available — native Web Push disabled:', e);
+      console.warn('[THREADMAP] VAPID secrets not available — native Web Push disabled:', e);
     }
 
     try {
@@ -159,10 +159,10 @@ export const sendBriefingNotifications = onSchedule(
       if (promises.length > 0) {
         await Promise.allSettled(promises);
         await batch.commit();
-        console.log(`[ORBIT] Sent ${promises.length} briefing notification(s)`);
+        console.log(`[THREADMAP] Sent ${promises.length} briefing notification(s)`);
       }
     } catch (err) {
-      console.error('[ORBIT] Briefing cron error:', err);
+      console.error('[THREADMAP] Briefing cron error:', err);
     }
   }
 );
@@ -198,14 +198,14 @@ async function sendPush(
     ? 'Your morning briefing is ready.'
     : 'Time to review your day.';
 
-  const tag = isMorning ? 'orbit-morning-briefing' : 'orbit-evening-briefing';
+  const tag = isMorning ? 'threadmap-morning-briefing' : 'threadmap-evening-briefing';
   const url = `/briefing?type=${type}`;
 
   try {
     if (data.type === 'webpush' && data.subscription) {
       // ── Native Web Push (iOS/Safari) ───────────────────
       if (!webPushReady) {
-        console.warn('[ORBIT] Skipping Web Push — VAPID keys not configured');
+        console.warn('[THREADMAP] Skipping Web Push — VAPID keys not configured');
         return;
       }
 
@@ -232,7 +232,7 @@ async function sendPush(
         { TTL: 3600 }
       );
 
-      console.log(`[ORBIT] ${type} Web Push sent to ${data.subscription.endpoint.slice(0, 40)}...`);
+      console.log(`[THREADMAP] ${type} Web Push sent to ${data.subscription.endpoint.slice(0, 40)}...`);
     } else if (data.token) {
       // ── FCM (Chrome, Edge, Firefox) ────────────────────
       await messaging.send({
@@ -260,9 +260,9 @@ async function sendPush(
         },
       });
 
-      console.log(`[ORBIT] ${type} FCM push sent to token ${data.token.slice(0, 8)}...`);
+      console.log(`[THREADMAP] ${type} FCM push sent to token ${data.token.slice(0, 8)}...`);
     } else {
-      console.warn('[ORBIT] Doc has neither token nor subscription, skipping');
+      console.warn('[THREADMAP] Doc has neither token nor subscription, skipping');
       return;
     }
 
@@ -280,15 +280,15 @@ async function sendPush(
       error.code === 'messaging/invalid-registration-token' ||
       error.code === 'messaging/registration-token-not-registered'
     ) {
-      console.warn(`[ORBIT] Removing stale FCM token: ${data.token?.slice(0, 8)}...`);
+      console.warn(`[THREADMAP] Removing stale FCM token: ${data.token?.slice(0, 8)}...`);
       batch.delete(docRef);
     }
     // Web Push subscription expired (410 Gone)
     else if (error.statusCode === 410 || error.statusCode === 404) {
-      console.warn(`[ORBIT] Removing expired Web Push subscription`);
+      console.warn(`[THREADMAP] Removing expired Web Push subscription`);
       batch.delete(docRef);
     } else {
-      console.error(`[ORBIT] Push send failed for ${type}:`, err);
+      console.error(`[THREADMAP] Push send failed for ${type}:`, err);
     }
   }
 }

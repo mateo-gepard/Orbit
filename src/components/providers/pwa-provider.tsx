@@ -28,7 +28,7 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
     // Listen for NAVIGATE messages from the Service Worker (notification clicks)
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data?.type === 'NAVIGATE' && event.data.url) {
-        console.log('[ORBIT] SW NAVIGATE:', event.data.url);
+        console.log('[THREADMAP] SW NAVIGATE:', event.data.url);
         router.push(event.data.url);
       }
     };
@@ -46,7 +46,7 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
       (window.navigator as unknown as { standalone: boolean }).standalone === true;
     
     if (isStandalone) {
-      console.log('[ORBIT] Running in standalone PWA mode');
+      console.log('[THREADMAP] Running in standalone PWA mode');
       document.documentElement.classList.add('standalone');
     }
 

@@ -1,13 +1,13 @@
 ═══════════════════════════════════════════════════════════════════════════════
-ORBIT — COMPLETE APP DESCRIPTION
+Threadmap — COMPLETE APP DESCRIPTION
 Personal Productivity OS
 ═══════════════════════════════════════════════════════════════════════════════
 
 📋 CORE CONCEPT
 ───────────────────────────────────────────────────────────────────────────────
 
-ORBIT is a Personal Productivity OS that unifies all productivity tools into a 
-single, interconnected system. Everything is an `OrbitItem` with a `type` field 
+Threadmap is a Personal Productivity OS that unifies all productivity tools into a
+single, interconnected system. Everything is an `OrbitItem` with a `type` field
 that determines whether it's a task, project, habit, event, goal, or note.
 
 
@@ -25,7 +25,7 @@ DATA LAYER (DUAL-MODE)
      - Works offline, no auth required
      - 5MB storage limit with auto-cleanup
      - Instant operations
-     
+
   2. Firebase Firestore (Cloud Mode)
      - Google Sign-In authentication
      - Real-time sync across devices
@@ -46,24 +46,24 @@ STATE MANAGEMENT
    ─────────────────────────────────────────────────────────────────────────
    • Activation: Cmd/Ctrl + K or tap "+" button
    • Natural Language Parsing:
-     
+
      Examples:
      /t Buy groceries tomorrow !2 #health
      → Creates task "Buy groceries" for tomorrow, priority 2, tagged #health
-     
+
      /p Mobile App @Website
      → Creates project "Mobile App" linked to item "Website"
-     
+
      /h Workout 3x/week #health
      → Creates habit "Workout" with custom frequency
-   
+
    • Syntax:
      - /t = task, /p = project, /h = habit, /e = event, /g = goal, /n = note
      - !1-3 = priority (1=high, 2=medium, 3=low)
      - #tag = life area tags
      - @ItemTitle = link to another item
      - Dates: today, tomorrow, monday, 2024-12-25, in 3 days
-   
+
    • Auto-complete: Search existing items as you type
    • Tag Creation: New tags auto-created on the fly
 
@@ -88,7 +88,7 @@ STATE MANAGEMENT
 
    UNIFIED API:
    • useLinks() React hook provides all relationship data
-   • getItemRelationships() returns ancestors, descendants, linked, 
+   • getItemRelationships() returns ancestors, descendants, linked,
      reverse-linked, all-related
    • LinkGraph visualizes relationships as mindmap
    • Network button shows visual graph of connections
@@ -110,16 +110,16 @@ STATE MANAGEMENT
      - Daily
      - Weekly (specific days: Mon, Wed, Fri)
      - Custom (e.g., 3x/week, weekends only)
-   
+
    • Views:
      - Week View (Mobile): Horizontal grid of 7 days
      - Month View (Desktop): Full calendar grid
-   
+
    • Streak Calculation:
      - Only counts scheduled days
      - Resets when you miss a scheduled day
      - Shows flame icon with count
-   
+
    • Completion Tracking: Tap day to toggle completion
    • Frequency Editor: Visual day picker
 
@@ -128,7 +128,7 @@ STATE MANAGEMENT
    • Month View: All events + task due dates
    • Google Calendar Sync:
      - Import events from Google Calendar
-     - Two-way sync (create events in ORBIT → appear in Google)
+     - Two-way sync (create events in Threadmap → appear in Google)
      - OAuth authentication
      - Syncs every 15 minutes
    • Event Creation: Drag or click to create
@@ -163,7 +163,7 @@ STATE MANAGEMENT
 
 9. TAG SYSTEM
    ─────────────────────────────────────────────────────────────────────────
-   • Predefined Tags: #tech, #uni, #career, #health, #fitness, #finance, 
+   • Predefined Tags: #tech, #uni, #career, #health, #fitness, #finance,
      #social, #family, #creative, #personal
    • Custom Tags: Create on the fly via command bar or UI
    • Filtering: All pages support tag filtering
@@ -259,9 +259,9 @@ src/lib/links.ts
 
 src/lib/hooks/use-links.ts
   React hook wrapper for linking:
-  • Returns: linkedItems, reverseLinkedItems, parentItem, childItems, 
+  • Returns: linkedItems, reverseLinkedItems, parentItem, childItems,
     allRelatedItems, relationships
-  • Actions: handleAddLink(), handleRemoveLink(), handleSetParent(), 
+  • Actions: handleAddLink(), handleRemoveLink(), handleSetParent(),
     isLinked(), canLink()
 
 src/lib/google-calendar.ts
@@ -414,8 +414,8 @@ STORAGE RULES
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-This is ORBIT — a complete, interconnected productivity system where everything 
-links together, works offline, syncs across devices, and feels instant. Every 
+This is Threadmap — a complete, interconnected productivity system where everything
+links together, works offline, syncs across devices, and feels instant. Every
 piece is designed to reduce friction and help you get things done.
 
 ═══════════════════════════════════════════════════════════════════════════════

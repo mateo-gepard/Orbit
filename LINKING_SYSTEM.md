@@ -1,8 +1,8 @@
-# ORBIT Unified Linking System
+# Threadmap Unified Linking System
 
 ## Overview
 
-The linking system provides a bulletproof, unified way to manage relationships between items in ORBIT. All link operations flow through a single source of truth, ensuring consistency and preventing bugs.
+The linking system provides a bulletproof, unified way to manage relationships between items in Threadmap. All link operations flow through a single source of truth, ensuring consistency and preventing bugs.
 
 ## Architecture
 

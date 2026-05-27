@@ -234,16 +234,9 @@ export function CommandBar() {
         ? relationshipTarget.id
         : undefined;
 
-    const startsInInbox =
-      parsed.type === 'task' &&
-      !parsed.dueDate &&
-      !parsed.startDate &&
-      !parentItemId &&
-      !relationshipTarget;
-
     const newItem: Omit<OrbitItem, 'id'> = {
       type: parsed.type,
-      status: startsInInbox ? 'inbox' : 'active',
+      status: 'active',
       title: parsed.title, // Early returns ensure this is never empty
       tags: parsed.tags,
       userId: user.uid,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/server/rate-limit';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Google Price Search Fallback
+// Threadmap — Google Price Search Fallback
 // For items where the scraper couldn't find a price (SPA sites
 // like LEGO.com), we search Google Shopping and extract prices
 // from the search results. No API key needed.
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[ORBIT] Price search error:', message);
+    console.error('[THREADMAP] Price search error:', message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

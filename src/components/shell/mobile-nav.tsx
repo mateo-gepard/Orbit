@@ -5,7 +5,6 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   CheckSquare,
-  Inbox as InboxIcon,
   Repeat,
   Plus,
   FileText,
@@ -17,7 +16,6 @@ import { useTranslation, type TranslationKey } from '@/lib/i18n';
 
 const TABS: { href: string; icon: typeof LayoutDashboard; labelKey: TranslationKey }[] = [
   { href: '/', icon: LayoutDashboard, labelKey: 'mobile.home' },
-  { href: '/inbox', icon: InboxIcon, labelKey: 'nav.inbox' },
   { href: '/tasks', icon: CheckSquare, labelKey: 'mobile.tasks' },
   { href: '/habits', icon: Repeat, labelKey: 'mobile.habits' },
   { href: '/notes', icon: FileText, labelKey: 'mobile.notes' },

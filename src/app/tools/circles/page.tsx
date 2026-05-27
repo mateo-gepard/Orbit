@@ -34,7 +34,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// Circles â€” Your People in Orbit
+// Circles â€” Your People in Your Circle
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function timeAgo(ts: number): string {
@@ -86,7 +86,7 @@ const ITEM_TYPE_ICONS: Record<string, typeof CalendarDays> = {
   task: CheckSquare,
 };
 
-// â”€â”€â”€ Orbit Map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ Circle Map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ORBIT_COLORS = [
   'rgba(244,63,94,0.55)',   // rose
@@ -149,7 +149,7 @@ function OrbitMap({
 
   return (
     <div className="relative w-full max-w-[340px] mx-auto">
-      <svg viewBox="0 0 300 300" className="w-full" role="img" aria-label="Orbit map">
+      <svg viewBox="0 0 300 300" className="w-full" role="img" aria-label="Circle map">
         <defs>
           <radialGradient id="orbit-field" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="currentColor" stopOpacity={0.04} />
@@ -232,7 +232,7 @@ function OrbitMap({
       </svg>
       {friends.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <p className="text-[12px] text-muted-foreground/30">Share your code to grow your orbit</p>
+          <p className="text-[12px] text-muted-foreground/30">Share your code to grow your circle</p>
         </div>
       )}
     </div>
@@ -268,7 +268,7 @@ function FriendCodeCard({ code }: { code: string }) {
         </button>
       </div>
       <p className="text-[11px] text-muted-foreground/30 mt-2">
-        Share this code so friends can add you to their orbit
+        Share this code so friends can add you to their circle
       </p>
     </div>
   );
@@ -362,7 +362,7 @@ function PendingRequests({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium truncate">
-                      {profile?.displayName || 'Orbit User'}
+                      {profile?.displayName || 'Threadmap User'}
                     </p>
                     <p className="text-[11px] text-muted-foreground/40">wants to connect</p>
                   </div>
@@ -402,7 +402,7 @@ function PendingRequests({
                   {initial(profile?.displayName || '?')}
                 </div>
                 <span className="text-[12px] text-muted-foreground/50 truncate flex-1">
-                  {profile?.displayName || 'Orbit User'} â€” pending
+                  {profile?.displayName || 'Threadmap User'} â€” pending
                 </span>
                 <button
                   onClick={() => onDecline(c.id)}
@@ -1042,7 +1042,7 @@ export default function CirclesPage() {
         <h1 className="text-xl font-semibold tracking-tight">Circles</h1>
         <div className="mt-12 text-center">
           <UserPlus className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
-          <p className="text-[13px] text-muted-foreground/50">Sign in to connect with other Orbit users</p>
+          <p className="text-[13px] text-muted-foreground/50">Sign in to connect with other Threadmap users</p>
         </div>
       </div>
     );
@@ -1056,8 +1056,8 @@ export default function CirclesPage() {
           <h1 className="text-xl font-semibold tracking-tight">Circles</h1>
           <p className="text-[13px] text-muted-foreground/50 mt-0.5">
             {accepted.length === 0
-              ? 'Your people in orbit'
-              : `${accepted.length} ${accepted.length === 1 ? 'friend' : 'friends'} in orbit`}
+              ? 'Your people in your circle'
+              : `${accepted.length} ${accepted.length === 1 ? 'friend' : 'friends'} in your circle`}
           </p>
         </div>
         <Button size="sm" onClick={() => setShowAddDialog(true)} className="gap-1.5 text-[12px]">
@@ -1125,7 +1125,7 @@ export default function CirclesPage() {
           onShareHabit={() => setShareForConnId(selectedConn.id)}
           onUnshareHabit={(habitId) => unshareHabit(selectedConn.id, habitId)}
           onRemove={() => {
-            if (confirm('Remove this friend from your orbit?')) {
+            if (confirm('Remove this friend from your circle?')) {
               removeFriend(selectedConn.id);
               setSelectedConnId(null);
             }

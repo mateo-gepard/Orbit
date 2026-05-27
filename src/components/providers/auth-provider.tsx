@@ -60,7 +60,7 @@ function createDemoUser(): User {
   return {
     uid: 'demo-user',
     displayName: 'Demo User',
-    email: 'demo@orbit.local',
+    email: 'demo@threadmap.local',
     photoURL: null,
     emailVerified: true,
     isAnonymous: false,
@@ -107,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!auth) {
       if (process.env.NODE_ENV !== 'production') {
-        console.info('[ORBIT Auth] Firebase unavailable; using local mode.');
+        console.info('[THREADMAP Auth] Firebase unavailable; using local mode.');
       }
       enterDemoMode();
       return;
@@ -138,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       (error) => {
-        console.error('[ORBIT Auth] Auth state error:', error);
+        console.error('[THREADMAP Auth] Auth state error:', error);
         if (cancelled) return;
         enterDemoMode();
       }
@@ -176,10 +176,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (error instanceof Error) {
-        console.error('[ORBIT Auth] Sign-in error:', error);
+        console.error('[THREADMAP Auth] Sign-in error:', error);
         throw error;
       } else {
-        console.error('[ORBIT Auth] Sign-in error:', error);
+        console.error('[THREADMAP Auth] Sign-in error:', error);
       }
       throw new Error('Google sign-in failed.');
     }
@@ -212,13 +212,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     await sendSignInLinkToEmail(auth, email, actionCodeSettings);
     window.localStorage.setItem(EMAIL_LINK_KEY, email);
-    console.info('[ORBIT Auth] Email link sent to', email);
+    console.info('[THREADMAP Auth] Email link sent to', email);
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
     if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     await sendPasswordResetEmail(auth, email);
-    console.info('[ORBIT Auth] Password reset email sent to', email);
+    console.info('[THREADMAP Auth] Password reset email sent to', email);
   }, []);
 
   // Handle email link completion when user returns to the app
@@ -236,10 +236,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.localStorage.removeItem(EMAIL_LINK_KEY);
         // Clean the URL by replacing history without the sign-in params
         window.history.replaceState(null, '', window.location.origin);
-        console.info('[ORBIT Auth] Email link sign-in completed');
+        console.info('[THREADMAP Auth] Email link sign-in completed');
       })
       .catch((error) => {
-        console.error('[ORBIT Auth] Email link sign-in error:', error);
+        console.error('[THREADMAP Auth] Email link sign-in error:', error);
       });
   }, []);
 
@@ -256,9 +256,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await deleteAllUserData(uid);
       // Delete the Firebase Auth user
       await firebaseDeleteUser(auth.currentUser);
-      console.info('[ORBIT Auth] Account deleted');
+      console.info('[THREADMAP Auth] Account deleted');
     } catch (error) {
-      console.error('[ORBIT Auth] Account deletion error:', error);
+      console.error('[THREADMAP Auth] Account deletion error:', error);
       throw error;
     } finally {
       setUser(null);
@@ -278,7 +278,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLocalModeEnabled(false);
       await firebaseSignOut(auth);
     } catch (error) {
-      console.error('[ORBIT Auth] Sign-out error:', error);
+      console.error('[THREADMAP Auth] Sign-out error:', error);
       // Force clear anyway
       setUser(null);
     }

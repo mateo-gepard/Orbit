@@ -2,7 +2,7 @@ import type { OrbitItem } from './types';
 import { calculateStreak } from './habits';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Badge & Achievement System
+// Threadmap — Badge & Achievement System
 // ═══════════════════════════════════════════════════════════
 
 export type BadgeTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';

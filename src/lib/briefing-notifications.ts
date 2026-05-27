@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Briefing Notifications
+// Threadmap — Briefing Notifications
 // Real browser push notifications with smart, human briefings.
 // Morning: what's ahead. Evening: what you accomplished.
 // Hockey Mode: sports commentary + medical vibes (German).
@@ -145,7 +145,7 @@ function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
     body = 'Spielfrei — plane deine Züge, Dr.';
   }
 
-  return { title, body, tag: 'orbit-morning-briefing' };
+  return { title, body, tag: 'threadmap-morning-briefing' };
 }
 
 function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
@@ -205,7 +205,7 @@ function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
     body += ` → Morgen: ${dueTomorrow.length} Spielzüge`;
   }
 
-  return { title, body, tag: 'orbit-evening-briefing' };
+  return { title, body, tag: 'threadmap-evening-briefing' };
 }
 
 // ── Morning briefing content ──────────────────────────────
@@ -251,7 +251,7 @@ export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
     (i) => i.type === 'goal' && i.status === 'active'
   );
 
-  // All active tasks (inbox size)
+  // All active tasks
   const activeTasks = items.filter(
     (i) => i.type === 'task' && i.status === 'active'
   );
@@ -279,7 +279,7 @@ export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
   return {
     title,
     body,
-    tag: 'orbit-morning-briefing',
+    tag: 'threadmap-morning-briefing',
   };
 }
 
@@ -362,7 +362,7 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
   return {
     title: greeting,
     body,
-    tag: 'orbit-evening-briefing',
+    tag: 'threadmap-evening-briefing',
   };
 }
 
@@ -370,11 +370,11 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
 
 async function sendNotification(data: BriefingData) {
   if (!hasNotificationPermission()) {
-    console.warn('[ORBIT] sendNotification: no permission');
+    console.warn('[THREADMAP] sendNotification: no permission');
     return;
   }
 
-  briefingLog('[ORBIT] sendNotification:', data.title, '|', data.body?.slice(0, 80));
+  briefingLog('[THREADMAP] sendNotification:', data.title, '|', data.body?.slice(0, 80));
 
   // Determine briefing page URL from tag
   const briefingType = data.tag.includes('morning') ? 'morning' : 'evening';
@@ -392,11 +392,11 @@ async function sendNotification(data: BriefingData) {
         data: { url, type: 'briefing', briefingType },
         renotify: false,
       } as NotificationOptions);
-      briefingLog('[ORBIT] Notification shown via SW registration');
+      briefingLog('[THREADMAP] Notification shown via SW registration');
       return;
     }
   } catch (err) {
-    console.warn('[ORBIT] SW showNotification failed:', err);
+    console.warn('[THREADMAP] SW showNotification failed:', err);
   }
 
   // Strategy 2: Plain Notification API (only works when tab is focused)
@@ -412,9 +412,9 @@ async function sendNotification(data: BriefingData) {
       window.focus();
       notification.close();
     };
-    briefingLog('[ORBIT] Notification shown via Notification API');
+    briefingLog('[THREADMAP] Notification shown via Notification API');
   } catch (err) {
-    console.error('[ORBIT] All notification strategies failed:', err);
+    console.error('[THREADMAP] All notification strategies failed:', err);
   }
 }
 
@@ -450,7 +450,7 @@ export function syncBriefingScheduleToSW() {
       type: 'UPDATE_BRIEFING_SCHEDULE',
       config,
     });
-    briefingLog('[ORBIT] Briefing schedule synced to SW:', config);
+    briefingLog('[THREADMAP] Briefing schedule synced to SW:', config);
   } else {
     // SW not yet controlling — wait for it
     navigator.serviceWorker.ready.then((reg) => {
@@ -459,7 +459,7 @@ export function syncBriefingScheduleToSW() {
           type: 'UPDATE_BRIEFING_SCHEDULE',
           config,
         });
-        briefingLog('[ORBIT] Briefing schedule synced to SW (via ready):', config);
+        briefingLog('[THREADMAP] Briefing schedule synced to SW (via ready):', config);
       }
     });
   }
@@ -476,7 +476,7 @@ async function registerPeriodicSync() {
         .periodicSync.register('orbit-briefing-check', {
           minInterval: 60 * 60 * 1000, // Check at least every hour
         });
-      briefingLog('[ORBIT] Periodic background sync registered');
+      briefingLog('[THREADMAP] Periodic background sync registered');
     }
   } catch {
     // Not supported or permission denied — that's fine, SW timer handles it
@@ -599,7 +599,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       const items = currentGetItems();
       const briefing = generateMorningBriefing(items);
       sendNotification(briefing);
-      briefingLog('[ORBIT] Morning briefing sent (in-app fallback timer)');
+      briefingLog('[THREADMAP] Morning briefing sent (in-app fallback timer)');
     }
 
     // Evening briefing — use 5-minute window
@@ -612,11 +612,11 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       const items = currentGetItems();
       const briefing = generateEveningBriefing(items);
       sendNotification(briefing);
-      briefingLog('[ORBIT] Evening briefing sent (in-app fallback timer)');
+      briefingLog('[THREADMAP] Evening briefing sent (in-app fallback timer)');
     }
   }, 60_000); // every 60 seconds (SW checks every 30s, so this is the backup)
 
-  briefingLog('[ORBIT] Briefing scheduler started (SW + in-app fallback)');
+  briefingLog('[THREADMAP] Briefing scheduler started (SW + in-app fallback)');
 }
 
 export function stopBriefingScheduler() {

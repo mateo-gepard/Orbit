@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { saveToolData } from './firestore';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — The Vault: Wishlist Engine
+// Threadmap — The Vault: Wishlist Engine
 // Wishes as rare collectibles in a private collection vault.
 // Auction Ring duels for Elo-ranked prioritisation.
 // ═══════════════════════════════════════════════════════════

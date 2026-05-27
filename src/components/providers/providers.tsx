@@ -29,7 +29,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('[ORBIT] Uncaught error:', error, errorInfo);
+    console.error('[THREADMAP] Uncaught error:', error, errorInfo);
   }
 
   render() {

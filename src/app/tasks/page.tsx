@@ -283,7 +283,7 @@ export default function TasksPage() {
 
   // Filter tasks
   const filteredTasks = useMemo(() => {
-    let tasks = items.filter((i) => i.type === 'task' && i.status !== 'inbox');
+    let tasks = items.filter((i) => i.type === 'task');
 
     // Status
     if (statusFilter === 'active') {

@@ -1,6 +1,6 @@
-# ORBIT
+# Threadmap
 
-ORBIT is a local-first personal productivity system for turning connected intent into action.
+Threadmap is a local-first personal productivity system for turning connected intent into action.
 
 It brings tasks, projects, habits, goals, notes, calendar work, files, and focused tools into one shared item graph instead of treating them as separate apps. A task can belong to a project, reference a note, support a goal, appear on the calendar, and stay available from the same command surface.
 
@@ -10,7 +10,7 @@ The app runs without a backend by default. Firebase is an optional upgrade for a
 
 - Captures tasks, projects, habits, events, goals, and notes through one unified item model.
 - Links items together with parent-child relationships, peer links, reverse links, and a visual graph.
-- Provides dashboard, inbox, task, project, habit, goal, note, calendar, file, archive, and toolbox views.
+- Provides dashboard, task, project, habit, goal, note, calendar, file, archive, and toolbox views.
 - Supports natural-language command capture for fast entry.
 - Works as an installable PWA with iOS-friendly mobile navigation and safe-area handling.
 - Runs in local mode with browser storage when Firebase is not configured.
@@ -21,7 +21,7 @@ The app runs without a backend by default. Firebase is an optional upgrade for a
 
 ### Unified Items
 
-Most of ORBIT revolves around a single `OrbitItem` shape. Different item types share the same base lifecycle and can be linked together:
+Most of Threadmap revolves around a single `OrbitItem` shape. Different item types share the same base lifecycle and can be linked together:
 
 - `task`
 - `project`
@@ -34,13 +34,13 @@ This keeps workflows composable. A project can contain tasks and goals, a note c
 
 ### Local-First Runtime
 
-ORBIT can be used immediately in local mode. Local mode stores data in the browser and is meant for zero-config development, demos, and personal use on one device.
+Threadmap can be used immediately in local mode. Local mode stores data in the browser and is meant for zero-config development, demos, and personal use on one device.
 
-When Firebase environment variables are present, ORBIT switches to cloud mode for authenticated users and realtime sync. The app is designed to degrade gracefully when Firebase is missing or unavailable.
+When Firebase environment variables are present, Threadmap switches to cloud mode for authenticated users and realtime sync. The app is designed to degrade gracefully when Firebase is missing or unavailable.
 
 ### Connected Workflow
 
-ORBIT is built around the idea that productivity data should not be isolated. Relationships are first-class:
+Threadmap is built around the idea that productivity data should not be isolated. Relationships are first-class:
 
 - Parent-child hierarchy for projects, goals, and tasks.
 - Peer links between related items.
@@ -91,7 +91,7 @@ Copy the example environment file when you want cloud features:
 cp .env.local.example .env.local
 ```
 
-Firebase is optional. If the required Firebase variables are empty, ORBIT stays in local mode.
+Firebase is optional. If the required Firebase variables are empty, Threadmap stays in local mode.
 
 ### Required For Cloud Auth And Sync
 

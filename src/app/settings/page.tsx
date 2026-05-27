@@ -392,15 +392,15 @@ function NotificationsSection({
                 ? 'This browser can receive briefings and reminders.'
                 : permDenied
                   ? isIOS
-                    ? 'Tap the share button → "Add to Home Screen", then open Orbit from the home screen and enable notifications again.'
-                    : 'Open browser settings → Site permissions → find Orbit → set Notifications to "Allow".'
+                    ? 'Tap the share button → "Add to Home Screen", then open Threadmap from the home screen and enable notifications again.'
+                    : 'Open browser settings → Site permissions → find Threadmap → set Notifications to "Allow".'
                   : permUnsupported
                     ? isIOS && !isPWA
-                      ? 'On iOS, notifications only work when Orbit is installed as an app. Tap the share button → "Add to Home Screen".'
+                      ? 'On iOS, notifications only work when Threadmap is installed as an app. Tap the share button → "Add to Home Screen".'
                       : 'This browser does not support notifications.'
                     : isIOS && !isPWA
-                      ? 'First add Orbit to your home screen (share → "Add to Home Screen"), then enable notifications.'
-                      : 'Allow Orbit to send you daily briefings and reminders.'
+                      ? 'First add Threadmap to your home screen (share → "Add to Home Screen"), then enable notifications.'
+                      : 'Allow Threadmap to send you daily briefings and reminders.'
               }
             </p>
           </div>
@@ -599,7 +599,7 @@ function NotificationsSection({
             <div className="px-4 py-2.5 bg-muted/10">
               <p className="text-[10px] text-muted-foreground/35 leading-relaxed">
                 {fcmStatus === 'registered'
-                  ? 'Briefings will be delivered even when Orbit is closed or your device is sleeping. Remove old devices you no longer use.'
+                  ? 'Briefings will be delivered even when Threadmap is closed or your device is sleeping. Remove old devices you no longer use.'
                   : 'Enable push to receive briefings when the app is closed. Each device must be registered separately.'}
               </p>
             </div>
@@ -721,7 +721,7 @@ export default function SettingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `orbit-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `threadmap-settings-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     updateNested('data', { lastExportAt: Date.now() });
@@ -743,7 +743,7 @@ export default function SettingsPage() {
           flashSaved();
         }
       } catch {
-        console.error('[ORBIT] Failed to import settings');
+        console.error('[THREADMAP] Failed to import settings');
       }
     };
     input.click();
@@ -785,7 +785,7 @@ export default function SettingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `orbit-full-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `threadmap-full-export-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     updateNested('data', { lastExportAt: Date.now() });
@@ -910,7 +910,7 @@ export default function SettingsPage() {
 
               <SettingRow label={t('settings.email')} description={t('settings.emailDesc')}>
                 <span className="text-[12px] text-muted-foreground/60 font-mono">
-                  {user?.email || 'demo@orbit.local'}
+                  {user?.email || 'demo@threadmap.local'}
                 </span>
               </SettingRow>
 
@@ -1056,7 +1056,6 @@ export default function SettingsPage() {
                   options={[
                     { value: 'dashboard', label: t('nav.dashboard') },
                     { value: 'tasks', label: t('nav.tasks') },
-                    { value: 'inbox', label: t('nav.inbox') },
                   ]}
                   onChange={(v) => set('defaultView', v)}
                 />

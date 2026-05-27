@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# ORBIT — FCM Background Notifications Setup
+# Threadmap — FCM Background Notifications Setup
 # ═══════════════════════════════════════════════════════════
 #
 # This script sets up Firebase Cloud Messaging (FCM) for
@@ -17,7 +17,7 @@
 set -e
 
 echo "═══════════════════════════════════════════════════════════"
-echo "  ORBIT — FCM Background Notifications Setup"
+echo "  Threadmap — FCM Background Notifications Setup"
 echo "═══════════════════════════════════════════════════════════"
 echo ""
 

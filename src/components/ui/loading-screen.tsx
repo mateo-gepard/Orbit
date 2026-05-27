@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/lib/settings-store';
 const HOCKEY_LOADING = [
   'Kabine wird vorbereitet... 🏒',
   'Trikots werden sortiert...',
-  'Dr. Orbit macht Aufwärmübungen...',
+  'Dr. Threadmap macht Aufwärmübungen...',
   'Strafbank wird poliert...',
   'Spielfeld wird gewässert...',
   'Schläger werden getaped...',
@@ -56,7 +56,7 @@ export function LoadingScreen() {
           {/* Branding */}
           <div className="flex flex-col items-center gap-1.5">
             <h1 className="text-lg font-semibold tracking-tight">
-              ORBIT <span className="text-cyan-600">🩺</span>
+              THREADMAP <span className="text-cyan-600">🩺</span>
             </h1>
             <p className="text-[11px] text-muted-foreground/60 animate-pulse">
               {loadingText}
@@ -75,11 +75,11 @@ export function LoadingScreen() {
       )}
     >
       <div className="flex flex-col items-center gap-4">
-        {/* Orbit logo animation */}
+        {/* Threadmap logo animation */}
         <div className="relative h-16 w-16">
           {/* Outer ring */}
           <div className="absolute inset-0 rounded-full border-2 border-foreground/10" />
-          {/* Spinning orbit ring */}
+          {/* Spinning thread ring */}
           <div className="absolute inset-0 animate-spin-slow">
             <div className="h-full w-full rounded-full border-2 border-transparent border-t-foreground/40" />
           </div>
@@ -91,7 +91,7 @@ export function LoadingScreen() {
         
         {/* App name */}
         <div className="flex flex-col items-center gap-1">
-          <h1 className="text-lg font-semibold tracking-tight">ORBIT</h1>
+          <h1 className="text-lg font-semibold tracking-tight">THREADMAP</h1>
           <p className="text-[11px] text-muted-foreground/60">Loading your workspace...</p>
         </div>
       </div>

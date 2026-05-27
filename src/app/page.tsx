@@ -622,7 +622,6 @@ export default function DashboardPage() {
     if (!mounted || loading || !user) return;
     const viewRoutes: Record<string, string> = {
       tasks: '/tasks',
-      inbox: '/inbox',
     };
     const route = viewRoutes[defaultView];
     if (route) router.replace(route);

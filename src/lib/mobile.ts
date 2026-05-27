@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Mobile Haptics & Utilities
+// Threadmap — Mobile Haptics & Utilities
 // ═══════════════════════════════════════════════════════════
 
 /** Trigger haptic feedback if available */

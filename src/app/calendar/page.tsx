@@ -338,7 +338,7 @@ function TimeGrid({
 
     const seen = new Set<string>();
 
-    items.filter((i) => i.status !== 'archived' && i.status !== 'inbox').forEach((item) => {
+    items.filter((i) => i.status !== 'archived').forEach((item) => {
       for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
         const dateStr = format(days[dayIdx], 'yyyy-MM-dd');
 
@@ -684,7 +684,7 @@ export default function CalendarPage() {
 
   const getItemsForDate = useCallback((date: Date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    return items.filter((i) => i.status !== 'archived' && i.status !== 'inbox' && ((i.type === 'event' && (i.startDate === dateStr || (i.startDate && i.endDate && i.startDate <= dateStr && dateStr <= i.endDate))) || (i.type === 'task' && i.dueDate === dateStr)));
+    return items.filter((i) => i.status !== 'archived' && ((i.type === 'event' && (i.startDate === dateStr || (i.startDate && i.endDate && i.startDate <= dateStr && dateStr <= i.endDate))) || (i.type === 'task' && i.dueDate === dateStr)));
   }, [items]);
 
   const handleImportFromGoogle = async () => {
@@ -716,9 +716,9 @@ export default function CalendarPage() {
           count++;
         }
       }
-      console.log(`[ORBIT] Imported ${count} events from Google Calendar`);
+      console.log(`[THREADMAP] Imported ${count} events from Google Calendar`);
     } catch (err) {
-      console.error('[ORBIT] Import failed:', err);
+      console.error('[THREADMAP] Import failed:', err);
     } finally { setImporting(false); }
   };
 

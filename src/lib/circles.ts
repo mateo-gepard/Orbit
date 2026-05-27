@@ -14,7 +14,7 @@ import {
 import { db } from './firebase';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Circles: Multi-User Firestore Operations
+// Threadmap — Circles: Multi-User Firestore Operations
 // Real users, real connections, real shared habits.
 // ═══════════════════════════════════════════════════════════
 
@@ -124,7 +124,7 @@ export async function ensureUserProfile(
   // Create new
   const profile: UserProfile = {
     uid,
-    displayName: data.displayName || 'Orbit User',
+    displayName: data.displayName || 'Threadmap User',
     email: data.email || '',
     photoURL: data.photoURL,
     friendCode: generateFriendCode(),
@@ -205,7 +205,7 @@ export function subscribeToConnections(
       callback(connections);
     },
     (err) => {
-      console.error('[ORBIT] Circles connection subscription error:', err);
+      console.error('[THREADMAP] Circles connection subscription error:', err);
     },
   );
 }
@@ -286,7 +286,7 @@ export function subscribeToNudges(
       callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Nudge)));
     },
     (err) => {
-      console.error('[ORBIT] Circles nudge subscription error:', err);
+      console.error('[THREADMAP] Circles nudge subscription error:', err);
     },
   );
 }

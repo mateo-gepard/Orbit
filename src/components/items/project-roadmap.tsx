@@ -92,7 +92,7 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
     const milestones = allItems.filter(i => i.parentId === project.id && i.type === 'goal' && i.status !== 'archived');
     const milestoneIds = new Set(milestones.map(m => m.id));
     const tasks = allItems.filter(i =>
-      i.type === 'task' && i.status !== 'archived' && i.status !== 'inbox' &&
+      i.type === 'task' && i.status !== 'archived' &&
       (i.parentId === project.id || milestoneIds.has(i.parentId!)),
     );
     const done = tasks.filter(t => t.status === 'done').length;

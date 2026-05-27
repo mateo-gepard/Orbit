@@ -37,7 +37,7 @@ function scheduleSave(profile: AbiturProfile) {
     try {
       await saveToolData(_syncUserId, 'abitur', { profile });
     } catch (err) {
-      console.error('[ORBIT] Failed to save Abitur data:', err);
+      console.error('[THREADMAP] Failed to save Abitur data:', err);
     } finally {
       _pendingSave = false;
     }
@@ -300,7 +300,7 @@ export const useAbiturStore = create<AbiturState>()(
         if (!prev && !_cloudReceived) {
           const { profile } = get();
           if (profile.onboardingComplete) {
-            console.log('[ORBIT] Abitur: user signed in — pushing local profile to cloud');
+            console.log('[THREADMAP] Abitur: user signed in — pushing local profile to cloud');
             scheduleSave(profile);
           }
         }

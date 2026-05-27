@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Real-time Google Calendar Sync Service
+// Threadmap — Real-time Google Calendar Sync Service
 // ═══════════════════════════════════════════════════════════
 
 import {
@@ -110,7 +110,7 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
 
     lastSyncTime = Date.now();
   } catch (err) {
-    console.error('[ORBIT Sync] Sync failed:', err);
+    console.error('[THREADMAP Sync] Sync failed:', err);
   }
 }
 
