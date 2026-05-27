@@ -374,7 +374,7 @@ async function sendNotification(data: BriefingData) {
     return;
   }
 
-  console.log('[ORBIT] sendNotification:', data.title, '|', data.body?.slice(0, 80));
+  briefingLog('[ORBIT] sendNotification:', data.title, '|', data.body?.slice(0, 80));
 
   // Determine briefing page URL from tag
   const briefingType = data.tag.includes('morning') ? 'morning' : 'evening';
@@ -392,7 +392,7 @@ async function sendNotification(data: BriefingData) {
         data: { url, type: 'briefing', briefingType },
         renotify: false,
       } as NotificationOptions);
-      console.log('[ORBIT] Notification shown via SW registration');
+      briefingLog('[ORBIT] Notification shown via SW registration');
       return;
     }
   } catch (err) {
@@ -412,7 +412,7 @@ async function sendNotification(data: BriefingData) {
       window.focus();
       notification.close();
     };
-    console.log('[ORBIT] Notification shown via Notification API');
+    briefingLog('[ORBIT] Notification shown via Notification API');
   } catch (err) {
     console.error('[ORBIT] All notification strategies failed:', err);
   }
@@ -421,6 +421,13 @@ async function sendNotification(data: BriefingData) {
 // ── Push schedule to Service Worker ───────────────────────
 // The SW stores this in IndexedDB and checks every 30s,
 // firing notifications even when the page is closed.
+
+const DEBUG_BRIEFINGS = process.env.NODE_ENV !== 'production';
+const briefingLog = (...args: unknown[]) => {
+  if (DEBUG_BRIEFINGS) console.log(...args);
+};
+
+let lastSyncedScheduleJson: string | null = null;
 
 export function syncBriefingScheduleToSW() {
   const { settings } = useSettingsStore.getState();
@@ -433,6 +440,9 @@ export function syncBriefingScheduleToSW() {
     eveningEnabled: settings.notifications.enabled && settings.notifications.eveningBriefing,
     eveningTime: settings.notifications.eveningBriefingTime,
   };
+  const scheduleJson = JSON.stringify(config);
+  if (scheduleJson === lastSyncedScheduleJson) return;
+  lastSyncedScheduleJson = scheduleJson;
 
   // Send to SW controller
   if (navigator.serviceWorker.controller) {
@@ -440,7 +450,7 @@ export function syncBriefingScheduleToSW() {
       type: 'UPDATE_BRIEFING_SCHEDULE',
       config,
     });
-    console.log('[ORBIT] Briefing schedule synced to SW:', config);
+    briefingLog('[ORBIT] Briefing schedule synced to SW:', config);
   } else {
     // SW not yet controlling — wait for it
     navigator.serviceWorker.ready.then((reg) => {
@@ -449,7 +459,7 @@ export function syncBriefingScheduleToSW() {
           type: 'UPDATE_BRIEFING_SCHEDULE',
           config,
         });
-        console.log('[ORBIT] Briefing schedule synced to SW (via ready):', config);
+        briefingLog('[ORBIT] Briefing schedule synced to SW (via ready):', config);
       }
     });
   }
@@ -466,7 +476,7 @@ async function registerPeriodicSync() {
         .periodicSync.register('orbit-briefing-check', {
           minInterval: 60 * 60 * 1000, // Check at least every hour
         });
-      console.log('[ORBIT] Periodic background sync registered');
+      briefingLog('[ORBIT] Periodic background sync registered');
     }
   } catch {
     // Not supported or permission denied — that's fine, SW timer handles it
@@ -481,6 +491,7 @@ async function registerPeriodicSync() {
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let swMessageListenerRegistered = false;
+let currentGetItems: () => OrbitItem[] = () => [];
 
 // Persist last-fired dates in localStorage to survive page reloads
 // but allow re-firing on a new day
@@ -520,7 +531,12 @@ function isWithinWindow(targetHHMM: string, windowMinutes: number): boolean {
 }
 
 export function startBriefingScheduler(getItems: () => OrbitItem[]) {
-  if (schedulerInterval) clearInterval(schedulerInterval);
+  currentGetItems = getItems;
+
+  if (schedulerInterval) {
+    syncBriefingScheduleToSW();
+    return;
+  }
 
   // 1. Sync schedule to service worker for background notifications
   syncBriefingScheduleToSW();
@@ -530,7 +546,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
     swMessageListenerRegistered = true;
     navigator.serviceWorker.addEventListener('message', (event) => {
       if (event.data?.type === 'BRIEFING_FIRE') {
-        const items = getItems();
+        const items = currentGetItems();
         if (event.data.briefing === 'morning') {
           // Mark as fired so in-app timer doesn't double-fire
           setLastFired('morning');
@@ -580,10 +596,10 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       lastFired.morning !== today
     ) {
       setLastFired('morning');
-      const items = getItems();
+      const items = currentGetItems();
       const briefing = generateMorningBriefing(items);
       sendNotification(briefing);
-      console.log('[ORBIT] Morning briefing sent (in-app fallback timer)');
+      briefingLog('[ORBIT] Morning briefing sent (in-app fallback timer)');
     }
 
     // Evening briefing — use 5-minute window
@@ -593,14 +609,14 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       lastFired.evening !== today
     ) {
       setLastFired('evening');
-      const items = getItems();
+      const items = currentGetItems();
       const briefing = generateEveningBriefing(items);
       sendNotification(briefing);
-      console.log('[ORBIT] Evening briefing sent (in-app fallback timer)');
+      briefingLog('[ORBIT] Evening briefing sent (in-app fallback timer)');
     }
   }, 60_000); // every 60 seconds (SW checks every 30s, so this is the backup)
 
-  console.log('[ORBIT] Briefing scheduler started (SW + in-app fallback)');
+  briefingLog('[ORBIT] Briefing scheduler started (SW + in-app fallback)');
 }
 
 export function stopBriefingScheduler() {
@@ -608,6 +624,7 @@ export function stopBriefingScheduler() {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
   }
+  currentGetItems = () => [];
 }
 
 // ── Manual triggers (for testing / on-demand) ─────────────

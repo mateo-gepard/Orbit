@@ -106,7 +106,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!auth) {
-      console.info('[ORBIT Auth] Firebase unavailable; using local mode.');
+      if (process.env.NODE_ENV !== 'production') {
+        console.info('[ORBIT Auth] Firebase unavailable; using local mode.');
+      }
       enterDemoMode();
       return;
     }

@@ -40,7 +40,9 @@ if (typeof window !== 'undefined' && isFirebaseConfigured) {
     console.warn('Firebase initialization failed:', error);
   }
 } else if (typeof window !== 'undefined') {
-  console.info('[ORBIT Firebase] Cloud sync unavailable; running in local mode.');
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('[ORBIT Firebase] Cloud sync unavailable; running in local mode.');
+  }
 }
 
 export { app, auth, db, googleProvider };

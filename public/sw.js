@@ -7,6 +7,11 @@
 // Import Firebase compat SDK so FCM can deliver push messages
 // when the app is closed or in background.
 // Wrapped in try/catch so SW still works if Firebase CDN is unreachable.
+const DEBUG_SW = false;
+const swLog = (...args) => {
+  if (DEBUG_SW) console.log(...args);
+};
+
 let fcmMessaging = null;
 try {
   importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
@@ -25,7 +30,7 @@ try {
 
   // Handle background FCM messages (when app is NOT in foreground)
   fcmMessaging.onBackgroundMessage((payload) => {
-    console.log('[SW] FCM background message:', payload);
+    swLog('[SW] FCM background message:', payload);
 
     const title = payload.notification?.title || payload.data?.title || 'ORBIT';
     const body = payload.notification?.body || payload.data?.body || '';
@@ -43,12 +48,12 @@ try {
     }
   });
 
-  console.log('[SW] Firebase Messaging initialized');
+  swLog('[SW] Firebase Messaging initialized');
 } catch (e) {
   console.warn('[SW] Firebase Messaging init failed (push will use generic handler):', e);
 }
 
-const CACHE_VERSION = 7; // Increment this to force cache refresh
+const CACHE_VERSION = 8; // Increment this to force cache refresh
 const CACHE_NAME = `orbit-v${CACHE_VERSION}`;
 const OFFLINE_URLS = ['/', '/inbox', '/tasks', '/habits', '/briefing'];
 
@@ -98,7 +103,7 @@ async function saveSchedule(config) {
       tx.onerror = reject;
     });
   } catch (e) {
-    console.log('[SW] Failed to save schedule:', e);
+    swLog('[SW] Failed to save schedule:', e);
   }
 }
 
@@ -133,7 +138,7 @@ async function setLastFired(data) {
       tx.onerror = reject;
     });
   } catch (e) {
-    console.log('[SW] Failed to save lastFired:', e);
+    swLog('[SW] Failed to save lastFired:', e);
   }
 }
 
@@ -231,7 +236,7 @@ async function showBriefingNotification(type, config) {
       renotify: false,
       requireInteraction: false,
     });
-    console.log(`[SW] ${type} briefing notification shown`);
+    swLog(`[SW] ${type} briefing notification shown`);
   } catch (e) {
     console.error(`[SW] Failed to show ${type} notification:`, e);
   }
@@ -267,7 +272,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(OFFLINE_URLS).catch(() => {
-        console.log('[SW] Some routes could not be cached');
+        swLog('[SW] Some routes could not be cached');
       });
     })
   );
@@ -283,7 +288,7 @@ self.addEventListener('activate', (event) => {
           keys
             .filter((key) => key !== CACHE_NAME)
             .map((key) => {
-              console.log('[SW] Deleting old cache:', key);
+              swLog('[SW] Deleting old cache:', key);
               return caches.delete(key);
             })
         )
@@ -292,7 +297,7 @@ self.addEventListener('activate', (event) => {
     ]).then(() => {
       // Start the briefing check loop
       scheduleNextCheck();
-      console.log('[SW] Activated + briefing scheduler started');
+      swLog('[SW] Activated + briefing scheduler started');
     })
   );
 });
@@ -311,7 +316,7 @@ self.addEventListener('message', (event) => {
   if (event.data.type === 'UPDATE_BRIEFING_SCHEDULE') {
     // App sends us the schedule config
     saveSchedule(event.data.config).then(() => {
-      console.log('[SW] Briefing schedule updated:', event.data.config);
+      swLog('[SW] Briefing schedule updated:', event.data.config);
       // Restart check loop
       scheduleNextCheck();
     });
