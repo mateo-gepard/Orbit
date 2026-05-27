@@ -73,7 +73,7 @@ function getStatusOptions(type: ItemType): ItemStatus[] {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">
+    <span className="text-[11px] font-semibold text-muted-foreground/60 uppercase">
       {children}
     </span>
   );
@@ -318,18 +318,19 @@ export function DetailPanel() {
   const content = (
     <div className="flex h-full flex-col">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+      <div className="flex items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3.5 backdrop-blur-xl">
         <div className="flex items-center gap-2">
           {(item.type === 'task' || item.type === 'habit') && (
             <button
               onClick={handleComplete}
               aria-label={item.status === 'done' ? 'Mark as incomplete' : 'Mark as complete'}
               className={cn(
-                'relative flex h-5 w-5 items-center justify-center rounded-full border-2 transition-all',
+                'relative flex h-5 w-5 items-center justify-center rounded-full border transition-all shadow-[var(--shadow-hairline)]',
+                'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
                 'before:absolute before:inset-[-6px]',
                 item.status === 'done'
                   ? 'border-green-600 bg-green-600'
-                  : 'border-foreground/30 hover:border-foreground/50'
+                  : 'border-transparent bg-background/70 hover:border-foreground/25'
               )}
             >
               {item.status === 'done' && <Check className="h-3 w-3 text-white" />}
@@ -356,7 +357,7 @@ export function DetailPanel() {
               e.preventDefault();
               setShowLinkGraph(true);
             }}
-            className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors active:scale-95"
+            className="orbit-pressable rounded-lg p-1.5 text-muted-foreground/50 outline-none hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25"
             title={t('detail.viewLinkGraph')}
             type="button"
           >
@@ -367,7 +368,7 @@ export function DetailPanel() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+                  className="orbit-pressable rounded-lg p-1.5 text-muted-foreground/50 outline-none hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25"
                   aria-label="More options"
                 >
                   <MoreVertical className="h-4 w-4" />
@@ -552,12 +553,12 @@ export function DetailPanel() {
           </DropdownMenu>
           
           {/* Close button - Desktop only */}
-          <button onClick={() => setDetailPanelOpen(false)} aria-label="Close detail panel" className="hidden lg:flex rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+          <button onClick={() => setDetailPanelOpen(false)} aria-label="Close detail panel" className="orbit-pressable hidden rounded-lg p-1.5 text-muted-foreground/50 outline-none hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 lg:flex">
             <X className="h-4 w-4" />
           </button>
           
           {/* Close button - Mobile only */}
-          <button onClick={() => setDetailPanelOpen(false)} aria-label="Close detail panel" className="lg:hidden rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+          <button onClick={() => setDetailPanelOpen(false)} aria-label="Close detail panel" className="orbit-pressable rounded-lg p-1.5 text-muted-foreground/50 outline-none hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 lg:hidden">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -572,7 +573,7 @@ export function DetailPanel() {
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => handleUpdate({ title })}
           onKeyDown={(e) => e.key === 'Enter' && handleUpdate({ title })}
-          className="w-full bg-transparent text-lg font-semibold leading-snug outline-none placeholder:text-muted-foreground/30"
+          className="w-full rounded-lg bg-transparent px-1 py-1 text-lg font-semibold leading-snug outline-none placeholder:text-muted-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/25"
           placeholder={t('detail.titlePlaceholder')}
         />
 
@@ -605,7 +606,7 @@ export function DetailPanel() {
               {item.dueDate && (
                 <button
                   onClick={() => handleUpdate({ dueDate: undefined })}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-foreground/[0.05]"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25"
                 >
                   <X className="h-3 w-3 text-muted-foreground/50" />
                 </button>
@@ -617,7 +618,7 @@ export function DetailPanel() {
           {canToggleToday && (
             <button
               onClick={handleAddToToday}
-              className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 h-9 text-[13px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
+              className="surface-card orbit-pressable flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring/25"
             >
               <Sparkles className="h-3.5 w-3.5" />
               {shouldClearMyDay ? t('itemRow.removeBtn') : t('detail.addToToday')}
@@ -670,7 +671,7 @@ export function DetailPanel() {
             <FieldLabel>{t('detail.checklist')}</FieldLabel>
             <div className="mt-2 space-y-1">
               {(item.checklist || []).map((check) => (
-                <div key={check.id} className="flex items-center gap-2.5 group">
+                <div key={check.id} className="group flex min-h-9 items-center gap-2.5 rounded-lg px-1.5">
                   <Checkbox
                     checked={check.done}
                     onCheckedChange={() => toggleChecklistItem(check.id)}
@@ -684,7 +685,7 @@ export function DetailPanel() {
                       const updated = (item.checklist || []).filter(c => c.id !== check.id);
                       handleUpdate({ checklist: updated });
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-foreground/[0.05] transition-opacity"
+                    className="rounded-md p-1 opacity-0 transition-opacity hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 group-hover:opacity-100"
                   >
                     <X className="h-3 w-3 text-muted-foreground/50" />
                   </button>
@@ -696,9 +697,9 @@ export function DetailPanel() {
                   onChange={(e) => setNewChecklistText(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addChecklistItem()}
                   placeholder={t('detail.checklistPlaceholder')}
-                  className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/30 py-1.5 border-b border-border/30 focus:border-border transition-colors"
+                  className="flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[13px] outline-none placeholder:text-muted-foreground/30 transition-colors focus:border-border/70 focus:bg-background/50"
                 />
-                <button onClick={addChecklistItem} className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors shrink-0" aria-label="Add checklist item">
+                <button onClick={addChecklistItem} className="shrink-0 rounded-lg p-1.5 text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25" aria-label="Add checklist item">
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
@@ -726,9 +727,9 @@ export function DetailPanel() {
                 key={tag}
                 onClick={() => toggleTag(tag)}
                 className={cn(
-                  'rounded-md px-2.5 py-1 text-[12px] font-medium transition-all',
+                  'rounded-lg px-2.5 py-1 text-[12px] font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
                   validItemTags.includes(tag)
-                    ? 'bg-foreground text-background'
+                    ? 'bg-foreground text-background shadow-[var(--shadow-soft)]'
                     : 'bg-foreground/[0.06] text-muted-foreground/70 hover:bg-foreground/[0.1]'
                 )}
               >
@@ -748,7 +749,7 @@ export function DetailPanel() {
                 <div className="mt-2">
                   <button
                     onClick={() => setSelectedItemId(parentItem.id)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors text-left group"
+                    className="surface-card orbit-pressable flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring/25 group"
                   >
                     {(() => {
                       const Icon = TYPE_ICONS[parentItem.type];
@@ -795,7 +796,7 @@ export function DetailPanel() {
                       <button
                         key={linked.id}
                         onClick={() => setSelectedItemId(linked.id)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors text-left group"
+                        className="surface-card orbit-pressable flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring/25 group"
                       >
                         <Icon className={cn("h-4 w-4 shrink-0", isDone ? 'text-muted-foreground/30' : 'text-muted-foreground/50')} />
                         <span className={cn("text-[13px] flex-1", isDone ? 'line-through text-muted-foreground/40' : 'text-foreground/90 group-hover:text-foreground')}>
@@ -822,7 +823,7 @@ export function DetailPanel() {
                       <button
                         key={child.id}
                         onClick={() => setSelectedItemId(child.id)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors text-left group"
+                        className="surface-card orbit-pressable flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring/25 group"
                       >
                         <Icon className={cn("h-4 w-4 shrink-0", isDone ? 'text-muted-foreground/30' : 'text-muted-foreground/50')} />
                         <span className={cn("text-[13px] flex-1", isDone ? 'line-through text-muted-foreground/40' : 'text-foreground/90 group-hover:text-foreground')}>
@@ -855,7 +856,7 @@ export function DetailPanel() {
     <>
       {/* Desktop */}
       <div className={cn(
-        'hidden lg:block border-l border-border/60 bg-background transition-all duration-200',
+        'hidden lg:block border-l border-border/50 bg-background shadow-[var(--shadow-panel)] transition-[width] duration-200 ease-[var(--ease-standard)]',
         detailPanelOpen ? 'w-96' : 'w-0 overflow-hidden'
       )}>
         {content}

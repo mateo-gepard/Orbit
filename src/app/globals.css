@@ -49,6 +49,7 @@
 
 /* ─── Light: warm paper tones ─── */
 :root {
+  color-scheme: light;
   --radius: 0.625rem;
   --background: oklch(0.988 0.002 80);
   --foreground: oklch(0.16 0.01 60);
@@ -81,10 +82,28 @@
   --sidebar-accent-foreground: oklch(0.20 0.01 60);
   --sidebar-border: oklch(0.91 0.005 75);
   --sidebar-ring: oklch(0.65 0.01 60);
+  --surface-flat: oklch(0.982 0.003 80);
+  --surface-raised: oklch(0.998 0.001 80);
+  --surface-overlay: oklch(1 0 0 / 0.78);
+  --surface-muted: oklch(0.955 0.004 78);
+  --border-subtle: oklch(0.88 0.006 75 / 0.62);
+  --border-strong: oklch(0.78 0.008 70 / 0.72);
+  --shadow-hairline: inset 0 0 0 1px var(--border-subtle);
+  --shadow-soft: 0 1px 2px oklch(0.18 0.012 60 / 0.04), 0 8px 24px -20px oklch(0.18 0.012 60 / 0.35);
+  --shadow-panel: 0 1px 2px oklch(0.18 0.012 60 / 0.05), 0 18px 44px -32px oklch(0.18 0.012 60 / 0.28);
+  --shadow-float: 0 12px 36px -24px oklch(0.18 0.012 60 / 0.42), 0 1px 0 oklch(1 0 0 / 0.7) inset;
+  --shadow-pressed: inset 0 1px 2px oklch(0.18 0.012 60 / 0.08);
+  --focus-ring: oklch(0.62 0.018 65 / 0.5);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 140ms;
+  --duration-standard: 220ms;
+  --tap-highlight: oklch(0.18 0.012 60 / 0.06);
 }
 
 /* ─── Dark: deep warm charcoal ─── */
 .dark {
+  color-scheme: dark;
   --background: oklch(0.14 0.008 60);
   --foreground: oklch(0.93 0.005 80);
   --card: oklch(0.185 0.008 60);
@@ -116,6 +135,19 @@
   --sidebar-accent-foreground: oklch(0.93 0.005 80);
   --sidebar-border: oklch(0.28 0.008 60);
   --sidebar-ring: oklch(0.50 0.01 60);
+  --surface-flat: oklch(0.145 0.008 60);
+  --surface-raised: oklch(0.19 0.008 60);
+  --surface-overlay: oklch(0.18 0.008 60 / 0.82);
+  --surface-muted: oklch(0.23 0.008 60);
+  --border-subtle: oklch(0.34 0.008 60 / 0.58);
+  --border-strong: oklch(0.45 0.008 60 / 0.64);
+  --shadow-hairline: inset 0 0 0 1px var(--border-subtle);
+  --shadow-soft: 0 1px 2px oklch(0 0 0 / 0.28), 0 10px 24px -20px oklch(0 0 0 / 0.72);
+  --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.34), 0 20px 48px -30px oklch(0 0 0 / 0.78);
+  --shadow-float: 0 18px 48px -28px oklch(0 0 0 / 0.82), 0 1px 0 oklch(1 0 0 / 0.045) inset;
+  --shadow-pressed: inset 0 1px 2px oklch(0 0 0 / 0.42);
+  --focus-ring: oklch(0.72 0.018 75 / 0.5);
+  --tap-highlight: oklch(1 0 0 / 0.07);
 }
 
 @layer base {
@@ -144,6 +176,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    letter-spacing: 0;
   }
 }
 
@@ -209,6 +242,44 @@
     max-height: var(--mobile-sheet-max-height);
   }
   .mobile-touch-target {
+    min-height: 44px;
+  }
+  .surface-card {
+    background: var(--surface-raised);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-soft);
+  }
+  .surface-panel {
+    background: var(--surface-overlay);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(18px) saturate(1.18);
+    -webkit-backdrop-filter: blur(18px) saturate(1.18);
+  }
+  .surface-float {
+    background: var(--surface-overlay);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-float);
+    backdrop-filter: blur(22px) saturate(1.2);
+    -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  }
+  .orbit-focus {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .orbit-pressable {
+    transition:
+      transform var(--duration-fast) var(--ease-standard),
+      background-color var(--duration-standard) var(--ease-standard),
+      border-color var(--duration-standard) var(--ease-standard),
+      color var(--duration-standard) var(--ease-standard),
+      box-shadow var(--duration-standard) var(--ease-standard),
+      opacity var(--duration-standard) var(--ease-standard);
+  }
+  .orbit-pressable:active {
+    transform: scale(0.985);
+  }
+  .orbit-control {
     min-height: 44px;
   }
 }
@@ -454,9 +525,9 @@
 /* ─── Focus ring ─── */
 @layer base {
   :focus-visible {
-    outline: 2px solid oklch(0.65 0.01 60 / 0.5);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: calc(var(--radius) - 2px);
   }
 }
 
@@ -474,8 +545,8 @@
   
   .transition-gpu {
     transition-property: transform, opacity, background-color, border-color, color, box-shadow;
-    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-    transition-duration: 200ms;
+    transition-timing-function: var(--ease-standard);
+    transition-duration: var(--duration-standard);
     will-change: transform, opacity;
     transform: translateZ(0);
     -webkit-transform: translateZ(0);
@@ -590,17 +661,25 @@
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
 }
+.reduce-motion .orbit-pressable,
+.reduce-motion .orbit-pressable:active {
+  transform: none !important;
+}
 
 /* High contrast — boost text contrast and borders */
 .high-contrast {
   --foreground: oklch(0.05 0 0);
   --muted-foreground: oklch(0.3 0 0);
   --border: oklch(0.5 0 0);
+  --border-subtle: oklch(0.45 0 0 / 0.82);
+  --focus-ring: oklch(0.18 0 0 / 0.78);
 }
 .dark.high-contrast {
   --foreground: oklch(0.98 0 0);
   --muted-foreground: oklch(0.8 0 0);
   --border: oklch(0.6 0 0);
+  --border-subtle: oklch(0.72 0 0 / 0.72);
+  --focus-ring: oklch(0.95 0 0 / 0.72);
 }
 
 /* Accent color — applied via --accent-color CSS variable from settings */

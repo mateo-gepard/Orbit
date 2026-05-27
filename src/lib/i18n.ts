@@ -97,7 +97,7 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
 
   // ── Onboarding ───────────────────────────────────────────
   'onboarding.title': 'Anpfiff! 🏒',
-  'onboarding.description': 'Drücke ⌘K um deinen ersten Spielzug zu planen, Dr.',
+  'onboarding.description': 'Plane deinen ersten Spielzug, Dr.',
   'onboarding.cta': 'Anpfiff!',
 
   // ── Command bar ──────────────────────────────────────────
@@ -230,7 +230,7 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'tasks.noTasks': 'Keine Spielzüge',
   'tasks.noMatchSearch': 'Kein Spielzug gefunden',
   'tasks.noCompleted': 'Noch keine Tore',
-  'tasks.noActiveHint': 'Keine aktiven Spielzüge — nutze ⌘K zum Aufstellen',
+  'tasks.noActiveHint': 'Keine aktiven Spielzüge',
   'tasks.clearFilters': 'Taktiktafel löschen',
 
   // ── Calendar ─────────────────────────────────────────────
@@ -381,7 +381,7 @@ const en = {
 
   // ── Onboarding ───────────────────────────────────────────
   'onboarding.title': 'Start your orbit',
-  'onboarding.description': 'Press ⌘K to create your first task, habit, or project.',
+  'onboarding.description': 'Your first task, habit, or project starts here.',
   'onboarding.cta': 'Create something',
 
   // ── Tasks page ───────────────────────────────────────────
@@ -389,7 +389,7 @@ const en = {
   'tasks.noTasks': 'No tasks',
   'tasks.noMatchSearch': 'No tasks match your search',
   'tasks.noCompleted': 'No completed tasks',
-  'tasks.noActiveHint': 'No active tasks — use ⌘K to create one',
+  'tasks.noActiveHint': 'No active tasks',
   'tasks.clearFilters': 'Clear filters',
 
   // ── Filter / Sort / Group ────────────────────────────────
@@ -420,7 +420,7 @@ const en = {
   'inbox.swipeHint': '← Swipe right to activate · Swipe left to delete →',
   'inbox.activate': 'Activate',
   'inbox.zero': 'Inbox zero',
-  'inbox.zeroDesc': 'All items processed. Press ⌘K to add new ones.',
+  'inbox.zeroDesc': 'All items processed.',
 
   // ── Today page ───────────────────────────────────────────
   'today.overdue': 'Overdue',
@@ -437,7 +437,7 @@ const en = {
   'habits.month': 'Month',
   'habits.streak': 'Streak',
   'habits.noHabits': 'No habits yet',
-  'habits.noHabitsTap': 'Tap + to create your first habit',
+  'habits.noHabitsTap': 'No habits yet',
   'habits.previousMonth': 'Previous month',
   'habits.nextMonth': 'Next month',
 
@@ -851,7 +851,7 @@ const de: Record<TranslationKey, string> = {
 
   // ── Onboarding ───────────────────────────────────────────
   'onboarding.title': 'Starte deinen Orbit',
-  'onboarding.description': 'Drücke ⌘K um deine erste Aufgabe, Gewohnheit oder dein erstes Projekt zu erstellen.',
+  'onboarding.description': 'Deine erste Aufgabe, Gewohnheit oder dein erstes Projekt beginnt hier.',
   'onboarding.cta': 'Etwas erstellen',
 
   // ── Tasks page ───────────────────────────────────────────
@@ -859,7 +859,7 @@ const de: Record<TranslationKey, string> = {
   'tasks.noTasks': 'Keine Aufgaben',
   'tasks.noMatchSearch': 'Keine Aufgaben gefunden',
   'tasks.noCompleted': 'Keine erledigten Aufgaben',
-  'tasks.noActiveHint': 'Keine aktiven Aufgaben — nutze ⌘K zum Erstellen',
+  'tasks.noActiveHint': 'Keine aktiven Aufgaben',
   'tasks.clearFilters': 'Filter zurücksetzen',
 
   // ── Filter / Sort / Group ────────────────────────────────
@@ -890,7 +890,7 @@ const de: Record<TranslationKey, string> = {
   'inbox.swipeHint': '← Nach rechts wischen: aktivieren · Nach links: löschen →',
   'inbox.activate': 'Aktivieren',
   'inbox.zero': 'Eingang leer',
-  'inbox.zeroDesc': 'Alle Einträge verarbeitet. Drücke ⌘K für neue.',
+  'inbox.zeroDesc': 'Alle Einträge verarbeitet.',
 
   // ── Today page ───────────────────────────────────────────
   'today.overdue': 'Überfällig',

@@ -41,11 +41,6 @@ export default function InboxPage() {
         <p className="mt-0.5 text-[13px] text-muted-foreground/60">
           {inboxItems.length} {inboxItems.length === 1 ? 'item' : 'items'} to process
         </p>
-        {inboxItems.length > 0 && (
-          <p className="mt-1 text-[11px] text-muted-foreground/45 lg:hidden">
-            Swipe right to activate. Swipe left to delete.
-          </p>
-        )}
       </div>
 
       <div className="space-y-px">
@@ -95,11 +90,7 @@ export default function InboxPage() {
                 </div>
                 <h3 className="text-[15px] font-semibold">Sauberes Spielfeld!</h3>
                 <p className="mt-1.5 max-w-xs text-[12px] text-muted-foreground/50">
-                  Keine Aufgaben im Strafraum. Drueck{' '}
-                  <kbd className="rounded border border-cyan-500/20 bg-cyan-500/5 px-1 py-0.5 font-mono text-[10px] text-cyan-600 dark:text-cyan-400">
-                    Cmd+K
-                  </kbd>{' '}
-                  um neue Spielzuege einzuwechseln.
+                  Keine Aufgaben im Strafraum.
                 </p>
                 <p className="mt-3 text-[10px] italic text-muted-foreground/30">
                   &ldquo;Die beste Verteidigung ist eine leere Inbox.&rdquo;

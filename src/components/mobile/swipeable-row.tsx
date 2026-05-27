@@ -136,20 +136,20 @@ export function SwipeableRow({
     : 'text-blue-600 dark:text-blue-400';
 
   return (
-    <div className="swipe-item relative overflow-hidden">
+    <div className="swipe-item relative overflow-hidden rounded-xl">
       {onSwipeRight && (
         <div
           className={cn(
-            'absolute inset-y-0 left-0 flex items-center pl-4 transition-colors duration-150',
+            'absolute inset-y-0 left-0 flex items-center pl-4 transition-colors duration-200 ease-[var(--ease-standard)]',
             passedThreshold && isSwipingRight
               ? 'bg-emerald-500/15 dark:bg-emerald-500/20'
-              : 'bg-foreground/[0.03]',
+              : 'bg-foreground/[0.025]',
           )}
           style={{ width: Math.max(0, offset) }}
         >
           <div className={cn(
-            'flex items-center gap-1.5 transition-all duration-150',
-            passedThreshold && isSwipingRight ? 'scale-110 opacity-100' : 'scale-90 opacity-60',
+            'flex items-center gap-1.5 transition-all duration-200 ease-[var(--ease-standard)]',
+            passedThreshold && isSwipingRight ? 'scale-105 opacity-100' : 'scale-95 opacity-60',
           )}>
             <RightIcon className={cn(
               'h-4 w-4',
@@ -157,7 +157,7 @@ export function SwipeableRow({
             )} />
             {Math.abs(offset) > 50 && (
               <span className={cn(
-                'whitespace-nowrap text-[11px] font-medium',
+                'whitespace-nowrap text-[11px] font-semibold',
                 passedThreshold && isSwipingRight ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
               )}>
                 {rightLabel}
@@ -170,18 +170,18 @@ export function SwipeableRow({
       {onSwipeLeft && (
         <div
           className={cn(
-            'absolute inset-y-0 right-0 flex items-center justify-end pr-4 transition-colors duration-150',
-            passedThreshold && isSwipingLeft ? leftActiveClasses : 'bg-foreground/[0.03]',
+            'absolute inset-y-0 right-0 flex items-center justify-end pr-4 transition-colors duration-200 ease-[var(--ease-standard)]',
+            passedThreshold && isSwipingLeft ? leftActiveClasses : 'bg-foreground/[0.025]',
           )}
           style={{ width: Math.max(0, -offset) }}
         >
           <div className={cn(
-            'flex items-center gap-1.5 transition-all duration-150',
-            passedThreshold && isSwipingLeft ? 'scale-110 opacity-100' : 'scale-90 opacity-60',
+            'flex items-center gap-1.5 transition-all duration-200 ease-[var(--ease-standard)]',
+            passedThreshold && isSwipingLeft ? 'scale-105 opacity-100' : 'scale-95 opacity-60',
           )}>
             {Math.abs(offset) > 50 && (
               <span className={cn(
-                'whitespace-nowrap text-[11px] font-medium',
+                'whitespace-nowrap text-[11px] font-semibold',
                 passedThreshold && isSwipingLeft ? leftTextClasses : 'text-muted-foreground/60',
               )}>
                 {leftLabel}
@@ -202,9 +202,9 @@ export function SwipeableRow({
         onTouchCancel={handleTouchCancel}
         style={{
           transform: `translateX(${offset}px)`,
-          transition: isReleasing ? 'transform 0.26s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none',
+          transition: isReleasing ? 'transform 0.26s var(--ease-emphasized)' : 'none',
         }}
-        className="relative z-10 bg-card"
+        className="relative z-10 bg-card/95"
       >
         {children}
       </div>

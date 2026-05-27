@@ -380,7 +380,7 @@ function BriefingContent() {
                   {hockeyMode ? 'Spielfrei — plane deine Züge, Dr.' : 'Clear runway ahead.'}
                 </p>
                 <p className="text-[12px] text-muted-foreground/30 mt-1">
-                  {hockeyMode ? 'Drücke ⌘K für einen neuen Spielzug.' : 'Press ⌘K to plan your day.'}
+                  {hockeyMode ? 'Der nächste Spielzug wartet.' : 'The next plan is ready when you are.'}
                 </p>
               </div>
             )}

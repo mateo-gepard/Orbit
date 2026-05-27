@@ -41,6 +41,13 @@ const TYPE_LABELS: Record<ItemType, string> = {
   note: 'Note',
 };
 
+const COMMAND_SECTION_LABEL =
+  'px-3 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground/50';
+const COMMAND_ROW =
+  'mx-1.5 flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[14px] outline-none transition-colors lg:py-2 lg:text-[13px] focus-visible:ring-2 focus-visible:ring-ring/25';
+const COMMAND_ROW_ACTIVE = 'bg-foreground/[0.055] shadow-[var(--shadow-hairline)]';
+const COMMAND_ROW_IDLE = 'hover:bg-foreground/[0.035] active:bg-foreground/[0.055]';
+
 export function CommandBar() {
   const { user } = useAuth();
   const { commandBarOpen, setCommandBarOpen, items, getAllTags, addCustomTag } = useOrbitStore();
@@ -339,7 +346,7 @@ export function CommandBar() {
     <div className="fixed inset-0 z-[100]">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+        className="absolute inset-0 bg-background/70 backdrop-blur-md"
         onClick={() => setCommandBarOpen(false)}
       />
 
@@ -363,14 +370,9 @@ export function CommandBar() {
           paddingRight: 'max(0.75rem, var(--safe-right))',
         }}
       >
-        <div className={cn(
-          'overflow-hidden bg-popover',
-          'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
-          'rounded-2xl lg:rounded-xl',
-          'border border-border/60'
-        )}>
+        <div className="surface-float overflow-hidden rounded-2xl">
           {/* Input */}
-          <div className="flex items-center gap-3 px-4 py-3 lg:py-3">
+          <div className="flex items-center gap-3 px-4 py-3.5 lg:py-3">
             <Search className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
             <input
               ref={inputRef}
@@ -421,23 +423,20 @@ export function CommandBar() {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setCommandBarOpen(false)}
-                className="mobile-touch-target rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/50 hover:text-muted-foreground lg:hidden"
+                className="mobile-touch-target rounded-lg px-2 py-1 text-[12px] font-medium text-muted-foreground/50 transition-colors hover:bg-foreground/[0.04] hover:text-muted-foreground lg:hidden"
               >
                 Cancel
               </button>
-              <kbd className="hidden lg:inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/60">
-                esc
-              </kbd>
             </div>
           </div>
 
           {/* Divider */}
-          <div className="h-px bg-border" />
+          <div className="h-px bg-border/40" />
 
           {/* Results */}
           <div 
             data-command-scroll
-            className="overflow-y-auto overscroll-contain py-1.5 lg:max-h-[300px]"
+            className="overflow-y-auto overscroll-contain py-2 lg:max-h-[300px]"
             style={{
               maxHeight: 'min(56dvh, calc(var(--app-height) - max(var(--safe-top), 8px) - 88px))',
             }}
@@ -445,7 +444,7 @@ export function CommandBar() {
             {/* Tag suggestions */}
             {suggestedTags.length > 0 && (
               <div>
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                <div className={COMMAND_SECTION_LABEL}>
                   {t('commandBar.tags')}
                 </div>
                 {suggestedTags.map((tag, idx) => (
@@ -453,8 +452,8 @@ export function CommandBar() {
                     key={tag}
                     onClick={() => handleSelectTag(tag)}
                     className={cn(
-                      'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
-                      idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
+                      COMMAND_ROW,
+                      idx === selectedIndex ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
                     )}
                   >
                     <span className="text-muted-foreground/50">#</span>
@@ -467,7 +466,7 @@ export function CommandBar() {
             {/* Priority suggestions */}
             {suggestedPriorities.length > 0 && !suggestedTags.length && (
               <div>
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                <div className={COMMAND_SECTION_LABEL}>
                   {t('commandBar.priority')}
                 </div>
                 {suggestedPriorities.map((priority, idx) => (
@@ -475,8 +474,8 @@ export function CommandBar() {
                     key={priority}
                     onClick={() => handleSelectPriority(priority)}
                     className={cn(
-                      'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
-                      idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
+                      COMMAND_ROW,
+                      idx === selectedIndex ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
                     )}
                   >
                     <span className="text-muted-foreground/50">!</span>
@@ -493,7 +492,7 @@ export function CommandBar() {
             {/* Link suggestions */}
             {suggestedLinks.length > 0 && !suggestedTags.length && !suggestedPriorities.length && (
               <div>
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                <div className={COMMAND_SECTION_LABEL}>
                   {t('commandBar.linkTo')}
                 </div>
                 {suggestedLinks.map((item, idx) => {
@@ -506,8 +505,8 @@ export function CommandBar() {
                       key={item.id}
                       onClick={() => handleSelectLink(item)}
                       className={cn(
-                        'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
-                        idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
+                        COMMAND_ROW,
+                        idx === selectedIndex ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
                       )}
                     >
                       <Icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
@@ -532,7 +531,7 @@ export function CommandBar() {
             {/* Search results */}
             {filteredItems.length > 0 && !input.startsWith('/') && !showingAutocomplete && (
               <div>
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                <div className={COMMAND_SECTION_LABEL}>
                   {t('commandBar.results')}
                 </div>
                 {filteredItems.map((item, idx) => {
@@ -542,8 +541,8 @@ export function CommandBar() {
                       key={item.id}
                       onClick={() => handleSelectItem(item.id)}
                       className={cn(
-                        'flex w-full items-center gap-3 px-3 py-3 lg:py-2 text-[14px] lg:text-[13px] text-left transition-colors',
-                        idx === selectedIndex ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.03]'
+                        COMMAND_ROW,
+                        idx === selectedIndex ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
                       )}
                     >
                       <Icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
@@ -560,12 +559,12 @@ export function CommandBar() {
             {/* Create preview for items with titles */}
             {input.trim() && isCreateMode && !suggestedTags.length && (previewTitle || resolvedLink) && (
               <div>
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                <div className={COMMAND_SECTION_LABEL}>
                   Create new {TYPE_LABELS[parsed.type].toLowerCase()}
                 </div>
                 <button
                   onClick={() => handleSubmit()}
-                  className="flex w-full items-center gap-3 px-3 py-3.5 lg:py-2.5 text-left transition-colors hover:bg-foreground/[0.03] active:bg-foreground/[0.06]"
+                  className={cn(COMMAND_ROW, 'py-3.5 lg:py-2.5', COMMAND_ROW_IDLE)}
                 >
                   <TypeIcon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
@@ -595,12 +594,12 @@ export function CommandBar() {
             {/* Tag creation preview (when only tags, no title) */}
             {input.trim() && isCreateMode && !suggestedTags.length && !parsed.title.trim() && parsed.tags.length > 0 && (
               <div>
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                <div className={COMMAND_SECTION_LABEL}>
                   {parsed.tags.length === 1 ? t('commandBar.createTag') : t('commandBar.createTags')}
                 </div>
                 <button
                   onClick={() => handleSubmit()}
-                  className="flex w-full items-center gap-3 px-3 py-3.5 lg:py-2.5 text-left transition-colors hover:bg-foreground/[0.03] active:bg-foreground/[0.06]"
+                  className={cn(COMMAND_ROW, 'py-3.5 lg:py-2.5', COMMAND_ROW_IDLE)}
                 >
                   <Hash className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
@@ -617,8 +616,8 @@ export function CommandBar() {
 
             {/* Empty state — hints */}
             {!input.trim() && (
-              <div className="px-4 py-3 space-y-3">
-                <div className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
+              <div className="space-y-3 px-4 py-3.5">
+                <div className="text-[10px] font-semibold uppercase text-muted-foreground/50">
                   {t('commandBar.commands')}
                 </div>
                 <div className="grid grid-cols-3 lg:grid-cols-2 gap-1.5">
@@ -635,26 +634,12 @@ export function CommandBar() {
                           inputRef.current?.focus();
                         });
                       }}
-                      className="flex flex-col lg:flex-row items-center gap-1.5 lg:gap-2 rounded-xl lg:rounded-md px-2.5 py-3 lg:py-1.5 text-[12px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground transition-colors active:bg-foreground/[0.06]"
+                      className="orbit-pressable flex flex-col items-center gap-1.5 rounded-xl border border-transparent bg-foreground/[0.025] px-2.5 py-3 text-[12px] text-muted-foreground outline-none hover:border-border/50 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:flex-row lg:gap-2 lg:py-1.5"
                     >
                       <Icon className="h-5 w-5 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                       <span className="capitalize text-[11px] lg:text-[12px]">{type}</span>
                     </button>
                   ))}
-                </div>
-                <div className="space-y-2 pt-1">
-                  <p className="text-[11px] text-muted-foreground/40">
-                    <span className="font-semibold text-muted-foreground/60">💡 Inbox: </span>
-                    Your capture zone. Items start here before you organize them.
-                  </p>
-                  <p className="text-[11px] text-muted-foreground/40">
-                    <span className="font-semibold text-muted-foreground/60">Tip: </span>
-                    Use <kbd className="font-mono text-[10px]">#tag</kbd>{' '}
-                    <kbd className="font-mono text-[10px]">!high</kbd>{' '}
-                    <kbd className="font-mono text-[10px]">@project</kbd>{' '}
-                    and dates like <kbd className="font-mono text-[10px]">morgen</kbd> or{' '}
-                    <kbd className="font-mono text-[10px]">15.03</kbd>
-                  </p>
                 </div>
               </div>
             )}

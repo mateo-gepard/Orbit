@@ -312,7 +312,7 @@ export default function HabitsPage() {
               <Repeat className="h-5 w-5 text-muted-foreground/30" />
             </div>
             <p className="text-[13px] text-muted-foreground/50">No habits yet</p>
-            <p className="text-[11px] text-muted-foreground/30 mt-1">Tap + to create your first habit</p>
+            <p className="text-[11px] text-muted-foreground/30 mt-1">No habits yet</p>
           </div>
         )}
       </div>

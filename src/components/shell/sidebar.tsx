@@ -163,14 +163,14 @@ export function Sidebar() {
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[3px] lg:hidden transition-opacity duration-300"
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[6px] lg:hidden transition-opacity duration-300"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       <aside
         className={cn(
-          'fixed left-0 top-0 z-50 flex h-full w-[280px] flex-col bg-sidebar transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:relative lg:w-[260px] lg:translate-x-0',
+          'fixed left-0 top-0 z-50 flex h-full w-[280px] flex-col border-r border-sidebar-border/60 bg-sidebar/95 shadow-[var(--shadow-panel)] backdrop-blur-xl transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:relative lg:w-[260px] lg:translate-x-0 lg:shadow-none',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
         style={{
@@ -182,7 +182,7 @@ export function Sidebar() {
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
             <div className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-md font-semibold text-xs tracking-tight",
+              "flex h-7 w-7 items-center justify-center rounded-lg font-semibold text-xs tracking-tight shadow-[var(--shadow-hairline)]",
               hockeyMode ? "bg-cyan-600 text-white" : "bg-foreground text-background"
             )}>
               {hockeyMode ? '🏒' : 'O'}
@@ -205,13 +205,10 @@ export function Sidebar() {
         <div className="px-3 pb-2">
           <button
             onClick={() => setCommandBarOpen(true)}
-            className="flex w-full items-center gap-2.5 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-[13px] text-muted-foreground transition-all hover:border-border hover:bg-background hover:shadow-sm"
+            className="surface-card orbit-pressable flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25"
           >
             <Plus className="h-3.5 w-3.5" />
             <span className="flex-1 text-left">{t('sidebar.quickAdd')}</span>
-            <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-[10px] font-mono leading-none">
-              ⌘K
-            </kbd>
           </button>
         </div>
 
@@ -220,7 +217,7 @@ export function Sidebar() {
           {NAV_SECTIONS.map((section, sIdx) => (
             <div key={sIdx} className={cn(sIdx > 0 && 'mt-5')} data-slot="nav-section">
               {section.labelKey && (
-                <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+                <div className="mb-1 px-2 text-[11px] font-semibold uppercase text-muted-foreground/60">
                   {t(section.labelKey)}
                 </div>
               )}
@@ -238,9 +235,9 @@ export function Sidebar() {
                       data-active={isActive ? 'true' : undefined}
                       style={isActive && accentColor ? { color: accentColor, borderColor: accentColor } : undefined}
                       className={cn(
-                        'group flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-all',
+                        'group orbit-pressable flex items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
                         isActive
-                          ? 'bg-foreground/[0.06] text-foreground'
+                          ? 'bg-foreground/[0.065] text-foreground shadow-[var(--shadow-hairline)]'
                           : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
                       )}
                     >
@@ -254,7 +251,7 @@ export function Sidebar() {
                       />
                       <span className="flex-1">{t(item.labelKey)}</span>
                       {showBadges && badgeCounts[item.href] > 0 && (
-                        <span className="ml-auto text-[10px] font-medium tabular-nums text-muted-foreground/50">
+                        <span className="ml-auto rounded-full bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground/60">
                           {badgeCounts[item.href]}
                         </span>
                       )}
@@ -267,7 +264,7 @@ export function Sidebar() {
 
           {/* Toolbox */}
           <div className="mt-5">
-            <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+            <div className="mb-1 px-2 text-[11px] font-semibold uppercase text-muted-foreground/60">
               {t('nav.toolbox')}
             </div>
             <div className="space-y-0.5">
@@ -275,9 +272,9 @@ export function Sidebar() {
                 href="/toolbox"
                 onClick={() => setSidebarOpen(false)}
                 className={cn(
-                  'group flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-all',
+                  'group orbit-pressable flex items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
                   pathname === '/toolbox'
-                    ? 'bg-foreground/[0.06] text-foreground'
+                    ? 'bg-foreground/[0.065] text-foreground shadow-[var(--shadow-hairline)]'
                     : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
                 )}
               >
@@ -299,9 +296,9 @@ export function Sidebar() {
                     href={tool.href}
                     onClick={() => setSidebarOpen(false)}
                     className={cn(
-                      'group flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-all',
+                      'group orbit-pressable flex items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
                       isActive
-                        ? 'bg-foreground/[0.06] text-foreground'
+                        ? 'bg-foreground/[0.065] text-foreground shadow-[var(--shadow-hairline)]'
                         : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
                     )}
                   >
@@ -322,14 +319,14 @@ export function Sidebar() {
           {/* Tags / Areas */}
           <div className="mt-5">
             <div className="mb-1 px-2 flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+              <span className="text-[11px] font-semibold uppercase text-muted-foreground/60">
                 {t('nav.areas')}
               </span>
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={() => setIsManaging(!isManaging)}
                   className={cn(
-                    'rounded p-0.5 transition-colors',
+                    'rounded-md p-0.5 transition-colors focus-visible:ring-2 focus-visible:ring-ring/25',
                     isManaging
                       ? 'text-foreground bg-foreground/10'
                       : 'text-muted-foreground/40 hover:text-muted-foreground/70'
@@ -340,7 +337,7 @@ export function Sidebar() {
                 </button>
                 <button
                   onClick={() => { setIsAddingTag(true); setIsManaging(true); }}
-                  className="rounded p-0.5 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
+                  className="rounded-md p-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-ring/25"
                   title={t('sidebar.addTag')}
                 >
                   <Plus className="h-3 w-3" />
@@ -366,7 +363,7 @@ export function Sidebar() {
                         onChange={(e) => setEditValue(e.target.value)}
                         onBlur={() => handleRenameTag(tag)}
                         onKeyDown={(e) => { if (e.key === 'Escape') { setEditingTag(null); setEditValue(''); } }}
-                        className="w-16 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-1 focus:ring-primary"
+                        className="w-16 rounded-lg border border-border/60 bg-background/70 px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-2 focus:ring-ring/25"
                       />
                     </form>
                   );
@@ -374,17 +371,17 @@ export function Sidebar() {
 
                 if (isDeleting) {
                   return (
-                    <div key={tag} className="flex items-center gap-1 rounded-md bg-destructive/10 px-1.5 py-0.5">
+                    <div key={tag} className="flex items-center gap-1 rounded-lg bg-destructive/10 px-1.5 py-0.5">
                       <span className="text-[10px] text-destructive font-medium">Delete &quot;{tag}&quot;?</span>
                       <button
                         onClick={() => handleDeleteTag(tag)}
-                        className="rounded p-0.5 text-destructive hover:bg-destructive/20"
+                        className="rounded-md p-0.5 text-destructive hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/25"
                       >
                         <Check className="h-3 w-3" />
                       </button>
                       <button
                         onClick={() => setDeletingTag(null)}
-                        className="rounded p-0.5 text-muted-foreground hover:bg-foreground/10"
+                        className="rounded-md p-0.5 text-muted-foreground hover:bg-foreground/10 focus-visible:ring-2 focus-visible:ring-ring/25"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -397,9 +394,9 @@ export function Sidebar() {
                     <button
                       onClick={() => setActiveTag(activeTag === tag ? null : tag)}
                       className={cn(
-                        'rounded-md px-2 py-0.5 text-[11px] font-medium transition-all',
+                        'rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
                         activeTag === tag
-                          ? 'bg-foreground text-background'
+                          ? 'bg-foreground text-background shadow-[var(--shadow-soft)]'
                           : 'text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-muted-foreground'
                       )}
                     >
@@ -409,14 +406,14 @@ export function Sidebar() {
                       <div className="flex items-center gap-0.5 ml-0.5">
                         <button
                           onClick={() => { setEditingTag(tag); setEditValue(tag); }}
-                          className="rounded p-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+                          className="rounded-md p-0.5 text-muted-foreground/40 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25"
                           title={t('common.rename')}
                         >
                           <Pencil className="h-2.5 w-2.5" />
                         </button>
                         <button
                           onClick={() => setDeletingTag(tag)}
-                          className="rounded p-0.5 text-muted-foreground/40 hover:text-destructive transition-colors"
+                          className="rounded-md p-0.5 text-muted-foreground/40 transition-colors hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/25"
                           title={t('common.delete')}
                         >
                           <Trash2 className="h-2.5 w-2.5" />
@@ -440,7 +437,7 @@ export function Sidebar() {
                     onBlur={handleAddTag}
                     onKeyDown={(e) => { if (e.key === 'Escape') { setIsAddingTag(false); setNewTagValue(''); } }}
                     placeholder={t('sidebar.newTagPlaceholder')}
-                    className="w-20 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/40"
+                    className="w-20 rounded-lg border border-border/60 bg-background/70 px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-2 focus:ring-ring/25 placeholder:text-muted-foreground/40"
                   />
                 </form>
               )}
@@ -449,7 +446,7 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-sidebar-border px-3 py-3">
+        <div className="border-t border-sidebar-border/60 bg-sidebar/70 px-3 py-3">
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <Tooltip>
@@ -458,8 +455,8 @@ export function Sidebar() {
                   href="/settings"
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
-                    'flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200',
-                    'hover:bg-foreground/[0.05] active:scale-95',
+                    'orbit-pressable flex h-8 w-8 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
+                    'hover:bg-foreground/[0.05]',
                     pathname === '/settings'
                       ? 'text-foreground'
                       : 'text-muted-foreground/60 hover:text-foreground'

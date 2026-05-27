@@ -110,13 +110,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 haptic('light');
                 setCommandBarOpen(true);
               }}
-              className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-[13px] text-muted-foreground/70 transition-all hover:border-border hover:bg-muted/60 hover:text-muted-foreground"
+              className="surface-card orbit-pressable flex min-w-72 items-center gap-2 rounded-xl px-3 py-1.5 text-[13px] text-muted-foreground/70 outline-none hover:bg-background hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/25"
             >
               <Search className="h-3.5 w-3.5" />
               <span>Search or create...</span>
-              <kbd className="ml-4 rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px] leading-none">
-                Cmd+K
-              </kbd>
             </button>
             <div className="flex-1" />
           </header>

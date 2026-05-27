@@ -120,9 +120,9 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       }}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedItemId(item.id); } }}
       className={cn(
-        'group mobile-touch-target relative flex w-full touch-manipulation items-center gap-3 rounded-lg px-3 text-left transition-all cursor-pointer',
-        'hover:bg-foreground/[0.03] active:bg-foreground/[0.05]',
-        'active:scale-[0.99]',
+        'group mobile-touch-target orbit-pressable relative flex w-full touch-manipulation items-center gap-3 rounded-xl px-3.5 text-left cursor-pointer outline-none',
+        'hover:bg-foreground/[0.035] active:bg-foreground/[0.055]',
+        'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
         // Bigger touch targets on mobile
         compact ? 'py-2.5 lg:py-1.5' : 'py-3 lg:py-2',
       )}
@@ -131,11 +131,13 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       {(item.type === 'task' || item.type === 'habit') && (
         <button
           onClick={toggleComplete}
+          aria-label={item.status === 'done' ? 'Mark as incomplete' : 'Mark as complete'}
           className={cn(
-            'relative flex h-6 w-6 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border transition-all',
+            'relative flex h-6 w-6 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border bg-background/60 shadow-[var(--shadow-hairline)] transition-all',
+            'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
             item.status === 'done'
-              ? 'border-foreground/30 bg-foreground/10'
-              : 'border-foreground/15 hover:border-foreground/40',
+              ? 'border-foreground/25 bg-foreground/10 text-foreground/60'
+              : 'border-transparent hover:border-foreground/25 hover:bg-background',
             // Bigger invisible hit target on mobile
             'before:absolute before:inset-[-10px] lg:before:inset-[-6px] before:content-[""]'
           )}
@@ -162,11 +164,11 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       )}
 
       {/* Content */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 py-px">
         <div className="flex items-center gap-1.5">
           <span
             className={cn(
-              'truncate text-[14px] lg:text-[13px]',
+              'truncate text-[14px] leading-snug lg:text-[13px]',
               item.status === 'done' ? 'text-muted-foreground/60 line-through' : 'text-foreground'
             )}
           >
@@ -178,14 +180,14 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         </div>
         {/* Meta row - always show on mobile for better scannability */}
         {(showType || showProject || item.status === 'waiting' || (item.tags && item.tags.length > 0) || item.startTime) && (
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             {item.status === 'waiting' && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-gray-500/10 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+              <span className="inline-flex items-center gap-1 rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">
                 {t('status.waiting')}
               </span>
             )}
             {showType && (
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+              <span className="text-[10px] uppercase text-muted-foreground/60 font-medium">
                 {t(`type.${item.type}`)}
               </span>
             )}
@@ -201,7 +203,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
               </span>
             )}
             {item.tags?.slice(0, 2).map((tag) => (
-              <span key={tag} className="text-[10px] text-muted-foreground/50">
+              <span key={tag} className="rounded-[4px] bg-foreground/[0.04] px-1.5 py-0.5 text-[10px] text-muted-foreground/50">
                 {tag}
               </span>
             ))}
@@ -214,7 +216,8 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         <button
           onClick={handleAddToToday}
           className={cn(
-            'hidden lg:flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all shrink-0',
+            'hidden lg:flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-all shrink-0 shadow-[var(--shadow-hairline)]',
+            'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
             'opacity-0 group-hover:opacity-100',
             isMyDay 
               ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400'
@@ -230,9 +233,9 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       {item.dueDate && (
         <span
           className={cn(
-            'text-[11px] shrink-0 tabular-nums',
-            isDueToday ? 'text-blue-600 dark:text-blue-400 font-medium' :
-            isOverdue ? 'text-destructive font-medium' : 'text-muted-foreground/60'
+            'inline-flex h-6 shrink-0 items-center rounded-md px-1.5 text-[11px] tabular-nums',
+            isDueToday ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium' :
+            isOverdue ? 'bg-destructive/10 text-destructive font-medium' : 'text-muted-foreground/60'
           )}
         >
           {isDueToday

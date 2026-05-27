@@ -514,9 +514,6 @@ export default function ProjectsPage() {
                 >
                   Cancel
                 </button>
-                <kbd className="hidden lg:inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/60">
-                  esc
-                </kbd>
               </div>
 
               {/* Divider */}
@@ -544,13 +541,10 @@ export default function ProjectsPage() {
               <div className="h-px bg-border" />
 
               {/* Footer */}
-              <div className="flex items-center justify-between px-4 py-2.5 lg:py-2 bg-muted/30">
-                <p className="text-[10px] lg:text-[9px] text-muted-foreground/50 font-medium">
-                  <kbd className="font-mono">⌘↵</kbd> create · <kbd className="font-mono">esc</kbd> cancel
-                </p>
+              <div className="flex items-center justify-end px-4 py-2.5 lg:py-2 bg-muted/30">
                 <button
                   onClick={() => handleNewProject()}
-                  className="rounded-lg px-3 py-1.5 text-[12px] lg:text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors active:scale-95"
+                  className="orbit-pressable rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background hover:bg-foreground/90 lg:text-[11px]"
                 >
                   Create
                 </button>

@@ -660,7 +660,7 @@ export default function TasksPage() {
                 ? 'No tasks match your search'
                 : statusFilter === 'done'
                 ? 'No completed tasks'
-                : 'No active tasks — use ⌘K to create one'}
+                : 'No active tasks'}
             </p>
           </div>
         )}
