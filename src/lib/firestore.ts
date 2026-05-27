@@ -35,8 +35,12 @@ const RETRY_BASE_MS = 500;
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
-function isFirebaseAvailable(): boolean {
-  return db !== null;
+function isLocalOnlyUser(userId?: string | null): boolean {
+  return userId === 'demo-user' || userId === 'local';
+}
+
+function isFirebaseAvailable(userId?: string | null): boolean {
+  return db !== null && !isLocalOnlyUser(userId);
 }
 
 function getDb(): Firestore {
@@ -209,7 +213,7 @@ export function subscribeToItems(
   userId: string,
   callback: (items: OrbitItem[]) => void
 ): () => void {
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(userId)) {
     // Local mode: load and listen to storage events from other tabs
     const items = loadLocalItems();
     callback(items);
@@ -279,7 +283,7 @@ export async function createItem(
     console.error('[ORBIT] Invalid item data, creating with defaults');
   }
 
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(item.userId)) {
     const newItem = sanitizeItem({
       ...item,
       id,
@@ -323,7 +327,7 @@ export async function updateItem(
   // Snapshot the item before update for analytics diffing
   const existingItem = useOrbitStore.getState().items.find((i) => i.id === id);
 
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(existingItem?.userId || updates.userId)) {
     const success = optimisticLocalUpdate((items) => {
       const idx = items.findIndex((i) => i.id === id);
       if (idx === -1) {
@@ -371,7 +375,7 @@ export async function updateItem(
 export async function deleteItem(id: string): Promise<void> {
   const existingItem = useOrbitStore.getState().items.find((i) => i.id === id);
 
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(existingItem?.userId)) {
     const success = optimisticLocalUpdate((items) =>
       items.filter((i) => i.id !== id)
     );
@@ -400,8 +404,12 @@ export async function deleteItem(id: string): Promise<void> {
 }
 
 export async function getItem(id: string): Promise<OrbitItem | null> {
-  if (!isFirebaseAvailable()) {
-    return loadLocalItems().find((i) => i.id === id) || null;
+  const localItem = useOrbitStore.getState().items.find((i) => i.id === id)
+    || loadLocalItems().find((i) => i.id === id)
+    || null;
+
+  if (!isFirebaseAvailable(localItem?.userId)) {
+    return localItem;
   }
 
   return withRetry(async () => {
@@ -470,8 +478,9 @@ export async function linkItems(
   itemBId: string
 ): Promise<void> {
   const now = Date.now();
+  const localUserId = useOrbitStore.getState().items.find((i) => i.id === itemAId || i.id === itemBId)?.userId;
 
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(localUserId)) {
     optimisticLocalUpdate((items) => {
       const a = items.find((i) => i.id === itemAId);
       const b = items.find((i) => i.id === itemBId);
@@ -518,8 +527,9 @@ export async function unlinkItems(
   itemBId: string
 ): Promise<void> {
   const now = Date.now();
+  const localUserId = useOrbitStore.getState().items.find((i) => i.id === itemAId || i.id === itemBId)?.userId;
 
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(localUserId)) {
     optimisticLocalUpdate((items) => {
       const a = items.find((i) => i.id === itemAId);
       const b = items.find((i) => i.id === itemBId);
@@ -591,7 +601,7 @@ export function subscribeToUserSettings(
   userId: string,
   callback: (settings: UserSettings) => void
 ): () => void {
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(userId)) {
     // Local mode: load from localStorage
     const stored = localStorage.getItem(LOCAL_SETTINGS_KEY);
     if (stored) {
@@ -666,7 +676,7 @@ export async function saveUserSettings(
     localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(data));
   } catch { /* quota exceeded — ignore */ }
 
-  if (!isFirebaseAvailable()) return;
+  if (!isFirebaseAvailable(userId)) return;
 
   await withRetry(async () => {
     const docRef = doc(getDb(), SETTINGS_COLLECTION, userId);
@@ -696,7 +706,7 @@ export async function saveToolData<T extends Record<string, unknown>>(
     localStorage.setItem(`orbit-tool-${toolId}`, JSON.stringify(payload));
   } catch { /* quota exceeded — ignore */ }
 
-  if (!isFirebaseAvailable()) return;
+  if (!isFirebaseAvailable(userId)) return;
 
   await withRetry(async () => {
     const docRef = doc(getDb(), TOOL_DATA_COLLECTION, `${userId}_${toolId}`);
@@ -716,7 +726,7 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
 ): () => void {
   const localKey = `orbit-tool-${toolId}`;
 
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(userId)) {
     // Local mode
     try {
       const stored = localStorage.getItem(localKey);
@@ -767,7 +777,7 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
  * Called during account deletion.
  */
 export async function deleteAllUserData(userId: string): Promise<void> {
-  if (!isFirebaseAvailable()) {
+  if (!isFirebaseAvailable(userId)) {
     // Clear local storage instead
     localStorage.removeItem(LOCAL_STORAGE_KEY);
     const toolKeys = Object.keys(localStorage).filter((k) => k.startsWith('orbit-'));

@@ -58,6 +58,46 @@ interface OrbitStore {
  */
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 let _ignoreCloudUntil = 0; // timestamp — ignore incoming cloud updates until this time
+const TAGS_STORAGE_KEY = 'orbit-tags';
+const LEGACY_TAGS_STORAGE_KEY = 'orbit-settings';
+
+function sanitizeTagList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((tag): tag is string => typeof tag === 'string') : [];
+}
+
+function migrateLegacyTagStorage() {
+  if (typeof window === 'undefined') return;
+
+  try {
+    if (window.localStorage.getItem(TAGS_STORAGE_KEY)) return;
+
+    const legacyRaw = window.localStorage.getItem(LEGACY_TAGS_STORAGE_KEY);
+    if (!legacyRaw) return;
+
+    const legacy = JSON.parse(legacyRaw) as {
+      state?: {
+        customTags?: unknown;
+        removedDefaultTags?: unknown;
+      };
+    };
+    const customTags = sanitizeTagList(legacy.state?.customTags);
+    const removedDefaultTags = sanitizeTagList(legacy.state?.removedDefaultTags);
+
+    if (customTags.length === 0 && removedDefaultTags.length === 0) return;
+
+    window.localStorage.setItem(
+      TAGS_STORAGE_KEY,
+      JSON.stringify({
+        state: { customTags, removedDefaultTags },
+        version: 0,
+      })
+    );
+  } catch {
+    // Leave legacy storage untouched if migration fails.
+  }
+}
+
+migrateLegacyTagStorage();
 
 function debouncedSyncTags(get: () => OrbitStore) {
   if (syncTimeout) clearTimeout(syncTimeout);
@@ -253,11 +293,22 @@ export const useOrbitStore = create<OrbitStore>()(
   },
 }),
     {
-      name: 'orbit-settings',
+      name: TAGS_STORAGE_KEY,
       partialize: (state) => ({
         customTags: state.customTags,
         removedDefaultTags: state.removedDefaultTags,
       }),
+      merge: (persisted, current) => {
+        const state = persisted as
+          | Partial<Pick<OrbitStore, 'customTags' | 'removedDefaultTags'>>
+          | undefined;
+        return {
+          ...current,
+          customTags: sanitizeTagList(state?.customTags),
+          removedDefaultTags: sanitizeTagList(state?.removedDefaultTags),
+        };
+      },
+      skipHydration: true,
     }
   )
 );

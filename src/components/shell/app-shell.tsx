@@ -45,7 +45,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [loading, pathname, router, user]);
 
-  if (!loading && !user) {
+  if (loading) {
+    return <main className="min-h-[var(--app-height)] bg-background text-foreground" />;
+  }
+
+  if (!user) {
     return (
       <main className="min-h-[var(--app-height)] bg-background text-foreground">
         {pathname === '/' ? children : null}

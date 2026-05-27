@@ -23,7 +23,7 @@ const MIN_LOADING_TIME = 800;
 const MAX_LOADING_TIME = 6000;
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, isDemo } = useAuth();
   const setItems = useOrbitStore((s) => s.setItems);
   const setTagsFromCloud = useOrbitStore((s) => s.setTagsFromCloud);
   const setSyncUserId = useOrbitStore((s) => s._setSyncUserId);
@@ -58,6 +58,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       useSettingsStore.getState()._setSyncUserId(null);
       useCirclesStore.getState()._setSyncUserId(null);
       // Rehydrate persisted stores from localStorage even in demo mode
+      useOrbitStore.persist.rehydrate();
       useToolboxStore.persist.rehydrate();
       useAbiturStore.persist.rehydrate();
       useWishlistStore.persist.rehydrate();
@@ -74,25 +75,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // ── Rehydrate persisted stores ──
       // Provides instant UI from localStorage while Firestore loads.
       // Cloud snapshots always overwrite this — cloud is the source of truth.
+      useOrbitStore.persist.rehydrate();
       useToolboxStore.persist.rehydrate();
       useAbiturStore.persist.rehydrate();
       useWishlistStore.persist.rehydrate();
       useSettingsStore.persist.rehydrate();
 
-      // Set sync user ID for tag cloud sync
-      setSyncUserId(user.uid);
-      prevUserIdRef.current = user.uid;
+      const isLocalUser = isDemo || user.uid === 'demo-user';
 
-      // Set sync user IDs for tool stores
-      useAbiturStore.getState()._setSyncUserId(user.uid);
-      useToolboxStore.getState()._setSyncUserId(user.uid);
-      useWishlistStore.getState()._setSyncUserId(user.uid);
-      useCirclesStore.getState()._setSyncUserId(user.uid, {
-        displayName: user.displayName || 'Orbit User',
-        email: user.email || '',
-        photoURL: user.photoURL || null,
-      });
-      useSettingsStore.getState()._setSyncUserId(user.uid);
+      if (isLocalUser) {
+        setSyncUserId(null);
+        prevUserIdRef.current = null;
+        useAbiturStore.getState()._setSyncUserId(null);
+        useToolboxStore.getState()._setSyncUserId(null);
+        useWishlistStore.getState()._setSyncUserId(null);
+        useCirclesStore.getState()._setSyncUserId(null);
+        useSettingsStore.getState()._setSyncUserId(null);
+      } else {
+        // Set sync user ID for tag cloud sync
+        setSyncUserId(user.uid);
+        prevUserIdRef.current = user.uid;
+
+        // Set sync user IDs for tool stores
+        useAbiturStore.getState()._setSyncUserId(user.uid);
+        useToolboxStore.getState()._setSyncUserId(user.uid);
+        useWishlistStore.getState()._setSyncUserId(user.uid);
+        useCirclesStore.getState()._setSyncUserId(user.uid, {
+          displayName: user.displayName || 'Orbit User',
+          email: user.email || '',
+          photoURL: user.photoURL || null,
+        });
+        useSettingsStore.getState()._setSyncUserId(user.uid);
+      }
 
       // Cleanup previous subscriptions
       if (unsubscribeRef.current) {
@@ -151,7 +165,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         user.uid,
         'wishlist',
         (data) => {
-          console.log('[ORBIT] Wishlist callback fired, data:', data ? `items=${(data as Record<string, unknown>).items ? (data.items as unknown[]).length : 'missing'}, keys=${Object.keys(data).join(',')}` : 'null');
           if (data) {
             useWishlistStore.getState()._setFromCloud(data as { items: never[]; duels: never[] });
           }
@@ -165,11 +178,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       unsubToolDataRefs.current.push(unsubWishlist);
 
       // Subscribe to Flight Logs — ensures cloud sync even when flight page isn't open
-      const unsubFlightLogs = subscribeToFlightLogs(user.uid, () => {
-        // Data is persisted to localStorage by subscribeToFlightLogs itself;
-        // the flight page reads from there. No extra state needed here.
-      });
-      unsubToolDataRefs.current.push(unsubFlightLogs);
+      if (!isLocalUser) {
+        const unsubFlightLogs = subscribeToFlightLogs(user.uid, () => {
+          // Data is persisted to localStorage by subscribeToFlightLogs itself;
+          // the flight page reads from there. No extra state needed here.
+        });
+        unsubToolDataRefs.current.push(unsubFlightLogs);
+      }
 
       // Subscribe to Settings
       const unsubSettings2 = subscribeToToolData<{ settings: UserSettings }>(
@@ -191,7 +206,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       startBriefingScheduler(() => useOrbitStore.getState().items);
 
       // Register FCM for background push notifications
-      if (isFCMAvailable()) {
+      if (!isLocalUser && isFCMAvailable()) {
         // First, silently refresh if subscription was lost (e.g. iOS killed it)
         refreshPushSubscription(user.uid).catch(() => {});
 
@@ -237,7 +252,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setError('Unable to connect. Your data is saved locally.');
       }
     }
-  }, [user, dataLoaded, setItems, setTagsFromCloud, setSyncUserId]);
+  }, [user, isDemo, dataLoaded, setItems, setTagsFromCloud, setSyncUserId]);
 
   useEffect(() => {
     const connectFrame = requestAnimationFrame(() => {
