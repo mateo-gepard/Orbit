@@ -7,15 +7,12 @@ import {
   Trash2,
   Archive,
   RotateCcw,
-  Link2,
   Check,
   Plus,
   Calendar as CalendarIcon,
   CheckCircle2,
-  CheckSquare,
   Target,
   LayoutList,
-  CalendarClock,
   Sparkles,
   FileText,
   MoreVertical,
@@ -29,22 +26,22 @@ import { syncEventToGoogle, requestCalendarPermission, hasCalendarPermission } f
 import { LinkManager } from '@/components/items/link-manager';
 import { LinkGraph } from '@/components/items/link-graph';
 import { ProjectDashboard } from './project-dashboard';
+import { getItemRelationships } from '@/lib/links';
 import type { OrbitItem, ItemType, ItemStatus, Priority, ChecklistItem, GoalTimeframe, HabitFrequency, NoteSubtype } from '@/lib/types';
-import { LIFE_AREA_TAGS } from '@/lib/types';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { calculateStreak } from '@/lib/habits';
-import { cn, formatTimestamp, fullTimestampPattern, getLocale } from '@/lib/utils';
+import { cn, fullTimestampPattern, getLocale } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { toast } from 'sonner';
 
-const STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
+const TASK_STATUS_OPTIONS: ItemStatus[] = ['inbox', 'active', 'waiting', 'done', 'archived'];
+const STANDARD_STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
 const ITEM_TYPE_KEYS: Record<ItemType, TranslationKey> = {
   task: 'type.task',
   project: 'type.project',
@@ -52,12 +49,6 @@ const ITEM_TYPE_KEYS: Record<ItemType, TranslationKey> = {
   event: 'type.event',
   goal: 'type.goal',
   note: 'type.note',
-};
-const STATUS_DESCRIPTIONS: Record<ItemStatus, string> = {
-  active: 'Currently working on this',
-  waiting: 'Blocked or waiting for someone',
-  done: 'Completed',
-  archived: 'No longer relevant',
 };
 const TYPE_OPTIONS: ItemType[] = ['task', 'project', 'habit', 'event', 'goal', 'note'];
 const PRIORITY_OPTIONS: Priority[] = ['low', 'medium', 'high'];
@@ -76,6 +67,10 @@ const TYPE_ICONS: Record<ItemType, typeof CheckCircle2> = {
 };
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+function getStatusOptions(type: ItemType): ItemStatus[] {
+  return type === 'task' ? TASK_STATUS_OPTIONS : STANDARD_STATUS_OPTIONS;
+}
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">
@@ -85,7 +80,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 export function DetailPanel() {
-  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags, removeCustomTag, setCompletionAnimation } = useOrbitStore();
+  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags, setCompletionAnimation } = useOrbitStore();
   const item = selectedItemId ? items.find(i => i.id === selectedItemId) : undefined;
   const { t } = useTranslation();
   const [title, setTitle] = useState('');
@@ -129,18 +124,28 @@ export function DetailPanel() {
         }, 100);
       }
     }
+  // Only resync when navigating between items so local title edits are not overwritten.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
 
   const handleUpdate = useCallback(
     async (updates: Partial<OrbitItem>) => {
       if (!item) return;
       try {
-        await updateItem(item.id, updates);
+        const promotesInbox =
+          item.type === 'task' &&
+          item.status === 'inbox' &&
+          (Boolean(updates.dueDate) || Boolean(updates.myDay) || Boolean(updates.parentId));
+        const normalizedUpdates: Partial<OrbitItem> = promotesInbox
+          ? { ...updates, status: 'active' }
+          : updates;
+
+        await updateItem(item.id, normalizedUpdates);
         
         // Auto-sync event changes to Google Calendar
         if (item.type === 'event' && item.googleCalendarId && hasCalendarPermission()) {
           try {
-            const updatedItem = { ...item, ...updates };
+            const updatedItem = { ...item, ...normalizedUpdates };
             await syncEventToGoogle(updatedItem as OrbitItem);
           } catch {
             // Auto-sync is non-blocking — swallow errors
@@ -152,6 +157,12 @@ export function DetailPanel() {
     },
     [item]
   );
+
+  useEffect(() => {
+    if (item && item.type !== 'task' && item.status === 'inbox') {
+      void handleUpdate({ status: 'active' });
+    }
+  }, [item, handleUpdate]);
 
   const handleSyncToGoogleCalendar = async () => {
     if (!item || item.type !== 'event') return;
@@ -282,9 +293,11 @@ export function DetailPanel() {
 
   // Regular detail panel for non-project items
   const childItems = items.filter((i) => i.parentId === item.id);
-  const linkedItems = (item.linkedIds || [])
-    .map(id => items.find(i => i.id === id))
-    .filter((i): i is OrbitItem => i !== undefined);
+  const relationships = getItemRelationships(item, items);
+  const linkedItems = [
+    ...relationships.linked,
+    ...relationships.reverseLinked,
+  ].filter((linkedItem, index, arr) => arr.findIndex((i) => i.id === linkedItem.id) === index);
 
   // Current milestone: if parent is a goal under the project
   const currentMilestoneId = (parentItem?.type === 'goal' && owningProject) ? parentItem.id : '';
@@ -293,6 +306,13 @@ export function DetailPanel() {
     if (!owningProject) return;
     const newParentId = milestoneId === 'none' ? owningProject.id : milestoneId;
     handleUpdate({ parentId: newParentId });
+  };
+
+  const handleTypeChange = (nextType: ItemType) => {
+    handleUpdate({
+      type: nextType,
+      ...(nextType !== 'task' && item.status === 'inbox' ? { status: 'active' as const } : {}),
+    });
   };
 
   const content = (
@@ -344,17 +364,20 @@ export function DetailPanel() {
           </button>
           
           {/* Three-dot menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
-                <MoreVertical className="h-4 w-4" />
-              </button>
-            </DropdownMenuTrigger>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+                  aria-label="More options"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               {/* Change Type */}
               <div className="px-2 py-2">
                 <FieldLabel>{t('detail.changeType')}</FieldLabel>
-                <Select value={item.type} onValueChange={(v) => handleUpdate({ type: v as ItemType })}>
+                <Select value={item.type} onValueChange={(v) => handleTypeChange(v as ItemType)}>
                   <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {TYPE_OPTIONS.map((t) => (
@@ -372,8 +395,8 @@ export function DetailPanel() {
                 <Select value={item.status} onValueChange={(v) => handleUpdate({ status: v as ItemStatus, completedAt: v === 'done' ? Date.now() : undefined })}>
                   <SelectTrigger className="mt-1 h-8 text-[12px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {STATUS_OPTIONS.map((s) => (
-                      <SelectItem key={s} value={s} className="capitalize text-[12px]">{s}</SelectItem>
+                    {getStatusOptions(item.type).map((s) => (
+                      <SelectItem key={s} value={s} className="capitalize text-[12px]">{t(`status.${s}`)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -416,7 +439,11 @@ export function DetailPanel() {
                               key={idx}
                               onClick={() => {
                                 const days = new Set(item.customDays || []);
-                                days.has(idx) ? days.delete(idx) : days.add(idx);
+                                if (days.has(idx)) {
+                                  days.delete(idx);
+                                } else {
+                                  days.add(idx);
+                                }
                                 handleUpdate({ customDays: Array.from(days) });
                               }}
                               className={cn(
@@ -811,23 +838,6 @@ export function DetailPanel() {
           </div>
         )}
 
-        {/* Parent/Linked Item */}
-        {parentItem && (
-          <div>
-            <FieldLabel>Part of</FieldLabel>
-            <button
-              onClick={() => setSelectedItemId(parentItem.id)}
-              className="mt-2 w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors text-left"
-            >
-              <Link2 className="h-4 w-4 text-blue-600/60" />
-              <span className="text-[13px] text-foreground/90 flex-1">
-                {parentItem.title}
-              </span>
-              <span className="text-[10px] text-muted-foreground/40 uppercase">{parentItem.type}</span>
-            </button>
-          </div>
-        )}
-
         {/* Metadata - Collapsed at bottom */}
         <div className="pt-2 pb-4">
           <div className="h-px bg-border/30 mb-3" />
@@ -856,7 +866,7 @@ export function DetailPanel() {
         <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
           <SheetContent
             side="bottom"
-            className="h-[92dvh] rounded-t-2xl p-0 border-0"
+            className="mobile-sheet-height rounded-t-2xl p-0 border-0"
             showCloseButton={false}
             onOpenAutoFocus={(e) => e.preventDefault()}
             style={swipeStyles}
@@ -874,7 +884,7 @@ export function DetailPanel() {
               isDragging && "bg-muted-foreground/40 w-12"
             )} />
           </div>
-          <div className="h-[calc(92dvh-24px)] overflow-hidden pt-14">
+          <div className="h-full overflow-hidden pt-14">
             {content}
           </div>
         </SheetContent>

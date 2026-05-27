@@ -7,6 +7,19 @@
 
 import type { OrbitItem, ItemType } from './types';
 
+const ALLOWED_PARENT_TYPES: Record<ItemType, ItemType[]> = {
+  project: [],
+  goal: ['project'],
+  task: ['project', 'goal'],
+  event: ['project', 'goal'],
+  note: ['project', 'goal'],
+  habit: ['project', 'goal'],
+};
+
+export function getAllowedParentTypes(type: ItemType): ItemType[] {
+  return ALLOWED_PARENT_TYPES[type] || [];
+}
+
 /**
  * Get all items that are directly linked to the given item
  */
@@ -122,11 +135,14 @@ export function areItemsConnected(item1: OrbitItem, item2: OrbitItem, allItems: 
  * (excludes self, already linked, parent, children, archived)
  */
 export function getLinkableItems(item: OrbitItem, allItems: OrbitItem[], typeFilter?: ItemType): OrbitItem[] {
+  const reverseLinkedIds = getReverseLinkedItems(item, allItems).map(i => i.id);
   const excludedIds = new Set([
     item.id,
     ...(item.linkedIds || []),
+    ...reverseLinkedIds,
     ...(item.parentId ? [item.parentId] : []),
-    ...getChildItems(item, allItems).map(i => i.id)
+    ...getAllAncestors(item, allItems).map(i => i.id),
+    ...getAllDescendants(item, allItems).map(i => i.id),
   ]);
   
   return allItems.filter(i => 
@@ -134,6 +150,31 @@ export function getLinkableItems(item: OrbitItem, allItems: OrbitItem[], typeFil
     i.status !== 'archived' &&
     (typeFilter ? i.type === typeFilter : true)
   );
+}
+
+/**
+ * Get items that can be used as a hierarchy parent for the given item.
+ */
+export function getParentableItems(item: OrbitItem, allItems: OrbitItem[], typeFilter?: ItemType): OrbitItem[] {
+  const allowedTypes = getAllowedParentTypes(item.type);
+  if (allowedTypes.length === 0) return [];
+
+  return allItems.filter(i =>
+    i.id !== item.parentId &&
+    canSetParent(item, i, allItems) &&
+    (typeFilter ? i.type === typeFilter : true)
+  );
+}
+
+export function canSetParent(item: OrbitItem, potentialParent: OrbitItem, allItems: OrbitItem[]): boolean {
+  if (potentialParent.id === item.id) return false;
+  if (potentialParent.status === 'archived') return false;
+  if (!getAllowedParentTypes(item.type).includes(potentialParent.type)) return false;
+
+  const descendants = getAllDescendants(item, allItems);
+  if (descendants.some(descendant => descendant.id === potentialParent.id)) return false;
+
+  return true;
 }
 
 /**
@@ -162,16 +203,14 @@ export function removeLink(item: OrbitItem, targetId: string): Partial<OrbitItem
  * Set parent for an item
  */
 export function setParent(item: OrbitItem, parentId: string | undefined, allItems: OrbitItem[]): Partial<OrbitItem> {
+  if (item.parentId === parentId) return {};
+
   // Prevent circular parent relationships
   if (parentId) {
     const potentialParent = allItems.find(i => i.id === parentId);
     if (!potentialParent) return {};
-    
-    // Check if setting this parent would create a cycle
-    const ancestors = getAllAncestors(potentialParent, allItems);
-    if (ancestors.some(a => a.id === item.id)) {
-      return {}; // Prevented circular parent relationship
-    }
+
+    if (!canSetParent(item, potentialParent, allItems)) return {};
   }
   
   return { parentId };

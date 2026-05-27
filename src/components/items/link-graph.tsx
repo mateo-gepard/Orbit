@@ -66,7 +66,7 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent
         side="bottom"
-        className="h-[85dvh] rounded-t-2xl p-0 border-0"
+        className="mobile-graph-sheet-height rounded-t-2xl p-0 border-0"
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         style={swipeStyles}

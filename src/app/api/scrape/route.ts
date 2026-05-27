@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit } from '@/lib/server/rate-limit';
+import { fetchPublicUrl } from '@/lib/server/url-safety';
 
 // ═══════════════════════════════════════════════════════════
 // ORBIT — URL Metadata Scraper
@@ -165,6 +167,9 @@ function titleFromUrl(parsed: URL): string | null {
 }
 
 export async function GET(request: NextRequest) {
+  const rateLimited = checkRateLimit(request, { name: 'scrape-url', max: 20, windowMs: 60_000 });
+  if (rateLimited) return rateLimited;
+
   const url = request.nextUrl.searchParams.get('url');
 
   if (!url) {
@@ -172,14 +177,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Validate URL
-    const parsedUrl = new URL(url);
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
     // Use realistic browser headers — many sites block bot-like User-Agents
-    const response = await fetch(url, {
+    const { response, url: parsedUrl } = await fetchPublicUrl(url, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -193,7 +195,6 @@ export async function GET(request: NextRequest) {
         'Upgrade-Insecure-Requests': '1',
         'Cache-Control': 'max-age=0',
       },
-      redirect: 'follow',
     });
 
     clearTimeout(timeout);
@@ -233,7 +234,7 @@ export async function GET(request: NextRequest) {
     }
     reader.cancel();
 
-    const result = extractMeta(html, url);
+    const result = extractMeta(html, parsedUrl.href);
 
     return NextResponse.json(result, {
       headers: {
@@ -243,6 +244,15 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[ORBIT] Scrape error:', message);
+    if (
+      message.includes('Local network') ||
+      message.includes('Only http') ||
+      message.includes('embedded credentials') ||
+      message.includes('could not be resolved') ||
+      message.includes('Too many redirects')
+    ) {
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
     // Fallback: try to extract a title from the URL path
     try {
       const parsed = new URL(url);

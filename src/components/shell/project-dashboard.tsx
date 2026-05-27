@@ -33,6 +33,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { FileUpload } from '@/components/files/file-upload';
 import { cn, formatTimestamp } from '@/lib/utils';
+import { useTranslation } from '@/lib/i18n';
 
 const STATUS_OPTIONS: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
 
@@ -47,6 +48,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export function ProjectDashboard() {
   const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags } = useOrbitStore();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const item = selectedItemId ? items.find(i => i.id === selectedItemId) : undefined;
   const itemId = item?.id;
   const [title, setTitle] = useState(item?.title || '');
@@ -64,9 +66,9 @@ export function ProjectDashboard() {
 
   const projectMilestones = itemId ? items.filter((i) => i.parentId === itemId && i.type === 'goal') : [];
   const milestoneIds = new Set(projectMilestones.map((m) => m.id));
-  const directProjectTasks = itemId ? items.filter((i) => i.parentId === itemId && i.type === 'task') : [];
+  const directProjectTasks = itemId ? items.filter((i) => i.parentId === itemId && i.type === 'task' && i.status !== 'inbox') : [];
   const nestedProjectTasks = milestoneIds.size > 0
-    ? items.filter((i) => i.type === 'task' && milestoneIds.has(i.parentId!))
+    ? items.filter((i) => i.type === 'task' && i.status !== 'inbox' && milestoneIds.has(i.parentId!))
     : [];
   const projectTasks = [...directProjectTasks, ...nestedProjectTasks];
 
@@ -233,9 +235,9 @@ export function ProjectDashboard() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {STATUS_OPTIONS.map((s) => (
-                        <SelectItem key={s} value={s} className="capitalize text-[11px]">{s}</SelectItem>
-                      ))}
+                        {STATUS_OPTIONS.map((s) => (
+                          <SelectItem key={s} value={s} className="capitalize text-[11px]">{t(`status.${s}`)}</SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -608,7 +610,7 @@ export function ProjectDashboard() {
         <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
           <SheetContent
             side="bottom"
-            className="h-[92dvh] rounded-t-2xl p-0 border-0"
+            className="mobile-sheet-height rounded-t-2xl p-0 border-0"
             showCloseButton={false}
             onOpenAutoFocus={(e) => e.preventDefault()}
             style={swipeStyles}
@@ -625,7 +627,7 @@ export function ProjectDashboard() {
                 isDragging && "bg-muted-foreground/40 w-12"
               )} />
             </div>
-            <div className="h-[calc(92dvh-24px)] overflow-hidden pt-14">
+            <div className="h-full overflow-hidden pt-14">
               {content}
             </div>
           </SheetContent>

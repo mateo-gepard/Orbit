@@ -10,10 +10,10 @@ import {
   deleteObject,
   type UploadTask,
 } from 'firebase/storage';
-import { app } from './firebase';
+import { app, isFirebaseStorageConfigured } from './firebase';
 import type { ProjectFile } from './types';
 
-const storage = app ? getStorage(app) : null;
+const storage = app && isFirebaseStorageConfigured ? getStorage(app) : null;
 
 // Maximum file size: 10MB
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -76,7 +76,7 @@ export async function uploadProjectFile(
   // Create unique filename
   const timestamp = Date.now();
   const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const storagePath = `projects/${projectId}/${timestamp}_${sanitizedName}`;
+  const storagePath = `users/${userId}/projects/${projectId}/${timestamp}_${sanitizedName}`;
 
   // Create storage reference
   const storageRef = ref(storage, storagePath);

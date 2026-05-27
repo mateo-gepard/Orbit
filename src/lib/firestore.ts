@@ -80,7 +80,7 @@ async function withRetry<T>(
 // ═══════════════════════════════════════════════════════════
 
 const VALID_TYPES = new Set(['task', 'project', 'habit', 'event', 'goal', 'note']);
-const VALID_STATUSES = new Set(['active', 'waiting', 'done', 'archived']);
+const VALID_STATUSES = new Set(['inbox', 'active', 'waiting', 'done', 'archived']);
 
 function validateItem(item: Partial<OrbitItem>): boolean {
   if (!item.title || typeof item.title !== 'string') return false;

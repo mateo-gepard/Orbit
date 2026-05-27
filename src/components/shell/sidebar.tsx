@@ -15,6 +15,7 @@ import {
   LogOut,
   Plus,
   CheckSquare,
+  Inbox,
   Files,
   Pencil,
   Trash2,
@@ -24,7 +25,6 @@ import {
   Route,
   FileBarChart,
   GraduationCap,
-  Heart,
   Gem,
   Users,
   Settings,
@@ -50,6 +50,7 @@ const NAV_SECTIONS: { labelKey?: TranslationKey; items: { href: string; labelKey
   {
     items: [
       { href: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+      { href: '/inbox', labelKey: 'nav.inbox', icon: Inbox },
       { href: '/tasks', labelKey: 'nav.tasks', icon: CheckSquare },
     ],
   },
@@ -103,11 +104,11 @@ export function Sidebar() {
     if (!showBadges) return {} as Record<string, number>;
     const active = storeItems.filter((i) => i.status !== 'archived' && i.status !== 'done');
     return {
-      '/tasks': active.filter((i) => i.type === 'task').length,
+      '/tasks': active.filter((i) => i.type === 'task' && i.status !== 'inbox').length,
       '/projects': active.filter((i) => i.type === 'project').length,
       '/habits': active.filter((i) => i.type === 'habit').length,
       '/goals': active.filter((i) => i.type === 'goal').length,
-      '/inbox': active.filter((i) => !i.type || i.status === 'active').length,
+      '/inbox': storeItems.filter((i) => i.type === 'task' && i.status === 'inbox').length,
     } as Record<string, number>;
   }, [showBadges, storeItems]);
 

@@ -92,7 +92,7 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
     const milestones = allItems.filter(i => i.parentId === project.id && i.type === 'goal' && i.status !== 'archived');
     const milestoneIds = new Set(milestones.map(m => m.id));
     const tasks = allItems.filter(i =>
-      i.type === 'task' && i.status !== 'archived' &&
+      i.type === 'task' && i.status !== 'archived' && i.status !== 'inbox' &&
       (i.parentId === project.id || milestoneIds.has(i.parentId!)),
     );
     const done = tasks.filter(t => t.status === 'done').length;
@@ -115,7 +115,7 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent
         side="bottom"
-        className="h-[92dvh] lg:h-[88dvh] rounded-t-2xl p-0 border-0"
+        className="mobile-sheet-height rounded-t-2xl p-0 border-0 lg:h-[88dvh]"
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         style={swipeStyles}

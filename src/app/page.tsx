@@ -36,10 +36,12 @@ import { updateItem } from '@/lib/firestore';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
+import { getTaskBuckets } from '@/lib/task-buckets';
 
 /* ── Login ── */
-function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, onResetPassword }: {
-  onSignIn: () => void;
+function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEmailLink, onResetPassword }: {
+  onSignIn: () => Promise<void>;
+  onDemo: () => void;
   onEmailSignIn: (email: string, password: string) => Promise<void>;
   onEmailSignUp: (email: string, password: string, displayName?: string) => Promise<void>;
   onSendEmailLink: (email: string) => Promise<void>;
@@ -67,6 +69,12 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
     return map[code] || t('error.generic');
   };
 
+  const authErrorMessage = (err: unknown) => {
+    const code = (err as { code?: string })?.code || '';
+    if (code) return firebaseErrorMessage(code);
+    return err instanceof Error ? err.message : t('error.generic');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -78,8 +86,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
         await onEmailSignIn(email, password);
       }
     } catch (err: unknown) {
-      const code = (err as { code?: string })?.code || '';
-      setError(firebaseErrorMessage(code));
+      setError(authErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -93,8 +100,19 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
       await onSendEmailLink(email);
       setMode('email-link-sent');
     } catch (err: unknown) {
-      const code = (err as { code?: string })?.code || '';
-      setError(firebaseErrorMessage(code));
+      setError(authErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setSubmitting(true);
+    try {
+      await onSignIn();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t('error.generic'));
     } finally {
       setSubmitting(false);
     }
@@ -133,7 +151,8 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
         {mode === 'choice' ? (
           <div className="space-y-2.5">
             <button
-              onClick={onSignIn}
+              onClick={handleGoogleSignIn}
+              disabled={submitting}
               className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 active:scale-[0.98] transition-transform"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24">
@@ -144,6 +163,9 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               </svg>
               {t('login.continueGoogle')}
             </button>
+            {error && (
+              <p className="px-1 text-[12px] font-medium text-destructive">{error}</p>
+            )}
 
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">
@@ -167,7 +189,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               {t('login.signInEmailLink')}
             </button>
             <button
-              onClick={onSignIn}
+              onClick={onDemo}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
             >
               {t('login.tryWithout')}
@@ -245,8 +267,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               await onResetPassword(email);
               setMode('reset-sent');
             } catch (err: unknown) {
-              const code = (err as { code?: string })?.code || '';
-              setError(firebaseErrorMessage(code));
+              setError(authErrorMessage(err));
             } finally {
               setSubmitting(false);
             }
@@ -453,7 +474,7 @@ function Section({
           {href && (
             <Link
               href={href}
-              className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+              className="mobile-touch-target rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
             >
               {t('common.viewAll')}
             </Link>
@@ -461,7 +482,7 @@ function Section({
           {action}
         </div>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/80 shadow-sm shadow-black/[0.02] backdrop-blur-sm transition-colors group-hover/section:border-border">
+      <div className="overflow-hidden rounded-xl border border-border/60 bg-card/80 shadow-sm shadow-black/[0.02] backdrop-blur-sm transition-colors group-hover/section:border-border lg:rounded-2xl">
         {children}
       </div>
     </section>
@@ -577,7 +598,7 @@ function HockeyQuote() {
 
 /* ── Dashboard ── */
 export default function DashboardPage() {
-  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink, resetPassword } = useAuth();
+  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink, resetPassword, enterDemoMode } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const defaultView = useSettingsStore((s) => s.settings.defaultView);
   const { weekStart: weekStartSetting, language } = useSettingsStore((s) => s.settings);
@@ -624,43 +645,13 @@ export default function DashboardPage() {
     principles,
     totalActive,
   } = useMemo(() => {
-    const isOpenTask = (i: typeof items[number]) =>
-      i.type === 'task' && i.status !== 'done' && i.status !== 'archived';
-
-    const overdueItems = isViewingToday
-      ? items.filter((i) => isOpenTask(i) && Boolean(i.dueDate && i.dueDate < todayStr))
-      : [];
-
-    // For current/future dates, show active tasks
-    // For past dates, also show tasks that were completed on that day (archived)
-    const todayTasks = items.filter((i) => {
-      if (i.type !== 'task') return false;
-      if (i.dueDate !== selectedDateStr) return false;
-      
-      // For past dates, include completed tasks from that day
-      if (isViewingPast) {
-        return i.status === 'done' || (i.status !== 'archived');
-      }
-      
-      // For today/future, only active tasks
-      return i.status !== 'done' && i.status !== 'archived';
+    const { todayTasks, myDayTasks, notDoneFromBefore, overdueItems } = getTaskBuckets({
+      items,
+      selectedDateStr,
+      todayStr,
+      isViewingPast,
+      isViewingToday,
     });
-
-    const scheduledTaskIds = new Set([...overdueItems, ...todayTasks].map((i) => i.id));
-
-    // My Day tasks are manually planned. Due/overdue tasks already appear automatically.
-    const myDayTasks = items.filter(
-      (i) => isOpenTask(i) && i.myDay === selectedDateStr && !scheduledTaskIds.has(i.id)
-    );
-
-    const visibleTaskIds = new Set([...scheduledTaskIds, ...myDayTasks.map((i) => i.id)]);
-
-    // Not done from before: myDay was set to a past date (accumulated), excluding deadline-scheduled tasks.
-    const notDoneFromBefore = isViewingToday
-      ? items.filter(
-          (i) => isOpenTask(i) && Boolean(i.myDay && i.myDay < todayStr && !visibleTaskIds.has(i.id))
-        )
-      : [];
 
     const todayEvents = items.filter((i) => {
       if (i.type !== 'event' || i.status === 'archived') return false;
@@ -685,13 +676,13 @@ export default function DashboardPage() {
   }
 
   if (!user) {
-    return <LoginScreen onSignIn={signInWithGoogle} onEmailSignIn={signInWithEmail} onEmailSignUp={signUpWithEmail} onSendEmailLink={sendEmailLink} onResetPassword={resetPassword} />;
+    return <LoginScreen onSignIn={signInWithGoogle} onDemo={enterDemoMode} onEmailSignIn={signInWithEmail} onEmailSignUp={signUpWithEmail} onSendEmailLink={sendEmailLink} onResetPassword={resetPassword} />;
   }
 
   // Show onboarding if empty
   if (totalActive === 0) {
     return (
-      <div className="p-4 lg:p-8 max-w-3xl mx-auto">
+        <div className="mobile-page-gutter mx-auto max-w-3xl py-4 lg:p-8">
         <div className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">
             {format(selectedDate, 'EEEE, d MMMM')}
@@ -724,9 +715,66 @@ export default function DashboardPage() {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
   const focusTaskCount = overdueItems.length + todayTasks.length + myDayTasks.length;
   const habitProgressLabel = todayHabits.length > 0 ? `${completedHabitsToday}/${todayHabits.length}` : '0';
+  const renderDateBar = (className: string) => (
+    <div className={cn('items-center gap-1 overflow-hidden rounded-2xl border border-border/60 bg-card/50 p-1 shadow-sm shadow-black/[0.02]', className)}>
+      {weekDays.map((day) => {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const dayItems = items.filter(
+          (i) =>
+            i.status !== 'archived' &&
+            ((i.type === 'task' && i.dueDate === dayStr) ||
+             (i.type === 'event' && i.startDate === dayStr))
+        );
+        const isCurrentDay = isSameDay(day, selectedDate);
+        const isDayToday = isToday(day);
+        return (
+          <button
+            key={dayStr}
+            onClick={() => setSelectedDate(day)}
+            aria-label={format(day, 'EEEE, d MMMM yyyy', { locale })}
+            className={cn(
+              'mobile-touch-target flex min-w-0 flex-1 flex-col items-center rounded-xl py-2.5 transition-colors active:scale-95 lg:py-2',
+              isCurrentDay
+                ? 'bg-foreground text-background'
+                : isDayToday
+                ? 'bg-foreground/[0.08] hover:bg-foreground/[0.12]'
+                : 'hover:bg-foreground/[0.03]'
+            )}
+          >
+            <span className={cn(
+              'text-[10px] font-medium uppercase',
+              !isCurrentDay && !isDayToday && 'text-muted-foreground/50',
+              isDayToday && !isCurrentDay && 'text-foreground/70'
+            )}>
+              {format(day, 'EEE', { locale })}
+            </span>
+            <span className={cn(
+              'mt-0.5 text-sm font-semibold tabular-nums',
+              !isCurrentDay && 'text-foreground'
+            )}>
+              {format(day, 'd')}
+            </span>
+            {dayItems.length > 0 && (
+              <div className="mt-1 flex gap-0.5">
+                {dayItems.slice(0, 3).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      'h-1 w-1 rounded-full',
+                      isCurrentDay ? 'bg-background/50' : 'bg-foreground/20'
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 lg:space-y-8 lg:p-8" data-slot="page-content">
+    <div className="mobile-page-gutter mx-auto max-w-6xl space-y-5 py-4 lg:space-y-8 lg:p-8" data-slot="page-content">
       {/* ── Header with Date Navigation ── */}
       <div className="flex flex-col gap-4 border-b border-border/60 pb-4 lg:flex-row lg:items-center lg:justify-between lg:pb-5">
         <div className="min-w-0 flex-1">
@@ -755,7 +803,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Date Navigation Controls */}
-        <div className="flex w-full items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-1 lg:w-auto">
+        <div className="hidden w-full items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-1 lg:flex lg:w-auto">
           <button
             onClick={() => setSelectedDate(subDays(selectedDate, 1))}
             className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:bg-foreground/[0.05] active:scale-95"
@@ -781,6 +829,8 @@ export default function DashboardPage() {
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
+
+        {renderDateBar('flex lg:hidden')}
       </div>
 
       {/* ── Principles / Hockey Quotes ── */}
@@ -863,60 +913,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── Week strip — larger touch targets on mobile ── */}
-      <div className="flex items-center gap-1 rounded-2xl border border-border/60 bg-card/50 p-1">
-        {weekDays.map((day) => {
-          const dayStr = format(day, 'yyyy-MM-dd');
-          const dayItems = items.filter(
-            (i) =>
-              i.status !== 'archived' &&
-              ((i.type === 'task' && i.dueDate === dayStr) ||
-               (i.type === 'event' && i.startDate === dayStr))
-          );
-          const isCurrentDay = isSameDay(day, selectedDate);
-          const isDayToday = isToday(day);
-          return (
-            <button
-              key={dayStr}
-              onClick={() => setSelectedDate(day)}
-              className={cn(
-                'flex flex-1 flex-col items-center rounded-xl py-2.5 lg:py-2 transition-colors active:scale-95',
-                isCurrentDay 
-                  ? 'bg-foreground text-background' 
-                  : isDayToday
-                  ? 'bg-foreground/[0.08] hover:bg-foreground/[0.12]'
-                  : 'hover:bg-foreground/[0.03]'
-              )}
-            >
-              <span className={cn(
-                'text-[10px] font-medium uppercase', 
-                !isCurrentDay && !isDayToday && 'text-muted-foreground/50',
-                isDayToday && !isCurrentDay && 'text-foreground/70'
-              )}>
-                {format(day, 'EEE', { locale })}
-              </span>
-              <span className={cn(
-                'text-sm font-semibold mt-0.5 tabular-nums', 
-                !isCurrentDay && 'text-foreground'
-              )}>
-                {format(day, 'd')}
-              </span>
-              {dayItems.length > 0 && (
-                <div className="flex gap-0.5 mt-1">
-                  {dayItems.slice(0, 3).map((_, idx) => (
-                    <div
-                      key={idx}
-                      className={cn(
-                        'h-1 w-1 rounded-full',
-                        isCurrentDay ? 'bg-background/50' : 'bg-foreground/20'
-                      )}
-                    />
-                  ))}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {renderDateBar('hidden lg:flex')}
 
       {/* ── Content — masonry-style two column on desktop ── */}
       <div className="lg:hidden flex flex-col gap-4">

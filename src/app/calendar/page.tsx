@@ -194,7 +194,7 @@ function getEventColor(item: OrbitItem): { bg: string; text: string; border: str
   return { bg: 'bg-blue-500/10 dark:bg-blue-400/10', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-400/25', accent: 'bg-blue-500', dot: 'bg-blue-400' };
 }
 
-function getRelativeDayLabel(date: Date, loc: Locale): string | null {
+function getRelativeDayLabel(date: Date): string | null {
   if (isToday(date)) return 'Today';
   if (isYesterday(date)) return 'Yesterday';
   if (isTomorrow(date)) return 'Tomorrow';
@@ -237,7 +237,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
     onClose();
   };
 
-  const relLabel = getRelativeDayLabel(date, loc);
+  const relLabel = getRelativeDayLabel(date);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -325,8 +325,6 @@ function TimeGrid({
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [now, setNow] = useState(new Date());
-  const { t } = useTranslation();
-
   useEffect(() => {
     const target = Math.max(0, 7 * HOUR_HEIGHT - 40);
     gridRef.current?.scrollTo({ top: target, behavior: 'smooth' });
@@ -340,7 +338,7 @@ function TimeGrid({
 
     const seen = new Set<string>();
 
-    items.filter((i) => i.status !== 'archived').forEach((item) => {
+    items.filter((i) => i.status !== 'archived' && i.status !== 'inbox').forEach((item) => {
       for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
         const dateStr = format(days[dayIdx], 'yyyy-MM-dd');
 
@@ -404,7 +402,7 @@ function TimeGrid({
           <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
             {days.map((day, i) => {
               const today = isToday(day);
-              const relLabel = getRelativeDayLabel(day, loc);
+              const relLabel = getRelativeDayLabel(day);
               return (
                 <div key={i} className={cn(
                   'text-center py-3 lg:py-3.5 transition-colors',
@@ -438,7 +436,7 @@ function TimeGrid({
           </div>
           <div>
             <div className="text-[14px] font-semibold leading-tight">
-              {getRelativeDayLabel(days[0], loc) || format(days[0], 'EEEE', { locale: loc })}
+              {getRelativeDayLabel(days[0]) || format(days[0], 'EEEE', { locale: loc })}
             </div>
             <div className="text-[12px] text-muted-foreground/40 mt-0.5">{format(days[0], 'MMMM yyyy', { locale: loc })}</div>
           </div>
@@ -686,7 +684,7 @@ export default function CalendarPage() {
 
   const getItemsForDate = useCallback((date: Date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    return items.filter((i) => i.status !== 'archived' && ((i.type === 'event' && (i.startDate === dateStr || (i.startDate && i.endDate && i.startDate <= dateStr && dateStr <= i.endDate))) || (i.type === 'task' && i.dueDate === dateStr)));
+    return items.filter((i) => i.status !== 'archived' && i.status !== 'inbox' && ((i.type === 'event' && (i.startDate === dateStr || (i.startDate && i.endDate && i.startDate <= dateStr && dateStr <= i.endDate))) || (i.type === 'task' && i.dueDate === dateStr)));
   }, [items]);
 
   const handleImportFromGoogle = async () => {
@@ -984,7 +982,7 @@ export default function CalendarPage() {
                     </div>
                     <div>
                       <p className="text-[13px] font-bold leading-tight">
-                        {getRelativeDayLabel(selectedMobileDay, locale) || format(selectedMobileDay, 'EEEE', { locale })}
+                        {getRelativeDayLabel(selectedMobileDay) || format(selectedMobileDay, 'EEEE', { locale })}
                       </p>
                       <p className="text-[11px] text-muted-foreground/40">{format(selectedMobileDay, 'MMMM yyyy', { locale })}</p>
                     </div>

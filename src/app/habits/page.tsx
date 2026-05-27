@@ -68,34 +68,34 @@ export default function HabitsPage() {
   };
 
   return (
-    <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto" data-slot="page-content">
-      <div className="flex items-center justify-between">
+    <div className="mobile-page-gutter mx-auto max-w-4xl space-y-5 py-4 lg:space-y-6 lg:p-8" data-slot="page-content">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{t('nav.habits')}</h1>
           <p className="text-[13px] text-muted-foreground/60 mt-0.5">
             {completionRate}% this week
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto no-scrollbar">
           {/* Month navigation - only show in month view */}
           {viewMode === 'month' && (
             <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 p-0.5">
               <button
                 onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-                className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-background transition-all"
+                className="mobile-touch-target flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 transition-all hover:bg-background hover:text-foreground lg:min-h-0"
                 aria-label="Previous month"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => setCurrentMonth(new Date())}
-                className="px-2.5 py-1 text-[12px] font-medium text-foreground/80 hover:text-foreground transition-colors"
+                className="mobile-touch-target px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:text-foreground lg:min-h-0"
               >
                 {format(currentMonth, 'MMM yyyy')}
               </button>
               <button
                 onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-                className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-background transition-all"
+                className="mobile-touch-target flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 transition-all hover:bg-background hover:text-foreground lg:min-h-0"
                 aria-label="Next month"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -107,7 +107,7 @@ export default function HabitsPage() {
             <button
               onClick={() => setViewMode('week')}
               className={cn(
-                'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all',
+                'mobile-touch-target flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all lg:min-h-0',
                 viewMode === 'week'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground/60 hover:text-foreground'
@@ -119,7 +119,7 @@ export default function HabitsPage() {
             <button
               onClick={() => setViewMode('month')}
               className={cn(
-                'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all',
+                'mobile-touch-target flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all lg:min-h-0',
                 viewMode === 'month'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground/60 hover:text-foreground'
@@ -131,7 +131,7 @@ export default function HabitsPage() {
           </div>
           <button
             onClick={handleNewHabit}
-            className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform"
+            className="mobile-touch-target flex items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-transform transition-opacity hover:opacity-90 active:scale-95 lg:min-h-0 lg:rounded-lg lg:py-1.5 lg:text-[12px]"
           >
             <Plus className="h-3.5 w-3.5" />
             New

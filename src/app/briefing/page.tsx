@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   Clock,
   Flame,
-  ChevronRight,
   CalendarDays,
   Target,
   Sparkles,
@@ -22,10 +21,7 @@ import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
 import {
   format,
-  isToday,
-  isTomorrow,
   parseISO,
-  isPast,
 } from 'date-fns';
 import { getLocale } from '@/lib/utils';
 import { isHabitScheduledForDate, isHabitCompletedForDate, calculateStreak } from '@/lib/habits';
@@ -35,6 +31,10 @@ import { useTranslation } from '@/lib/i18n';
 import type { OrbitItem } from '@/lib/types';
 
 type Phase = 'morning' | 'evening';
+
+function isOpenScheduledTask(item: OrbitItem) {
+  return item.type === 'task' && item.status !== 'inbox' && item.status !== 'done' && item.status !== 'archived';
+}
 
 export default function BriefingPage() {
   return (
@@ -48,7 +48,7 @@ function BriefingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { items, setSelectedItemId } = useOrbitStore();
-  const { t, lang } = useTranslation();
+  const { lang } = useTranslation();
   const locale = getLocale(lang);
   const { settings } = useSettingsStore();
   const hockeyMode = settings.hockeyMode && settings.language === 'de';
@@ -75,19 +75,19 @@ function BriefingContent() {
 
   // ── Computed data ──
   const tasksDueToday = useMemo(() =>
-    items.filter(i => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate === todayStr),
+    items.filter(i => isOpenScheduledTask(i) && i.dueDate === todayStr),
     [items, todayStr]
   );
 
   const tasksDueTodayIds = useMemo(() => new Set(tasksDueToday.map((task) => task.id)), [tasksDueToday]);
 
   const myDayTasks = useMemo(() =>
-    items.filter(i => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay === todayStr && !tasksDueTodayIds.has(i.id)),
+    items.filter(i => isOpenScheduledTask(i) && i.myDay === todayStr && !tasksDueTodayIds.has(i.id)),
     [items, todayStr, tasksDueTodayIds]
   );
 
   const overdue = useMemo(() =>
-    items.filter(i => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate && i.dueDate < todayStr),
+    items.filter(i => isOpenScheduledTask(i) && i.dueDate && i.dueDate < todayStr),
     [items, todayStr]
   );
 
@@ -115,7 +115,7 @@ function BriefingContent() {
   );
 
   const dueTomorrow = useMemo(() =>
-    items.filter(i => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate === tomorrowStr),
+    items.filter(i => isOpenScheduledTask(i) && i.dueDate === tomorrowStr),
     [items, tomorrowStr]
   );
 

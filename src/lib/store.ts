@@ -199,7 +199,7 @@ export const useOrbitStore = create<OrbitStore>()(
   setDetailPanelOpen: (open) =>
     set({ detailPanelOpen: open, selectedItemId: open ? get().selectedItemId : null }),
 
-      sidebarOpen: true,
+      sidebarOpen: false,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
       commandBarOpen: false,

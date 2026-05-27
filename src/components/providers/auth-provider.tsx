@@ -24,6 +24,9 @@ import { deleteAllUserData } from '@/lib/firestore';
 import { useSettingsStore } from '@/lib/settings-store';
 
 const EMAIL_LINK_KEY = 'orbitEmailForSignIn';
+const LOCAL_MODE_KEY = 'orbitLocalMode';
+const FIREBASE_NOT_CONFIGURED_MESSAGE =
+  'Firebase is not configured. Use local mode or add Firebase environment variables.';
 
 interface AuthContextType {
   user: User | null;
@@ -33,6 +36,7 @@ interface AuthContextType {
   signUpWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
   sendEmailLink: (email: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  enterDemoMode: () => void;
   deleteAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   isDemo: boolean;
@@ -46,6 +50,7 @@ const AuthContext = createContext<AuthContextType>({
   signUpWithEmail: async () => {},
   sendEmailLink: async () => {},
   resetPassword: async () => {},
+  enterDemoMode: () => {},
   deleteAccount: async () => {},
   signOut: async () => {},
   isDemo: false,
@@ -72,6 +77,20 @@ function createDemoUser(): User {
   } as unknown as User;
 }
 
+function isLocalModeEnabled() {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem(LOCAL_MODE_KEY) === '1';
+}
+
+function setLocalModeEnabled(enabled: boolean) {
+  if (typeof window === 'undefined') return;
+  if (enabled) {
+    window.localStorage.setItem(LOCAL_MODE_KEY, '1');
+  } else {
+    window.localStorage.removeItem(LOCAL_MODE_KEY);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,12 +98,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!auth) {
-      // Firebase not available — auto-enter demo mode
-      console.info('[ORBIT Auth] Firebase unavailable — using demo mode');
-      setUser(createDemoUser());
-      setIsDemo(true);
+      console.info('[ORBIT Auth] Firebase unavailable; cloud sign-in is disabled.');
+      if (isLocalModeEnabled()) {
+        setUser(createDemoUser());
+        setIsDemo(true);
+        initAnalytics('demo-user');
+      } else {
+        setUser(null);
+        setIsDemo(false);
+      }
       setLoading(false);
-      initAnalytics('demo-user');
       return;
     }
 
@@ -94,7 +117,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       auth,
       (firebaseUser) => {
         if (cancelled) return;
-        setUser(firebaseUser);
+        if (!firebaseUser && isLocalModeEnabled()) {
+          setUser(createDemoUser());
+          setIsDemo(true);
+          initAnalytics('demo-user');
+        } else {
+          if (firebaseUser) setLocalModeEnabled(false);
+          setUser(firebaseUser);
+          setIsDemo(false);
+        }
         setLoading(false);
         
         // Start analytics tracking
@@ -111,9 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (error) => {
         console.error('[ORBIT Auth] Auth state error:', error);
         if (cancelled) return;
-        // Fall back to demo mode on auth errors
-        setUser(createDemoUser());
-        setIsDemo(true);
+        setUser(null);
+        setIsDemo(false);
         setLoading(false);
       }
     );
@@ -128,39 +158,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(async () => {
     if (!auth || !googleProvider) {
-      setUser(createDemoUser());
-      setIsDemo(true);
-      return;
+      throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error: unknown) {
-      // User closed popup or network error — fall back to demo
       const code = (error as { code?: string })?.code || '';
       if (code === 'auth/popup-closed-by-user') {
-        console.info('[ORBIT Auth] Popup closed — offering demo mode');
+        throw new Error('Google sign-in was cancelled.');
+      }
+      if (code === 'auth/popup-blocked') {
+        throw new Error('Google sign-in popup was blocked. Enable popups or use local mode.');
+      }
+      if (error instanceof Error) {
+        console.error('[ORBIT Auth] Sign-in error:', error);
+        throw error;
       } else {
         console.error('[ORBIT Auth] Sign-in error:', error);
       }
-      setUser(createDemoUser());
-      setIsDemo(true);
+      throw new Error('Google sign-in failed.');
     }
+  }, []);
+
+  const enterDemoMode = useCallback(() => {
+    setLocalModeEnabled(true);
+    setUser(createDemoUser());
+    setIsDemo(true);
+    setLoading(false);
+    initAnalytics('demo-user');
   }, []);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     if (!auth) {
-      setUser(createDemoUser());
-      setIsDemo(true);
-      return;
+      throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     await signInWithEmailAndPassword(auth, email, password);
   }, []);
 
   const signUpWithEmail = useCallback(async (email: string, password: string, displayName?: string) => {
     if (!auth) {
-      setUser(createDemoUser());
-      setIsDemo(true);
-      return;
+      throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     if (displayName && cred.user) {
@@ -169,7 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendEmailLinkFn = useCallback(async (email: string) => {
-    if (!auth) throw new Error('Firebase not available');
+    if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     const actionCodeSettings = {
       url: window.location.origin,
       handleCodeInApp: true,
@@ -180,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
-    if (!auth) throw new Error('Firebase not available');
+    if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     await sendPasswordResetEmail(auth, email);
     console.info('[ORBIT Auth] Password reset email sent to', email);
   }, []);
@@ -209,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const deleteAccount = useCallback(async () => {
     if (isDemo || !auth || !auth.currentUser) {
-      // Demo mode — just clear local storage
+      setLocalModeEnabled(false);
       setUser(null);
       setIsDemo(false);
       return;
@@ -232,12 +269,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     stopAnalytics();
     if (isDemo) {
+      setLocalModeEnabled(false);
       setUser(null);
       setIsDemo(false);
       return;
     }
     if (!auth) return;
     try {
+      setLocalModeEnabled(false);
       await firebaseSignOut(auth);
     } catch (error) {
       console.error('[ORBIT Auth] Sign-out error:', error);
@@ -247,7 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isDemo]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink: sendEmailLinkFn, resetPassword, deleteAccount, signOut, isDemo }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink: sendEmailLinkFn, resetPassword, enterDemoMode, deleteAccount, signOut, isDemo }}>
       {children}
     </AuthContext.Provider>
   );

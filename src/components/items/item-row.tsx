@@ -96,7 +96,10 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     if (shouldClearMyDay) {
       await updateItem(item.id, { myDay: undefined });
     } else {
-      await updateItem(item.id, { myDay: todayStr });
+      await updateItem(item.id, {
+        myDay: todayStr,
+        ...(item.status === 'inbox' ? { status: 'active' as const } : {}),
+      });
     }
   };
 
@@ -117,8 +120,9 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       }}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedItemId(item.id); } }}
       className={cn(
-        'group relative flex w-full items-center gap-3 rounded-lg px-3 text-left transition-all cursor-pointer',
+        'group mobile-touch-target relative flex w-full touch-manipulation items-center gap-3 rounded-lg px-3 text-left transition-all cursor-pointer',
         'hover:bg-foreground/[0.03] active:bg-foreground/[0.05]',
+        'active:scale-[0.99]',
         // Bigger touch targets on mobile
         compact ? 'py-2.5 lg:py-1.5' : 'py-3 lg:py-2',
       )}
@@ -128,7 +132,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         <button
           onClick={toggleComplete}
           className={cn(
-            'relative flex h-5 w-5 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border transition-all',
+            'relative flex h-6 w-6 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border transition-all',
             item.status === 'done'
               ? 'border-foreground/30 bg-foreground/10'
               : 'border-foreground/15 hover:border-foreground/40',
@@ -136,7 +140,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
             'before:absolute before:inset-[-10px] lg:before:inset-[-6px] before:content-[""]'
           )}
         >
-          {item.status === 'done' && <Check className="h-2.5 w-2.5 text-foreground/50" />}
+          {item.status === 'done' && <Check className="h-3 w-3 lg:h-2.5 lg:w-2.5 text-foreground/50" />}
         </button>
       )}
 
@@ -174,7 +178,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         </div>
         {/* Meta row - always show on mobile for better scannability */}
         {(showType || showProject || item.status === 'waiting' || (item.tags && item.tags.length > 0) || item.startTime) && (
-          <div className="flex items-center gap-1.5 mt-0.5">
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
             {item.status === 'waiting' && (
               <span className="inline-flex items-center gap-1 rounded-md bg-gray-500/10 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
                 {t('status.waiting')}

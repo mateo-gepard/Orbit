@@ -12,19 +12,16 @@ import { useTranslation } from '@/lib/i18n';
 import { useSettingsStore } from '@/lib/settings-store';
 
 export default function InboxPage() {
-  const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
+  const { items } = useOrbitStore();
   const { t } = useTranslation();
   const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
 
   const inboxItems = useMemo(
-    () => items.filter((i) => 
-      i.type === 'task' && 
-      i.status !== 'done' && 
-      i.status !== 'archived' && 
-      !i.dueDate && 
-      !i.parentId
+    () => items.filter((i) =>
+      i.type === 'task' &&
+      i.status === 'inbox',
     ),
-    [items]
+    [items],
   );
 
   const quickSetStatus = async (id: string, status: ItemStatus) => {
@@ -33,21 +30,20 @@ export default function InboxPage() {
   };
 
   const quickDelete = async (id: string) => {
-    haptic('medium');
+    haptic('error');
     await deleteItem(id);
   };
 
   return (
-    <div className="p-4 lg:p-8 space-y-5 max-w-3xl mx-auto" data-slot="page-content">
+    <div className="mobile-page-gutter mx-auto max-w-3xl space-y-5 py-4 lg:p-8" data-slot="page-content">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">{t('nav.inbox')}</h1>
-        <p className="text-[13px] text-muted-foreground/60 mt-0.5">
-          {inboxItems.length} {inboxItems.length === 1 ? 'item' : 'items'} to
-          process
+        <p className="mt-0.5 text-[13px] text-muted-foreground/60">
+          {inboxItems.length} {inboxItems.length === 1 ? 'item' : 'items'} to process
         </p>
         {inboxItems.length > 0 && (
-          <p className="text-[11px] text-muted-foreground/40 mt-1 lg:hidden">
-            ← Swipe right to activate · Swipe left to delete →
+          <p className="mt-1 text-[11px] text-muted-foreground/45 lg:hidden">
+            Swipe right to activate. Swipe left to delete.
           </p>
         )}
       </div>
@@ -55,7 +51,6 @@ export default function InboxPage() {
       <div className="space-y-px">
         {inboxItems.map((item) => (
           <div key={item.id} className="group">
-            {/* Mobile: use swipeable rows */}
             <div className="lg:hidden">
               <SwipeableRow
                 onSwipeRight={() => quickSetStatus(item.id, 'active')}
@@ -64,24 +59,24 @@ export default function InboxPage() {
                 leftLabel={t('common.delete')}
                 rightIcon={ArrowRight}
                 leftIcon={Trash2}
+                leftTone="destructive"
               >
                 <ItemRow item={item} showType compact enableSwipe={false} />
               </SwipeableRow>
             </div>
-            {/* Desktop: hover buttons */}
-            <div className="hidden lg:flex items-center gap-1.5">
-              <div className="flex-1 min-w-0">
+            <div className="hidden items-center gap-1.5 lg:flex">
+              <div className="min-w-0 flex-1">
                 <ItemRow item={item} showType compact enableSwipe={false} />
               </div>
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                 <button
-                  className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+                  className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                   onClick={() => quickSetStatus(item.id, 'active')}
                 >
                   {t('inbox.activate')}
                 </button>
                 <button
-                  className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
+                  className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                   onClick={() => quickSetStatus(item.id, 'archived')}
                 >
                   {t('common.archive')}
@@ -95,29 +90,28 @@ export default function InboxPage() {
           <div className="flex flex-col items-center justify-center py-20 text-center">
             {hockeyMode ? (
               <>
-                {/* Hockey-themed empty state */}
-                <div className="mb-4 text-5xl select-none" style={{ filter: 'drop-shadow(0 2px 8px rgba(0,200,200,0.15))' }}>
-                  🥅
+                <div className="mb-4 select-none text-5xl" style={{ filter: 'drop-shadow(0 2px 8px rgba(0,200,200,0.15))' }}>
+                  {'\u{1F3D2}'}
                 </div>
-                <h3 className="text-[15px] font-semibold">Sauberes Spielfeld! 🏒</h3>
-                <p className="text-[12px] text-muted-foreground/50 mt-1.5 max-w-xs">
-                  Keine Bälle im Strafraum. Drück{' '}
-                  <kbd className="rounded border border-cyan-500/20 bg-cyan-500/5 px-1 py-0.5 text-[10px] font-mono text-cyan-600 dark:text-cyan-400">
-                    ⌘K
+                <h3 className="text-[15px] font-semibold">Sauberes Spielfeld!</h3>
+                <p className="mt-1.5 max-w-xs text-[12px] text-muted-foreground/50">
+                  Keine Aufgaben im Strafraum. Drueck{' '}
+                  <kbd className="rounded border border-cyan-500/20 bg-cyan-500/5 px-1 py-0.5 font-mono text-[10px] text-cyan-600 dark:text-cyan-400">
+                    Cmd+K
                   </kbd>{' '}
-                  um neue Spielzüge einzuwechseln.
+                  um neue Spielzuege einzuwechseln.
                 </p>
-                <p className="text-[10px] text-muted-foreground/30 mt-3 italic">
-                  &ldquo;Die beste Verteidigung ist eine leere Inbox.&rdquo; — Dr. Orbit
+                <p className="mt-3 text-[10px] italic text-muted-foreground/30">
+                  &ldquo;Die beste Verteidigung ist eine leere Inbox.&rdquo;
                 </p>
               </>
             ) : (
               <>
-                <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
-                  <InboxIcon className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-foreground/[0.04] lg:h-12 lg:w-12">
+                  <InboxIcon className="h-6 w-6 text-muted-foreground/30 lg:h-5 lg:w-5" />
                 </div>
                 <h3 className="text-[15px] font-medium">{t('inbox.zero')}</h3>
-                <p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
+                <p className="mt-1 max-w-xs text-[12px] text-muted-foreground/50">
                   {t('inbox.zeroDesc')}
                 </p>
               </>

@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import {
   CheckSquare,
   FolderKanban,
@@ -16,12 +15,12 @@ import {
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { parseCommand } from '@/lib/command-parser';
-import { createItem } from '@/lib/firestore';
+import { createItem, linkItems } from '@/lib/firestore';
 import { syncEventToGoogle, hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
 import type { ItemType, NoteSubtype, OrbitItem } from '@/lib/types';
-import { LIFE_AREA_TAGS } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n';
+import { getAllowedParentTypes } from '@/lib/links';
 import { toast } from 'sonner';
 
 const TYPE_ICONS: Record<ItemType, typeof CheckSquare> = {
@@ -51,7 +50,6 @@ export function CommandBar() {
   const [resolvedLink, setResolvedLink] = useState<OrbitItem | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
   const allTags = getAllTags();
 
@@ -183,12 +181,13 @@ export function CommandBar() {
       }
     });
 
-    // Find linked items by title
-    let parentItemId: string | undefined;
+    // Find a related item by @title. Projects/goals become hierarchy parents when valid;
+    // all other targets become peer links after creation.
+    let relationshipTarget: OrbitItem | undefined;
     
     // If a resolved link item was stored from autocomplete, use it
     if (resolvedLink) {
-      parentItemId = resolvedLink.id;
+      relationshipTarget = resolvedLink;
     } else if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
       const firstLinkTitle = parsed.linkedItemTitles[0];
       const linkTitleLower = firstLinkTitle.toLowerCase();
@@ -206,7 +205,7 @@ export function CommandBar() {
       }
       
       if (matchedItem) {
-        parentItemId = matchedItem.id;
+        relationshipTarget = matchedItem;
       }
     }
 
@@ -223,9 +222,21 @@ export function CommandBar() {
       else if (parsed.tags.includes('journal')) noteSubtype = 'journal';
     }
 
+    const parentItemId =
+      relationshipTarget && getAllowedParentTypes(parsed.type).includes(relationshipTarget.type)
+        ? relationshipTarget.id
+        : undefined;
+
+    const startsInInbox =
+      parsed.type === 'task' &&
+      !parsed.dueDate &&
+      !parsed.startDate &&
+      !parentItemId &&
+      !relationshipTarget;
+
     const newItem: Omit<OrbitItem, 'id'> = {
       type: parsed.type,
-      status: 'active',
+      status: startsInInbox ? 'inbox' : 'active',
       title: parsed.title, // Early returns ensure this is never empty
       tags: parsed.tags,
       userId: user.uid,
@@ -252,6 +263,10 @@ export function CommandBar() {
 
     try {
       const itemId = await createItem(newItem);
+
+      if (relationshipTarget && !parentItemId) {
+        await linkItems(itemId, relationshipTarget.id);
+      }
       
       // Auto-sync events to Google Calendar
       if (parsed.type === 'event' && itemId) {
@@ -331,6 +346,9 @@ export function CommandBar() {
       {/* Dialog — top-aligned on mobile (stays above keyboard), centered on desktop */}
       <div 
         ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search or create"
         className={cn(
           'relative z-10 w-full',
           // Mobile: top-aligned card with safe area
@@ -340,6 +358,10 @@ export function CommandBar() {
           'lg:max-w-[520px]',
           'animate-slide-down-spring lg:animate-scale-in'
         )}
+        style={{
+          paddingLeft: 'max(0.75rem, var(--safe-left))',
+          paddingRight: 'max(0.75rem, var(--safe-right))',
+        }}
       >
         <div className={cn(
           'overflow-hidden bg-popover',
@@ -387,16 +409,19 @@ export function CommandBar() {
                 }
               }}
               placeholder={t('commandBar.placeholder')}
+              aria-label="Search or create"
+              inputMode="text"
               className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
               autoFocus
               autoComplete="off"
               autoCorrect="off"
+              spellCheck={false}
               enterKeyHint="done"
             />
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setCommandBarOpen(false)}
-                className="rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/50 hover:text-muted-foreground lg:hidden"
+                className="mobile-touch-target rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/50 hover:text-muted-foreground lg:hidden"
               >
                 Cancel
               </button>
@@ -412,7 +437,10 @@ export function CommandBar() {
           {/* Results */}
           <div 
             data-command-scroll
-            className="overflow-y-auto overscroll-contain py-1.5 max-h-[40vh] lg:max-h-[300px]"
+            className="overflow-y-auto overscroll-contain py-1.5 lg:max-h-[300px]"
+            style={{
+              maxHeight: 'min(56dvh, calc(var(--app-height) - max(var(--safe-top), 8px) - 88px))',
+            }}
           >
             {/* Tag suggestions */}
             {suggestedTags.length > 0 && (

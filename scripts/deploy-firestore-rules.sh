@@ -1,25 +1,16 @@
 #!/bin/bash
+set -euo pipefail
 
-# ORBIT — Deploy Firestore Security Rules
-# Run: npm run deploy:rules
-
-echo "🔥 Deploying Firestore Rules to orbit-9e0b6..."
-
-# Check if firebase-tools is installed
-if ! command -v firebase &> /dev/null; then
-    echo "❌ Firebase CLI not found. Installing..."
-    npm install -g firebase-tools
+PROJECT_ARG=()
+if [ -n "${FIREBASE_PROJECT_ID:-}" ]; then
+  PROJECT_ARG=(--project "$FIREBASE_PROJECT_ID")
 fi
 
-# Login check
-if ! firebase projects:list &> /dev/null; then
-    echo "🔐 Please login to Firebase..."
-    firebase login
+if ! command -v firebase >/dev/null 2>&1; then
+  echo "Firebase CLI not found. Install it with: npm install -g firebase-tools"
+  exit 1
 fi
 
-# Deploy rules
-echo "📤 Deploying rules..."
-firebase deploy --only firestore:rules --project orbit-9e0b6
-
-echo "✅ Firestore Rules deployed!"
-echo "📊 Analytics events will now sync to Firestore."
+echo "Deploying Firestore and Storage rules..."
+firebase deploy --only firestore:rules,storage "${PROJECT_ARG[@]}"
+echo "Rules deployed."

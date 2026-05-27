@@ -31,6 +31,10 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const links = useLinks({ item, allItems, onUpdate });
+  const visibleLinkedItems = [
+    ...links.relationships.linked,
+    ...links.relationships.reverseLinked,
+  ].filter((linkedItem, index, arr) => arr.findIndex((i) => i.id === linkedItem.id) === index);
 
   // Auto-focus search when entering item list
   useEffect(() => {
@@ -58,7 +62,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
   const getCategoryItems = (): OrbitItem[] => {
     if (!selectedType) return [];
     const items = pickerMode === 'parent'
-      ? links.linkableItems.filter(i => i.type === selectedType)
+      ? links.getParentableByType(selectedType)
       : links.getLinkableByType(selectedType);
     if (!search.trim()) return items;
     const q = search.toLowerCase();
@@ -71,7 +75,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
   // Count available items per type
   const getTypeCount = (type: ItemType): number => {
     if (pickerMode === 'parent') {
-      return links.linkableItems.filter(i => i.type === type).length;
+      return links.getParentableByType(type).length;
     }
     return links.getLinkableByType(type).length;
   };
@@ -102,9 +106,21 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
   };
 
   // Category grid (step 1)
-  const renderCategoryGrid = () => (
-    <div className="grid grid-cols-3 gap-1.5">
-      {(Object.entries(ITEM_TYPE_CONFIG) as [ItemType, typeof ITEM_TYPE_CONFIG[ItemType]][]).map(([type, config]) => {
+  const renderCategoryGrid = () => {
+    if (pickerMode === 'parent' && links.parentableItems.length === 0) {
+      return (
+        <div className="rounded-lg bg-foreground/[0.03] px-3 py-4 text-center text-[11px] text-muted-foreground/60">
+          No valid parent items available
+        </div>
+      );
+    }
+
+    const categories = (Object.entries(ITEM_TYPE_CONFIG) as [ItemType, typeof ITEM_TYPE_CONFIG[ItemType]][])
+      .filter(([type]) => pickerMode !== 'parent' || getTypeCount(type) > 0);
+
+    return (
+      <div className="grid grid-cols-3 gap-1.5">
+        {categories.map(([type, config]) => {
         const Icon = config.icon;
         const count = getTypeCount(type);
         return (
@@ -127,9 +143,10 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
             <span className="text-[9px] text-muted-foreground/50">{count}</span>
           </button>
         );
-      })}
-    </div>
-  );
+        })}
+      </div>
+    );
+  };
 
   // Item list (step 2)
   const renderItemList = () => {
@@ -210,16 +227,16 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
       )}
 
       {/* Linked Items */}
-      {links.relationships.linked.length > 0 && (
+      {visibleLinkedItems.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <LinkIcon className="h-3.5 w-3.5 text-muted-foreground/60" />
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider font-medium">
-              Linked Items ({links.relationships.linked.length})
+              Linked Items ({visibleLinkedItems.length})
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {links.relationships.linked.map((linkedItem: OrbitItem) =>
+            {visibleLinkedItems.map((linkedItem: OrbitItem) =>
               renderItemBadge(linkedItem, () => links.handleRemoveLink(linkedItem.id))
             )}
           </div>
@@ -260,12 +277,13 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
             size="sm"
             variant="outline"
             onClick={() => setPickerMode('link')}
+            disabled={links.linkableItems.length === 0}
             className="h-7 text-[11px] gap-1.5"
           >
             <Plus className="h-3.5 w-3.5" />
             Add Link
           </Button>
-          {!links.relationships.parent && (
+          {links.parentableItems.length > 0 && (
             <Button
               size="sm"
               variant="outline"
@@ -273,7 +291,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
               className="h-7 text-[11px] gap-1.5"
             >
               <FolderOpen className="h-3.5 w-3.5" />
-              Set Parent
+              {links.relationships.parent ? 'Change Parent' : 'Set Parent'}
             </Button>
           )}
         </div>

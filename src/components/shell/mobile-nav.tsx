@@ -5,16 +5,19 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   CheckSquare,
+  Inbox as InboxIcon,
   Repeat,
   Plus,
   FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
+import { haptic } from '@/lib/mobile';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 
 const TABS: { href: string; icon: typeof LayoutDashboard; labelKey: TranslationKey }[] = [
   { href: '/', icon: LayoutDashboard, labelKey: 'mobile.home' },
+  { href: '/inbox', icon: InboxIcon, labelKey: 'nav.inbox' },
   { href: '/tasks', icon: CheckSquare, labelKey: 'mobile.tasks' },
   { href: '/habits', icon: Repeat, labelKey: 'mobile.habits' },
   { href: '/notes', icon: FileText, labelKey: 'mobile.notes' },
@@ -27,16 +30,18 @@ export function MobileNav() {
 
   return (
     <>
-      {/* Floating Action Button */}
       <button
-        onClick={() => setCommandBarOpen(true)}
+        onClick={() => {
+          haptic('medium');
+          setCommandBarOpen(true);
+        }}
         aria-label="Create new item"
         className={cn(
           'lg:hidden',
           'flex h-14 w-14 items-center justify-center',
           'rounded-full bg-foreground text-background',
           'shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]',
-          'active:scale-95 transition-transform duration-150',
+          'transition-transform duration-150 active:scale-95',
         )}
         style={{
           position: 'fixed',
@@ -48,10 +53,9 @@ export function MobileNav() {
         <Plus className="h-6 w-6" strokeWidth={2.5} />
       </button>
 
-      {/* Bottom Tab Bar - v1.1 */}
       <nav
         id="mobile-nav"
-        className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
+        className="select-none border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150 lg:hidden"
         style={{
           position: 'fixed',
           bottom: '0px',
@@ -63,7 +67,11 @@ export function MobileNav() {
       >
         <div
           className="flex items-center justify-around"
-          style={{ height: 'var(--bottom-nav-height)' }}
+          style={{
+            height: 'var(--bottom-nav-height)',
+            paddingLeft: 'max(4px, var(--safe-left))',
+            paddingRight: 'max(4px, var(--safe-right))',
+          }}
         >
           {TABS.map((tab) => {
             const isActive =
@@ -76,31 +84,32 @@ export function MobileNav() {
                 key={tab.href}
                 href={tab.href}
                 aria-label={t(tab.labelKey)}
+                aria-current={isActive ? 'page' : undefined}
+                onClick={() => haptic('light')}
                 className={cn(
-                  'relative flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-all duration-200',
-                  'active:scale-90',
-                  isActive
-                    ? 'text-foreground'
-                    : 'text-muted-foreground/50'
+                  'relative flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-0 py-1 transition-all duration-200',
+                  'active:scale-95',
+                  isActive ? 'text-foreground' : 'text-muted-foreground/55',
                 )}
               >
-                {/* Active indicator dot */}
-                {isActive && (
-                  <div className="absolute -top-1 h-1 w-1 rounded-full bg-foreground animate-scale-in" />
-                )}
-                <div className="relative">
+                <div
+                  className={cn(
+                    'flex h-7 min-w-9 items-center justify-center rounded-xl px-2 transition-all duration-200',
+                    isActive && 'bg-foreground/[0.07]',
+                  )}
+                >
                   <Icon
                     className={cn(
                       'h-5 w-5 transition-all duration-200',
-                      isActive && 'scale-110'
+                      isActive && 'scale-105',
                     )}
                     strokeWidth={isActive ? 2.2 : 1.8}
                   />
                 </div>
                 <span
                   className={cn(
-                    'text-[10px] font-medium leading-none transition-all duration-200',
-                    isActive ? 'opacity-100' : 'opacity-0 h-0'
+                    'max-w-full truncate text-[10px] font-medium leading-none transition-all duration-200',
+                    isActive ? 'h-2.5 opacity-100' : 'h-0 opacity-0',
                   )}
                 >
                   {t(tab.labelKey)}

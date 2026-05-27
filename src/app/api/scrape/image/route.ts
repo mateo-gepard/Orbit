@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit } from '@/lib/server/rate-limit';
 
 // ═══════════════════════════════════════════════════════════
 // ORBIT — Product Image & Price Search (Multi-source)
@@ -299,9 +300,15 @@ async function scrapePrice(query: string): Promise<string | undefined> {
 
 // ── Main handler ─────────────────────────────────────────
 export async function GET(request: NextRequest) {
+  const rateLimited = checkRateLimit(request, { name: 'scrape-image', max: 30, windowMs: 60_000 });
+  if (rateLimited) return rateLimited;
+
   const query = request.nextUrl.searchParams.get('q');
   if (!query) {
     return NextResponse.json({ error: 'Missing q parameter' }, { status: 400 });
+  }
+  if (query.length > 160) {
+    return NextResponse.json({ error: 'Query too long' }, { status: 400 });
   }
 
   console.log(`[ORBIT] Image/price search: "${query}"`);

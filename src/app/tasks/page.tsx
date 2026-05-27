@@ -7,7 +7,6 @@ import {
   ChevronRight,
   SlidersHorizontal,
   ArrowUpDown,
-  Inbox,
   FolderKanban,
   Target,
   Tag,
@@ -68,6 +67,37 @@ function sortTasks(tasks: OrbitItem[], sortKey: SortKey, ascending: boolean): Or
   return ascending ? sorted : sorted.reverse();
 }
 
+function getTaskGoal(task: OrbitItem, allItems: OrbitItem[]): OrbitItem | undefined {
+  const parentGoal = task.parentId
+    ? allItems.find((i) => i.id === task.parentId && i.type === 'goal' && i.status !== 'archived')
+    : undefined;
+  if (parentGoal) return parentGoal;
+
+  return allItems.find((i) =>
+    i.type === 'goal' &&
+    i.status !== 'archived' &&
+    ((task.linkedIds || []).includes(i.id) || Boolean(i.linkedIds?.includes(task.id)))
+  );
+}
+
+function getTaskProject(task: OrbitItem, allItems: OrbitItem[]): OrbitItem | undefined {
+  const parent = task.parentId
+    ? allItems.find((i) => i.id === task.parentId && i.status !== 'archived')
+    : undefined;
+
+  if (parent?.type === 'project') return parent;
+  if (parent?.type === 'goal' && parent.parentId) {
+    return allItems.find((i) => i.id === parent.parentId && i.type === 'project' && i.status !== 'archived');
+  }
+
+  const goal = getTaskGoal(task, allItems);
+  if (goal?.parentId) {
+    return allItems.find((i) => i.id === goal.parentId && i.type === 'project' && i.status !== 'archived');
+  }
+
+  return undefined;
+}
+
 function groupTasks(
   tasks: OrbitItem[],
   groupBy: GroupBy,
@@ -86,26 +116,17 @@ function groupTasks(
 
     switch (groupBy) {
       case 'project': {
-        const parent = task.parentId
-          ? allItems.find((i) => i.id === task.parentId && i.type === 'project')
-          : undefined;
-        key = parent ? parent.id : '__no_project';
-        label = parent ? parent.title : 'No Project';
-        emoji = parent?.emoji || (parent ? '📁' : undefined);
+        const project = getTaskProject(task, allItems);
+        key = project ? project.id : '__no_project';
+        label = project ? project.title : 'No Project';
+        emoji = project?.emoji;
         break;
       }
       case 'goal': {
-        const goalParent = task.parentId
-          ? allItems.find((i) => i.id === task.parentId && i.type === 'goal')
-          : undefined;
-        // Also check linked goals
-        const linkedGoal = !goalParent && task.linkedIds?.length
-          ? allItems.find((i) => task.linkedIds!.includes(i.id) && i.type === 'goal')
-          : undefined;
-        const goal = goalParent || linkedGoal;
+        const goal = getTaskGoal(task, allItems);
         key = goal ? goal.id : '__no_goal';
         label = goal ? goal.title : 'No Goal';
-        emoji = goal ? '🎯' : undefined;
+        emoji = undefined;
         break;
       }
       case 'priority': {
@@ -201,7 +222,7 @@ const GROUP_OPTIONS: { key: GroupBy; label: string; icon: typeof FolderKanban }[
 ];
 
 export default function TasksPage() {
-  const { items, setSelectedItemId, getAllTags, removeTag } = useOrbitStore();
+  const { items, getAllTags, removeTag } = useOrbitStore();
   const { t } = useTranslation();
 
   // Filters
@@ -262,7 +283,7 @@ export default function TasksPage() {
 
   // Filter tasks
   const filteredTasks = useMemo(() => {
-    let tasks = items.filter((i) => i.type === 'task');
+    let tasks = items.filter((i) => i.type === 'task' && i.status !== 'inbox');
 
     // Status
     if (statusFilter === 'active') {
@@ -305,7 +326,7 @@ export default function TasksPage() {
   const activeFilters = [tagFilter, priorityFilter].filter(Boolean).length;
 
   return (
-    <div className="p-4 lg:p-8 space-y-4 lg:space-y-5 max-w-3xl mx-auto" data-slot="page-content">
+    <div className="mobile-page-gutter mx-auto max-w-3xl space-y-4 py-4 lg:space-y-5 lg:p-8" data-slot="page-content">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
@@ -323,7 +344,7 @@ export default function TasksPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className={cn(
-            'w-full rounded-xl border border-border/60 bg-card px-4 py-2.5 lg:py-2 text-[14px] lg:text-[13px]',
+            'w-full rounded-xl border border-border/60 bg-card px-4 py-2.5 text-[14px] lg:py-2 lg:text-[13px]',
             'placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/10',
             'transition-shadow'
           )}
@@ -347,7 +368,7 @@ export default function TasksPage() {
               key={s}
               onClick={() => setStatusFilter(s)}
               className={cn(
-                'shrink-0 rounded-xl lg:rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all active:scale-95',
+                'mobile-touch-target shrink-0 rounded-xl px-3 py-1.5 text-[12px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
                 statusFilter === s
                   ? 'bg-foreground text-background'
                   : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
@@ -365,7 +386,7 @@ export default function TasksPage() {
               key={p}
               onClick={() => setPriorityFilter(priorityFilter === p ? null : p)}
               className={cn(
-                'shrink-0 rounded-xl lg:rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 flex items-center gap-1',
+                'mobile-touch-target flex shrink-0 items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
                 priorityFilter === p
                   ? 'bg-foreground text-background'
                   : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
@@ -390,13 +411,13 @@ export default function TasksPage() {
             <div key={tag} className="relative">
               <button
                 onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-                onTouchStart={(e) => {
+                onTouchStart={() => {
                   handleTagLongPressStart(tag);
                 }}
-                onTouchEnd={(e) => {
+                onTouchEnd={() => {
                   handleTagLongPressEnd();
                 }}
-                onTouchCancel={(e) => {
+                onTouchCancel={() => {
                   handleTagLongPressEnd();
                 }}
                 onMouseEnter={() => {
@@ -407,7 +428,7 @@ export default function TasksPage() {
                   setTagToDelete(null);
                 }}
                 className={cn(
-                  'shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-all active:scale-95',
+                  'mobile-touch-target shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0',
                   tagFilter === tag
                     ? 'bg-foreground text-background'
                     : 'text-muted-foreground/50 hover:bg-foreground/[0.05] hover:text-muted-foreground'
@@ -474,7 +495,7 @@ export default function TasksPage() {
                 setShowGroupMenu(false);
               }}
               className={cn(
-                'flex items-center gap-1.5 rounded-xl lg:rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95',
+                'mobile-touch-target flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
                 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
               )}
             >
@@ -525,7 +546,7 @@ export default function TasksPage() {
                 setShowSortMenu(false);
               }}
               className={cn(
-                'flex items-center gap-1.5 rounded-xl lg:rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95',
+                'mobile-touch-target flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
                 groupBy !== 'none'
                   ? 'bg-foreground text-background'
                   : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
@@ -573,7 +594,7 @@ export default function TasksPage() {
                 setPriorityFilter(null);
                 setSearchQuery('');
               }}
-              className="ml-auto text-[11px] text-muted-foreground/40 hover:text-foreground transition-colors"
+              className="mobile-touch-target ml-auto text-[11px] text-muted-foreground/40 transition-colors hover:text-foreground lg:min-h-0"
             >
               Clear filters
             </button>

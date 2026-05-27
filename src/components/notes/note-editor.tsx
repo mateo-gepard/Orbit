@@ -40,6 +40,14 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
     allItems: items,
     onUpdate: async (updates) => await updateItem(note.id, updates)
   });
+  const visibleLinkedItems = [
+    ...links.relationships.linked,
+    ...links.relationships.reverseLinked,
+  ].filter((item, index, arr) => arr.findIndex((i) => i.id === item.id) === index);
+  const linkPickerItems = [
+    ...visibleLinkedItems,
+    ...links.linkableItems,
+  ].filter((item, index, arr) => arr.findIndex((i) => i.id === item.id) === index);
 
   // Auto-save on content/title change (debounced)
   useEffect(() => {
@@ -228,10 +236,10 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
               
               <div className="px-2 py-1.5">
                 <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2">
-                  Linked Items ({links.relationships.linked.length})
+                  Linked Items ({visibleLinkedItems.length})
                 </p>
                 <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto">
-                  {links.linkableItems.map((item: OrbitItem) => (
+                  {linkPickerItems.map((item: OrbitItem) => (
                     <button
                       key={item.id}
                       onClick={() => links.isLinked(item.id) ? links.handleRemoveLink(item.id) : links.handleAddLink(item.id)}
@@ -249,7 +257,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
                       )}
                     </button>
                   ))}
-                  {links.linkableItems.length === 0 && (
+                  {linkPickerItems.length === 0 && (
                     <p className="text-[10px] text-muted-foreground/40 py-2 text-center">
                       No items available to link
                     </p>

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/providers/providers";
 
@@ -27,7 +28,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "ORBIT — Personal Productivity OS",
+  title: "ORBIT - Personal Productivity OS",
   description: "One system, one dashboard, everything connected.",
   manifest: "/manifest.json",
   icons: {
@@ -35,14 +36,14 @@ export const metadata: Metadata = {
     apple: "/icons/icon-192.png",
   },
   openGraph: {
-    title: "ORBIT — Personal Productivity OS",
+    title: "ORBIT - Personal Productivity OS",
     description: "One system, one dashboard, everything connected.",
     siteName: "ORBIT",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "ORBIT — Personal Productivity OS",
+    title: "ORBIT - Personal Productivity OS",
     description: "One system, one dashboard, everything connected.",
   },
   appleWebApp: {
@@ -60,8 +61,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Google Identity Services for Calendar OAuth */}
-        <script src="https://accounts.google.com/gsi/client" async defer></script>
         {/* PWA: Apple Touch Icon */}
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192.png" />
         <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
@@ -77,6 +76,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Providers>{children}</Providers>
+        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
       </body>
     </html>
   );

@@ -51,7 +51,7 @@ export function buildRoadmapGraph(
 
   for (const ms of milestones) {
     const tasks = allItems
-      .filter(i => i.parentId === ms.id && i.type === 'task' && i.status !== 'archived')
+      .filter(i => i.parentId === ms.id && i.type === 'task' && i.status !== 'archived' && i.status !== 'inbox')
       .sort((a, b) => {
         // Done tasks last, then by priority, then by due date
         if (a.status === 'done' && b.status !== 'done') return 1;
@@ -70,7 +70,7 @@ export function buildRoadmapGraph(
 
   // ── Ungrouped tasks (direct children of project that are tasks) ──
   const ungroupedTasks = allItems
-    .filter(i => i.parentId === project.id && i.type === 'task' && i.status !== 'archived')
+    .filter(i => i.parentId === project.id && i.type === 'task' && i.status !== 'archived' && i.status !== 'inbox')
     .sort((a, b) => {
       if (a.status === 'done' && b.status !== 'done') return 1;
       if (b.status === 'done' && a.status !== 'done') return -1;
