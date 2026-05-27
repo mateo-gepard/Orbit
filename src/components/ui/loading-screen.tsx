@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
 
@@ -83,9 +84,16 @@ export function LoadingScreen() {
           <div className="absolute inset-0 animate-spin-slow">
             <div className="h-full w-full rounded-full border-2 border-transparent border-t-foreground/40" />
           </div>
-          {/* Center dot */}
+          {/* Center mark */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-2 w-2 rounded-full bg-foreground/60 animate-pulse" />
+            <Image
+              src="/favicon.svg"
+              alt=""
+              width={44}
+              height={44}
+              className="h-11 w-11 rounded-xl shadow-[var(--shadow-hairline)] animate-pulse"
+              priority
+            />
           </div>
         </div>
         

@@ -1,4 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="40" fill="#1c1917"/>
-  <text x="96" y="120" font-family="system-ui,-apple-system,sans-serif" font-weight="700" font-size="100" fill="#faf9f7" text-anchor="middle">T</text>
+<svg width="192" height="192" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Threadmap T Icon</title>
+  <rect width="512" height="512" fill="#ffffff"/>
+  <defs>
+    <linearGradient id="threadmap-icon-gradient" x1="98" y1="102" x2="409" y2="421" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#001A44"/>
+      <stop offset="0.42" stop-color="#003869"/>
+      <stop offset="0.72" stop-color="#005887"/>
+      <stop offset="1" stop-color="#00163D"/>
+    </linearGradient>
+  </defs>
+  <rect x="70" y="100" width="372" height="96" rx="48" fill="url(#threadmap-icon-gradient)"/>
+  <path d="M204 171H308V380C308 408.719 284.719 432 256 432C227.281 432 204 408.719 204 380V171Z" fill="url(#threadmap-icon-gradient)"/>
 </svg>

@@ -178,10 +178,11 @@ export function Sidebar() {
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-lg font-semibold text-xs tracking-tight shadow-[var(--shadow-hairline)]",
-              hockeyMode ? "bg-cyan-600 text-white" : "bg-foreground text-background"
-            )}>
+            <div
+              aria-hidden="true"
+              style={{ backgroundImage: "url('/favicon.svg')", color: 'transparent' }}
+              className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg bg-cover bg-center bg-no-repeat shadow-[var(--shadow-hairline)]"
+            >
               {hockeyMode ? '🏒' : 'T'}
             </div>
             <span className="text-[15px] font-semibold tracking-tight">
