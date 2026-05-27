@@ -1,18 +1,52 @@
 # ORBIT
 
-Personal productivity OS for tasks, projects, habits, calendar work, notes, goals, files, and focused planning.
+ORBIT is a local-first personal productivity system for turning connected intent into action.
 
-ORBIT runs locally out of the box with localStorage. Firebase is optional and only turns on when real `NEXT_PUBLIC_FIREBASE_*` environment variables are configured.
+It brings tasks, projects, habits, goals, notes, calendar work, files, and focused tools into one shared item graph instead of treating them as separate apps. A task can belong to a project, reference a note, support a goal, appear on the calendar, and stay available from the same command surface.
 
-## Features
+The app runs without a backend by default. Firebase is an optional upgrade for accounts, cross-device sync, file storage, push notifications, and integrations.
 
-- Unified item model for tasks, projects, habits, events, goals, and notes.
-- Dashboard with due work, overdue work, habits, upcoming events, projects, and goals.
-- Natural-language command capture.
-- Project file uploads with Firebase Storage when cloud mode is configured.
-- Calendar views and optional Google Calendar sync.
-- PWA metadata and browser notification support.
-- Toolbox apps including focus sessions, dispatch planning, briefing, Abitur tracking, wishlist, and social habit circles.
+## What It Does
+
+- Captures tasks, projects, habits, events, goals, and notes through one unified item model.
+- Links items together with parent-child relationships, peer links, reverse links, and a visual graph.
+- Provides dashboard, inbox, task, project, habit, goal, note, calendar, file, archive, and toolbox views.
+- Supports natural-language command capture for fast entry.
+- Works as an installable PWA with iOS-friendly mobile navigation and safe-area handling.
+- Runs in local mode with browser storage when Firebase is not configured.
+- Enables cloud mode with Firebase Auth, Firestore, Storage, Messaging, and Functions.
+- Includes optional Google Calendar sync and web scraping helpers for selected tools.
+
+## Core Concepts
+
+### Unified Items
+
+Most of ORBIT revolves around a single `OrbitItem` shape. Different item types share the same base lifecycle and can be linked together:
+
+- `task`
+- `project`
+- `habit`
+- `event`
+- `goal`
+- `note`
+
+This keeps workflows composable. A project can contain tasks and goals, a note can reference a project, and a task can carry due dates, tags, priority, checklist data, and relationships without switching systems.
+
+### Local-First Runtime
+
+ORBIT can be used immediately in local mode. Local mode stores data in the browser and is meant for zero-config development, demos, and personal use on one device.
+
+When Firebase environment variables are present, ORBIT switches to cloud mode for authenticated users and realtime sync. The app is designed to degrade gracefully when Firebase is missing or unavailable.
+
+### Connected Workflow
+
+ORBIT is built around the idea that productivity data should not be isolated. Relationships are first-class:
+
+- Parent-child hierarchy for projects, goals, and tasks.
+- Peer links between related items.
+- Reverse links so relationships are discoverable from both sides.
+- Link graph view for exploring connected work.
+- Command capture that can create, tag, prioritize, schedule, and link items.
 
 ## Tech Stack
 
@@ -21,30 +55,93 @@ ORBIT runs locally out of the box with localStorage. Firebase is optional and on
 - TypeScript
 - Tailwind CSS v4
 - Zustand
-- Firebase Auth, Firestore, Storage, Functions
+- Radix UI primitives
+- Firebase Auth, Firestore, Storage, Messaging, and Functions
 - Vitest
+- ESLint
 
 ## Getting Started
 
+### Prerequisites
+
+- Node.js 20 or newer
+- npm
+
+### Install
+
 ```bash
 npm install
+```
+
+### Run Locally
+
+```bash
 npm run dev
 ```
 
-Open `http://localhost:3000` and choose local mode to use ORBIT without a backend.
+Open `http://localhost:3000`.
+
+To use the app without backend setup, choose local mode on the sign-in screen.
+
+## Environment Setup
+
+Copy the example environment file when you want cloud features:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Firebase is optional. If the required Firebase variables are empty, ORBIT stays in local mode.
+
+### Required For Cloud Auth And Sync
+
+```text
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+```
+
+### Required For File Uploads
+
+```text
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+```
+
+### Required For Push Notifications
+
+```text
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_VAPID_KEY=
+NEXT_PUBLIC_WEBPUSH_VAPID_KEY=
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+```
+
+### Optional Integrations
+
+```text
+NEXT_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID=
+GOOGLE_SEARCH_API_KEY=
+GOOGLE_SEARCH_CX=
+```
+
+For the full backend checklist, see [BACKEND_SETUP.md](./BACKEND_SETUP.md) and [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md).
 
 ## Scripts
 
 ```bash
-npm run dev              # local development
-npm run lint             # eslint
-npm test                 # unit tests
-npm run build            # production build
-npm run deploy:rules     # deploy Firestore and Storage rules
-npm run deploy:functions # deploy Cloud Functions
+npm run dev              # Start the Next.js development server
+npm run build            # Build the production app
+npm run start            # Start the production server after build
+npm run lint             # Run ESLint
+npm test                 # Run unit tests with Vitest
+npm run test:watch       # Run Vitest in watch mode
+npm run deploy:rules     # Deploy Firestore and Storage rules
+npm run deploy:functions # Deploy Firebase Cloud Functions
 ```
 
-Cloud Functions are built separately:
+Cloud Functions have their own package:
 
 ```bash
 cd functions
@@ -52,19 +149,75 @@ npm install
 npm run build
 ```
 
-## Backend Setup
+## Project Structure
 
-Copy `.env.local.example` to `.env.local` and fill in Firebase values when you want cloud accounts, sync, Storage, push, or Google Calendar.
-
-```bash
-cp .env.local.example .env.local
+```text
+src/app                 App Router pages, layouts, and API routes
+src/components          Shared UI, shell, item, mobile, file, and tool components
+src/lib                 Store, data access, Firebase, parsing, links, settings, utilities
+src/lib/hooks           Reusable React hooks
+functions               Firebase Cloud Functions
+public                  PWA manifest, service worker, icons, and static assets
+firestore.rules         Firestore security rules
+storage.rules           Firebase Storage security rules
 ```
 
-See `BACKEND_SETUP.md` and `PRODUCTION_READINESS.md` for the full launch checklist.
+## Important Documents
 
-## Deployment
+- [ARCHITECTURE.md](./ARCHITECTURE.md): system architecture and local/cloud data flow.
+- [LINKING_SYSTEM.md](./LINKING_SYSTEM.md): item relationships, graph utilities, and link APIs.
+- [BACKEND_SETUP.md](./BACKEND_SETUP.md): Firebase, Storage, Functions, push, and deployment setup.
+- [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md): production launch checklist.
+- [BADGE_SYSTEM.md](./BADGE_SYSTEM.md): badge and achievement system notes.
+- [STORAGE_CORS_SETUP.md](./STORAGE_CORS_SETUP.md): Storage CORS configuration.
 
-The app currently fits Vercel best because it uses Next.js App Router API routes. Firebase Hosting would need an SSR adapter or a static-export redesign.
+## Firebase Deployment
+
+Deploy rules after reviewing the project and environment:
+
+```bash
+firebase deploy --only firestore:rules,storage --project YOUR_PROJECT_ID
+```
+
+Set VAPID secrets before deploying functions:
+
+```bash
+firebase functions:secrets:set VAPID_PUBLIC_KEY --project YOUR_PROJECT_ID
+firebase functions:secrets:set VAPID_PRIVATE_KEY --project YOUR_PROJECT_ID
+firebase deploy --only functions --project YOUR_PROJECT_ID
+```
+
+## App Deployment
+
+The current app fits Vercel best because it uses Next.js App Router server routes under `src/app/api`.
+
+```bash
+npm run build
+npx vercel
+```
+
+Firebase Hosting would require an SSR adapter or a static-export redesign.
+
+## Quality Checks
+
+Run these before pushing application changes:
+
+```bash
+npm test
+npm run lint
+npm run build
+```
+
+Current lint output may include warnings from unfinished or experimental areas; builds should complete successfully.
+
+## Design Principles
+
+- Local-first: usable without setup or external services.
+- Connected: tasks, notes, projects, goals, habits, and events are part of one graph.
+- Fast capture: command entry should make adding and linking work feel immediate.
+- Graceful fallback: missing Firebase configuration should not break the app.
+- Mobile-native: the PWA should feel comfortable on iOS, including safe areas and bottom navigation.
+- Quiet interface: the UI should stay focused, calm, and useful rather than decorative.
 
 ## License
 
