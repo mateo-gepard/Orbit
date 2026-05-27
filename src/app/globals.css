@@ -167,13 +167,6 @@
   }
 }
 
-@supports (height: 100dvh) {
-  html,
-  body {
-    height: 100dvh;
-  }
-}
-
 /* ─── PWA Standalone Mode ─── */
 @media all and (display-mode: standalone) {
   /* Disable text selection on non-editable elements */

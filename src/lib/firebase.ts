@@ -2,13 +2,23 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
+const bundledFirebaseConfig = {
+  apiKey: 'AIzaSyBOqJE0MVXrfBwTope_4vgCTMeAM_omY-E',
+  authDomain: 'orbit-9e0b6.firebaseapp.com',
+  projectId: 'orbit-9e0b6',
+  storageBucket: 'orbit-9e0b6.firebasestorage.app',
+  messagingSenderId: '631355120389',
+  appId: '1:631355120389:web:42c163eae64bc3dfe5f56c',
+};
+
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || bundledFirebaseConfig.apiKey,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || bundledFirebaseConfig.authDomain,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || bundledFirebaseConfig.projectId,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || bundledFirebaseConfig.storageBucket,
+  messagingSenderId:
+    process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || bundledFirebaseConfig.messagingSenderId,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || bundledFirebaseConfig.appId,
 };
 
 const requiredFirebaseEnv = [
@@ -19,9 +29,14 @@ const requiredFirebaseEnv = [
 ] as const;
 
 export const missingFirebaseEnv = requiredFirebaseEnv.filter((key) => !process.env[key]);
-export const isFirebaseConfigured = missingFirebaseEnv.length === 0;
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey &&
+  firebaseConfig.authDomain &&
+  firebaseConfig.projectId &&
+  firebaseConfig.appId
+);
 export const isFirebaseStorageConfigured =
-  isFirebaseConfigured && Boolean(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
+  isFirebaseConfigured && Boolean(firebaseConfig.storageBucket);
 
 // Only initialize Firebase on the client side
 let app: ReturnType<typeof initializeApp> | null = null;
@@ -38,10 +53,6 @@ if (typeof window !== 'undefined' && isFirebaseConfigured) {
     googleProvider.addScope('https://www.googleapis.com/auth/calendar');
   } catch (error) {
     console.warn('Firebase initialization failed:', error);
-  }
-} else if (typeof window !== 'undefined') {
-  if (process.env.NODE_ENV !== 'production') {
-    console.info('[ORBIT Firebase] Cloud sync unavailable; running in local mode.');
   }
 }
 

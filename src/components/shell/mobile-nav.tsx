@@ -41,7 +41,7 @@ export function MobileNav() {
           'flex h-14 w-14 items-center justify-center',
           'rounded-full bg-foreground text-background',
           'shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]',
-          'transition-transform duration-150 active:scale-95',
+          'active:scale-95 transition-transform duration-150',
         )}
         style={{
           position: 'fixed',
@@ -55,7 +55,7 @@ export function MobileNav() {
 
       <nav
         id="mobile-nav"
-        className="select-none border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150 lg:hidden"
+        className="lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150"
         style={{
           position: 'fixed',
           bottom: '0px',
@@ -67,11 +67,7 @@ export function MobileNav() {
       >
         <div
           className="flex items-center justify-around"
-          style={{
-            height: 'var(--bottom-nav-height)',
-            paddingLeft: 'max(4px, var(--safe-left))',
-            paddingRight: 'max(4px, var(--safe-right))',
-          }}
+          style={{ height: 'var(--bottom-nav-height)' }}
         >
           {TABS.map((tab) => {
             const isActive =
@@ -84,32 +80,33 @@ export function MobileNav() {
                 key={tab.href}
                 href={tab.href}
                 aria-label={t(tab.labelKey)}
-                aria-current={isActive ? 'page' : undefined}
                 onClick={() => haptic('light')}
                 className={cn(
-                  'relative flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-0 py-1 transition-all duration-200',
-                  'active:scale-95',
-                  isActive ? 'text-foreground' : 'text-muted-foreground/55',
+                  'relative flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-all duration-200',
+                  'active:scale-90',
+                  isActive
+                    ? 'text-foreground'
+                    : 'text-muted-foreground/50',
                 )}
               >
+                {isActive && (
+                  <div className="absolute -top-1 h-1 w-1 rounded-full bg-foreground animate-scale-in" />
+                )}
                 <div
-                  className={cn(
-                    'flex h-7 min-w-9 items-center justify-center rounded-xl px-2 transition-all duration-200',
-                    isActive && 'bg-foreground/[0.07]',
-                  )}
+                  className="relative"
                 >
                   <Icon
                     className={cn(
                       'h-5 w-5 transition-all duration-200',
-                      isActive && 'scale-105',
+                      isActive && 'scale-110',
                     )}
                     strokeWidth={isActive ? 2.2 : 1.8}
                   />
                 </div>
                 <span
                   className={cn(
-                    'max-w-full truncate text-[10px] font-medium leading-none transition-all duration-200',
-                    isActive ? 'h-2.5 opacity-100' : 'h-0 opacity-0',
+                    'text-[10px] font-medium leading-none transition-all duration-200',
+                    isActive ? 'opacity-100' : 'opacity-0 h-0',
                   )}
                 >
                   {t(tab.labelKey)}

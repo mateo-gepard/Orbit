@@ -46,12 +46,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [loading, pathname, router, user]);
 
   if (loading) {
-    return <main className="min-h-[var(--app-height)] bg-background text-foreground" />;
+    return <main className="min-h-screen bg-background text-foreground" />;
   }
 
   if (!user) {
     return (
-      <main className="min-h-[var(--app-height)] bg-background text-foreground">
+      <main className="min-h-screen bg-background text-foreground">
         {pathname === '/' ? children : null}
       </main>
     );
@@ -59,23 +59,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <div className="flex h-[var(--app-height)] w-full max-w-[100vw] overflow-hidden bg-background">
+      <div className="flex h-screen w-full overflow-hidden bg-background max-w-[100vw]">
         <Sidebar />
 
-        <div className="flex min-w-0 max-w-full flex-1 flex-col overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0 max-w-full">
           <header
-            className="z-30 flex shrink-0 items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl lg:hidden"
+            className="flex shrink-0 items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4 lg:hidden"
             style={{
-              minHeight: 'calc(48px + var(--safe-top))',
-              paddingTop: 'var(--safe-top)',
-              paddingLeft: 'max(1rem, var(--safe-left))',
-              paddingRight: 'max(1rem, var(--safe-right))',
+              minHeight: '48px',
+              paddingTop: 'env(safe-area-inset-top, 0px)',
             }}
           >
             <Button
               variant="ghost"
               size="icon"
-              className="-ml-1 h-10 w-10"
+              className="h-8 w-8 -ml-1"
               aria-label="Open sidebar"
               onClick={() => {
                 haptic('light');
@@ -94,7 +92,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 text-muted-foreground"
+              className="h-8 w-8 text-muted-foreground"
               aria-label="Search or create"
               onClick={() => {
                 haptic('light');
@@ -123,9 +121,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex-1" />
           </header>
 
-          <div className="flex min-h-0 flex-1 overflow-hidden">
-            <main className="mobile-scroll flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-0 lg:pb-0">
-              <div className="mobile-bottom-space overflow-x-hidden lg:pb-0">
+          <div className="flex flex-1 overflow-hidden min-h-0">
+            <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-0 lg:pb-0">
+              <div className="pb-[calc(48px+env(safe-area-inset-bottom,0px)+16px)] lg:pb-0 overflow-x-hidden">
                 {children}
               </div>
             </main>

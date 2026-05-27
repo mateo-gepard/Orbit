@@ -119,15 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       auth,
       (firebaseUser) => {
         if (cancelled) return;
-        if (!firebaseUser && isLocalModeEnabled()) {
-          setUser(createDemoUser());
-          setIsDemo(true);
-          initAnalytics('demo-user');
-        } else {
-          if (firebaseUser) setLocalModeEnabled(false);
-          setUser(firebaseUser);
-          setIsDemo(false);
+        if (firebaseUser || isLocalModeEnabled()) {
+          setLocalModeEnabled(false);
         }
+        setUser(firebaseUser);
+        setIsDemo(false);
         setLoading(false);
         
         // Start analytics tracking
