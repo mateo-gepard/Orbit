@@ -10,6 +10,14 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import * as webpush from 'web-push';
 import { isSafeAttachmentPath, safeAttachmentPaths } from './attachment-paths';
+import { createThreadmapMcpServer } from './mcp/server';
+import {
+  createAuthorizationErrorRedirect,
+  createThreadmapOAuthService,
+  serializeOAuthError,
+} from './mcp/oauth';
+import { OAUTH_JSON_HEADERS } from './mcp/metadata';
+import { parseBearerToken } from './mcp/security';
 
 initializeApp();
 
@@ -38,6 +46,13 @@ const UPLOAD_INTENT_WINDOW_MS = 10 * 60_000;
 const MAX_ACTIVE_UPLOAD_INTENTS = 10;
 const MAX_RESERVED_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_UPLOAD_INTENTS_PER_WINDOW = 20;
+const MCP_DEFAULT_OWNER_UID = (process.env.MCP_OWNER_UID || 'threadmap-owner').trim();
+const MCP_CONSENT_ORIGIN = (process.env.MCP_CONSENT_ORIGIN || '').trim();
+const MCP_FUNCTION_SCOPES = Object.freeze([
+  'threadmap.read',
+  'threadmap.write',
+  'offline_access',
+]);
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -201,6 +216,104 @@ function nextDailyOccurrence(time: string, timezone: string, now: number): numbe
     if (candidate > now) return candidate;
   }
   return nextDailyAt(time, timezone, now);
+}
+
+interface HttpRequestLike {
+  headers: {
+    get(name: string): string | undefined;
+  };
+  url: string;
+}
+
+function requestOrigin(request: HttpRequestLike): string {
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const host = request.headers.get('host');
+  const protocol = (forwardedProto || 'https').split(',')[0]?.trim() || 'https';
+  if (forwardedHost) {
+    return `${protocol}://${forwardedHost.split(',')[0].trim()}`;
+  }
+  if (host) return `${protocol}://${host}`;
+  return 'https://threadmap.app';
+}
+
+function requestPathname(request: HttpRequestLike): string {
+  const base = requestOrigin(request);
+  try {
+    return new URL(request.url, base).pathname || '/';
+  } catch {
+    if (typeof request.url === 'string') {
+      return request.url.startsWith('http')
+        ? (new URL(request.url).pathname || '/')
+        : `/${request.url.split('?', 1)[0].replace(/^\//, '')}`;
+    }
+    return '/';
+  }
+}
+
+function inferMcpFunctionBase(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  const knownSuffixes = [
+    '/authorize',
+    '/register',
+    '/token',
+    '/revoke',
+    '/.well-known/oauth-authorization-server',
+    '/.well-known/oauth-protected-resource',
+  ];
+
+  for (const suffix of knownSuffixes) {
+    if (normalized === suffix) return '';
+    if (normalized.endsWith(suffix)) {
+      const base = normalized.slice(0, -suffix.length);
+      return base === '' ? '' : base;
+    }
+  }
+
+  return normalized === '/' ? '' : normalized;
+}
+
+function normalizePath(path: string): string {
+  if (!path) return '';
+  if (path === '/') return '';
+  return path;
+}
+
+function joinPath(base: string, suffix: string): string {
+  return `${normalizePath(base)}${suffix}`;
+}
+
+function buildThreadmapMcpConfiguration(request: HttpRequestLike) {
+  const origin = requestOrigin(request);
+  const pathname = requestPathname(request);
+  const basePath = inferMcpFunctionBase(pathname);
+  const authorizationConsentOrigin = MCP_CONSENT_ORIGIN || origin;
+  return {
+    ownerUid: MCP_DEFAULT_OWNER_UID,
+    issuer: `${origin}${normalizePath(basePath)}` || origin,
+    resource: `${origin}${normalizePath(basePath)}` || origin,
+    authorizationEndpoint: `${origin}${joinPath(basePath, '/authorize')}`,
+    tokenEndpoint: `${origin}${joinPath(basePath, '/token')}`,
+    registrationEndpoint: `${origin}${joinPath(basePath, '/register')}`,
+    revocationEndpoint: `${origin}${joinPath(basePath, '/revoke')}`,
+    protectedResourceMetadataUrl: `${origin}${joinPath(basePath, '/.well-known/oauth-protected-resource')}`,
+    authorizationConsentUrl: `${authorizationConsentOrigin}/integrations/authorize`,
+    scopesSupported: [...MCP_FUNCTION_SCOPES],
+    dynamicClientScopes: [
+      'threadmap.read',
+      'threadmap.write',
+      'offline_access',
+    ],
+    resourceName: 'Threadmap',
+  };
+}
+
+function isHttpError(error: unknown): error is { status: number; code?: string } {
+  return Boolean(
+    error && typeof error === 'object'
+      && ('status' in (error as Record<string, unknown>)
+        || 'code' in (error as Record<string, unknown>))
+  );
 }
 
 function recordValue(value: unknown, field: string): Record<string, unknown> {
