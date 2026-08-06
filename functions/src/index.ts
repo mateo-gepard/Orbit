@@ -50,7 +50,7 @@ const UPLOAD_INTENT_WINDOW_MS = 10 * 60_000;
 const MAX_ACTIVE_UPLOAD_INTENTS = 10;
 const MAX_RESERVED_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_UPLOAD_INTENTS_PER_WINDOW = 20;
-const MCP_DEFAULT_OWNER_UID = (process.env.MCP_OWNER_UID || 'threadmap-owner').trim();
+const MCP_DEFAULT_OWNER_UID = (process.env.MCP_OWNER_UID || '').trim();
 const MCP_CONSENT_ORIGIN = (process.env.MCP_CONSENT_ORIGIN || '').trim();
 const MCP_DISCOVERY_ORIGIN = (process.env.MCP_DISCOVERY_ORIGIN || '').trim();
 const MCP_FUNCTION_SCOPES = Object.freeze([
@@ -425,6 +425,12 @@ function createThreadmapOAuthAdminService() {
 
 function requireThreadmapOwner(request: { auth?: { uid: string } | null }) {
   const subject = requireUid(request);
+  if (!MCP_DEFAULT_OWNER_UID) {
+    throw new HttpsError(
+      'failed-precondition',
+      'MCP owner UID is not configured. Set MCP_OWNER_UID in Cloud Function env.'
+    );
+  }
   if (subject !== MCP_DEFAULT_OWNER_UID) {
     throw new HttpsError('permission-denied', 'Only the configured owner may manage MCP clients.');
   }
@@ -484,6 +490,15 @@ function recordValue(value: unknown, field: string): Record<string, unknown> {
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const allowed = new Set(keys);
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function normalizeOptionalTrimmedString(value: unknown, fieldName: string): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== 'string') {
+    throw new HttpsError('invalid-argument', `The ${fieldName} is invalid.`);
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function validBriefingTime(value: unknown, field: string): string {
@@ -1476,9 +1491,7 @@ export const listThreadmapMcpTokenFamilies = onCall(
     if (!hasOnlyKeys(data, ['clientId', 'includeRevoked'])) {
       throw new HttpsError('invalid-argument', 'The list request contains unsupported fields.');
     }
-    if (data.clientId !== undefined && typeof data.clientId !== 'string') {
-      throw new HttpsError('invalid-argument', 'The client ID filter is invalid.');
-    }
+    const requestedClientId = normalizeOptionalTrimmedString(data.clientId, 'client ID filter');
     if (data.includeRevoked !== undefined && typeof data.includeRevoked !== 'boolean') {
       throw new HttpsError('invalid-argument', 'The includeRevoked flag is invalid.');
     }
@@ -1488,7 +1501,6 @@ export const listThreadmapMcpTokenFamilies = onCall(
       uid,
       data.includeRevoked === true
     );
-    const requestedClientId = data.clientId?.trim();
     return {
       tokenFamilies: requestedClientId
         ? families.filter((family) => family.clientId === requestedClientId)
