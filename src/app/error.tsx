@@ -2,11 +2,12 @@
 
 import { useEffect } from 'react';
 import { useTranslation } from '@/lib/i18n';
+import { reportError } from '@/lib/report-error';
 
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const { t } = useTranslation();
   useEffect(() => {
-    console.error('[THREADMAP] Route error:', error);
+    reportError(error, { source: 'route-error', digest: error.digest });
   }, [error]);
 
   return (

@@ -2,6 +2,7 @@
 
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { useTranslation } from '@/lib/i18n';
+import { reportError } from '@/lib/report-error';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -30,7 +31,10 @@ class ErrorBoundaryInner extends Component<ErrorBoundaryInnerProps, ErrorBoundar
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('[THREADMAP] Uncaught error:', error, errorInfo);
+    reportError(error, {
+      source: 'react-error-boundary',
+      componentStack: errorInfo.componentStack ?? undefined,
+    });
   }
 
   render() {

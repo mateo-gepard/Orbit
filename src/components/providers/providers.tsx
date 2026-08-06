@@ -1,6 +1,7 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { installGlobalErrorHandlers } from '@/lib/report-error';
 import { ThemeProvider } from './theme-provider';
 import { AuthProvider } from './auth-provider';
 import { DataProvider } from './data-provider';
@@ -15,6 +16,9 @@ export function Providers({ children }: { children: ReactNode }) {
   // NOTE: rehydrate() is called inside DataProvider.connect() — BEFORE
   // Firestore subscriptions start — so cloud data always wins over stale
   // localStorage on a fresh device.
+
+  // Catches async throws and rejected promises, which never reach the boundary.
+  useEffect(() => installGlobalErrorHandlers(), []);
 
   return (
     <ErrorBoundary>
