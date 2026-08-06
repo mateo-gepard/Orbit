@@ -29,11 +29,13 @@ In this implementation, metadata endpoint roots are built from runtime/optional 
 - `MCP_CONSENT_ORIGIN`  
   Optional override for the user approval route (`/integrations/authorize`) when deployed behind a different domain than the function request origin.
 - `MCP_OWNER_UID`  
-  Firebase Auth `uid` of the account allowed to approve/revoke MCP clients and sessions from settings.
+  Firebase Auth `uid` used by MCP service configuration for internal ownership bookkeeping.
   Copy the UID from **Firebase Console → Authentication → Users** (or your admin user record) and set this
   environment value when deploying Functions.
+  MCP authorization and token management is scoped to the currently signed-in user at runtime; each user
+  can connect/approve/revoke their own MCP clients and sessions.
 
-If this value is missing, MCP management APIs return:
+If this value is missing, MCP OAuth service initialization fails and returns:
 
 - `MCP owner UID is not configured. Set MCP_OWNER_UID in Cloud Function env.`
 
@@ -52,12 +54,11 @@ If this value is missing, MCP management APIs return:
 
 ## Troubleshooting
 
-- If consent never appears, confirm `threadmap` client owner is signed in and not in demo mode.
+- If consent never appears, confirm the signed-in user is not in demo mode and has access to the account matching this request.
 - If discovery metadata is wrong, verify `MCP_DISCOVERY_ORIGIN` and `MCP_CONSENT_ORIGIN`.
-- If clients are not manageable from settings, check Firestore Rules + callable permissions and confirm you are signed in as the configured owner.
+- If clients are not manageable from settings, check Firebase auth state and callable permissions.
 
 ## Required runtime checks
 
-- `MCP_OWNER_UID` is mandatory for MCP management actions.
-- Ensure the signed-in account UID exactly matches `MCP_OWNER_UID`.
+- `MCP_OWNER_UID` is mandatory for MCP service initialization.
 - Confirm `MCP_DISCOVERY_ORIGIN` and `MCP_CONSENT_ORIGIN` are set for custom domains/proxy setups.

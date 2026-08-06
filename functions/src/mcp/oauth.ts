@@ -929,7 +929,6 @@ export class ThreadmapOAuthService {
     requestToken: unknown,
     authenticatedUid: string
   ): Promise<AuthorizationRequestView> {
-    this.assertOwner(authenticatedUid);
     const normalizedToken = this.expectOpaqueToken(
       requestToken,
       'tmar_',
@@ -975,17 +974,29 @@ export class ThreadmapOAuthService {
     authenticatedUid: string,
     includeRevoked = false
   ): Promise<ThreadmapOAuthClientRecord[]> {
-    this.assertOwner(authenticatedUid);
-    const snapshot = await this.db.collection(OAUTH_COLLECTIONS.clients).get();
+    const tokenFamilySnapshot = await this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
+      .where('userId', '==', authenticatedUid)
+      .get();
+    const allowedClientIds = new Set<string>();
+    for (const doc of tokenFamilySnapshot.docs) {
+      const family = tokenFamilyDocument(doc.data());
+      if (!family || (!includeRevoked && family.status !== 'active')) continue;
+      allowedClientIds.add(family.clientId);
+    }
+    if (allowedClientIds.size === 0) {
+      return [];
+    }
+
     const rows: ThreadmapOAuthClientRecord[] = [];
-    for (const doc of snapshot.docs) {
-      const current = clientDocument(doc.data());
+    for (const clientId of allowedClientIds) {
+      const clientSnapshot = await this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId).get();
+      const current = clientDocument(clientSnapshot.data());
       if (!current) continue;
       const revokedAt = current.revokedAt;
       const status = revokedAt === undefined ? 'active' : 'revoked';
       if (!includeRevoked && status !== 'active') continue;
       rows.push({
-        clientId: current.clientId || doc.id,
+        clientId: current.clientId || clientId,
         clientName: current.clientName,
         platform: current.platform,
         redirectUris: [...current.redirectUris],
@@ -1009,7 +1020,6 @@ export class ThreadmapOAuthService {
     authenticatedUid: string,
     includeRevoked = false
   ): Promise<ThreadmapMcpTokenFamilyRecord[]> {
-    this.assertOwner(authenticatedUid);
     const snapshot = await this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
       .where('userId', '==', authenticatedUid)
       .get();
@@ -1041,7 +1051,6 @@ export class ThreadmapOAuthService {
     authenticatedUid: string,
     approvedScopes?: unknown
   ): Promise<AuthorizationDecisionResult> {
-    this.assertOwner(authenticatedUid);
     const normalizedToken = this.expectOpaqueToken(
       requestToken,
       'tmar_',
@@ -1128,7 +1137,6 @@ export class ThreadmapOAuthService {
     requestToken: unknown,
     authenticatedUid: string
   ): Promise<AuthorizationDecisionResult> {
-    this.assertOwner(authenticatedUid);
     const normalizedToken = this.expectOpaqueToken(
       requestToken,
       'tmar_',
@@ -1229,8 +1237,7 @@ export class ThreadmapOAuthService {
     const now = this.now();
     if (!tokenDocument || tokenDocument.status !== 'active'
         || tokenDocument.expiresAt <= now
-        || tokenDocument.resource !== this.configuration.resource
-        || tokenDocument.userId !== this.configuration.ownerUid) {
+        || tokenDocument.resource !== this.configuration.resource) {
       throw new OAuthProtocolError('invalid_token', 'The access token is invalid or expired.', {
         status: 401,
       });
@@ -1335,7 +1342,6 @@ export class ThreadmapOAuthService {
     authenticatedUid: string,
     reason: 'owner_disconnect' | 'security_event' | 'administrative' = 'owner_disconnect'
   ): Promise<boolean> {
-    this.assertOwner(authenticatedUid);
     let clientId: string;
     try {
       clientId = validateClientId(clientIdValue);
@@ -1344,14 +1350,18 @@ export class ThreadmapOAuthService {
     }
     const now = this.now();
     return this.db.runTransaction(async (transaction) => {
-      const clientRef = this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId);
-      const snapshot = await transaction.get(clientRef);
-      const client = clientDocument(snapshot.data());
-      if (!client) return false;
-      if (client.revokedAt === undefined) {
-        transaction.update(clientRef, {
+      const familySnapshot = await transaction.get(
+        this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
+          .where('userId', '==', authenticatedUid)
+          .where('clientId', '==', clientId)
+      );
+      if (familySnapshot.empty) return false;
+      for (const familyDoc of familySnapshot.docs) {
+        const family = tokenFamilyDocument(familyDoc.data());
+        if (!family || family.status === 'revoked') continue;
+        transaction.update(familyDoc.ref, {
+          status: 'revoked',
           revokedAt: now,
-          updatedAt: now,
           revocationReason: reason,
         });
       }
@@ -1364,7 +1374,6 @@ export class ThreadmapOAuthService {
     authenticatedUid: string,
     reason: 'owner_disconnect' | 'security_event' | 'administrative' = 'owner_disconnect'
   ): Promise<boolean> {
-    this.assertOwner(authenticatedUid);
     if (typeof tokenFamilyId !== 'string' || !/^tmf_[A-Za-z0-9_-]{20,100}$/.test(tokenFamilyId)) {
       throw new OAuthProtocolError('invalid_request', 'token family is invalid.');
     }
@@ -1383,14 +1392,6 @@ export class ThreadmapOAuthService {
       }
       return true;
     });
-  }
-
-  private assertOwner(authenticatedUid: string): void {
-    if (!constantTimeStringEqual(authenticatedUid, this.configuration.ownerUid)) {
-      throw new OAuthProtocolError('access_denied', 'Only the Threadmap owner may authorize access.', {
-        status: 403,
-      });
-    }
   }
 
   private expectOpaqueToken(
@@ -1531,12 +1532,17 @@ export class ThreadmapOAuthService {
       const currentClientSnapshot = await transaction.get(clientRef);
       const codeDocument = authorizationCodeDocument(codeSnapshot.data());
       const currentClient = ensureActiveClient(clientDocument(currentClientSnapshot.data()));
+      if (!codeDocument || codeDocument.clientId !== currentClient.clientId
+          || codeDocument.expiresAt <= now) {
+        throw new OAuthProtocolError(
+          'invalid_grant',
+          'The authorization code is invalid, expired, or already used.'
+        );
+      }
       const deletionJobSnapshot = await transaction.get(
-        this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(this.configuration.ownerUid)
+        this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(codeDocument.userId)
       );
-      if (!codeDocument || codeDocument.status !== 'active' || codeDocument.expiresAt <= now
-          || codeDocument.clientId !== currentClient.clientId
-          || codeDocument.userId !== this.configuration.ownerUid
+      if (codeDocument.status !== 'active'
           || codeDocument.redirectUri !== redirectUri
           || codeDocument.resource !== resource
           || !verifyPkceS256(verifier, codeDocument.codeChallenge)
@@ -1645,14 +1651,15 @@ export class ThreadmapOAuthService {
       const currentClientSnapshot = await transaction.get(clientRef);
       const currentClient = ensureActiveClient(clientDocument(currentClientSnapshot.data()));
       const oldRefresh = refreshTokenDocument(refreshSnapshot.data());
-      const deletionJobSnapshot = await transaction.get(
-        this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(this.configuration.ownerUid)
-      );
       if (!oldRefresh || oldRefresh.clientId !== currentClient.clientId
           || oldRefresh.resource !== resource
-          || oldRefresh.userId !== this.configuration.ownerUid
-          || oldRefresh.expiresAt <= now
-          || deletionJobSnapshot.exists) {
+          || oldRefresh.expiresAt <= now) {
+        throw new OAuthProtocolError('invalid_grant', 'The refresh token is invalid or expired.');
+      }
+      const deletionJobSnapshot = await transaction.get(
+        this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(oldRefresh.userId)
+      );
+      if (deletionJobSnapshot.exists) {
         throw new OAuthProtocolError('invalid_grant', 'The refresh token is invalid or expired.');
       }
       const familyRef = this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)

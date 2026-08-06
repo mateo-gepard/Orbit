@@ -423,20 +423,6 @@ function createThreadmapOAuthAdminService() {
   });
 }
 
-function requireThreadmapOwner(request: { auth?: { uid: string } | null }) {
-  const subject = requireUid(request);
-  if (!MCP_DEFAULT_OWNER_UID) {
-    throw new HttpsError(
-      'failed-precondition',
-      'MCP owner UID is not configured. Set MCP_OWNER_UID in Cloud Function env.'
-    );
-  }
-  if (subject !== MCP_DEFAULT_OWNER_UID) {
-    throw new HttpsError('permission-denied', 'Only the configured owner may manage MCP clients.');
-  }
-  return subject;
-}
-
 function normalizePath(path: string): string {
   if (!path) return '';
   if (path === '/') return '';
@@ -1401,7 +1387,7 @@ export const getThreadmapMcpAuthorizationRequest = onCall(
     if (!hasOnlyKeys(data, ['request']) || typeof data.request !== 'string') {
       throw new HttpsError('invalid-argument', 'The authorization request must include a request token.');
     }
-    const uid = requireThreadmapOwner(request);
+    const uid = requireUid(request);
     return oauthService.getAuthorizationRequest(data.request, uid);
   }
 );
@@ -1422,7 +1408,7 @@ export const approveThreadmapMcpAuthorizationRequest = onCall(
     if (typeof data.request !== 'string') {
       throw new HttpsError('invalid-argument', 'The request token is invalid.');
     }
-    const uid = requireThreadmapOwner(request);
+    const uid = requireUid(request);
     const result = await oauthService.approveAuthorizationRequest(
       data.request,
       uid,
@@ -1448,7 +1434,7 @@ export const denyThreadmapMcpAuthorizationRequest = onCall(
     if (typeof data.request !== 'string') {
       throw new HttpsError('invalid-argument', 'The request token is invalid.');
     }
-    const uid = requireThreadmapOwner(request);
+    const uid = requireUid(request);
     const result = await oauthService.denyAuthorizationRequest(data.request, uid);
     return result;
   }
@@ -1469,7 +1455,7 @@ export const listThreadmapMcpClients = onCall(
     if (data.includeRevoked !== undefined && typeof data.includeRevoked !== 'boolean') {
       throw new HttpsError('invalid-argument', 'The includeRevoked flag is invalid.');
     }
-    const uid = requireThreadmapOwner(request);
+    const uid = requireUid(request);
     const oauthService = createThreadmapOAuthAdminService();
     const clients: ThreadmapOAuthClientRecord[] = await oauthService.listClients(
       uid,
@@ -1495,7 +1481,7 @@ export const listThreadmapMcpTokenFamilies = onCall(
     if (data.includeRevoked !== undefined && typeof data.includeRevoked !== 'boolean') {
       throw new HttpsError('invalid-argument', 'The includeRevoked flag is invalid.');
     }
-    const uid = requireThreadmapOwner(request);
+    const uid = requireUid(request);
     const oauthService = createThreadmapOAuthAdminService();
     const families: ThreadmapMcpTokenFamilyRecord[] = await oauthService.listTokenFamilies(
       uid,
@@ -1528,7 +1514,7 @@ export const revokeThreadmapMcpClient = onCall(
     if (clientId.length === 0) {
       throw new HttpsError('invalid-argument', 'The client ID is invalid.');
     }
-    const uid = requireThreadmapOwner(request);
+    const uid = requireUid(request);
     const oauthService = createThreadmapOAuthAdminService();
     const success = await oauthService.revokeClient(clientId, uid, 'administrative');
     return { success };
@@ -1554,7 +1540,7 @@ export const revokeThreadmapMcpTokenFamily = onCall(
     if (tokenFamilyId.length === 0) {
       throw new HttpsError('invalid-argument', 'The token family ID is invalid.');
     }
-    const uid = requireThreadmapOwner(request);
+    const uid = requireUid(request);
     const oauthService = createThreadmapOAuthAdminService();
     const success = await oauthService.revokeTokenFamily(tokenFamilyId, uid, 'administrative');
     return { success };

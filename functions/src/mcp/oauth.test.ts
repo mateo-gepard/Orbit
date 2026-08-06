@@ -355,3 +355,97 @@ test('full DCR, consent, code, access, refresh rotation, and replay revocation f
     (error) => error instanceof OAuthProtocolError && error.code === 'invalid_token'
   );
 });
+
+test('per-user authorization and revocation scopes token families independently', async () => {
+  const firestore = new MemoryFirestore();
+  const now = Date.UTC(2026, 7, 6, 12, 0, 0);
+  const service = new ThreadmapOAuthService(
+    firestore as unknown as Firestore,
+    configuration,
+    { now: () => now }
+  );
+  const firstUser = 'threadmap-user-a';
+  const secondUser = 'threadmap-user-b';
+
+  const registration = await service.registerClient({
+    redirect_uris: [CLAUDE_REDIRECT_URI],
+    token_endpoint_auth_method: 'none',
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    client_name: 'Shared Claude Client',
+    scope: 'threadmap.read offline_access',
+    resource: configuration.resource,
+  });
+
+  const startFlow = async (requestUser: string, state: string) => {
+    const authorization = await service.startAuthorization({
+      response_type: 'code',
+      client_id: registration.client_id,
+      redirect_uri: CLAUDE_REDIRECT_URI,
+      resource: configuration.resource,
+      scope: 'threadmap.read offline_access',
+      state,
+      code_challenge: createPkceS256Challenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
+      code_challenge_method: 'S256',
+    });
+    const requestToken = new URL(authorization.location).searchParams.get('request');
+    if (!requestToken?.startsWith('tmar_')) throw new Error('Missing authorization request handle.');
+    await service.getAuthorizationRequest(requestToken, requestUser);
+    const decision = await service.approveAuthorizationRequest(requestToken, requestUser);
+    const callback = new URL(decision.location);
+    const code = callback.searchParams.get('code');
+    if (!code?.startsWith('tmac_')) throw new Error('Missing authorization code.');
+    return code;
+  };
+
+  const codeForFirstUser = await startFlow(firstUser, 'first-user-state');
+  const firstUserTokenSet = await service.exchangeToken({
+    grant_type: 'authorization_code',
+    client_id: registration.client_id,
+    code: codeForFirstUser,
+    redirect_uri: CLAUDE_REDIRECT_URI,
+    code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+    resource: configuration.resource,
+  });
+  const codeForSecondUser = await startFlow(secondUser, 'second-user-state');
+  const secondUserTokenSet = await service.exchangeToken({
+    grant_type: 'authorization_code',
+    client_id: registration.client_id,
+    code: codeForSecondUser,
+    redirect_uri: CLAUDE_REDIRECT_URI,
+    code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+    resource: configuration.resource,
+  });
+
+  const principalA = await service.authenticateAccessToken(firstUserTokenSet.access_token, ['threadmap.read']);
+  const principalB = await service.authenticateAccessToken(secondUserTokenSet.access_token, ['threadmap.read']);
+  assert.equal(principalA.userId, firstUser);
+  assert.equal(principalB.userId, secondUser);
+  assert.equal(principalA.clientId, registration.client_id);
+  assert.equal(principalB.clientId, registration.client_id);
+
+  const firstUserClients = await service.listClients(firstUser);
+  const secondUserClients = await service.listClients(secondUser);
+  assert.deepEqual(firstUserClients.length, 1);
+  assert.deepEqual(secondUserClients.length, 1);
+  assert.equal(firstUserClients[0]?.clientId, registration.client_id);
+  assert.equal(secondUserClients[0]?.clientId, registration.client_id);
+  assert.equal(firstUserClients[0]?.clientName, 'Shared Claude Client');
+
+  const firstUserFamilies = await service.listTokenFamilies(firstUser);
+  const secondUserFamilies = await service.listTokenFamilies(secondUser);
+  assert.equal(firstUserFamilies.length, 1);
+  assert.equal(secondUserFamilies.length, 1);
+  assert.notEqual(firstUserFamilies[0]?.tokenFamilyId, secondUserFamilies[0]?.tokenFamilyId);
+  assert.equal(firstUserFamilies[0]?.userId, firstUser);
+  assert.equal(secondUserFamilies[0]?.userId, secondUser);
+
+  const revokedForFirstUser = await service.revokeClient(registration.client_id, firstUser, 'administrative');
+  assert.equal(revokedForFirstUser, true);
+
+  const firstUserFamiliesAfterRevoke = await service.listTokenFamilies(firstUser, true);
+  const secondUserFamiliesAfterRevoke = await service.listTokenFamilies(secondUser, false);
+  assert.equal(firstUserFamiliesAfterRevoke[0]?.status, 'revoked');
+  assert.equal(secondUserFamiliesAfterRevoke.length, 1);
+  assert.equal(secondUserFamiliesAfterRevoke[0]?.status, 'active');
+});

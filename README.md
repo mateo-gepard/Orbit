@@ -135,7 +135,8 @@ MCP_CONSENT_ORIGIN=
 MCP_OWNER_UID=
 ```
 
-If you enable MCP management in Settings, `MCP_OWNER_UID` must be set to the signed-in owner's Firebase UID.
+MCP authorization in Settings is now account-scoped: each signed-in user can connect and manage their own MCP
+clients/sessions through their account. Keep `MCP_OWNER_UID` configured so the MCP service can initialize.
 
 For the full backend checklist, see [BACKEND_SETUP.md](./BACKEND_SETUP.md) and [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md).
 
