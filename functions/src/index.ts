@@ -52,6 +52,7 @@ const MAX_RESERVED_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_UPLOAD_INTENTS_PER_WINDOW = 20;
 const MCP_DEFAULT_OWNER_UID = (process.env.MCP_OWNER_UID || 'threadmap-owner').trim();
 const MCP_CONSENT_ORIGIN = (process.env.MCP_CONSENT_ORIGIN || '').trim();
+const MCP_DISCOVERY_ORIGIN = (process.env.MCP_DISCOVERY_ORIGIN || '').trim();
 const MCP_FUNCTION_SCOPES = Object.freeze([
   'threadmap.read',
   'threadmap.write',
@@ -332,15 +333,17 @@ function createThreadmapOAuthForRequest(request: HttpRequestLike) {
 }
 
 function createThreadmapOAuthAdminService() {
+  const baseOrigin = MCP_DISCOVERY_ORIGIN || MCP_CONSENT_ORIGIN || 'https://threadmap.app';
   return createThreadmapOAuthService(db, {
     ownerUid: MCP_DEFAULT_OWNER_UID,
-    issuer: 'https://threadmap.app',
-    resource: 'https://threadmap.app',
-    authorizationEndpoint: 'https://threadmap.app/authorize',
-    tokenEndpoint: 'https://threadmap.app/token',
-    registrationEndpoint: 'https://threadmap.app/register',
-    revocationEndpoint: 'https://threadmap.app/revoke',
-    protectedResourceMetadataUrl: 'https://threadmap.app/.well-known/oauth-protected-resource',
+    issuer: baseOrigin,
+    resource: baseOrigin,
+    authorizationEndpoint: `${baseOrigin}/authorize`,
+    tokenEndpoint: `${baseOrigin}/token`,
+    registrationEndpoint: `${baseOrigin}/register`,
+    revocationEndpoint: `${baseOrigin}/revoke`,
+    protectedResourceMetadataUrl: `${baseOrigin}/.well-known/oauth-protected-resource`,
+    authorizationConsentUrl: `${baseOrigin}/integrations/authorize`,
     scopesSupported: MCP_FUNCTION_SCOPES,
     resourceName: 'Threadmap',
   });
@@ -378,6 +381,7 @@ function buildThreadmapMcpConfiguration(request: HttpRequestLike) {
     registrationEndpoint: `${origin}${joinPath(basePath, '/register')}`,
     revocationEndpoint: `${origin}${joinPath(basePath, '/revoke')}`,
     protectedResourceMetadataUrl: `${origin}${joinPath(basePath, '/.well-known/oauth-protected-resource')}`,
+    authorizationConsentUrl: `${authorizationConsentOrigin}/integrations/authorize`,
     scopesSupported: [...MCP_FUNCTION_SCOPES],
     dynamicClientScopes: [
       'threadmap.read',

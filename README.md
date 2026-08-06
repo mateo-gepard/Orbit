@@ -127,6 +127,14 @@ GOOGLE_SEARCH_API_KEY=
 GOOGLE_SEARCH_CX=
 ```
 
+### Optional Function/Backend MCP
+
+```text
+MCP_DISCOVERY_ORIGIN=
+MCP_CONSENT_ORIGIN=
+MCP_OWNER_UID=
+```
+
 For the full backend checklist, see [BACKEND_SETUP.md](./BACKEND_SETUP.md) and [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md).
 
 ## Scripts
@@ -173,6 +181,7 @@ storage.rules           Firebase Storage security rules
 - [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md): production launch checklist.
 - [BADGE_SYSTEM.md](./BADGE_SYSTEM.md): badge and achievement system notes.
 - [STORAGE_CORS_SETUP.md](./STORAGE_CORS_SETUP.md): Storage CORS configuration.
+- [MCP_INTEGRATION.md](./MCP_INTEGRATION.md): MCP metadata, endpoints, and onboarding checklist.
 
 ## Firebase Deployment
 

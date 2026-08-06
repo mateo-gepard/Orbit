@@ -139,29 +139,29 @@ const SECTIONS: SettingSection[] = [
 type McpIntegrationEndpoint = {
   key: TranslationKey;
   description: TranslationKey;
-  value: string;
+  path: string;
 };
 
 const MCP_INTEGRATION_ENDPOINTS = [
   {
     key: 'settings.mcpEndpoint',
     description: 'settings.mcpEndpointDesc',
-    value: 'https://threadmap.app/mcp',
+    path: '/mcp',
   },
   {
     key: 'settings.mcpWellKnownAuthorizationServer',
     description: 'settings.mcpWellKnownAuthorizationServerDesc',
-    value: 'https://threadmap.app/.well-known/oauth-authorization-server',
+    path: '/.well-known/oauth-authorization-server',
   },
   {
     key: 'settings.mcpWellKnownProtectedResource',
     description: 'settings.mcpWellKnownProtectedResourceDesc',
-    value: 'https://threadmap.app/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
   },
   {
     key: 'settings.mcpConsentUrl',
     description: 'settings.mcpConsentUrlDesc',
-    value: 'https://threadmap.app/integrations/authorize',
+    path: '/integrations/authorize',
   },
 ] satisfies McpIntegrationEndpoint[];
 
@@ -849,6 +849,7 @@ export default function SettingsPage() {
   const [mcpManagementError, setMcpManagementError] = useState<string | null>(null);
   const [mcpRevokingClientId, setMcpRevokingClientId] = useState<string | null>(null);
   const [mcpRevokingTokenFamilyId, setMcpRevokingTokenFamilyId] = useState<string | null>(null);
+  const [mcpRevokingClientSessions, setMcpRevokingClientSessions] = useState<string | null>(null);
   const [timezoneEditor, setTimezoneEditor] = useState<{
     savedValue: string;
     draft: string;
@@ -975,7 +976,7 @@ export default function SettingsPage() {
   }, [activeSection, user, isDemo]);
 
   const handleRevokeMcpClient = async (clientId: string) => {
-    if (!user || mcpRevokingClientId || mcpRevokingTokenFamilyId) return;
+    if (!user || mcpRevokingClientId || mcpRevokingTokenFamilyId || mcpRevokingClientSessions) return;
     if (!window.confirm(t('settings.mcpRevokeClientConfirm'))) return;
     setMcpRevokingClientId(clientId);
     try {
@@ -991,7 +992,7 @@ export default function SettingsPage() {
   };
 
   const handleRevokeMcpSession = async (tokenFamilyId: string) => {
-    if (!user || mcpRevokingClientId || mcpRevokingTokenFamilyId) return;
+    if (!user || mcpRevokingClientId || mcpRevokingTokenFamilyId || mcpRevokingClientSessions) return;
     if (!window.confirm(t('settings.mcpRevokeSessionConfirm'))) return;
     setMcpRevokingTokenFamilyId(tokenFamilyId);
     try {
@@ -1005,6 +1006,40 @@ export default function SettingsPage() {
       setMcpRevokingTokenFamilyId(null);
     }
   };
+
+  const handleRevokeAllMcpSessions = async (clientId: string) => {
+    const sessions = sessionsByClientId.get(clientId) || [];
+    if (!user || sessions.length < 1 || mcpRevokingClientId || mcpRevokingTokenFamilyId || mcpRevokingClientSessions) return;
+    if (!window.confirm(t('settings.mcpRevokeAllSessionsConfirm'))) return;
+    setMcpRevokingClientSessions(clientId);
+    try {
+      const results = await Promise.allSettled(
+        sessions.map((session) => revokeThreadmapMcpTokenFamily(session.tokenFamilyId))
+      );
+      const failedCount = results.filter((result) => (
+        result.status === 'rejected' || (result.status === 'fulfilled' && !result.value)
+      )).length;
+      if (failedCount > 0) {
+        throw new Error(
+          failedCount === 1
+            ? t('settings.mcpRevokeSessionFailed')
+            : t('settings.mcpRevokeAllSessionsFailed').replace('{count}', String(failedCount))
+        );
+      }
+      await loadMcpConnections();
+      toast.success(t('settings.mcpSessionsRevoked'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('settings.mcpRevokeAllSessionsFailed'));
+      await loadMcpConnections();
+    } finally {
+      setMcpRevokingClientSessions(null);
+    }
+  };
+
+  const mcpEndpointEntries = MCP_INTEGRATION_ENDPOINTS.map((endpoint) => ({
+    ...endpoint,
+    value: `${window.location.origin}${endpoint.path}`,
+  }));
 
   const sessionsByClientId = mcpTokenFamilies.reduce((acc, family) => {
     const bucket = acc.get(family.clientId) || [];
@@ -2040,12 +2075,12 @@ export default function SettingsPage() {
               </p>
 
               <div className="rounded-2xl border border-border/40 overflow-hidden">
-                {MCP_INTEGRATION_ENDPOINTS.map((endpoint, index) => (
+                {mcpEndpointEntries.map((endpoint, index) => (
                   <div
                     key={endpoint.key}
                     className={cn(
                       'px-4 py-3 text-sm',
-                      index < MCP_INTEGRATION_ENDPOINTS.length - 1 && 'border-b border-border/20'
+                      index < mcpEndpointEntries.length - 1 && 'border-b border-border/20'
                     )}
                   >
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground/70 mb-1.5">
@@ -2146,7 +2181,7 @@ export default function SettingsPage() {
                               <div className="flex flex-wrap gap-2 pt-1">
                                 <button
                                   type="button"
-                                  disabled={mcpRevokingClientId === client.clientId}
+                                  disabled={mcpRevokingClientId === client.clientId || mcpRevokingClientSessions !== null}
                                   onClick={() => void handleRevokeMcpClient(client.clientId)}
                                   className="rounded-lg border border-destructive/30 px-3 py-1.5 text-[11px] font-medium text-destructive/80 hover:bg-destructive/5 disabled:opacity-50"
                                 >
@@ -2162,6 +2197,23 @@ export default function SettingsPage() {
                                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
                                   {t('settings.mcpSessionsTitle')}
                                 </p>
+                                {sessionsForClient.length > 1 && (
+                                  <div className="flex items-center justify-between gap-2 text-[10px]">
+                                    <span className="text-muted-foreground/70">
+                                      {t('settings.mcpSessionsCount', { count: sessionsForClient.length })}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleRevokeAllMcpSessions(client.clientId)}
+                                      disabled={mcpRevokingClientSessions === client.clientId}
+                                      className="rounded-lg border border-destructive/30 px-2.5 py-1 font-medium text-destructive/85 hover:bg-destructive/5 disabled:opacity-50"
+                                    >
+                                      {mcpRevokingClientSessions === client.clientId
+                                        ? t('settings.mcpRevoking')
+                                        : t('settings.mcpRevokeAllSessions')}
+                                    </button>
+                                  </div>
+                                )}
                                 {sessionsForClient.map((session) => (
                                   <div
                                     key={session.tokenFamilyId}
@@ -2181,7 +2233,10 @@ export default function SettingsPage() {
                                     <button
                                       type="button"
                                       onClick={() => void handleRevokeMcpSession(session.tokenFamilyId)}
-                                      disabled={mcpRevokingTokenFamilyId === session.tokenFamilyId}
+                                      disabled={
+                                        mcpRevokingTokenFamilyId === session.tokenFamilyId
+                                        || mcpRevokingClientSessions === client.clientId
+                                      }
                                       className="shrink-0 rounded-lg border border-destructive/25 px-2.5 py-1 text-[10px] font-medium text-destructive/80 hover:bg-destructive/5 disabled:opacity-50"
                                     >
                                       {mcpRevokingTokenFamilyId === session.tokenFamilyId

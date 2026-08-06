@@ -137,6 +137,7 @@ export function createAuthorizationErrorRedirect(
 export interface ThreadmapOAuthConfiguration
   extends OAuthEndpointConfiguration, RedirectUriPolicy {
   ownerUid: string;
+  authorizationConsentUrl?: string;
   dynamicClientScopes?: readonly string[];
   accessTokenTtlSeconds?: number;
   refreshTokenTtlSeconds?: number;
@@ -147,6 +148,7 @@ export interface ThreadmapOAuthConfiguration
 export interface ResolvedThreadmapOAuthConfiguration
   extends OAuthEndpointConfiguration, RedirectUriPolicy {
   ownerUid: string;
+  authorizationConsentUrl: string;
   dynamicClientScopes: string[];
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
@@ -613,7 +615,9 @@ export function resolveThreadmapOAuthConfiguration(
 ): ResolvedThreadmapOAuthConfiguration {
   validateOAuthEndpointConfiguration(configuration);
   validateOwnerUid(configuration.ownerUid);
-  validateHttpsUrl(THREADMAP_AUTHORIZATION_CONSENT_URL, 'authorization consent URL', {
+  const authorizationConsentUrl = configuration.authorizationConsentUrl
+    || THREADMAP_AUTHORIZATION_CONSENT_URL;
+  const parsedAuthorizationConsentUrl = validateHttpsUrl(authorizationConsentUrl, 'authorization consent URL', {
     allowPath: true,
     allowQuery: false,
   });
@@ -638,6 +642,7 @@ export function resolveThreadmapOAuthConfiguration(
   return {
     ...configuration,
     ownerUid: configuration.ownerUid,
+    authorizationConsentUrl: parsedAuthorizationConsentUrl.toString(),
     scopesSupported: supportedScopes,
     dynamicClientScopes,
     configuredRedirectUris,
@@ -913,7 +918,7 @@ export class ThreadmapOAuthService {
       .create(document);
 
     return {
-      location: appendOAuthParameters(THREADMAP_AUTHORIZATION_CONSENT_URL, {
+      location: appendOAuthParameters(this.configuration.authorizationConsentUrl, {
         request: requestToken,
       }),
       expiresAt,
