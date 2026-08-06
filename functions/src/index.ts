@@ -53,6 +53,7 @@ const MCP_FUNCTION_SCOPES = Object.freeze([
   'threadmap.write',
   'offline_access',
 ]);
+const threadmapMcpServer = createThreadmapMcpServer(db);
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -271,6 +272,45 @@ function inferMcpFunctionBase(pathname: string): string {
   }
 
   return normalized === '/' ? '' : normalized;
+}
+
+function normalizeMcpPath(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  return normalized;
+}
+
+function mcpRelativePath(pathname: string, basePath: string): string {
+  const normalizedPath = normalizeMcpPath(pathname);
+  const normalizedBase = normalizePath(basePath);
+  if (!normalizedBase) {
+    return normalizedPath;
+  }
+  if (normalizedPath === normalizedBase) return '/';
+  if (normalizedPath.startsWith(`${normalizedBase}/`)) {
+    return normalizeMcpPath(normalizedPath.slice(normalizedBase.length));
+  }
+  return normalizedPath;
+}
+
+function parseJsonBody(body: unknown): unknown {
+  if (body === null || body === undefined || typeof body === 'object') return body;
+  if (typeof body === 'string') {
+    if (body.trim().length < 1) return {};
+    try {
+      return JSON.parse(body);
+    } catch {
+      throw new HttpsError('invalid-argument', 'Request body must be valid JSON.');
+    }
+  }
+  throw new HttpsError('invalid-argument', 'Request body format is unsupported.');
+}
+
+function isHttpMethod(method: string | undefined, expected: string): boolean {
+  return (method || '').toUpperCase() === expected;
+}
+
+function createThreadmapOAuthForRequest(request: HttpRequestLike) {
+  return createThreadmapOAuthService(db, buildThreadmapMcpConfiguration(request));
 }
 
 function normalizePath(path: string): string {
@@ -1018,6 +1058,278 @@ export const deleteThreadmapPushDevice = onCall(
       writePushRegistry(transaction, registrySnapshot, uid, deviceIds, Date.now());
     });
     return { success: true };
+  }
+);
+
+export const threadmapMcpGateway = onRequest(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async (request, response) => {
+    const oauthService = createThreadmapOAuthForRequest(request);
+    const pathname = requestPathname(request);
+    const basePath = inferMcpFunctionBase(pathname);
+    const endpoint = mcpRelativePath(pathname, basePath);
+
+    if (isHttpMethod(request.method, 'OPTIONS')) {
+      response.set('Allow', 'GET, POST').set('Cache-Control', 'no-store').status(204).end();
+      return;
+    }
+
+    try {
+      if (endpoint === '/.well-known/oauth-authorization-server') {
+        if (!isHttpMethod(request.method, 'GET')) {
+          response.set('Allow', 'GET').status(405).json({ error: 'method_not_allowed' });
+          return;
+        }
+        response
+          .status(200)
+          .set(OAUTH_JSON_HEADERS)
+          .json(oauthService.authorizationServerMetadata());
+        return;
+      }
+
+      if (endpoint === '/.well-known/oauth-protected-resource') {
+        if (!isHttpMethod(request.method, 'GET')) {
+          response.set('Allow', 'GET').status(405).json({ error: 'method_not_allowed' });
+          return;
+        }
+        response
+          .status(200)
+          .set(OAUTH_JSON_HEADERS)
+          .json(oauthService.protectedResourceMetadata());
+        return;
+      }
+
+      if (endpoint === '/authorize') {
+        if (!isHttpMethod(request.method, 'GET')) {
+          response.set('Allow', 'GET').status(405).json({ error: 'method_not_allowed' });
+          return;
+        }
+        try {
+          const result = await oauthService.startAuthorization(request.query || {});
+          response.redirect(302, result.location);
+          return;
+        } catch (error) {
+          const errorRedirect = createAuthorizationErrorRedirect(error as Error);
+          if (errorRedirect) {
+            response.redirect(302, errorRedirect);
+            return;
+          }
+          const serialized = serializeOAuthError(error);
+          response
+            .status(serialized.status)
+            .set(OAUTH_JSON_HEADERS)
+            .json(serialized.body);
+          return;
+        }
+      }
+
+      if (endpoint === '/register') {
+        if (!isHttpMethod(request.method, 'POST')) {
+          response.set('Allow', 'POST').status(405).json({ error: 'method_not_allowed' });
+          return;
+        }
+        const result = await oauthService.registerClient(parseJsonBody(request.body));
+        response.status(200).set(OAUTH_JSON_HEADERS).json(result);
+        return;
+      }
+
+      if (endpoint === '/token') {
+        if (!isHttpMethod(request.method, 'POST')) {
+          response.set('Allow', 'POST').status(405).json({ error: 'method_not_allowed' });
+          return;
+        }
+        const result = await oauthService.exchangeToken(
+          parseJsonBody(request.body),
+          request.get('authorization')
+        );
+        response.status(200).set(OAUTH_JSON_HEADERS).json(result);
+        return;
+      }
+
+      if (endpoint === '/revoke') {
+        if (!isHttpMethod(request.method, 'POST')) {
+          response.set('Allow', 'POST').status(405).json({ error: 'method_not_allowed' });
+          return;
+        }
+        const result = await oauthService.revokeToken(
+          parseJsonBody(request.body),
+          request.get('authorization')
+        );
+        response.status(200).set(OAUTH_JSON_HEADERS).json(result);
+        return;
+      }
+
+      if (endpoint === '/' || endpoint === '/mcp') {
+        if (!isHttpMethod(request.method, 'POST')) {
+          response.set('Allow', 'POST').status(405).json({ error: 'method_not_allowed' });
+          return;
+        }
+        const authorization = request.get('authorization');
+        const accessToken = parseBearerToken(authorization);
+        if (!accessToken) {
+          response
+            .set('WWW-Authenticate', oauthService.bearerChallenge(['threadmap.read']))
+            .status(401)
+            .set(OAUTH_JSON_HEADERS)
+            .json({
+              error: 'invalid_token',
+              error_description: 'Bearer access token missing.',
+            });
+          return;
+        }
+        const principal = await oauthService.authenticateAccessToken(accessToken, []);
+        const requestPayload = parseJsonBody(request.body);
+        const dispatchResult = await threadmapMcpServer.handle(requestPayload, {
+          principal,
+          protocolVersion: request.get('mcp-protocol-version') || undefined,
+        });
+        for (const [name, value] of Object.entries(dispatchResult.headers)) {
+          response.set(name, value);
+        }
+        if (dispatchResult.body === undefined) {
+          response.status(dispatchResult.status).end();
+          return;
+        }
+        response
+          .status(dispatchResult.status)
+          .json(dispatchResult.body);
+        return;
+      }
+
+      response.status(404).json({ error: 'not_found' });
+    } catch (error) {
+      const serialized = serializeOAuthError(error);
+      if (endpoint === '/' || endpoint === '/mcp') {
+        const status = serialized.status;
+        if (status === 401 || status === 403) {
+          response
+            .set('WWW-Authenticate', oauthService.bearerChallenge(['threadmap.read']))
+            .status(status)
+            .set(OAUTH_JSON_HEADERS)
+            .json(serialized.body);
+          return;
+        }
+      }
+      response
+        .status(serialized.status)
+        .set(OAUTH_JSON_HEADERS)
+        .json(serialized.body);
+    }
+  }
+);
+
+export const getThreadmapMcpAuthorizationRequest = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 20,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['request']) || typeof data.request !== 'string') {
+      throw new HttpsError('invalid-argument', 'The authorization request must include a request token.');
+    }
+    const oauthService = createThreadmapOAuthService(
+      db,
+      {
+        ownerUid: MCP_DEFAULT_OWNER_UID,
+        issuer: 'https://threadmap.app',
+        resource: 'https://threadmap.app',
+        authorizationEndpoint: 'https://threadmap.app/authorize',
+        tokenEndpoint: 'https://threadmap.app/token',
+        registrationEndpoint: 'https://threadmap.app/register',
+        revocationEndpoint: 'https://threadmap.app/revoke',
+        protectedResourceMetadataUrl: 'https://threadmap.app/.well-known/oauth-protected-resource',
+        scopesSupported: MCP_FUNCTION_SCOPES,
+        resourceName: 'Threadmap',
+      }
+    );
+    const subject = requireUid(request);
+    if (subject !== MCP_DEFAULT_OWNER_UID) {
+      throw new HttpsError('permission-denied', 'Only the configured owner may view authorization requests.');
+    }
+    return oauthService.getAuthorizationRequest(data.request, subject);
+  }
+);
+
+export const approveThreadmapMcpAuthorizationRequest = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 20,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['request', 'approvedScopes'])) {
+      throw new HttpsError('invalid-argument', 'The approval request contains unsupported fields.');
+    }
+    if (typeof data.request !== 'string') {
+      throw new HttpsError('invalid-argument', 'The request token is invalid.');
+    }
+    const oauthService = createThreadmapOAuthService(
+      db,
+      {
+        ownerUid: MCP_DEFAULT_OWNER_UID,
+        issuer: 'https://threadmap.app',
+        resource: 'https://threadmap.app',
+        authorizationEndpoint: 'https://threadmap.app/authorize',
+        tokenEndpoint: 'https://threadmap.app/token',
+        registrationEndpoint: 'https://threadmap.app/register',
+        revocationEndpoint: 'https://threadmap.app/revoke',
+        protectedResourceMetadataUrl: 'https://threadmap.app/.well-known/oauth-protected-resource',
+        scopesSupported: MCP_FUNCTION_SCOPES,
+        resourceName: 'Threadmap',
+      }
+    );
+    const uid = requireUid(request);
+    const result = await oauthService.approveAuthorizationRequest(
+      data.request,
+      uid,
+      data.approvedScopes
+    );
+    return result;
+  }
+);
+
+export const denyThreadmapMcpAuthorizationRequest = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 20,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['request'])) {
+      throw new HttpsError('invalid-argument', 'The denial request contains unsupported fields.');
+    }
+    if (typeof data.request !== 'string') {
+      throw new HttpsError('invalid-argument', 'The request token is invalid.');
+    }
+    const oauthService = createThreadmapOAuthService(
+      db,
+      {
+        ownerUid: MCP_DEFAULT_OWNER_UID,
+        issuer: 'https://threadmap.app',
+        resource: 'https://threadmap.app',
+        authorizationEndpoint: 'https://threadmap.app/authorize',
+        tokenEndpoint: 'https://threadmap.app/token',
+        registrationEndpoint: 'https://threadmap.app/register',
+        revocationEndpoint: 'https://threadmap.app/revoke',
+        protectedResourceMetadataUrl: 'https://threadmap.app/.well-known/oauth-protected-resource',
+        scopesSupported: MCP_FUNCTION_SCOPES,
+        resourceName: 'Threadmap',
+      }
+    );
+    const uid = requireUid(request);
+    const result = await oauthService.denyAuthorizationRequest(data.request, uid);
+    return result;
   }
 );
 
