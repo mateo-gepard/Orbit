@@ -20,6 +20,7 @@ const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 const TOKEN_STORAGE_KEY = 'orbit-google-token';
 const TOKEN_EXPIRY_KEY = 'orbit-google-token-expiry';
 const GOOGLE_IDENTITY_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
+const POPUP_DISABLED_HINT = 'google-calendar-popup-blocked';
 
 // ═══════════════════════════════════════════════════════════
 // Google Calendar Types
@@ -62,6 +63,28 @@ interface GoogleTokenClientConfig {
   client_id: string;
   scope: string;
   callback: (response: GoogleTokenResponse) => void;
+}
+
+function normalizeCalendarPermissionError(error: unknown): string {
+  if (typeof error !== 'string') {
+    if (!error) return 'Google Calendar permission request failed.';
+    return String(error);
+  }
+  const normalized = error.toLowerCase();
+  if (
+    normalized.includes('popup')
+    || normalized.includes('blocked')
+    || normalized.includes('window.closed')
+    || normalized.includes('not_allowed')
+    || normalized.includes('denied')
+  ) {
+    return POPUP_DISABLED_HINT;
+  }
+  return error;
+}
+
+export function isCalendarPopupBlockedError(errorMessage: string): boolean {
+  return errorMessage === POPUP_DISABLED_HINT;
 }
 
 class GoogleCalendarApiError extends Error {
@@ -170,6 +193,32 @@ const activeCalendarRequests = new Set<AbortController>();
 const CALENDAR_REQUEST_TIMEOUT_MS = 20_000;
 const MAX_CALENDAR_RESPONSE_BYTES = 5 * 1024 * 1024;
 const MAX_CALENDAR_ERROR_BYTES = 64 * 1024;
+const POPUP_TEST_WINDOW_NAME = 'threadmap-calendar-popup-check';
+const POPUP_TEST_FEATURES = 'noopener=yes,width=1,height=1,left=-10000,top=-10000';
+
+function canUsePopupWindow(): boolean {
+  if (process.env.NODE_ENV === 'test') {
+    return true;
+  }
+  if (typeof window === 'undefined' || typeof window.open !== 'function') {
+    return false;
+  }
+  let probe: Window | null = null;
+  try {
+    probe = window.open('', POPUP_TEST_WINDOW_NAME, POPUP_TEST_FEATURES);
+  } catch (error) {
+    console.warn('[THREADMAP Google Calendar] Popup capability probe failed:', error);
+    return false;
+  }
+  if (!probe) return false;
+  try {
+    probe.close();
+  } catch {
+    // Ignore: if close fails, the popup window itself is still present and may
+    // still indicate the environment supports it.
+  }
+  return true;
+}
 
 export function cancelPendingGoogleCalendarRequests(): void {
   for (const controller of activeCalendarRequests) {
@@ -384,6 +433,9 @@ export async function requestCalendarPermission(): Promise<string> {
   if (!google?.accounts?.oauth2) {
     throw new Error('Google Calendar authorization is still loading. Try again in a moment.');
   }
+  if (!canUsePopupWindow()) {
+    throw new Error(POPUP_DISABLED_HINT);
+  }
 
   return new Promise((resolve, reject) => {
     const client: GoogleTokenClient = google.accounts.oauth2.initTokenClient({
@@ -391,7 +443,7 @@ export async function requestCalendarPermission(): Promise<string> {
       scope: SCOPES.join(' '),
       callback: (response: GoogleTokenResponse) => {
         if (response.error) {
-          reject(new Error(response.error));
+          reject(new Error(normalizeCalendarPermissionError(response.error)));
           return;
         }
         try {

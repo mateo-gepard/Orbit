@@ -60,6 +60,7 @@ import {
   clearGoogleAccessToken,
   hasCalendarPermission,
   prepareGoogleCalendarPermission,
+  isCalendarPopupBlockedError,
   requestCalendarPermission,
 } from '@/lib/google-calendar';
 import {
@@ -1354,11 +1355,19 @@ export default function SettingsPage() {
       setCalendarConnected(true);
       startGoogleCalendarSync(user.uid);
       toast.success(t('settings.calendarSyncEnabled'));
-    } catch {
+    } catch (error) {
       stopGoogleCalendarSync();
       clearGoogleAccessToken();
       setCalendarConnected(false);
-      toast.error(t('settings.calendarConnectError'));
+      const fallbackMessage = t('settings.calendarConnectError');
+      const message = error instanceof Error && error.message ? error.message : fallbackMessage;
+      if (message === 'calendar-permission-denied') {
+        toast.error(fallbackMessage);
+      } else if (isCalendarPopupBlockedError(message)) {
+        toast.error(t('settings.calendarPopupBlocked'));
+      } else {
+        toast.error(message);
+      }
     } finally {
       setCalendarConnecting(false);
     }

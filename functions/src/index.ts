@@ -324,6 +324,80 @@ function parseJsonBody(body: unknown): unknown {
   throw new HttpsError('invalid-argument', 'Request body format is unsupported.');
 }
 
+function parseUrlencodedBody(body: string): Record<string, string | string[]> {
+  const params = new URLSearchParams(body);
+  const payload: Record<string, string | string[]> = {};
+  for (const [name, value] of params.entries()) {
+    const existing = payload[name];
+    if (existing === undefined) {
+      payload[name] = value;
+      continue;
+    }
+    payload[name] = Array.isArray(existing)
+      ? [...existing, value]
+      : [existing, value];
+  }
+  return payload;
+}
+
+function parseRequestBody(
+  body: unknown,
+  contentType: string | null | undefined
+): unknown {
+  if (body === null || body === undefined || body === '') return {};
+  if (typeof body === 'object') return body;
+  if (typeof body !== 'string') {
+    throw new HttpsError('invalid-argument', 'Request body format is unsupported.');
+  }
+  const normalizedContentType = (contentType || '').toLowerCase();
+  if (normalizedContentType.includes('application/x-www-form-urlencoded')) {
+    if (body.trim().length < 1) return {};
+    return parseUrlencodedBody(body);
+  }
+  if (body.trim().length < 1) return {};
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new HttpsError('invalid-argument', 'Request body must be valid JSON or form-encoded.');
+  }
+}
+
+function parseOAuthArrayField(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Fall back to generic field parsing.
+    }
+  }
+  return trimmed
+    .split(/[\s,]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeOAuthRequestBody(body: unknown): unknown {
+  if (!isRecord(body)) return body;
+  const normalized = { ...body };
+  if ('redirect_uris' in normalized) normalized.redirect_uris = parseOAuthArrayField(normalized.redirect_uris);
+  if ('grant_types' in normalized) normalized.grant_types = parseOAuthArrayField(normalized.grant_types);
+  if ('response_types' in normalized) normalized.response_types = parseOAuthArrayField(normalized.response_types);
+  return normalized;
+}
+
 function isHttpMethod(method: string | undefined, expected: string): boolean {
   return (method || '').toUpperCase() === expected;
 }
@@ -1112,13 +1186,47 @@ export const threadmapMcpGateway = onRequest(
     memory: '256MiB',
   },
   async (request, response) => {
+    const requestedHeaders = (request.get('access-control-request-headers') || '')
+      .toLowerCase()
+      .split(',')
+      .map((header) => header.trim())
+      .filter(Boolean);
+    const normalizedHeaders = new Set(['authorization', 'content-type', 'mcp-protocol-version']);
+    for (const header of requestedHeaders) normalizedHeaders.add(header);
+    const allHeaders = new Set<string>(normalizedHeaders);
+    const existingCorsHeaders = response.getHeader('Access-Control-Allow-Headers');
+    if (Array.isArray(existingCorsHeaders)) {
+      for (const header of existingCorsHeaders) {
+        for (const value of header.split(',').map((value) => value.trim().toLowerCase())) {
+          if (value) allHeaders.add(value);
+        }
+      }
+    } else if (typeof existingCorsHeaders === 'string') {
+      for (const value of existingCorsHeaders.split(',').map((value) => value.trim().toLowerCase())) {
+        if (value) allHeaders.add(value);
+      }
+    }
+
+    if (typeof response.removeHeader === 'function') {
+      response.removeHeader('Access-Control-Allow-Headers');
+    }
+    response
+      .set('Access-Control-Allow-Origin', '*')
+      .set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      .set('Access-Control-Allow-Headers', [...allHeaders].join(','))
+      .set('Access-Control-Max-Age', '600')
+      .set('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
     const oauthService = createThreadmapOAuthForRequest(request);
     const pathname = requestPathname(request);
     const basePath = inferMcpFunctionBase(pathname);
     const endpoint = mcpRelativePath(pathname, basePath);
 
     if (isHttpMethod(request.method, 'OPTIONS')) {
-      response.set('Allow', 'GET, POST').set('Cache-Control', 'no-store').status(204).end();
+      response
+        .set('Allow', 'GET, POST, OPTIONS')
+        .set('Cache-Control', 'no-store')
+        .status(204)
+        .end();
       return;
     }
 
@@ -1176,7 +1284,10 @@ export const threadmapMcpGateway = onRequest(
           response.set('Allow', 'POST').status(405).json({ error: 'method_not_allowed' });
           return;
         }
-        const result = await oauthService.registerClient(parseJsonBody(request.body));
+        const body = normalizeOAuthRequestBody(
+          parseRequestBody(request.body, request.get('content-type'))
+        );
+        const result = await oauthService.registerClient(body);
         response.status(200).set(OAUTH_JSON_HEADERS).json(result);
         return;
       }
@@ -1186,10 +1297,8 @@ export const threadmapMcpGateway = onRequest(
           response.set('Allow', 'POST').status(405).json({ error: 'method_not_allowed' });
           return;
         }
-        const result = await oauthService.exchangeToken(
-          parseJsonBody(request.body),
-          request.get('authorization')
-        );
+        const body = parseRequestBody(request.body, request.get('content-type'));
+        const result = await oauthService.exchangeToken(body, request.get('authorization'));
         response.status(200).set(OAUTH_JSON_HEADERS).json(result);
         return;
       }
@@ -1199,10 +1308,8 @@ export const threadmapMcpGateway = onRequest(
           response.set('Allow', 'POST').status(405).json({ error: 'method_not_allowed' });
           return;
         }
-        const result = await oauthService.revokeToken(
-          parseJsonBody(request.body),
-          request.get('authorization')
-        );
+        const body = parseRequestBody(request.body, request.get('content-type'));
+        const result = await oauthService.revokeToken(body, request.get('authorization'));
         response.status(200).set(OAUTH_JSON_HEADERS).json(result);
         return;
       }

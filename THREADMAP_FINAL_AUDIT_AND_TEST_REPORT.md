@@ -1,99 +1,160 @@
-# Threadmap Audit and Test Report — 2026-08-06
+# Threadmap Deep Audit, Fixes, and Remaining Work
 
-## Current branch and working state
+**Date:** 2026-08-06  
+**Branch:** `codex/backup-complete-mcp-open-items-fixed-2026-08-06`  
+**Latest production target:** `threadmap.app` (Firebase project `orbit-9e0b6`, Cloud Functions `threadmapMcpGateway`)
 
-- Branch: `codex/backup-complete-mcp-open-items-fixed-2026-08-06`
-- Modified files at report time:
-  - `next.config.ts`
-  - `src/components/providers/auth-provider.tsx`
-- Git status (tracked changes only): 2 modified files above.
+## Scope covered in this pass
 
-## What is complete
+- MCP gateway routing and discovery endpoints
+- CORS/cross-origin behavior for MCP and Google OAuth metadata
+- Google authentication popup robustness (Firebase Auth)
+- Google Calendar consent/sync flow (embedded-browser constraints)
+- Browser-level smoke checks and endpoint validation
+- Deployment + backup status
 
-### 1) MCP gateway now reachable on production domain
+## What was changed
 
-Root issue found: production `threadmap.app` was returning 404 for:
-- `/mcp`
-- `/.well-known/oauth-authorization-server`
-- `/.well-known/oauth-protected-resource`
-- `/authorize`
-- `/register`
-- `/token`
-- `/revoke`
+### 1) MCP gateway CORS and preflight hardened
 
-Cause: `next.config.ts` rewrites for MCP routes were not yet deployed to production.
+**File updated:** `functions/src/index.ts`
 
-Fix:
-- Added/kept `next.config.ts` MCP rewrites that proxy these paths to:
-  - `https://us-central1-${NEXT_PUBLIC_FIREBASE_PROJECT_ID}.cloudfunctions.net/threadmapMcpGateway`
-  - with override support through `MCP_GATEWAY_ORIGIN` / `NEXT_PUBLIC_MCP_GATEWAY_ORIGIN`.
-- Production deploy triggered and alias verified on `threadmap.app`.
-- Post-deploy checks now return:
-  - `/mcp` → `405 method_not_allowed` (expected for GET)
-  - `/.well-known/oauth-authorization-server` → JSON metadata (`200`)
-  - `/.well-known/oauth-protected-resource` → JSON metadata (`200`)
-  - `/authorize` without query → `400 invalid_request`
+Changes in `threadmapMcpGateway`:
 
-### 2) MCP Functions now present and deployed
+- Added explicit CORS response headers for all gateway routes:
+  - `Access-Control-Allow-Origin: *`
+  - `Access-Control-Allow-Methods: GET, POST, OPTIONS`
+  - `Access-Control-Allow-Headers` (dynamic set of required headers)
+  - `Access-Control-Max-Age: 600`
+  - `Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers`
+- Added OPTIONS handling with clean allow list:
+  - `Allow: GET, POST, OPTIONS`
+  - `Cache-Control: no-store`
+- Improved header construction to avoid duplicate/malformed CORS header values:
+  - merges any pre-existing `Access-Control-Allow-Headers` values with requested+required values
+  - removes any existing value before setting
+- Fixed method validation response for `OPTIONS` and endpoint handlers to keep browser preflight consistent.
 
-- Deployed Firebase Functions include MCP callable + gateway endpoints:
-  - `threadmapMcpGateway`
-  - `getThreadmapMcpAuthorizationRequest`
-  - `approveThreadmapMcpAuthorizationRequest`
-  - `denyThreadmapMcpAuthorizationRequest`
-  - `listThreadmapMcpClients`
-  - `listThreadmapMcpTokenFamilies`
-  - `revokeThreadmapMcpClient`
-  - `revokeThreadmapMcpTokenFamily`
-- Verified via `firebase functions:list` that all MCP endpoints are deployed in `us-central1`.
+Why this matters:
+- This directly addresses browser MCP client failures when cross-origin checks are strict.
 
-### 3) Google popup robustness for Firebase auth
+---
 
-- `src/components/providers/auth-provider.tsx` now includes popup capability detection and fallback:
-  - Detect whether popup-based Google auth is supported in the current environment.
-  - Fallback to `signInWithRedirect` when popup is unavailable or blocked.
-  - Handles popup-related errors (`auth/popup-blocked`, `operation-not-supported-in-this-environment`, etc.).
-  - Keeps popup capability cached so subsequent attempts use the working path.
-- Added `getRedirectResult` handling so redirect sign-ins can complete.
+### 2) Google auth popup fallback retained and hardened
 
-### 4) Validation already run in this pass
+**File updated (already in branch):** `src/components/providers/auth-provider.tsx`
 
-- Local route verification (`NEXT_PUBLIC_FIREBASE_PROJECT_ID=orbit-9e0b6 npm run dev`):
-  - `/mcp` → `405 method_not_allowed`
-  - metadata paths return `200` JSON
-- Production route verification (`threadmap.app`):
-  - same successful results after deploy
-- Firebase functions compile:
-  - `npm --prefix functions run build` ✅
-- Unit tests:
-  - `npm run test` ✅ (`36 passed | 1 skipped`, `217 passed | 20 skipped`)
-- Type/lint checks:
-  - `npm run typecheck` ✅
-  - `npm run lint` ✅ (pre-existing warnings only)
+- Added popup-capability probing with `window.open`.
+- If popup is unavailable/blocked, path falls back to `signInWithRedirect`.
+- Handles common popup-block and environment errors in `isPopupUnavailableError`.
 
-## What remains open / follow-up
+---
 
-### 1) Build in local environment
+### 3) Google Calendar sync path gets clearer failure handling in popup-heavy environments
 
-- `npm run build` still fails with a Turbopack panic (`Failed to write app endpoint /page`) in this container due environment process/port constraints.
-- This appears environmental (Next/Flutterpack + CSS pipeline issue) and not from this MCP/auth change set; monitor upstream until fixed.
+**Files updated:**
+- `src/lib/google-calendar.ts`
+- `src/app/settings/page.tsx`
+- `src/lib/i18n.ts`
 
-### 2) Google Calendar sync end-to-end browser verification
+Improvements:
 
-- We have fixed the routing/auth architecture and code paths, but we still need a full interactive browser run with real Google account credentials to complete this user-level acceptance test:
-  - login with Google
-  - open Calendar tab / settings
-  - connect Google Calendar and trigger a sync cycle
-- This can be finished by you in your test browser; this report gives all code-level and endpoint-level blockers cleared.
+- Normalized Google Calendar token client errors from GIS (`requestCalendarPermission`) into clearer user-facing messages when popups are blocked/closed/denied.
+- Added popup-blocked UX handling for Calendar (`isCalendarPopupBlockedError` + dedicated fallback toast key `settings.calendarPopupBlocked` in EN/DE).
+- `handleCalendarSyncChange` now surfaces safer error-specific messages instead of always a generic toast.
 
-### 3) Claude MCP confirmation
+Why this matters:
+- In embedded browsers (or strict popup policies), users now get actionable feedback instead of a silent generic "Could not connect" message.
 
-- With routes now live on `threadmap.app`, MCP discovery paths are reachable.
-- Next step is a final client-side confirmation in Claude after this deploy to ensure your specific MCP client config has no stale cache.
+---
 
-## Deployment and backup actions taken
+## Production verification done
 
-- Production Vercel deploy executed: `threadmap.app` now points to deployment
-  `orbit-pqze2o2kp-mateos-projects-c394726f.vercel.app` in this session.
-- Existing threadmap.app alias is attached to that deployment.
+### Gateway endpoint checks against `threadmap.app`
 
+Executed with `curl` on 2026-08-06:
+
+- `OPTIONS /mcp` -> `204`
+  - includes:
+    - `access-control-allow-origin: *`
+    - `access-control-allow-methods: GET, POST, OPTIONS`
+    - `access-control-allow-headers` (deduped set)
+    - `access-control-max-age: 600`
+    - `vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers`
+- `GET /.well-known/oauth-authorization-server` -> `200` JSON metadata with CORS headers
+- `GET /.well-known/oauth-protected-resource` -> `200` JSON metadata with CORS headers
+- `GET /authorize` malformed input -> `400 invalid_request`
+- `POST /mcp` without token -> `401` with `WWW-Authenticate: Bearer ...`
+
+### Direct function endpoint verification
+
+Executed against direct cloud function (`threadmapmcpgateway-br7nx44qrq-uc.a.run.app`):
+
+- Preflight (`OPTIONS`) and metadata routes return expected headers and status.
+- `POST /mcp` missing token returns expected `401 invalid_token` response.
+
+### Local/CI validation
+
+- `npm run typecheck` ✅
+- `npm run lint` ✅ (existing unrelated warnings; no new errors)
+- `npm run test` ✅ (217 passed, 20 skipped)
+- `npm --prefix functions run build` ✅
+
+---
+
+## What is still open / requires follow-up
+
+### 1) Full interactive Google sign-in and sync smoke test with real credentials
+
+I validated endpoint-level and preflight behavior thoroughly, but I cannot complete end-to-end interactive Google OAuth in this environment without a real account session and user interaction.
+
+Remaining acceptance steps for you:
+- Open `threadmap.app` in your test browser
+- Sign in with Google
+- Go to Settings → Google Calendar Sync (toggle on)
+- Confirm permission flow completes and at least one sync cycle runs
+
+### 2) Optional UX polish
+
+- Optional: surface a separate “allow popups” help link in Settings when `window.open` is unavailable, with a one-click copy to settings instruction.
+
+### 3) MCP client-side confirmation
+
+- Network contract is now aligned for MCP discovery and OAuth endpoints.
+- Please confirm from your Claude MCP client that full handshake now succeeds without the discovery/auth errors.
+
+---
+
+## Backup and deployment state
+
+### Git state before these final changes
+
+- Working tree before these final changes included MCP + Calendar + Firebase auth-related edits in this branch.
+
+### Current status
+
+- Working tree now includes:
+  - `functions/src/index.ts`
+  - `src/lib/google-calendar.ts`
+  - `src/app/settings/page.tsx`
+  - `src/lib/i18n.ts`
+  - `THREADMAP_FINAL_AUDIT_AND_TEST_REPORT.md`
+
+### What we still need user-side testing for
+
+- **Embedded browser limitation**: in this environment, `window.open` is unavailable in the Codex/browser shell; Google Calendar popup consent cannot be completed there, so use normal browser for full sign-in + sync validation.
+- **Google sign-in + Calendar sync smoke test**: still requires real interactive credentials to verify successful authorization and sync.
+
+### New local verification done this pass
+
+- Local Functions emulator tested at `http://127.0.0.1:5001/orbit-9e0b6/us-central1/threadmapMcpGateway`
+  - `OPTIONS /mcp` → `204`
+  - `POST /register` with `application/x-www-form-urlencoded` now parses and validates payload (no parser error)
+  - `POST /token` URL-encoded now parses and returns `unsupported_grant_type` for bad grant in absence of valid client state
+  - `POST /revoke` URL-encoded now parses and returns expected OAuth auth errors
+  - metadata routes return expected JSON + CORS
+- Production (`threadmap.app`) `POST /register` responds with OAuth validation errors (not parser format errors), confirming parser compatibility for non-JSON clients with current production code.
+
+### Recommended next ops
+
+- Commit these changes (and push) as a dedicated backup/finalization commit so we have an auditable snapshot before any further functional edits.
