@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkRateLimit } from '@/lib/server/rate-limit';
-import { fetchPublicUrl } from '@/lib/server/url-safety';
+import {
+  acquireConcurrency,
+  checkDistributedScrapeRateLimit,
+  checkRateLimit,
+} from '@/lib/server/rate-limit';
+import { fetchPublicUrl, readResponseText } from '@/lib/server/url-safety';
+import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — URL Metadata Scraper
@@ -15,6 +20,33 @@ export interface ScrapeResult {
   currency?: string;
   description?: string;
   siteName?: string;
+}
+
+function bounded(value: string | undefined, maxLength: number): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : undefined;
+}
+
+function safeImageUrl(value: string | undefined): string | undefined {
+  if (!value || value.length > 2_048) return undefined;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeResult(result: ScrapeResult): ScrapeResult {
+  const price = result.price?.match(/^\d{1,8}(?:\.\d{1,2})?$/)?.[0];
+  return {
+    title: bounded(result.title, 500),
+    image: safeImageUrl(result.image),
+    price,
+    currency: bounded(result.currency?.toUpperCase(), 8),
+    description: bounded(result.description, 2_000),
+    siteName: bounded(result.siteName, 200),
+  };
 }
 
 function extractMeta(html: string, url: string): ScrapeResult {
@@ -163,11 +195,24 @@ function titleFromUrl(parsed: URL): string | null {
     .trim();
   if (cleaned.length < 3) return null;
   // Title-case
-  return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
+  return cleaned.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 500);
 }
 
 export async function GET(request: NextRequest) {
-  const rateLimited = checkRateLimit(request, { name: 'scrape-url', max: 20, windowMs: 60_000 });
+  const preAuthLimited = checkRateLimit(request, {
+    name: 'scrape-auth', max: 30, windowMs: 60_000,
+  });
+  if (preAuthLimited) return preAuthLimited;
+
+  let user;
+  try {
+    user = await requireFirebaseUser(request);
+  } catch (error) {
+    return authErrorResponse(error) || NextResponse.json({ error: 'Authentication failed.' }, { status: 500 });
+  }
+  const rateLimited = checkRateLimit(request, {
+    name: 'scrape-url', max: 10, windowMs: 60_000, identity: user.uid,
+  });
   if (rateLimited) return rateLimited;
 
   const url = request.nextUrl.searchParams.get('url');
@@ -175,10 +220,25 @@ export async function GET(request: NextRequest) {
   if (!url) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
   }
+  if (url.length > 2_048) {
+    return NextResponse.json({ error: 'URL too long' }, { status: 400 });
+  }
 
+  const sharedRateLimited = await checkDistributedScrapeRateLimit(request, user.uid);
+  if (sharedRateLimited) return sharedRateLimited;
+
+  const release = acquireConcurrency('scrape', user.uid, 2);
+  if (!release) {
+    return NextResponse.json(
+      { code: 'SCRAPE_BUSY', error: 'Too many product imports are already running.' },
+      { status: 429, headers: { 'Retry-After': '5', 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    timeout = setTimeout(() => controller.abort(), 8000);
 
     // Use realistic browser headers — many sites block bot-like User-Agents
     const { response, url: parsedUrl } = await fetchPublicUrl(url, {
@@ -197,9 +257,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       // Fallback: try to extract a title from the URL path
       const fallback = titleFromUrl(parsedUrl);
       if (fallback) {
@@ -212,29 +271,14 @@ export async function GET(request: NextRequest) {
 
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+      await response.body?.cancel().catch(() => {});
       return NextResponse.json({ error: 'Not an HTML page' }, { status: 400 });
     }
 
-    // Read first 300KB — some sites (Amazon) have images deep in the page
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return NextResponse.json({ error: 'No response body' }, { status: 502 });
-    }
+    // The same hard deadline covers headers, redirects, and the bounded body.
+    const html = await readResponseText(response, 300_000);
 
-    let html = '';
-    const decoder = new TextDecoder();
-    const maxBytes = 300_000;
-    let bytesRead = 0;
-
-    while (bytesRead < maxBytes) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      html += decoder.decode(value, { stream: true });
-      bytesRead += value.length;
-    }
-    reader.cancel();
-
-    const result = extractMeta(html, parsedUrl.href);
+    const result = sanitizeResult(extractMeta(html, parsedUrl.href));
 
     return NextResponse.json(result, {
       headers: {
@@ -244,10 +288,14 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[THREADMAP] Scrape error:', message);
+    if ((err as { name?: string })?.name === 'AbortError') {
+      return NextResponse.json({ error: 'Product lookup timed out.' }, { status: 504 });
+    }
     if (
       message.includes('Local network') ||
       message.includes('Only http') ||
       message.includes('embedded credentials') ||
+      message.includes('Non-standard') ||
       message.includes('could not be resolved') ||
       message.includes('Too many redirects')
     ) {
@@ -263,6 +311,9 @@ export async function GET(request: NextRequest) {
         });
       }
     } catch { /* ignore */ }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: 'Product lookup failed.' }, { status: 502 });
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    release();
   }
 }

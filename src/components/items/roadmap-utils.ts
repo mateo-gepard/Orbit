@@ -28,6 +28,7 @@ const EDGE_DEPENDENCY = {
 export function buildRoadmapGraph(
   project: OrbitItem,
   allItems: OrbitItem[],
+  options: { dependencyLabel?: string } = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -46,7 +47,6 @@ export function buildRoadmapGraph(
     });
 
   // ── Collect tasks per milestone ──
-  const milestoneIds = new Set(milestones.map(m => m.id));
   const tasksByMilestone = new Map<string, OrbitItem[]>();
 
   for (const ms of milestones) {
@@ -123,8 +123,7 @@ export function buildRoadmapGraph(
   const TASK_COLS_PER_MS = 2; // Tasks laid out in 2 columns under each milestone
 
   // Calculate column widths
-  const colWidths = columns.map(col => {
-    const taskRows = Math.ceil(Math.min(col.tasks.length, COL_MAX_TASKS) / TASK_COLS_PER_MS);
+  const colWidths = columns.map(() => {
     const taskGridWidth = TASK_COLS_PER_MS * (NODE_W + H_GAP) - H_GAP;
     return Math.max(MS_NODE_W, taskGridWidth);
   });
@@ -258,7 +257,7 @@ export function buildRoadmapGraph(
             color: '#3b82f6',
           },
           style: EDGE_DEPENDENCY,
-          label: 'depends on',
+          label: options.dependencyLabel,
           labelStyle: { fontSize: 9, fill: '#3b82f6' },
           labelBgStyle: { fill: 'var(--color-background)', fillOpacity: 0.8 },
           labelBgPadding: [4, 2] as [number, number],
@@ -269,5 +268,9 @@ export function buildRoadmapGraph(
     colX += colW + H_GAP * 2;
   }
 
-  return { nodes, edges };
+  const renderedNodeIds = new Set(nodes.map((node) => node.id));
+  return {
+    nodes,
+    edges: edges.filter((edge) => renderedNodeIds.has(edge.source) && renderedNodeIds.has(edge.target)),
+  };
 }

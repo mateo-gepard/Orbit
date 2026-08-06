@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckSquare,
   CalendarDays,
@@ -21,7 +21,6 @@ import { cn, getLocale, getWeekStartsOn } from '@/lib/utils';
 import {
   format,
   isToday,
-  isPast,
   startOfWeek,
   addDays,
   subDays,
@@ -37,15 +36,32 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
 import { getTaskBuckets } from '@/lib/task-buckets';
+import { eventOccursOnDate, getProjectTaskProgress } from '@/lib/dashboard';
+import { toast } from 'sonner';
 
 /* ── Login ── */
-function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEmailLink, onResetPassword }: {
+function LoginScreen({
+  onSignIn,
+  onDemo,
+  onEmailSignIn,
+  onEmailSignUp,
+  onSendEmailLink,
+  onResetPassword,
+  emailLinkState,
+  emailLinkError,
+  onCompleteEmailLink,
+  onCancelEmailLink,
+}: {
   onSignIn: () => Promise<void>;
-  onDemo: () => void;
+  onDemo: () => Promise<void>;
   onEmailSignIn: (email: string, password: string) => Promise<void>;
   onEmailSignUp: (email: string, password: string, displayName?: string) => Promise<void>;
   onSendEmailLink: (email: string) => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
+  emailLinkState: 'idle' | 'needs-email' | 'signing-in' | 'error';
+  emailLinkError: string | null;
+  onCompleteEmailLink: (email: string) => Promise<void>;
+  onCancelEmailLink: () => void;
 }) {
   const [mode, setMode] = useState<'choice' | 'login' | 'signup' | 'email-link' | 'email-link-sent' | 'reset-password' | 'reset-sent'>('choice');
   const [email, setEmail] = useState('');
@@ -106,13 +122,48 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
     }
   };
 
+  const handleCompleteEmailLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      await onCompleteEmailLink(email);
+    } catch (err: unknown) {
+      setError(authErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancelEmailLink = () => {
+    setEmail('');
+    setError('');
+    setSubmitting(false);
+    onCancelEmailLink();
+  };
+
+  const isCompletingEmailLink = emailLinkState !== 'idle';
+  const completingEmailLink = submitting || emailLinkState === 'signing-in';
+
   const handleGoogleSignIn = async () => {
     setError('');
     setSubmitting(true);
     try {
       await onSignIn();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('error.generic'));
+      setError(authErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDemo = async () => {
+    setError('');
+    setSubmitting(true);
+    try {
+      await onDemo();
+    } catch (err: unknown) {
+      setError(authErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -122,11 +173,14 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
     <div className="flex min-h-[100dvh] items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-8">
         <div className="space-y-2 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-foreground text-background font-bold text-xl">
-            O
-          </div>
+          <div
+            aria-hidden="true"
+            className="mx-auto h-14 w-14 rounded-2xl bg-cover bg-center shadow-[var(--shadow-soft)]"
+            style={{ backgroundImage: "url('/favicon.svg')" }}
+          />
           <h1 className="text-2xl font-bold tracking-tight mt-4">
-            {mode === 'signup' ? t('login.createAccount')
+            {isCompletingEmailLink ? t('login.confirmEmailLink')
+              : mode === 'signup' ? t('login.createAccount')
               : mode === 'email-link' ? t('login.signInEmailLink')
               : mode === 'email-link-sent' ? t('login.checkInbox')
               : mode === 'reset-password' ? t('login.resetPassword')
@@ -134,7 +188,9 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
               : t('login.welcome')}
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {mode === 'signup'
+            {isCompletingEmailLink
+              ? t('login.confirmEmailLinkDesc')
+              : mode === 'signup'
               ? t('login.createAccountDesc')
               : mode === 'email-link'
               ? t('login.emailLinkDesc')
@@ -148,7 +204,54 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
           </p>
         </div>
 
-        {mode === 'choice' ? (
+        {isCompletingEmailLink ? (
+          <form onSubmit={handleCompleteEmailLink} className="space-y-3">
+            <label htmlFor="confirm-email-link-address" className="text-[12px] font-medium text-foreground/80">
+              {t('login.emailUsedForLink')}
+            </label>
+            <input
+              id="confirm-email-link-address"
+              type="email"
+              placeholder={t('login.emailPlaceholder')}
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(''); }}
+              required
+              disabled={completingEmailLink}
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40 disabled:cursor-wait disabled:opacity-60"
+              autoComplete="email"
+              autoFocus
+            />
+
+            {(error || emailLinkError) && (
+              <p role="alert" className="px-1 text-[12px] font-medium text-destructive">
+                {error || emailLinkError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={completingEmailLink}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50 active:scale-[0.98] transition-transform"
+            >
+              {completingEmailLink ? (
+                <>
+                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                  {t('login.completingSignIn')}
+                </>
+              ) : (
+                t('login.completeSignIn')
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelEmailLink}
+              disabled={completingEmailLink}
+              className="w-full py-1 text-[12px] text-muted-foreground/70 transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              {t('login.cancelEmailLink')}
+            </button>
+          </form>
+        ) : mode === 'choice' ? (
           <div className="space-y-2.5">
             <button
               onClick={handleGoogleSignIn}
@@ -164,7 +267,7 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
               {t('login.continueGoogle')}
             </button>
             {error && (
-              <p className="px-1 text-[12px] font-medium text-destructive">{error}</p>
+              <p role="alert" className="px-1 text-[12px] font-medium text-destructive">{error}</p>
             )}
 
             <div className="relative my-4">
@@ -189,7 +292,8 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
               {t('login.signInEmailLink')}
             </button>
             <button
-              onClick={onDemo}
+              onClick={handleDemo}
+              disabled={submitting}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
             >
               {t('login.tryWithout')}
@@ -214,7 +318,9 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
           </div>
         ) : mode === 'email-link' ? (
           <form onSubmit={handleSendLink} className="space-y-3">
+            <label htmlFor="email-link-address" className="sr-only">{t('login.emailPlaceholder')}</label>
             <input
+              id="email-link-address"
               type="email"
               placeholder={t('login.emailPlaceholder')}
               value={email}
@@ -226,16 +332,20 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
             />
 
             {error && (
-              <p className="text-[12px] text-destructive font-medium px-1">{error}</p>
+              <p role="alert" className="text-[12px] text-destructive font-medium px-1">{error}</p>
             )}
 
             <button
               type="submit"
               disabled={submitting}
+              aria-busy={submitting}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
             >
               {submitting ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                <>
+                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                  <span>{t('login.sendSignInLink')}</span>
+                </>
               ) : (
                 t('login.sendSignInLink')
               )}
@@ -272,7 +382,9 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
               setSubmitting(false);
             }
           }} className="space-y-3">
+            <label htmlFor="reset-email-address" className="sr-only">{t('login.emailPlaceholder')}</label>
             <input
+              id="reset-email-address"
               type="email"
               placeholder={t('login.emailPlaceholder')}
               value={email}
@@ -283,15 +395,19 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
               autoFocus
             />
             {error && (
-              <p className="text-[12px] text-destructive font-medium px-1">{error}</p>
+              <p role="alert" className="text-[12px] text-destructive font-medium px-1">{error}</p>
             )}
             <button
               type="submit"
               disabled={submitting}
+              aria-busy={submitting}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
             >
               {submitting ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                <>
+                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                  <span>{t('login.sendResetLink')}</span>
+                </>
               ) : (
                 t('login.sendResetLink')
               )}
@@ -326,16 +442,22 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
-              <input
-                type="text"
-                placeholder={t('login.namePlaceholder')}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
-                autoComplete="name"
-              />
+              <>
+                <label htmlFor="account-name" className="sr-only">{t('login.namePlaceholder')}</label>
+                <input
+                  id="account-name"
+                  type="text"
+                  placeholder={t('login.namePlaceholder')}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
+                  autoComplete="name"
+                />
+              </>
             )}
+            <label htmlFor="account-email" className="sr-only">{t('login.emailPlaceholder')}</label>
             <input
+              id="account-email"
               type="email"
               placeholder={t('login.emailPlaceholder')}
               value={email}
@@ -345,7 +467,9 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
               autoComplete="email"
               autoFocus
             />
+            <label htmlFor="account-password" className="sr-only">{t('login.passwordPlaceholder')}</label>
             <input
+              id="account-password"
               type="password"
               placeholder={t('login.passwordPlaceholder')}
               value={password}
@@ -357,16 +481,20 @@ function LoginScreen({ onSignIn, onDemo, onEmailSignIn, onEmailSignUp, onSendEma
             />
 
             {error && (
-              <p className="text-[12px] text-destructive font-medium px-1">{error}</p>
+              <p role="alert" className="text-[12px] text-destructive font-medium px-1">{error}</p>
             )}
 
             <button
               type="submit"
               disabled={submitting}
+              aria-busy={submitting}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
             >
               {submitting ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                <>
+                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                  <span>{mode === 'signup' ? t('login.createAccount') : t('login.signIn')}</span>
+                </>
               ) : mode === 'signup' ? (
                 t('login.createAccount')
               ) : (
@@ -570,8 +698,9 @@ function HockeyQuote() {
   const quote = HOCKEY_QUOTES[idx];
 
   return (
-    <div
-      className="group relative rounded-xl border border-cyan-500/20 bg-gradient-to-r from-cyan-500/[0.03] to-emerald-500/[0.03] px-4 py-3 overflow-hidden cursor-pointer select-none transition-all hover:border-cyan-500/30"
+    <button
+      type="button"
+      className="group relative w-full overflow-hidden rounded-xl border border-cyan-500/20 bg-gradient-to-r from-cyan-500/[0.03] to-emerald-500/[0.03] px-4 py-3 text-left transition-all hover:border-cyan-500/30"
       onClick={() => setIdx((idx + 1) % HOCKEY_QUOTES.length)}
       title="Klick für neues Zitat"
     >
@@ -592,13 +721,26 @@ function HockeyQuote() {
       <p className="text-[9px] text-muted-foreground/40 mt-1.5 text-right tracking-wider uppercase">
         Tipp: Klicken für mehr
       </p>
-    </div>
+    </button>
   );
 }
 
 /* ── Dashboard ── */
 export default function DashboardPage() {
-  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink, resetPassword, enterDemoMode } = useAuth();
+  const {
+    user,
+    loading,
+    signInWithGoogle,
+    signInWithEmail,
+    signUpWithEmail,
+    sendEmailLink,
+    resetPassword,
+    continueAsDemo,
+    emailLinkState,
+    emailLinkError,
+    completeEmailLink,
+    cancelEmailLink,
+  } = useAuth();
   const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const defaultView = useSettingsStore((s) => s.settings.defaultView);
   const { weekStart: weekStartSetting, language } = useSettingsStore((s) => s.settings);
@@ -611,10 +753,30 @@ export default function DashboardPage() {
   // Hydration-safe: avoid rendering date-dependent text during SSR
   const [mounted, setMounted] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const currentDayRef = useRef(format(new Date(), 'yyyy-MM-dd'));
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(frame);
+  }, []);
+
+  // Keep an open dashboard correct across midnight without pulling a chosen
+  // historical date back to today.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const next = new Date();
+      const nextDay = format(next, 'yyyy-MM-dd');
+      const previousDay = currentDayRef.current;
+      if (nextDay !== previousDay) {
+        setSelectedDate((selected) => (
+          format(selected, 'yyyy-MM-dd') === previousDay ? next : selected
+        ));
+        currentDayRef.current = nextDay;
+      }
+      setCurrentTime(next);
+    }, 30_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // Redirect to the configured start page if not dashboard
@@ -624,14 +786,19 @@ export default function DashboardPage() {
       tasks: '/tasks',
     };
     const route = viewRoutes[defaultView];
-    if (route) router.replace(route);
+    const startViewKey = `threadmap-start-view-applied:${user.uid}`;
+    const alreadyApplied = window.sessionStorage.getItem(startViewKey);
+    if (!alreadyApplied) {
+      window.sessionStorage.setItem(startViewKey, 'true');
+      if (route) router.replace(route);
+    }
   }, [mounted, loading, user, defaultView, router]);
 
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
-  const isViewingToday = isToday(selectedDate);
-  const isViewingPast = isPast(selectedDate) && !isToday(selectedDate);
-
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const todayStr = format(currentTime, 'yyyy-MM-dd');
+  const isViewingToday = selectedDateStr === todayStr;
+  const isViewingPast = selectedDateStr < todayStr;
+  const isViewingFuture = selectedDateStr > todayStr;
 
   const {
     todayTasks,
@@ -652,10 +819,7 @@ export default function DashboardPage() {
       isViewingToday,
     });
 
-    const todayEvents = items.filter((i) => {
-      if (i.type !== 'event' || i.status === 'archived') return false;
-      return i.startDate === selectedDateStr || (!i.startDate && i.dueDate === selectedDateStr);
-    });
+    const todayEvents = items.filter((item) => eventOccursOnDate(item, selectedDateStr));
 
     const habits = items.filter((i) => i.type === 'habit' && i.status === 'active');
     const activeProjects = items.filter((i) => i.type === 'project' && i.status === 'active');
@@ -675,7 +839,20 @@ export default function DashboardPage() {
   }
 
   if (!user) {
-    return <LoginScreen onSignIn={signInWithGoogle} onDemo={enterDemoMode} onEmailSignIn={signInWithEmail} onEmailSignUp={signUpWithEmail} onSendEmailLink={sendEmailLink} onResetPassword={resetPassword} />;
+    return (
+      <LoginScreen
+        onSignIn={signInWithGoogle}
+        onDemo={continueAsDemo}
+        onEmailSignIn={signInWithEmail}
+        onEmailSignUp={signUpWithEmail}
+        onSendEmailLink={sendEmailLink}
+        onResetPassword={resetPassword}
+        emailLinkState={emailLinkState}
+        emailLinkError={emailLinkError}
+        onCompleteEmailLink={completeEmailLink}
+        onCancelEmailLink={cancelEmailLink}
+      />
+    );
   }
 
   // Show onboarding if empty
@@ -684,7 +861,7 @@ export default function DashboardPage() {
         <div className="mobile-page-gutter mx-auto max-w-3xl py-4 lg:p-8">
         <div className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">
-            {format(selectedDate, 'EEEE, d MMMM')}
+            {format(selectedDate, 'EEEE, d MMMM', { locale })}
           </h1>
         </div>
         <OnboardingState onOpen={() => setCommandBarOpen(true)} />
@@ -693,10 +870,7 @@ export default function DashboardPage() {
   }
 
   const getProjectProgress = (projectId: string) => {
-    const children = items.filter((i) => i.parentId === projectId);
-    if (children.length === 0) return 0;
-    const done = children.filter((i) => i.status === 'done').length;
-    return Math.round((done / children.length) * 100);
+    return getProjectTaskProgress(items, projectId);
   };
 
   const todayHabits = habits.filter((h) => isHabitScheduledForDate(h, selectedDate));
@@ -707,13 +881,34 @@ export default function DashboardPage() {
   const toggleHabit = async (habit: typeof items[0]) => {
     const completions = { ...(habit.completions || {}) };
     completions[selectedDateStr] = !completions[selectedDateStr];
-    await updateItem(habit.id, { completions });
+    try {
+      await updateItem(habit.id, { completions });
+    } catch {
+      toast.error(language === 'de' ? 'Gewohnheit konnte nicht aktualisiert werden' : 'Could not update this habit');
+    }
   };
 
   const weekStartDate = startOfWeek(selectedDate, { weekStartsOn });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
   const focusTaskCount = overdueItems.length + todayTasks.length + myDayTasks.length;
   const habitProgressLabel = todayHabits.length > 0 ? `${completedHabitsToday}/${todayHabits.length}` : '0';
+  const selectedDayStart = new Date(selectedDate);
+  selectedDayStart.setHours(0, 0, 0, 0);
+  const selectedDayEnd = addDays(selectedDayStart, 1);
+  const completedTasksOnSelectedDate = items.filter((candidate) =>
+    candidate.type === 'task'
+    && candidate.status === 'done'
+    && typeof candidate.completedAt === 'number'
+    && candidate.completedAt >= selectedDayStart.getTime()
+    && candidate.completedAt < selectedDayEnd.getTime()
+  ).length;
+  const hockeyPeriodLabel = isViewingToday
+    ? currentTime.getHours() < 12
+      ? '1. Drittel'
+      : currentTime.getHours() < 17
+        ? '2. Drittel'
+        : '3. Drittel'
+    : format(selectedDate, 'd. MMM', { locale });
   const renderDateBar = (className: string) => (
     <div className={cn('items-center gap-1 overflow-hidden rounded-2xl border border-border/60 bg-card/50 p-1 shadow-sm shadow-black/[0.02]', className)}>
       {weekDays.map((day) => {
@@ -722,12 +917,13 @@ export default function DashboardPage() {
           (i) =>
             i.status !== 'archived' &&
             ((i.type === 'task' && i.dueDate === dayStr) ||
-             (i.type === 'event' && i.startDate === dayStr))
+             (i.type === 'event' && eventOccursOnDate(i, dayStr)))
         );
         const isCurrentDay = isSameDay(day, selectedDate);
         const isDayToday = isToday(day);
         return (
           <button
+            type="button"
             key={dayStr}
             onClick={() => setSelectedDate(day)}
             aria-label={format(day, 'EEEE, d MMMM yyyy', { locale })}
@@ -788,9 +984,9 @@ export default function DashboardPage() {
           <h1 className="text-xl font-semibold tracking-tight mt-0.5">
             {isViewingToday ? (
               <>
-                {new Date().getHours() < 12
+                {currentTime.getHours() < 12
                   ? t('greeting.morning')
-                  : new Date().getHours() < 18
+                  : currentTime.getHours() < 18
                   ? t('greeting.afternoon')
                   : t('greeting.evening')}
                 {user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}
@@ -804,16 +1000,19 @@ export default function DashboardPage() {
         {/* Date Navigation Controls */}
         <div className="hidden w-full items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-1 lg:flex lg:w-auto">
           <button
+            type="button"
             onClick={() => setSelectedDate(subDays(selectedDate, 1))}
             className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:bg-foreground/[0.05] active:scale-95"
             title={t('date.previousDay')}
+            aria-label={t('date.previousDay')}
           >
             <ChevronLeft className="h-4 w-4 text-muted-foreground" />
           </button>
           
           {!isViewingToday && (
             <button
-              onClick={() => setSelectedDate(new Date())}
+              type="button"
+              onClick={() => setSelectedDate(currentTime)}
               className="rounded-xl bg-foreground/[0.08] px-3 py-2 text-[11px] font-medium transition-all hover:bg-foreground/[0.12] active:scale-95"
             >
               {t('date.today')}
@@ -821,11 +1020,40 @@ export default function DashboardPage() {
           )}
           
           <button
+            type="button"
             onClick={() => setSelectedDate(addDays(selectedDate, 1))}
             className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:bg-foreground/[0.05] active:scale-95"
             title={t('date.nextDay')}
+            aria-label={t('date.nextDay')}
           >
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 lg:hidden">
+          <button
+            type="button"
+            onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+            aria-label={t('date.previousDay')}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background/70 text-muted-foreground active:scale-95"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(currentTime)}
+            aria-current={isViewingToday ? 'date' : undefined}
+            className="min-h-11 flex-1 rounded-xl border border-border/60 bg-background/70 px-3 text-[12px] font-medium active:scale-[0.98]"
+          >
+            {isViewingToday ? t('date.today') : `${t('date.today')} · ${format(currentTime, 'd MMM', { locale })}`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+            aria-label={t('date.nextDay')}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background/70 text-muted-foreground active:scale-95"
+          >
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 
@@ -853,11 +1081,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Erledigt</p>
                 <p className="text-2xl font-black tabular-nums text-foreground leading-none mt-0.5">
-                  {items.filter(i => {
-                    if (i.type !== 'task' || i.status !== 'done' || !i.completedAt) return false;
-                    const today = new Date(); today.setHours(0,0,0,0);
-                    return i.completedAt >= today.getTime();
-                  }).length}
+                  {completedTasksOnSelectedDate}
                 </p>
               </div>
             </div>
@@ -866,7 +1090,7 @@ export default function DashboardPage() {
             <div className="flex flex-col items-center gap-0.5">
               <span className="text-[10px] font-black text-muted-foreground/30">:</span>
               <span className="text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-wider">
-                {new Date().getHours() < 12 ? '1. Drittel' : new Date().getHours() < 17 ? '2. Drittel' : '3. Drittel'}
+                {hockeyPeriodLabel}
               </span>
             </div>
             
@@ -954,27 +1178,31 @@ export default function DashboardPage() {
               return (
                 <div key={habit.id} className="flex items-center gap-2.5 py-1">
                   <button
+                    type="button"
                     onClick={() => toggleHabit(habit)}
-                    disabled={isViewingPast && !completed}
+                    disabled={isViewingFuture}
+                    aria-label={`${completed ? 'Mark incomplete' : 'Mark complete'}: ${habit.title}`}
+                    aria-pressed={completed}
                     className={cn(
-                      'flex h-5 w-5 items-center justify-center rounded-md border transition-all shrink-0',
+                      'flex h-9 w-9 items-center justify-center rounded-lg border transition-all shrink-0 lg:h-5 lg:w-5 lg:rounded-md',
                       completed
                         ? 'border-foreground/20 bg-foreground/10'
                         : 'border-foreground/15 hover:border-foreground/30',
-                      isViewingPast && !completed && 'opacity-30 cursor-not-allowed'
+                      isViewingFuture && 'cursor-not-allowed opacity-30'
                     )}
                   >
                     {completed && <CheckSquare className="h-3 w-3 text-foreground/50" />}
                   </button>
-                  <span
+                  <button
+                    type="button"
                     className={cn(
-                      'flex-1 text-[13px] cursor-pointer transition-colors hover:text-foreground',
+                      'flex-1 text-left text-[13px] cursor-pointer transition-colors hover:text-foreground',
                       completed ? 'line-through text-muted-foreground/50' : 'text-foreground'
                     )}
                     onClick={() => setSelectedItemId(habit.id)}
                   >
                     {habit.title}
-                  </span>
+                  </button>
                   {streak > 0 && (
                     <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums">
                       {hockeyMode ? (
@@ -1114,27 +1342,31 @@ export default function DashboardPage() {
                 return (
                   <div key={habit.id} className="flex items-center gap-2.5 py-1">
                     <button
+                      type="button"
                       onClick={() => toggleHabit(habit)}
-                      disabled={isViewingPast && !completed}
+                      disabled={isViewingFuture}
+                      aria-label={`${completed ? 'Mark incomplete' : 'Mark complete'}: ${habit.title}`}
+                      aria-pressed={completed}
                       className={cn(
-                        'flex h-5 w-5 items-center justify-center rounded-md border transition-all shrink-0',
+                        'flex h-9 w-9 items-center justify-center rounded-lg border transition-all shrink-0 lg:h-5 lg:w-5 lg:rounded-md',
                         completed
                           ? 'border-foreground/20 bg-foreground/10'
                           : 'border-foreground/15 hover:border-foreground/30',
-                        isViewingPast && !completed && 'opacity-30 cursor-not-allowed'
+                        isViewingFuture && 'cursor-not-allowed opacity-30'
                       )}
                     >
                       {completed && <CheckSquare className="h-3 w-3 text-foreground/50" />}
                     </button>
-                    <span
+                    <button
+                      type="button"
                       className={cn(
-                        'flex-1 text-[13px] cursor-pointer transition-colors hover:text-foreground',
+                        'flex-1 text-left text-[13px] cursor-pointer transition-colors hover:text-foreground',
                         completed ? 'line-through text-muted-foreground/50' : 'text-foreground'
                       )}
                       onClick={() => setSelectedItemId(habit.id)}
                     >
                       {habit.title}
-                    </span>
+                    </button>
                     {streak > 0 && (
                       <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums">
                         {hockeyMode ? (

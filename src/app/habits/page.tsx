@@ -1,20 +1,24 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Repeat, Flame, Plus, CheckSquare, CalendarDays, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem, updateItem } from '@/lib/firestore';
 import { cn } from '@/lib/utils';
-import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, addMonths, subMonths, getDay } from 'date-fns';
+import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, getDay } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate, getWeekCompletionRate } from '@/lib/habits';
 import { useTranslation } from '@/lib/i18n';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
 
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
 type ViewMode = 'week' | 'month';
+
+interface HabitToggleRetry {
+  habitId: string;
+  date: Date;
+  desired: boolean;
+}
 
 export default function HabitsPage() {
   const { items, setSelectedItemId } = useOrbitStore();
@@ -25,8 +29,14 @@ export default function HabitsPage() {
   const weekStartsOnNum = getWeekStartsOn(weekStartSetting);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const createInFlightRef = useRef(false);
+  const toggleInFlightRef = useRef(new Set<string>());
+  const [creatingHabit, setCreatingHabit] = useState(false);
+  const [pendingHabitIds, setPendingHabitIds] = useState<Set<string>>(new Set());
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<HabitToggleRetry | null>(null);
   const today = new Date();
-  const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+  const weekStart = startOfWeek(today, { weekStartsOn: weekStartsOnNum });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   
   const monthStart = startOfMonth(currentMonth);
@@ -34,8 +44,11 @@ export default function HabitsPage() {
   const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
   
   // Calculate padding days to align first day with correct weekday (Monday = 0)
-  const firstDayOfMonth = monthStart.getDay();
-  const paddingDays = (firstDayOfMonth + 6) % 7; // Convert Sunday=0 to Monday=0
+  const firstDayOfMonth = getDay(monthStart);
+  const paddingDays = (firstDayOfMonth - weekStartsOnNum + 7) % 7;
+  const calendarHeaderDays = Array.from({ length: 7 }, (_, index) =>
+    addDays(startOfWeek(monthStart, { weekStartsOn: weekStartsOnNum }), index)
+  );
 
   const habits = useMemo(
     () => items.filter((i) => i.type === 'habit' && i.status === 'active'),
@@ -44,28 +57,82 @@ export default function HabitsPage() {
 
   const completionRate = getWeekCompletionRate(habits, weekStart);
 
-  const toggleDay = async (habit: typeof habits[0], date: Date) => {
+  const toggleDay = async (habitId: string, date: Date, requestedDesired?: boolean) => {
+    if (toggleInFlightRef.current.has(habitId)) return;
+    toggleInFlightRef.current.add(habitId);
+    setPendingHabitIds((previous) => new Set(previous).add(habitId));
+    setToggleError(null);
+
     const dateKey = format(date, 'yyyy-MM-dd');
-    const completions = { ...(habit.completions || {}) };
-    completions[dateKey] = !completions[dateKey];
-    await updateItem(habit.id, { completions });
+    let desired = requestedDesired;
+    try {
+      const latestHabit = useOrbitStore.getState().items.find(
+        (item) => item.id === habitId && item.type === 'habit'
+      );
+      if (!latestHabit) throw new Error('Habit is no longer available.');
+
+      desired ??= !Boolean(latestHabit.completions?.[dateKey]);
+      const completions = {
+        ...(latestHabit.completions || {}),
+        [dateKey]: desired,
+      };
+      const outcome = await updateItem(habitId, { completions });
+      if (outcome === 'rejected') {
+        setToggleError({ habitId, date, desired });
+      }
+    } catch (cause) {
+      console.error('[THREADMAP] Habit completion update failed:', cause);
+      if (desired !== undefined) setToggleError({ habitId, date, desired });
+    } finally {
+      toggleInFlightRef.current.delete(habitId);
+      setPendingHabitIds((previous) => {
+        const next = new Set(previous);
+        next.delete(habitId);
+        return next;
+      });
+    }
   };
 
   const handleNewHabit = async () => {
-    if (!user) return;
-    const id = await createItem({
-      type: 'habit',
-      status: 'active',
-      title: 'New Habit',
-      frequency: 'daily',
-      completions: {},
-      tags: [],
-      userId: user.uid,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    setSelectedItemId(id);
+    if (createInFlightRef.current) return;
+    if (!user) {
+      setCreateError(lang === 'de'
+        ? 'Deine Sitzung ist nicht mehr aktiv. Melde dich erneut an und versuche es noch einmal.'
+        : 'Your session is no longer active. Sign in again and retry.');
+      return;
+    }
+
+    createInFlightRef.current = true;
+    setCreatingHabit(true);
+    setCreateError(null);
+    try {
+      const id = await createItem({
+        type: 'habit',
+        status: 'active',
+        title: t('habits.newHabitTitle'),
+        frequency: 'daily',
+        completions: {},
+        tags: [],
+        userId: user.uid,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      setSelectedItemId(id);
+    } catch (cause) {
+      console.error('[THREADMAP] Habit creation failed:', cause);
+      setCreateError(lang === 'de'
+        ? 'Die Gewohnheit konnte nicht erstellt werden. Versuche es erneut.'
+        : 'The habit could not be created. Please retry.');
+    } finally {
+      createInFlightRef.current = false;
+      setCreatingHabit(false);
+    }
   };
+
+  const habitToggleLabel = (title: string, date: Date, completed: boolean) => t(
+    completed ? 'habits.markIncomplete' : 'habits.markComplete',
+    { title, date: format(date, 'PPPP', { locale }) }
+  );
 
   return (
     <div className="mobile-page-gutter mx-auto max-w-4xl space-y-5 py-4 lg:space-y-6 lg:p-8" data-slot="page-content">
@@ -73,39 +140,47 @@ export default function HabitsPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{t('nav.habits')}</h1>
           <p className="text-[13px] text-muted-foreground/60 mt-0.5">
-            {completionRate}% this week
+            {completionRate === null
+              ? t('habits.futureWeekRate')
+              : t('habits.weekRate', { rate: completionRate })}
           </p>
         </div>
-        <div className="flex max-w-full items-center gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1">
           {/* Month navigation - only show in month view */}
           {viewMode === 'month' && (
             <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 p-0.5">
               <button
+                type="button"
                 onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
                 className="mobile-touch-target flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 transition-all hover:bg-background hover:text-foreground lg:min-h-0"
-                aria-label="Previous month"
+                aria-label={t('habits.previousMonth')}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
               <button
+                type="button"
                 onClick={() => setCurrentMonth(new Date())}
+                aria-label={`${t('common.today')}: ${format(currentMonth, 'MMMM yyyy', { locale })}`}
                 className="mobile-touch-target px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:text-foreground lg:min-h-0"
               >
-                {format(currentMonth, 'MMM yyyy')}
+                {t('common.today')} · {format(currentMonth, 'MMM yyyy', { locale })}
               </button>
               <button
+                type="button"
                 onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
                 className="mobile-touch-target flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 transition-all hover:bg-background hover:text-foreground lg:min-h-0"
-                aria-label="Next month"
+                aria-label={t('habits.nextMonth')}
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
           {/* View mode toggle */}
-          <div className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5">
+          <div className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5" role="group" aria-label={t('habits.calendarView')}>
             <button
+              type="button"
               onClick={() => setViewMode('week')}
+              aria-pressed={viewMode === 'week'}
               className={cn(
                 'mobile-touch-target flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all lg:min-h-0',
                 viewMode === 'week'
@@ -114,10 +189,12 @@ export default function HabitsPage() {
               )}
             >
               <CalendarDays className="h-3.5 w-3.5" />
-              Week
+              {t('habits.week')}
             </button>
             <button
+              type="button"
               onClick={() => setViewMode('month')}
+              aria-pressed={viewMode === 'month'}
               className={cn(
                 'mobile-touch-target flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all lg:min-h-0',
                 viewMode === 'month'
@@ -126,18 +203,45 @@ export default function HabitsPage() {
               )}
             >
               <Calendar className="h-3.5 w-3.5" />
-              Month
+              {t('habits.month')}
             </button>
           </div>
           <button
-            onClick={handleNewHabit}
-            className="mobile-touch-target flex items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-transform transition-opacity hover:opacity-90 active:scale-95 lg:min-h-0 lg:rounded-lg lg:py-1.5 lg:text-[12px]"
+            type="button"
+            onClick={() => void handleNewHabit()}
+            disabled={creatingHabit}
+            aria-busy={creatingHabit}
+            className="mobile-touch-target flex items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-transform transition-opacity hover:opacity-90 active:scale-95 disabled:cursor-wait disabled:opacity-70 lg:min-h-0 lg:rounded-lg lg:py-1.5 lg:text-[12px]"
           >
-            <Plus className="h-3.5 w-3.5" />
-            New
+            <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+            {creatingHabit
+              ? (lang === 'de' ? 'Wird erstellt …' : 'Creating…')
+              : t('common.new')}
           </button>
         </div>
       </div>
+
+      {(createError || toggleError) && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.05] px-3 py-2.5 text-[12px] text-destructive">
+          <p>
+            {createError || (lang === 'de'
+              ? 'Die Änderung konnte nicht synchronisiert werden. Versuche es erneut.'
+              : 'The completion change could not be synced. Please retry.')}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (createError) void handleNewHabit();
+              else if (toggleError) void toggleDay(toggleError.habitId, toggleError.date, toggleError.desired);
+            }}
+            disabled={creatingHabit || Boolean(toggleError && pendingHabitIds.has(toggleError.habitId))}
+            aria-busy={creatingHabit || Boolean(toggleError && pendingHabitIds.has(toggleError.habitId))}
+            className="min-h-9 rounded-lg bg-destructive/10 px-3 font-medium transition-colors hover:bg-destructive/20 disabled:cursor-wait disabled:opacity-60"
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      )}
 
       {/* ── Mobile Views ── */}
       <div className="lg:hidden space-y-3">
@@ -147,6 +251,7 @@ export default function HabitsPage() {
             {habits.map((habit) => {
               const streak = calculateStreak(habit);
               const completed = isHabitCompletedForDate(habit, today);
+              const habitBusy = pendingHabitIds.has(habit.id);
               return (
                 <div
                   key={habit.id}
@@ -155,7 +260,12 @@ export default function HabitsPage() {
                   {/* Habit header */}
                   <div className="flex items-center gap-3 px-4 py-3">
                     <button
-                      onClick={() => toggleDay(habit, today)}
+                      type="button"
+                      onClick={() => void toggleDay(habit.id, today)}
+                      disabled={habitBusy}
+                      aria-busy={habitBusy}
+                      aria-label={habitToggleLabel(habit.title, today, completed)}
+                      aria-pressed={completed}
                       className={cn(
                         'relative flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-[1.5px] transition-all',
                         'before:absolute before:inset-[-8px]',
@@ -195,12 +305,16 @@ export default function HabitsPage() {
                             'text-[9px] font-medium uppercase',
                             isCurrentDay ? 'text-foreground' : 'text-muted-foreground/40'
                           )}>
-                            {DAY_LABELS[(day.getDay() + 6) % 7].charAt(0)}
+                            {format(day, 'EEEEE', { locale })}
                           </span>
                           {scheduled ? (
                             <button
-                              onClick={() => !isFuture && toggleDay(habit, day)}
-                              disabled={isFuture}
+                              type="button"
+                              onClick={() => !isFuture && void toggleDay(habit.id, day)}
+                              disabled={isFuture || habitBusy}
+                              aria-busy={habitBusy}
+                              aria-label={habitToggleLabel(habit.title, day, dayCompleted)}
+                              aria-pressed={dayCompleted}
                               className={cn(
                                 'h-8 w-8 rounded-lg flex items-center justify-center transition-all active:scale-90',
                                 dayCompleted
@@ -232,6 +346,7 @@ export default function HabitsPage() {
           <>
             {habits.map((habit) => {
               const streak = calculateStreak(habit);
+              const habitBusy = pendingHabitIds.has(habit.id);
               return (
                 <div
                   key={habit.id}
@@ -255,6 +370,15 @@ export default function HabitsPage() {
                   {/* Month calendar grid */}
                   <div className="p-3">
                     <div className="grid grid-cols-7 gap-1">
+                      {calendarHeaderDays.map((day) => (
+                        <div
+                          key={`mobile-header-${day.toISOString()}`}
+                          aria-label={format(day, 'EEEE', { locale })}
+                          className="pb-1 text-center text-[9px] font-medium uppercase text-muted-foreground/45"
+                        >
+                          {format(day, 'EEE', { locale })}
+                        </div>
+                      ))}
                       {/* Padding days before month starts */}
                       {Array.from({ length: paddingDays }).map((_, i) => (
                         <div key={`padding-${i}`} className="aspect-square" />
@@ -268,8 +392,12 @@ export default function HabitsPage() {
                           <div key={day.toISOString()} className="aspect-square">
                             {scheduled ? (
                               <button
-                                onClick={() => !isFuture && toggleDay(habit, day)}
-                                disabled={isFuture}
+                                type="button"
+                                onClick={() => !isFuture && void toggleDay(habit.id, day)}
+                                disabled={isFuture || habitBusy}
+                                aria-busy={habitBusy}
+                                aria-label={habitToggleLabel(habit.title, day, dayCompleted)}
+                                aria-pressed={dayCompleted}
                                 className={cn(
                                   'w-full h-full rounded-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-90',
                                   dayCompleted
@@ -311,8 +439,8 @@ export default function HabitsPage() {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
               <Repeat className="h-5 w-5 text-muted-foreground/30" />
             </div>
-            <p className="text-[13px] text-muted-foreground/50">No habits yet</p>
-            <p className="text-[11px] text-muted-foreground/30 mt-1">No habits yet</p>
+            <p className="text-[13px] text-muted-foreground/50">{t('habits.noHabits')}</p>
+            <p className="text-[11px] text-muted-foreground/40 mt-1">{t('habits.noHabitsDesc')}</p>
           </div>
         )}
       </div>
@@ -333,7 +461,7 @@ export default function HabitsPage() {
                   'text-[10px] font-medium uppercase',
                   isToday(day) ? 'text-foreground' : 'text-muted-foreground/40'
                 )}>
-                  {DAY_LABELS[(day.getDay() + 6) % 7]}
+                  {format(day, 'EEE', { locale })}
                 </span>
                 <span className={cn(
                   'text-[11px] tabular-nums mt-0.5',
@@ -346,13 +474,14 @@ export default function HabitsPage() {
               </div>
             ))}
             <div className="text-center text-[10px] font-medium text-muted-foreground/40 uppercase">
-              Streak
+              {t('habits.streakLabel')}
             </div>
           </div>
 
           {/* Habit rows */}
           {habits.map((habit) => {
             const streak = calculateStreak(habit);
+            const habitBusy = pendingHabitIds.has(habit.id);
             return (
               <div
                 key={habit.id}
@@ -373,8 +502,12 @@ export default function HabitsPage() {
                     <div key={day.toISOString()} className="flex justify-center">
                       {scheduled ? (
                         <button
-                          onClick={() => !isFuture && toggleDay(habit, day)}
-                          disabled={isFuture}
+                          type="button"
+                          onClick={() => !isFuture && void toggleDay(habit.id, day)}
+                          disabled={isFuture || habitBusy}
+                          aria-busy={habitBusy}
+                          aria-label={habitToggleLabel(habit.title, day, completed)}
+                          aria-pressed={completed}
                           className={cn(
                             'relative h-7 w-7 rounded-lg flex items-center justify-center transition-all',
                             'before:absolute before:inset-[-2px]',
@@ -416,7 +549,7 @@ export default function HabitsPage() {
               <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                 <Repeat className="h-4 w-4 text-muted-foreground/30" />
               </div>
-              <p className="text-[12px] text-muted-foreground/50">No habits yet</p>
+              <p className="text-[12px] text-muted-foreground/50">{t('habits.noHabits')}</p>
             </div>
           )}
         </div>
@@ -425,6 +558,7 @@ export default function HabitsPage() {
         <div className="hidden lg:block space-y-4">
           {habits.map((habit) => {
             const streak = calculateStreak(habit);
+            const habitBusy = pendingHabitIds.has(habit.id);
             return (
               <div
                 key={habit.id}
@@ -449,9 +583,9 @@ export default function HabitsPage() {
                 <div className="p-4">
                   <div className="grid grid-cols-7 gap-2">
                     {/* Day headers */}
-                    {DAY_LABELS.map((label) => (
-                      <div key={label} className="text-center text-[10px] font-medium text-muted-foreground/40 uppercase pb-1">
-                        {label}
+                    {calendarHeaderDays.map((day) => (
+                      <div key={day.toISOString()} className="text-center text-[10px] font-medium text-muted-foreground/40 uppercase pb-1">
+                        {format(day, 'EEE', { locale })}
                       </div>
                     ))}
                     {/* Padding days before month starts */}
@@ -468,8 +602,12 @@ export default function HabitsPage() {
                         <div key={day.toISOString()} className="aspect-square">
                           {scheduled ? (
                             <button
-                              onClick={() => !isFuture && toggleDay(habit, day)}
-                              disabled={isFuture}
+                              type="button"
+                              onClick={() => !isFuture && void toggleDay(habit.id, day)}
+                              disabled={isFuture || habitBusy}
+                              aria-busy={habitBusy}
+                              aria-label={habitToggleLabel(habit.title, day, dayCompleted)}
+                              aria-pressed={dayCompleted}
                               className={cn(
                                 'w-full h-full rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all',
                                 dayCompleted
@@ -509,7 +647,7 @@ export default function HabitsPage() {
               <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                 <Repeat className="h-4 w-4 text-muted-foreground/30" />
               </div>
-              <p className="text-[12px] text-muted-foreground/50">No habits yet</p>
+              <p className="text-[12px] text-muted-foreground/50">{t('habits.noHabits')}</p>
             </div>
           )}
         </div>

@@ -5,10 +5,11 @@
 // Hockey Mode: sports commentary + medical vibes (German).
 // ═══════════════════════════════════════════════════════════
 
-import { format, isToday, parseISO, isTomorrow, isPast, differenceInDays } from 'date-fns';
+import { addDays, format } from 'date-fns';
 import type { OrbitItem } from './types';
 import { isHabitScheduledForDate, isHabitCompletedForDate, calculateStreak } from './habits';
 import { useSettingsStore } from './settings-store';
+import { scopedStorageKey } from './account-storage';
 
 // ── Permission ─────────────────────────────────────────────
 
@@ -45,24 +46,35 @@ const EVENING_GREETINGS = [
   'How did it go?',
 ];
 
+const MORNING_GREETINGS_DE = [
+  'Guten Morgen.',
+  'Ein neuer Tag wartet.',
+  'Zeit, den Tag zu gestalten.',
+  'Frischer Start.',
+];
+
+const EVENING_GREETINGS_DE = [
+  'Der Tag klingt aus.',
+  'Abendlicher Rückblick.',
+  'Zeit zum Reflektieren.',
+  'Fast geschafft.',
+];
+
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ── The day's weather report ──────────────────────────────
+function eventOccursOnDate(item: OrbitItem, date: string): boolean {
+  if (item.type !== 'event' || item.status !== 'active' || !item.startDate) return false;
+  const endDate = item.endDate || item.startDate;
+  return item.startDate <= date && endDate >= date;
+}
 
-function getDayOfWeekVibe(): string {
-  const day = new Date().getDay();
-  const vibes: Record<number, string[]> = {
-    0: ['Sunday mode — recharge.', 'A quiet Sunday ahead.'],
-    1: ['Monday. Set the tone.', 'Fresh week — fresh momentum.'],
-    2: ['Tuesday — build on yesterday.', 'Keep the rhythm going.'],
-    3: ['Midweek checkpoint.', 'Wednesday — halfway there.'],
-    4: ['Thursday — the home stretch starts.', 'Push through Thursday.'],
-    5: ['Friday energy. Finish strong.', 'TGIF — close strong.'],
-    6: ['Saturday. Your rules.', 'Weekend mode — but make it count.'],
+function localDayBounds(date: Date): { start: number; end: number } {
+  return {
+    start: new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime(),
+    end: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime(),
   };
-  return pickRandom(vibes[day] || ['Let\'s go.']);
 }
 
 // ── Hockey mode: German sports commentary ─────────────────
@@ -96,20 +108,6 @@ const HOCKEY_EVENING_GREETINGS = [
   'Strafbank-Report des Tages:',
 ];
 
-function getDayOfWeekVibeHockey(): string {
-  const day = new Date().getDay();
-  const vibes: Record<number, string[]> = {
-    0: ['Sonntag — Regeneration. Die beste Medizin.', 'Ruhetag. Der Körper muss heilen. 🩺'],
-    1: ['Montag. Erster Anpfiff der Woche!', 'Neue Woche, neues Spiel. 🏒'],
-    2: ['Dienstag — zweites Drittel der Woche.', 'Weiter trainieren, Dr.'],
-    3: ['Mittwoch — Halbzeit! Wie steht\'s?', 'Drittelpause. Nachschub holen.'],
-    4: ['Donnerstag — Endspurt Richtung Wochenende.', 'Power Play, Dr.!'],
-    5: ['Freitag! Letztes Drittel. Vollgas! 🚨', 'TGIF — Schluss-Sirene naht!'],
-    6: ['Samstag. Freies Training auf dem Platz.', 'Wochenende — aber Sieger ruhen nie.'],
-  };
-  return pickRandom(vibes[day] || ['Anpfiff! 🏒']);
-}
-
 function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
@@ -120,9 +118,7 @@ function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
   const overdue = items.filter(
     (i) => i.type === 'task' && i.status === 'active' && i.dueDate && i.dueDate < todayStr
   );
-  const eventsToday = items.filter(
-    (i) => i.type === 'event' && i.status === 'active' && i.startDate === todayStr
-  );
+  const eventsToday = items.filter((item) => eventOccursOnDate(item, todayStr));
   const habitsToday = items.filter(
     (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
   );
@@ -151,8 +147,7 @@ function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
 function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const todayEnd = todayStart + 86400000;
+  const { start: todayStart, end: todayEnd } = localDayBounds(today);
 
   const completedToday = items.filter(
     (i) => i.type === 'task' && i.status === 'done' && i.completedAt && i.completedAt >= todayStart && i.completedAt < todayEnd
@@ -169,15 +164,12 @@ function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
     return s > max ? s : max;
   }, 0);
 
-  const tomorrowStr = format(new Date(todayStart + 86400000), 'yyyy-MM-dd');
+  const tomorrowStr = format(addDays(today, 1), 'yyyy-MM-dd');
   const dueTomorrow = items.filter(
     (i) => i.type === 'task' && i.status === 'active' && i.dueDate === tomorrowStr
   );
 
   const title = pickRandom(HOCKEY_EVENING_GREETINGS);
-  const totalScheduled = completedToday.length + unfinished.length;
-  const habitRate = habitsToday.length > 0 ? habitsDone.length / habitsToday.length : 0;
-
   // Build concise single-line body for notification
   const parts: string[] = [];
 
@@ -237,35 +229,30 @@ export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
   );
 
   // Events today  
-  const eventsToday = items.filter(
-    (i) => i.type === 'event' && i.status === 'active' && i.startDate === todayStr
-  );
+  const eventsToday = items.filter((item) => eventOccursOnDate(item, todayStr));
 
   // Habits due today
   const habitsToday = items.filter(
     (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
   );
 
-  // Active goals
-  const activeGoals = items.filter(
-    (i) => i.type === 'goal' && i.status === 'active'
-  );
-
-  // All active tasks
-  const activeTasks = items.filter(
-    (i) => i.type === 'task' && i.status === 'active'
-  );
-
   // Build title — short, punchy
-  const greeting = pickRandom(MORNING_GREETINGS);
+  const german = settings.language === 'de';
+  const greeting = pickRandom(german ? MORNING_GREETINGS_DE : MORNING_GREETINGS);
   const title = greeting;
 
   // Build a concise single-line body that won't get cut off
   const counts: string[] = [];
-  if (tasksDueToday.length > 0) counts.push(`${tasksDueToday.length} task${tasksDueToday.length > 1 ? 's' : ''}`);
-  if (eventsToday.length > 0) counts.push(`${eventsToday.length} event${eventsToday.length > 1 ? 's' : ''}`);
-  if (habitsToday.length > 0) counts.push(`${habitsToday.length} habit${habitsToday.length > 1 ? 's' : ''}`);
-  if (overdue.length > 0) counts.push(`${overdue.length} overdue ⚠️`);
+  if (tasksDueToday.length > 0) counts.push(german
+    ? `${tasksDueToday.length} Aufgabe${tasksDueToday.length === 1 ? '' : 'n'}`
+    : `${tasksDueToday.length} task${tasksDueToday.length === 1 ? '' : 's'}`);
+  if (eventsToday.length > 0) counts.push(german
+    ? `${eventsToday.length} Termin${eventsToday.length === 1 ? '' : 'e'}`
+    : `${eventsToday.length} event${eventsToday.length === 1 ? '' : 's'}`);
+  if (habitsToday.length > 0) counts.push(german
+    ? `${habitsToday.length} Gewohnheit${habitsToday.length === 1 ? '' : 'en'}`
+    : `${habitsToday.length} habit${habitsToday.length === 1 ? '' : 's'}`);
+  if (overdue.length > 0) counts.push(german ? `${overdue.length} überfällig ⚠️` : `${overdue.length} overdue ⚠️`);
 
   let body: string;
   if (counts.length > 0) {
@@ -273,7 +260,7 @@ export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
     const topTask = tasksDueToday.find((t) => t.priority === 'high') || tasksDueToday[0];
     if (topTask) body += ` → ${topTask.title}`;
   } else {
-    body = 'Clear runway ahead — plan your day.';
+    body = german ? 'Freie Bahn — plane deinen Tag.' : 'Clear runway ahead — plan your day.';
   }
 
   return {
@@ -294,8 +281,7 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const todayEnd = todayStart + 86400000;
+  const { start: todayStart, end: todayEnd } = localDayBounds(today);
 
   // Tasks completed today
   const completedToday = items.filter(
@@ -314,14 +300,9 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
   const habitsDone = habitsToday.filter((h) => isHabitCompletedForDate(h, today));
 
   // Tasks due tomorrow
-  const tomorrowStr = format(new Date(todayStart + 86400000), 'yyyy-MM-dd');
+  const tomorrowStr = format(addDays(today, 1), 'yyyy-MM-dd');
   const dueTomorrow = items.filter(
     (i) => i.type === 'task' && i.status === 'active' && i.dueDate === tomorrowStr
-  );
-
-  // Events tomorrow
-  const eventsTomorrow = items.filter(
-    (i) => i.type === 'event' && i.status === 'active' && i.startDate === tomorrowStr
   );
 
   // Best streak
@@ -330,33 +311,36 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
     return s > max ? s : max;
   }, 0);
 
-  const greeting = pickRandom(EVENING_GREETINGS);
+  const german = settings.language === 'de';
+  const greeting = pickRandom(german ? EVENING_GREETINGS_DE : EVENING_GREETINGS);
 
   // Build concise single-line body for notification
   const parts: string[] = [];
 
   if (completedToday.length > 0) {
-    parts.push(`${completedToday.length} done ✓`);
+    parts.push(german ? `${completedToday.length} erledigt ✓` : `${completedToday.length} done ✓`);
   }
   if (unfinished.length > 0) {
-    parts.push(`${unfinished.length} open`);
+    parts.push(german ? `${unfinished.length} offen` : `${unfinished.length} open`);
   }
   if (habitsToday.length > 0) {
-    parts.push(`Habits ${habitsDone.length}/${habitsToday.length}`);
+    parts.push(`${german ? 'Gewohnheiten' : 'Habits'} ${habitsDone.length}/${habitsToday.length}`);
   }
   if (bestStreak > 1) {
-    parts.push(`${bestStreak}d streak 🔥`);
+    parts.push(german ? `${bestStreak} Tage Serie 🔥` : `${bestStreak}d streak 🔥`);
   }
 
   let body: string;
   if (parts.length > 0) {
     body = parts.join(' · ');
   } else {
-    body = 'Quiet day — nothing was scheduled.';
+    body = german ? 'Ruhiger Tag — nichts war geplant.' : 'Quiet day — nothing was scheduled.';
   }
 
   if (dueTomorrow.length > 0) {
-    body += ` → Tomorrow: ${dueTomorrow.length} task${dueTomorrow.length > 1 ? 's' : ''}`;
+    body += german
+      ? ` → Morgen: ${dueTomorrow.length} Aufgabe${dueTomorrow.length === 1 ? '' : 'n'}`
+      : ` → Tomorrow: ${dueTomorrow.length} task${dueTomorrow.length === 1 ? '' : 's'}`;
   }
 
   return {
@@ -410,6 +394,8 @@ async function sendNotification(data: BriefingData) {
 
     notification.onclick = () => {
       window.focus();
+      window.history.pushState(null, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate'));
       notification.close();
     };
     briefingLog('[THREADMAP] Notification shown via Notification API');
@@ -419,8 +405,7 @@ async function sendNotification(data: BriefingData) {
 }
 
 // ── Push schedule to Service Worker ───────────────────────
-// The SW stores this in IndexedDB and checks every 30s,
-// firing notifications even when the page is closed.
+// The SW stores this in IndexedDB for periodic checks and push delivery.
 
 const DEBUG_BRIEFINGS = process.env.NODE_ENV !== 'production';
 const briefingLog = (...args: unknown[]) => {
@@ -428,6 +413,7 @@ const briefingLog = (...args: unknown[]) => {
 };
 
 let lastSyncedScheduleJson: string | null = null;
+let currentBriefingOwnerId: string | null = null;
 
 export function syncBriefingScheduleToSW() {
   const { settings } = useSettingsStore.getState();
@@ -435,9 +421,10 @@ export function syncBriefingScheduleToSW() {
   if (!('serviceWorker' in navigator)) return;
 
   const config = {
-    morningEnabled: settings.notifications.enabled && settings.notifications.dailyBriefing,
+    ownerId: currentBriefingOwnerId,
+    morningEnabled: Boolean(currentBriefingOwnerId) && settings.notifications.enabled && settings.notifications.dailyBriefing,
     morningTime: settings.notifications.dailyBriefingTime,
-    eveningEnabled: settings.notifications.enabled && settings.notifications.eveningBriefing,
+    eveningEnabled: Boolean(currentBriefingOwnerId) && settings.notifications.enabled && settings.notifications.eveningBriefing,
     eveningTime: settings.notifications.eveningBriefingTime,
   };
   const scheduleJson = JSON.stringify(config);
@@ -473,31 +460,37 @@ async function registerPeriodicSync() {
     const reg = await navigator.serviceWorker.ready;
     if ('periodicSync' in reg) {
       await (reg as unknown as { periodicSync: { register: (tag: string, options: { minInterval: number }) => Promise<void> } })
-        .periodicSync.register('orbit-briefing-check', {
+        .periodicSync.register('threadmap-briefing-check', {
           minInterval: 60 * 60 * 1000, // Check at least every hour
         });
       briefingLog('[THREADMAP] Periodic background sync registered');
     }
   } catch {
-    // Not supported or permission denied — that's fine, SW timer handles it
+    // Not supported or permission denied — server push and the in-app fallback remain available.
   }
 }
 
 // ── Scheduler ─────────────────────────────────────────────
 // Dual strategy:
-// 1. Service Worker checks schedule in IndexedDB every 30s (works in background)
-// 2. In-app setInterval as a backup when SW can't fire (e.g. iOS Safari)
-// The SW also listens for Periodic Background Sync events.
+// 1. Server push and Periodic Background Sync can wake the Service Worker.
+// 2. An in-app interval is the fallback while Threadmap is open.
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let swMessageListenerRegistered = false;
 let currentGetItems: () => OrbitItem[] = () => [];
 
+function lastFiredKey(): string | null {
+  return currentBriefingOwnerId
+    ? scopedStorageKey('orbit-briefing-lastFired', currentBriefingOwnerId)
+    : null;
+}
+
 // Persist last-fired dates in localStorage to survive page reloads
 // but allow re-firing on a new day
 function getLastFired(): { morning: string | null; evening: string | null } {
   try {
-    const raw = localStorage.getItem('orbit-briefing-lastFired');
+    const key = lastFiredKey();
+    const raw = key ? localStorage.getItem(key) : null;
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
   return { morning: null, evening: null };
@@ -508,29 +501,33 @@ function setLastFired(type: 'morning' | 'evening') {
   const current = getLastFired();
   current[type] = today;
   try {
-    localStorage.setItem('orbit-briefing-lastFired', JSON.stringify(current));
+    const key = lastFiredKey();
+    if (key) localStorage.setItem(key, JSON.stringify(current));
   } catch { /* ignore */ }
-}
-
-function getTimeStr(): string {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
 function getDateStr(): string {
   return format(new Date(), 'yyyy-MM-dd');
 }
 
-// Check if we're within a window after the target time (handles timer drift)
-function isWithinWindow(targetHHMM: string, windowMinutes: number): boolean {
+// Background scheduling is browser-controlled and may wake late. Deliver a
+// once-per-day briefing within a useful grace period instead of requiring a
+// fragile five-minute wake-up window.
+function isBriefingDueToday(targetHHMM: string, type: 'morning' | 'evening'): boolean {
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(targetHHMM)) return false;
   const [h, m] = targetHHMM.split(':').map(Number);
   const now = new Date();
   const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
   const diff = now.getTime() - target.getTime();
-  return diff >= 0 && diff <= windowMinutes * 60 * 1000;
+  const graceMinutes = type === 'morning' ? 4 * 60 : 6 * 60;
+  return diff >= 0 && diff <= graceMinutes * 60_000;
 }
 
-export function startBriefingScheduler(getItems: () => OrbitItem[]) {
+export function startBriefingScheduler(userId: string, getItems: () => OrbitItem[]) {
+  if (currentBriefingOwnerId !== userId) {
+    stopBriefingScheduler();
+    currentBriefingOwnerId = userId;
+  }
   currentGetItems = getItems;
 
   if (schedulerInterval) {
@@ -584,7 +581,6 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
     if (!settings.notifications.enabled) return;
     if (!hasNotificationPermission()) return;
 
-    const now = getTimeStr();
     const today = getDateStr();
     const lastFired = getLastFired();
 
@@ -592,7 +588,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
     // Use 5-minute window so timer drift doesn't cause misses
     if (
       settings.notifications.dailyBriefing &&
-      isWithinWindow(settings.notifications.dailyBriefingTime, 5) &&
+      isBriefingDueToday(settings.notifications.dailyBriefingTime, 'morning') &&
       lastFired.morning !== today
     ) {
       setLastFired('morning');
@@ -605,7 +601,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
     // Evening briefing — use 5-minute window
     if (
       settings.notifications.eveningBriefing &&
-      isWithinWindow(settings.notifications.eveningBriefingTime, 5) &&
+      isBriefingDueToday(settings.notifications.eveningBriefingTime, 'evening') &&
       lastFired.evening !== today
     ) {
       setLastFired('evening');
@@ -614,7 +610,7 @@ export function startBriefingScheduler(getItems: () => OrbitItem[]) {
       sendNotification(briefing);
       briefingLog('[THREADMAP] Evening briefing sent (in-app fallback timer)');
     }
-  }, 60_000); // every 60 seconds (SW checks every 30s, so this is the backup)
+  }, 60_000); // every 60 seconds while the app is open
 
   briefingLog('[THREADMAP] Briefing scheduler started (SW + in-app fallback)');
 }
@@ -624,6 +620,16 @@ export function stopBriefingScheduler() {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
   }
+  if (currentBriefingOwnerId && 'serviceWorker' in navigator) {
+    const message = { type: 'CLEAR_BRIEFING_SCHEDULE', ownerId: currentBriefingOwnerId };
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(message);
+    } else {
+      void navigator.serviceWorker.ready.then((registration) => registration.active?.postMessage(message));
+    }
+  }
+  currentBriefingOwnerId = null;
+  lastSyncedScheduleJson = null;
   currentGetItems = () => [];
 }
 

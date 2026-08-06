@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Archive as ArchiveIcon, RotateCcw, Search, CheckCircle2, Circle } from 'lucide-react';
+import { Archive as ArchiveIcon, RotateCcw, Search, CheckCircle2, Circle, X } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import { ItemRow } from '@/components/items/item-row';
@@ -10,11 +10,12 @@ import { haptic } from '@/lib/mobile';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from '@/lib/i18n';
+import { toast } from 'sonner';
 
 type ViewTab = 'completed' | 'archived';
 
 export default function ArchivePage() {
-  const { items } = useOrbitStore();
+  const items = useOrbitStore((state) => state.items);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<ViewTab>('completed');
   const { t } = useTranslation();
@@ -26,7 +27,7 @@ export default function ArchivePage() {
     return completed.filter(
       (i) =>
         i.title.toLowerCase().includes(q) ||
-        i.tags?.some((t) => t.includes(q))
+        i.tags?.some((tag) => tag.toLowerCase().includes(q))
     );
   }, [items, search]);
 
@@ -37,18 +38,32 @@ export default function ArchivePage() {
     return archived.filter(
       (i) =>
         i.title.toLowerCase().includes(q) ||
-        i.tags?.some((t) => t.includes(q))
+        i.tags?.some((tag) => tag.toLowerCase().includes(q))
     );
   }, [items, search]);
 
   const handleRestore = async (id: string) => {
     haptic('success');
-    await updateItem(id, { status: 'active' });
+    try {
+      const archivedItem = items.find((item) => item.id === id);
+      await updateItem(id, {
+        status: archivedItem?.completedAt ? 'done' : 'active',
+        ...(!archivedItem?.completedAt ? { completedAt: undefined } : {}),
+      });
+      toast.success(t('archive.itemRestored'));
+    } catch {
+      toast.error(t('archive.restoreError'));
+    }
   };
 
   const handleUncomplete = async (id: string) => {
     haptic('light');
-    await updateItem(id, { status: 'active', completedAt: undefined });
+    try {
+      await updateItem(id, { status: 'active', completedAt: undefined });
+      toast.success(t('archive.itemActive'));
+    } catch {
+      toast.error(t('archive.updateError'));
+    }
   };
 
   return (
@@ -114,11 +129,13 @@ export default function ArchivePage() {
           <div className="max-w-3xl mx-auto relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 lg:h-3.5 lg:w-3.5 -translate-y-1/2 text-muted-foreground/30" />
             <input
+              aria-label={t(activeTab === 'completed' ? 'archive.searchCompleted' : 'archive.searchArchived')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Search ${activeTab}…`}
+              placeholder={t(activeTab === 'completed' ? 'archive.searchCompletedPlaceholder' : 'archive.searchArchivedPlaceholder')}
               className="w-full rounded-xl lg:rounded-lg border border-border/50 bg-background py-2.5 lg:py-2 pl-10 lg:pl-9 pr-3 text-[14px] lg:text-[13px] outline-none placeholder:text-muted-foreground/30 focus:border-foreground/20 transition-colors"
             />
+            {search && <button type="button" onClick={() => setSearch('')} aria-label={t('archive.clearSearch')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-muted-foreground/50 hover:bg-foreground/[0.05] hover:text-foreground"><X className="h-4 w-4" /></button>}
           </div>
         </div>
 
@@ -130,14 +147,15 @@ export default function ArchivePage() {
               {completedItems.map((item) => (
                 <div key={item.id} className="group">
                   {/* Mobile: swipe to uncomplete */}
-                  <div className="lg:hidden">
-                    <SwipeableRow
+                  <div className="flex items-center gap-1.5 lg:hidden">
+                    <div className="min-w-0 flex-1"><SwipeableRow
                       onSwipeRight={() => handleUncomplete(item.id)}
-                      rightLabel="Uncomplete"
+                      rightLabel={t('archive.uncomplete')}
                       rightIcon={Circle}
                     >
                       <ItemRow item={item} showType compact enableSwipe={false} />
-                    </SwipeableRow>
+                    </SwipeableRow></div>
+                    <button type="button" onClick={() => handleUncomplete(item.id)} aria-label={t('archive.moveActive', { title: item.title })} className="mobile-touch-target shrink-0 rounded-lg p-2 text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-foreground"><Circle className="h-4 w-4" /></button>
                   </div>
                   {/* Desktop: hover button */}
                   <div className="hidden lg:flex items-center gap-1.5">
@@ -145,10 +163,11 @@ export default function ArchivePage() {
                       <ItemRow item={item} showType compact enableSwipe={false} />
                     </div>
                     <button
-                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.05] transition-all shrink-0"
+                      aria-label={t('archive.moveActive', { title: item.title })}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 opacity-70 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.05] focus-visible:opacity-100 transition-all shrink-0"
                       onClick={() => handleUncomplete(item.id)}
                     >
-                      <Circle className="h-3 w-3" /> Uncomplete
+                      <Circle className="h-3 w-3" /> {t('archive.uncomplete')}
                     </button>
                   </div>
                 </div>
@@ -159,9 +178,9 @@ export default function ArchivePage() {
                   <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                     <CheckCircle2 className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
                   </div>
-                  <h3 className="text-[15px] font-medium">No completed items</h3>
+                  <h3 className="text-[15px] font-medium">{t('archive.noCompleted')}</h3>
                   <p className="text-[12px] text-muted-foreground/50 mt-1">
-                    {search ? 'Try a different search term' : 'Completed tasks and goals will appear here'}
+                    {search ? t('archive.tryDifferentSearch') : t('archive.noCompletedDesc')}
                   </p>
                 </div>
               )}
@@ -172,14 +191,15 @@ export default function ArchivePage() {
               {archivedItems.map((item) => (
                 <div key={item.id} className="group">
                   {/* Mobile: swipe to restore */}
-                  <div className="lg:hidden">
-                    <SwipeableRow
+                  <div className="flex items-center gap-1.5 lg:hidden">
+                    <div className="min-w-0 flex-1"><SwipeableRow
                       onSwipeRight={() => handleRestore(item.id)}
-                      rightLabel="Restore"
+                      rightLabel={t('common.restore')}
                       rightIcon={RotateCcw}
                     >
                       <ItemRow item={item} showType compact enableSwipe={false} />
-                    </SwipeableRow>
+                    </SwipeableRow></div>
+                    <button type="button" onClick={() => handleRestore(item.id)} aria-label={t('archive.restoreItem', { title: item.title })} className="mobile-touch-target shrink-0 rounded-lg p-2 text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-foreground"><RotateCcw className="h-4 w-4" /></button>
                   </div>
                   {/* Desktop: hover button */}
                   <div className="hidden lg:flex items-center gap-1.5">
@@ -187,10 +207,11 @@ export default function ArchivePage() {
                       <ItemRow item={item} showType compact enableSwipe={false} />
                     </div>
                     <button
-                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.05] transition-all shrink-0"
+                      aria-label={t('archive.restoreItem', { title: item.title })}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 opacity-70 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.05] focus-visible:opacity-100 transition-all shrink-0"
                       onClick={() => handleRestore(item.id)}
                     >
-                      <RotateCcw className="h-3 w-3" /> Restore
+                      <RotateCcw className="h-3 w-3" /> {t('common.restore')}
                     </button>
                   </div>
                 </div>
@@ -201,9 +222,9 @@ export default function ArchivePage() {
                   <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                     <ArchiveIcon className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
                   </div>
-                  <h3 className="text-[15px] font-medium">Archive is empty</h3>
+                  <h3 className="text-[15px] font-medium">{t('archive.archiveEmpty')}</h3>
                   <p className="text-[12px] text-muted-foreground/50 mt-1">
-                    {search ? 'Try a different search term' : 'Archived items will appear here'}
+                    {search ? t('archive.tryDifferentSearch') : t('archive.archiveEmptyDesc')}
                   </p>
                 </div>
               )}

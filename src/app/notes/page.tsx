@@ -1,15 +1,24 @@
 'use client';
 
-import { useMemo, useState, useRef } from 'react';
-import { FileText, Plus, Check } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { FileText, Plus, Search, X } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
-import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
-import type { NoteSubtype, OrbitItem } from '@/lib/types';
+import { cn, getLocale } from '@/lib/utils';
+import { format, isValid } from 'date-fns';
+import type { NoteSubtype } from '@/lib/types';
 import { NoteEditor } from '@/components/notes/note-editor';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
+import { toast } from 'sonner';
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 const FILTERS: { labelKey: TranslationKey; value: NoteSubtype | 'all' }[] = [
 	{ labelKey: 'notes.all', value: 'all' },
@@ -20,63 +29,107 @@ const FILTERS: { labelKey: TranslationKey; value: NoteSubtype | 'all' }[] = [
 ];
 
 export default function NotesPage() {
-	const { items, setSelectedItemId } = useOrbitStore();
+	const items = useOrbitStore((state) => state.items);
 	const { user } = useAuth();
-	const { t } = useTranslation();
+		const { t, tp, lang } = useTranslation();
 	const [filter, setFilter] = useState<NoteSubtype | 'all'>('all');
+	const [searchQuery, setSearchQuery] = useState('');
 	const [isCreating, setIsCreating] = useState(false);
 	const [newNoteTitle, setNewNoteTitle] = useState('');
 	const [newNoteContent, setNewNoteContent] = useState('');
-	const [editingNote, setEditingNote] = useState<OrbitItem | null>(null);
+	const [createError, setCreateError] = useState<string | null>(null);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+	const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	const contentInputRef = useRef<HTMLTextAreaElement>(null);
+	const createInFlightRef = useRef(false);
 
 	const notes = useMemo(() => {
 		const all = items.filter((i) => i.type === 'note' && i.status !== 'archived');
-		if (filter === 'all') return all;
-		return all.filter((i) => i.noteSubtype === filter || i.tags?.includes(filter));
-	}, [items, filter]);
+		const categorized = filter === 'all'
+			? all
+			: all.filter((i) => i.noteSubtype === filter || i.tags?.includes(filter));
+			const query = searchQuery.trim().toLocaleLowerCase(lang);
+		if (!query) return categorized;
+		return categorized.filter((note) =>
+			note.title.toLocaleLowerCase().includes(query) ||
+			(note.content || '').toLocaleLowerCase().includes(query)
+		);
+		}, [items, filter, lang, searchQuery]);
 
-	const handleCreateNote = async () => {
-		if (!user || (!newNoteTitle.trim() && !newNoteContent.trim())) {
-			setIsCreating(false);
-			setNewNoteTitle('');
-			setNewNoteContent('');
-			return;
-		}
+	const editingNote = editingNoteId
+		? items.find((item) => item.id === editingNoteId && item.type === 'note')
+		: undefined;
 
-		await createItem({
-			type: 'note',
-			status: 'active',
-			title: newNoteTitle.trim() || 'Untitled',
-			content: newNoteContent.trim(),
-			noteSubtype: filter === 'all' ? 'general' : filter,
-			tags: filter !== 'all' ? [filter] : [],
-			userId: user.uid,
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		});
-
+	const clearNewNote = () => {
 		setIsCreating(false);
 		setNewNoteTitle('');
 		setNewNoteContent('');
+		setCreateError(null);
+	};
+
+	const requestDismissNewNote = () => {
+		if (isSubmitting) return;
+		if (newNoteTitle.trim() || newNoteContent.trim()) {
+			setDiscardDialogOpen(true);
+			return;
+		}
+		clearNewNote();
+	};
+
+	const discardNewNote = (): boolean => {
+		clearNewNote();
+		return true;
+	};
+
+	const handleCreateNote = async () => {
+		if (createInFlightRef.current) return;
+		if (!newNoteTitle.trim() && !newNoteContent.trim()) {
+			clearNewNote();
+			return;
+		}
+		if (!user) {
+				setCreateError(t('notes.signInRequired'));
+			return;
+		}
+
+		createInFlightRef.current = true;
+		setIsSubmitting(true);
+		setCreateError(null);
+		try {
+			await createItem({
+				type: 'note',
+				status: 'active',
+					title: newNoteTitle.trim() || t('notes.untitled'),
+				content: newNoteContent.trim(),
+				noteSubtype: filter === 'all' ? 'general' : filter,
+				tags: filter !== 'all' ? [filter] : [],
+				userId: user.uid,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+			clearNewNote();
+		} catch {
+				setCreateError(t('notes.createError'));
+				toast.error(t('notes.createToastError'));
+		} finally {
+			createInFlightRef.current = false;
+			setIsSubmitting(false);
+		}
 	};
 
 	const handleStartCreating = () => {
+		setCreateError(null);
 		setIsCreating(true);
-		setTimeout(() => titleInputRef.current?.focus(), 0);
 	};
 
 	// Smart list auto-increment for numbered lists
 	const handleContentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-		if (e.key === 'Escape') {
-			setIsCreating(false);
-			setNewNoteTitle('');
-			setNewNoteContent('');
-		} else if (e.key === 'Enter') {
-			if (e.metaKey) {
+		if (e.key === 'Enter') {
+			if (e.metaKey || e.ctrlKey) {
 				e.preventDefault();
-				handleCreateNote();
+				void handleCreateNote();
 				return;
 			}
 
@@ -130,121 +183,123 @@ export default function NotesPage() {
 
 	return (
 		<>
-			{/* Floating create card - EXACTLY like command bar */}
-			{isCreating && (
-				<div
-					className="fixed inset-0 z-50 flex items-start bg-background/80 backdrop-blur-sm"
-					onClick={(e) => {
-						if (e.target === e.currentTarget) {
-							setIsCreating(false);
-							setNewNoteTitle('');
-							setNewNoteContent('');
-						}
+			<Dialog open={isCreating} onOpenChange={(open) => !open && requestDismissNewNote()}>
+				<DialogContent
+					showCloseButton={false}
+					className="fixed left-1/2 top-[max(env(safe-area-inset-top,0px),8px)] w-[calc(100%-1.5rem)] max-w-[520px] translate-x-[-50%] translate-y-0 gap-0 overflow-hidden rounded-2xl border-border/60 bg-popover p-0 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:top-[18vh] lg:rounded-xl lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]"
+					onOpenAutoFocus={(event) => {
+						event.preventDefault();
+						titleInputRef.current?.focus();
 					}}
 				>
-					<div 
-						className={cn(
-							'relative w-full',
-							// Mobile: top-aligned card with safe area
-							'pt-[max(env(safe-area-inset-top,0px),8px)] px-3',
-							// Desktop: centered
-							'lg:absolute lg:top-[18vh] lg:left-1/2 lg:-translate-x-1/2 lg:pt-0 lg:px-0',
-							'lg:max-w-[520px]',
-							'animate-slide-down-spring lg:animate-scale-in'
-						)}
-					>
-						<div className={cn(
-							'overflow-hidden bg-popover',
-							'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
-							'rounded-2xl lg:rounded-xl',
-							'border border-border/60'
-						)}>
-							{/* Title Input */}
-							<div className="flex items-center gap-3 px-4 py-3 lg:py-3">
-								<FileText className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
-								<input
-									ref={titleInputRef}
-									value={newNoteTitle}
-									onChange={(e) => setNewNoteTitle(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === 'Escape') {
-											setIsCreating(false);
-											setNewNoteTitle('');
-											setNewNoteContent('');
-										} else if (e.key === 'Enter') {
-											e.preventDefault();
-											contentInputRef.current?.focus();
-										}
-									}}
-									placeholder="Note title..."
-									className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
-									autoFocus
-									autoComplete="off"
-									autoCorrect="off"
-									enterKeyHint="next"
-								/>
-								<button
-									onClick={() => {
-										setIsCreating(false);
-										setNewNoteTitle('');
-										setNewNoteContent('');
-									}}
-									className="rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/50 hover:text-muted-foreground lg:hidden"
-								>
-									Cancel
-								</button>
-							</div>
+					<DialogHeader className="sr-only">
+							<DialogTitle>{t('notes.createTitle')}</DialogTitle>
+							<DialogDescription>
+								{t('notes.createDescription')}
+						</DialogDescription>
+					</DialogHeader>
 
-							{/* Divider */}
-							<div className="h-px bg-border" />
-
-							{/* Content Input */}
-							<div className="px-4 py-3 lg:py-3">
-								<textarea
-									ref={contentInputRef}
-									value={newNoteContent}
-									onChange={(e) => setNewNoteContent(e.target.value)}
-									onKeyDown={handleContentKeyDown}
-									placeholder="Take a note..."
-									className="w-full bg-transparent text-[14px] lg:text-[13px] text-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[120px] max-h-[40vh] overflow-y-auto leading-relaxed"
-									rows={6}
-									enterKeyHint="done"
-								/>
-							</div>
-
-							{/* Divider */}
-							<div className="h-px bg-border" />
-
-							{/* Footer */}
-							<div className="flex items-center justify-end px-4 py-2.5 lg:py-2 bg-muted/30">
-								<button
-									onClick={handleCreateNote}
-									className="orbit-pressable rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background hover:bg-foreground/90 lg:text-[11px]"
-								>
-									Create
-								</button>
-							</div>
-						</div>
+					<div className="flex items-center gap-3 px-4 py-3">
+						<FileText className="h-5 w-5 shrink-0 text-muted-foreground/50 lg:h-4 lg:w-4" />
+						<input
+								aria-label={t('notes.titleLabel')}
+							ref={titleInputRef}
+							value={newNoteTitle}
+							onChange={(event) => {
+								setNewNoteTitle(event.target.value);
+								setCreateError(null);
+							}}
+							onKeyDown={(event) => {
+								if (event.key === 'Enter') {
+									event.preventDefault();
+									contentInputRef.current?.focus();
+								}
+							}}
+								placeholder={t('notes.titlePlaceholder')}
+							disabled={isSubmitting}
+							className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/40 disabled:cursor-wait lg:text-sm"
+							autoComplete="off"
+							autoCorrect="off"
+							enterKeyHint="next"
+						/>
+						<button
+							type="button"
+							onClick={requestDismissNewNote}
+							disabled={isSubmitting}
+							className="min-h-11 rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/60 hover:text-muted-foreground disabled:cursor-wait disabled:opacity-50"
+						>
+								{t('common.cancel')}
+						</button>
 					</div>
-				</div>
-			)}
+
+					<div className="h-px bg-border" />
+
+					<div className="px-4 py-3">
+						<textarea
+								aria-label={t('notes.contentLabel')}
+							ref={contentInputRef}
+							value={newNoteContent}
+							onChange={(event) => {
+								setNewNoteContent(event.target.value);
+								setCreateError(null);
+							}}
+							onKeyDown={handleContentKeyDown}
+								placeholder={t('notes.contentPlaceholder')}
+							disabled={isSubmitting}
+							className="max-h-[40vh] min-h-[120px] w-full resize-none overflow-y-auto bg-transparent text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40 disabled:cursor-wait lg:text-[13px]"
+							rows={6}
+							enterKeyHint="done"
+						/>
+					</div>
+
+					{createError && (
+						<div role="alert" className="border-t border-destructive/20 bg-destructive/10 px-4 py-2 text-xs text-destructive">
+							{createError}
+						</div>
+					)}
+
+					<div className="h-px bg-border" />
+
+					<div className="flex items-center justify-end bg-muted/30 px-4 py-2.5">
+						<button
+							type="button"
+							onClick={() => void handleCreateNote()}
+							disabled={isSubmitting}
+							className="orbit-pressable min-h-10 rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background hover:bg-foreground/90 disabled:cursor-wait disabled:opacity-60 lg:text-[11px]"
+						>
+								{isSubmitting ? t('notes.creating') : t('common.create')}
+						</button>
+					</div>
+				</DialogContent>
+			</Dialog>
+
+			<ConfirmDialog
+				open={discardDialogOpen}
+				onOpenChange={setDiscardDialogOpen}
+					title={t('notes.discardTitle')}
+					description={t('notes.discardDescription')}
+					confirmLabel={t('notes.discardAction')}
+				onConfirm={discardNewNote}
+			/>
 
 		<div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-6xl mx-auto pb-safe" data-slot="page-content">
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-xl font-semibold tracking-tight">{t('nav.notes')}</h1>
 					<p className="text-[13px] text-muted-foreground/60 mt-0.5">
-						{notes.length} {notes.length === 1 ? 'note' : 'notes'}
+							{tp('notes.count.one', 'notes.count.other', notes.length)}
 					</p>
 				</div>
 			</div>
 
 			{/* Filter tabs — scrollable on mobile */}
-			<div className="flex gap-0.5 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 no-scrollbar">
+			<div className="-mx-4 flex gap-0.5 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
 				{FILTERS.map((f) => (
 					<button
 						key={f.value}
+						type="button"
 						onClick={() => setFilter(f.value)}
+						aria-pressed={filter === f.value}
 						className={cn(
 							'rounded-xl lg:rounded-md px-3 lg:px-2.5 py-1.5 lg:py-1 text-[13px] lg:text-[12px] font-medium transition-colors shrink-0 active:scale-95',
 							filter === f.value
@@ -257,22 +312,34 @@ export default function NotesPage() {
 				))}
 			</div>
 
+			<div className="relative">
+				<Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/45" />
+					<label htmlFor="note-search" className="sr-only">{t('notes.searchLabel')}</label>
+				<input
+					id="note-search"
+					value={searchQuery}
+					onChange={(event) => setSearchQuery(event.target.value)}
+						placeholder={t('notes.searchPlaceholder')}
+					className="w-full rounded-xl border border-border/60 bg-card py-2.5 pl-9 pr-10 text-[14px] outline-none placeholder:text-muted-foreground/35 focus-visible:ring-2 focus-visible:ring-ring/25"
+				/>
+					{searchQuery && <button type="button" onClick={() => setSearchQuery('')} aria-label={t('notes.clearSearch')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-muted-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground"><X className="h-4 w-4" /></button>}
+			</div>
+
 			{/* Notes grid */}
 			<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 pb-4">
 				{/* Quick add button */}
-				{!isCreating && (
-					<button
-						onClick={handleStartCreating}
-						className="flex items-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/50 p-4 text-left transition-all hover:bg-card hover:border-border"
-					>
-						<Plus className="h-4 w-4 text-muted-foreground/40" />
-						<span className="text-[12px] text-muted-foreground/60">Take a note...</span>
-					</button>
-				)}
+				<button
+					type="button"
+					onClick={handleStartCreating}
+					className="flex items-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/50 p-4 text-left transition-all hover:bg-card hover:border-border"
+				>
+					<Plus className="h-4 w-4 text-muted-foreground/40" />
+						<span className="text-[12px] text-muted-foreground/60">{t('notes.takeANote')}</span>
+				</button>
 				{notes.map((note) => (
 					<button
 						key={note.id}
-						onClick={() => setEditingNote(note)}
+						onClick={() => setEditingNoteId(note.id)}
 						className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card p-4 text-left transition-all hover:bg-foreground/[0.02] hover:border-border group"
 					>
 						<div className="flex items-start justify-between gap-2">
@@ -281,7 +348,7 @@ export default function NotesPage() {
 							</h3>
 							{note.noteSubtype && note.noteSubtype !== 'general' && (
 								<span className="text-[10px] text-muted-foreground/40 capitalize shrink-0">
-									{note.noteSubtype}
+									{t(`noteSubtype.${note.noteSubtype}`)}
 								</span>
 							)}
 						</div>
@@ -292,7 +359,9 @@ export default function NotesPage() {
 						)}
 						<div className="flex items-center justify-between mt-auto pt-1">
 							<span className="text-[10px] text-muted-foreground/30 tabular-nums">
-								{format(new Date(note.updatedAt), 'dd MMM yy')}
+									{isValid(new Date(note.updatedAt))
+										? format(new Date(note.updatedAt), 'dd MMM yy', { locale: getLocale(lang) })
+										: t('common.dateUnavailable')}
 							</span>
 							{note.tags && note.tags.length > 0 && (
 								<span className="text-[10px] text-muted-foreground/30">
@@ -309,7 +378,7 @@ export default function NotesPage() {
 					<div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
 						<FileText className="h-5 w-5 text-muted-foreground/30" />
 					</div>
-					<h3 className="text-[15px] font-medium">{t('notes.noNotes')}</h3>
+						<h3 className="text-[15px] font-medium">{searchQuery ? t('notes.noMatch') : t('notes.noNotes')}</h3>
 					<p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
 						{t('notes.noNotesDesc')}
 					</p>
@@ -319,7 +388,7 @@ export default function NotesPage() {
 
 		{/* Note Editor */}
 		{editingNote && (
-			<NoteEditor note={editingNote} onClose={() => setEditingNote(null)} />
+			<NoteEditor key={editingNote.id} note={editingNote} onClose={() => setEditingNoteId(null)} />
 		)}
 		</>
 	);

@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, useEffect, useState } from 'react';
+import { Suspense, useCallback, useMemo, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Sun,
@@ -10,6 +10,7 @@ import {
   Clock,
   Flame,
   CalendarDays,
+  CalendarRange,
   Target,
   Sparkles,
   ArrowRight,
@@ -20,27 +21,98 @@ import {
 import { cn } from '@/lib/utils';
 import { useOrbitStore } from '@/lib/store';
 import {
+  addDays,
+  endOfWeek,
   format,
+  isWithinInterval,
   parseISO,
+  startOfDay,
+  startOfWeek,
 } from 'date-fns';
-import { getLocale } from '@/lib/utils';
+import type { Locale } from 'date-fns';
+import { getLocale, getWeekStartsOn } from '@/lib/utils';
 import { isHabitScheduledForDate, isHabitCompletedForDate, calculateStreak } from '@/lib/habits';
 import { updateItem } from '@/lib/firestore';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useTranslation } from '@/lib/i18n';
+import { useAuth } from '@/components/providers/auth-provider';
+import {
+  createBriefingJournal,
+  flushBriefingJournal,
+  persistBriefingJournalDraft,
+  saveBriefingJournal,
+  subscribeToBriefingJournal,
+  type BriefingJournal,
+} from '@/lib/briefing';
 import type { OrbitItem } from '@/lib/types';
+import { toast } from 'sonner';
+import { eventOccursOnDate } from '@/lib/dashboard';
 
-type Phase = 'morning' | 'evening';
+type Phase = 'morning' | 'evening' | 'week';
+
+interface PendingBriefingSave {
+  revision: number;
+  userId: string;
+  journal: BriefingJournal;
+}
 
 function isOpenScheduledTask(item: OrbitItem) {
   return item.type === 'task' && item.status !== 'done' && item.status !== 'archived';
 }
 
+function useAlignedMinuteClock(): Date {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    let timer: number | undefined;
+
+    const schedule = () => {
+      const currentTime = Date.now();
+      const delay = 60_000 - (currentTime % 60_000) + 25;
+      timer = window.setTimeout(tick, delay);
+    };
+    const tick = () => {
+      setNow(new Date());
+      schedule();
+    };
+    const resync = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      tick();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') resync();
+    };
+
+    schedule();
+    window.addEventListener('focus', resync);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      window.removeEventListener('focus', resync);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
+  return now;
+}
+
 export default function BriefingPage() {
   return (
-    <Suspense fallback={<div className="min-h-[100dvh] bg-background" />}>
+    <Suspense fallback={<BriefingFallback />}>
       <BriefingContent />
     </Suspense>
+  );
+}
+
+function BriefingFallback() {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="flex min-h-[100dvh] items-center justify-center bg-background text-sm text-muted-foreground"
+      aria-busy="true"
+    >
+      {t('briefing.loading')}
+    </div>
   );
 }
 
@@ -48,17 +120,19 @@ function BriefingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { items, setSelectedItemId } = useOrbitStore();
-  const { lang } = useTranslation();
+  const { user } = useAuth();
+  const { t, tp, lang } = useTranslation();
   const locale = getLocale(lang);
-  const { settings } = useSettingsStore();
-  const hockeyMode = settings.hockeyMode && settings.language === 'de';
+  const now = useAlignedMinuteClock();
+  const weekStartSetting = useSettingsStore((state) => state.settings.weekStart);
+  const weekStartsOn = getWeekStartsOn(weekStartSetting);
 
   // Auto-detect phase from URL or time of day
   const phase: Phase = useMemo(() => {
     const param = searchParams.get('type');
-    if (param === 'morning' || param === 'evening') return param;
-    return new Date().getHours() < 16 ? 'morning' : 'evening';
-  }, [searchParams]);
+    if (param === 'morning' || param === 'evening' || param === 'week') return param;
+    return now.getHours() < 16 ? 'morning' : 'evening';
+  }, [now, searchParams]);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -67,11 +141,145 @@ function BriefingContent() {
     return () => clearTimeout(t);
   }, []);
 
-  const today = new Date();
+  const today = now;
   const todayStr = format(today, 'yyyy-MM-dd');
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const todayEnd = todayStart + 86400000;
-  const tomorrowStr = format(new Date(todayStart + 86400000), 'yyyy-MM-dd');
+  const todayStart = startOfDay(today).getTime();
+  const todayEnd = startOfDay(addDays(today, 1)).getTime();
+  const tomorrowStr = format(addDays(today, 1), 'yyyy-MM-dd');
+  const weekStart = startOfWeek(today, { weekStartsOn });
+  const weekEnd = endOfWeek(today, { weekStartsOn });
+  const weekKey = format(weekStart, 'yyyy-MM-dd');
+  const ownerScope = user?.uid || 'demo-user';
+  const activeJournalScope = `${ownerScope}:${todayStr}:${weekKey}`;
+  const [journal, setJournal] = useState(() => createBriefingJournal(todayStr, weekKey));
+  const [loadedJournalScope, setLoadedJournalScope] = useState<string | null>(null);
+  const completePendingRef = useRef(false);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const journalRef = useRef(journal);
+  const pendingSaveRef = useRef<PendingBriefingSave | null>(null);
+  const saveRevisionRef = useRef(0);
+  const flushInFlightRef = useRef<Promise<void> | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
+  const persistenceActiveRef = useRef(true);
+  const flushPendingRef = useRef<() => Promise<void>>(async () => {});
+
+  journalRef.current = journal;
+
+  const flushPending = useCallback(async (): Promise<void> => {
+    if (flushInFlightRef.current) {
+      await flushInFlightRef.current;
+      if (pendingSaveRef.current) await flushPendingRef.current();
+      return;
+    }
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+
+    const operation = (async () => {
+      try {
+        const outcome = await flushBriefingJournal(pending.userId, pending.journal);
+        if (
+          pendingSaveRef.current?.revision === pending.revision
+          && (outcome.localCommitted || outcome.cloudCommitted)
+        ) {
+          pendingSaveRef.current = null;
+        }
+      } catch {
+        if (persistenceActiveRef.current && pendingSaveRef.current?.revision === pending.revision) {
+          if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = window.setTimeout(() => { void flushPendingRef.current(); }, 5_000);
+        }
+      }
+    })();
+
+    flushInFlightRef.current = operation;
+    try {
+      await operation;
+    } finally {
+      if (flushInFlightRef.current === operation) flushInFlightRef.current = null;
+      const latest = pendingSaveRef.current;
+      if (persistenceActiveRef.current && latest && latest.revision !== pending.revision) {
+        if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = window.setTimeout(() => { void flushPendingRef.current(); }, 0);
+      }
+    }
+  }, []);
+
+  flushPendingRef.current = flushPending;
+
+  const queueBriefingSave = useCallback((nextJournal: BriefingJournal) => {
+    const snapshot: BriefingJournal = {
+      version: 2,
+      daily: { ...nextJournal.daily, priorityIds: [...nextJournal.daily.priorityIds] },
+      weekly: { ...nextJournal.weekly },
+    };
+    pendingSaveRef.current = {
+      revision: ++saveRevisionRef.current,
+      userId: ownerScope,
+      journal: snapshot,
+    };
+    try {
+      persistBriefingJournalDraft(ownerScope, snapshot);
+    } catch {
+      // Keep the draft dirty. The verified writer already raised the generic
+      // durability warning and the scheduled flush can still commit to cloud.
+    }
+    if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = window.setTimeout(() => { void flushPendingRef.current(); }, 250);
+  }, [ownerScope]);
+
+  const commitJournal = useCallback((
+    next: BriefingJournal | ((current: BriefingJournal) => BriefingJournal),
+  ): BriefingJournal | null => {
+    if (loadedJournalScope !== activeJournalScope) return null;
+    const nextJournal = typeof next === 'function' ? next(journalRef.current) : next;
+    journalRef.current = nextJournal;
+    queueBriefingSave(nextJournal);
+    setJournal(nextJournal);
+    return nextJournal;
+  }, [activeJournalScope, loadedJournalScope, queueBriefingSave]);
+
+  useEffect(() => {
+    let frame: number | null = null;
+    let unsubscribe = () => {};
+    // DataProvider establishes the active account context in its effect first.
+    const timer = setTimeout(() => {
+      unsubscribe = subscribeToBriefingJournal(ownerScope, todayStr, weekKey, (nextJournal) => {
+        if (frame !== null) cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => {
+          journalRef.current = nextJournal;
+          setJournal((current) => JSON.stringify(current) === JSON.stringify(nextJournal) ? current : nextJournal);
+          setLoadedJournalScope(activeJournalScope);
+        });
+      });
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      if (frame !== null) cancelAnimationFrame(frame);
+      unsubscribe();
+      void flushPendingRef.current();
+    };
+  }, [activeJournalScope, ownerScope, todayStr, weekKey]);
+
+  useEffect(() => {
+    persistenceActiveRef.current = true;
+    const flushNow = () => { void flushPendingRef.current(); };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') flushNow();
+    };
+    window.addEventListener('pagehide', flushNow);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushNow);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+      flushNow();
+      persistenceActiveRef.current = false;
+    };
+  }, []);
+
+  const journalReady = loadedJournalScope === activeJournalScope
+    && journal.daily.date === todayStr
+    && journal.weekly.weekKey === weekKey;
 
   // ── Computed data ──
   const tasksDueToday = useMemo(() =>
@@ -92,7 +300,7 @@ function BriefingContent() {
   );
 
   const eventsToday = useMemo(() =>
-    items.filter(i => i.type === 'event' && i.status !== 'archived' && i.startDate === todayStr)
+    items.filter(i => eventOccursOnDate(i, todayStr))
       .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
     [items, todayStr]
   );
@@ -110,7 +318,11 @@ function BriefingContent() {
   );
 
   const completedToday = useMemo(() =>
-    items.filter(i => i.status === 'done' && i.completedAt && i.completedAt >= todayStart && i.completedAt < todayEnd),
+    items.filter(i => i.type === 'task'
+      && i.status === 'done'
+      && i.completedAt
+      && i.completedAt >= todayStart
+      && i.completedAt < todayEnd),
     [items, todayStart, todayEnd]
   );
 
@@ -120,7 +332,8 @@ function BriefingContent() {
   );
 
   const eventsTomorrow = useMemo(() =>
-    items.filter(i => i.type === 'event' && i.status !== 'archived' && i.startDate === tomorrowStr),
+    items.filter(i => eventOccursOnDate(i, tomorrowStr))
+      .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
     [items, tomorrowStr]
   );
 
@@ -129,32 +342,89 @@ function BriefingContent() {
     [items]
   );
 
+  const tasksDueThisWeek = useMemo(() =>
+    items.filter((item) => {
+      if (!isOpenScheduledTask(item) || !item.dueDate) return false;
+      try {
+        return isWithinInterval(parseISO(item.dueDate), { start: weekStart, end: weekEnd });
+      } catch {
+        return false;
+      }
+    }),
+    [items, weekEnd, weekStart]
+  );
+
+  const completedThisWeek = useMemo(() =>
+    items.filter((item) => item.status === 'done'
+      && item.completedAt
+      && item.completedAt >= weekStart.getTime()
+      && item.completedAt <= weekEnd.getTime()),
+    [items, weekEnd, weekStart]
+  );
+
   const bestStreak = useMemo(() =>
     habitsToday.reduce((max, h) => Math.max(max, calculateStreak(h)), 0),
     [habitsToday]
   );
 
-  const topTask = tasksDueToday.find(t => t.priority === 'high') || myDayTasks.find(t => t.priority === 'high') || tasksDueToday[0] || myDayTasks[0];
+  const briefingCandidates = useMemo(() => {
+    const unique = new Map<string, OrbitItem>();
+    for (const task of [...overdue, ...tasksDueToday, ...myDayTasks, ...items.filter(isOpenScheduledTask)]) {
+      if (!unique.has(task.id)) unique.set(task.id, task);
+    }
+    return [...unique.values()].slice(0, 12);
+  }, [items, myDayTasks, overdue, tasksDueToday]);
+
+  useEffect(() => {
+    if (loadedJournalScope !== activeJournalScope) return;
+    const activeIds = new Set(briefingCandidates.map((task) => task.id));
+    const filteredIds = journal.daily.priorityIds.filter((id) => activeIds.has(id));
+    if (filteredIds.length === journal.daily.priorityIds.length) return;
+    const frame = requestAnimationFrame(() => {
+      commitJournal((current) => ({
+        ...current,
+        daily: { ...current.daily, priorityIds: current.daily.priorityIds.filter((id) => activeIds.has(id)) },
+      }));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeJournalScope, briefingCandidates, commitJournal, journal.daily.priorityIds, loadedJournalScope]);
+
+  const focusedTasks = journal.daily.priorityIds
+    .map((id) => items.find((item) => item.id === id))
+    .filter((item): item is OrbitItem => Boolean(item));
+  const topTask = focusedTasks[0]
+    || tasksDueToday.find(t => t.priority === 'high')
+    || myDayTasks.find(t => t.priority === 'high')
+    || tasksDueToday[0]
+    || myDayTasks[0];
+
+  const togglePriority = (taskId: string) => {
+    commitJournal((current) => {
+      const activeIds = new Set(briefingCandidates.map((task) => task.id));
+      const selected = current.daily.priorityIds.filter((id) => activeIds.has(id));
+      const priorityIds = selected.includes(taskId)
+        ? selected.filter((id) => id !== taskId)
+        : selected.length < 3 ? [...selected, taskId] : selected;
+      return { ...current, daily: { ...current.daily, priorityIds } };
+    });
+  };
 
   // ── Greeting ──
   const greeting = useMemo(() => {
-    if (hockeyMode) {
-      return phase === 'morning'
-        ? ['Aufwärmen, Dr.! 🏒', 'Anpfiff!', 'Spieltag, Dr.!', 'Los geht\'s!'][Math.floor(Math.random() * 4)]
-        : ['Schlusspfiff! 🏒', 'Abpfiff.', 'Das Spiel ist aus.', 'Feierabend, Dr.'][Math.floor(Math.random() * 4)];
+    if (phase === 'week') {
+      return t('briefing.greetingWeek');
     }
-    const hour = today.getHours();
+    const hour = now.getHours();
     if (phase === 'morning') {
-      if (hour < 6) return 'Early bird.';
-      if (hour < 9) return 'Good morning.';
-      if (hour < 12) return 'Let\'s get to it.';
-      return 'Good afternoon.';
+      if (hour < 6) return t('briefing.greetingEarly');
+      if (hour < 9) return t('briefing.greetingMorning');
+      if (hour < 12) return t('briefing.greetingStart');
+      return t('briefing.greetingAfternoon');
     }
-    if (hour < 18) return 'Afternoon check-in.';
-    if (hour < 21) return 'Evening reflection.';
-    return 'Day\'s end.';
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, hockeyMode]);
+    if (hour < 18) return t('briefing.greetingAfternoonCheck');
+    if (hour < 21) return t('briefing.greetingEvening');
+    return t('briefing.greetingDayEnd');
+  }, [now, phase, t]);
 
   const dayLabel = format(today, 'EEEE, d MMMM', { locale });
 
@@ -166,8 +436,38 @@ function BriefingContent() {
   const toggleHabit = async (habit: OrbitItem) => {
     const completions = { ...(habit.completions || {}) };
     completions[todayStr] = !completions[todayStr];
-    await updateItem(habit.id, { completions });
+    try {
+      await updateItem(habit.id, { completions });
+    } catch {
+      toast.error(t('briefing.habitUpdateError'));
+    }
   };
+
+  const completeBriefing = async () => {
+    if (!journalReady || completePendingRef.current) return;
+    completePendingRef.current = true;
+    setIsCompleting(true);
+    const completedAt = Date.now();
+    const next = phase === 'morning'
+      ? { ...journal, daily: { ...journal.daily, morningCompletedAt: completedAt } }
+      : phase === 'evening'
+        ? { ...journal, daily: { ...journal.daily, eveningCompletedAt: completedAt } }
+        : { ...journal, weekly: { ...journal.weekly, completedAt } };
+    try {
+      commitJournal(next);
+      await saveBriefingJournal(ownerScope, next);
+      router.push('/');
+    } catch {
+      toast.error(t('briefing.saveError'));
+    } finally {
+      completePendingRef.current = false;
+      setIsCompleting(false);
+    }
+  };
+
+  // Never flash the previous date or account's journal while its replacement
+  // subscription is loading.
+  if (!journalReady) return <BriefingFallback />;
 
   // ═══════════════════════════════════════════════════════════
   // RENDER
@@ -179,7 +479,9 @@ function BriefingContent() {
       mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4',
       phase === 'morning'
         ? 'bg-gradient-to-b from-amber-50/50 via-background to-background dark:from-amber-950/20 dark:via-background dark:to-background'
-        : 'bg-gradient-to-b from-indigo-50/50 via-background to-background dark:from-indigo-950/20 dark:via-background dark:to-background',
+        : phase === 'evening'
+          ? 'bg-gradient-to-b from-indigo-50/50 via-background to-background dark:from-indigo-950/20 dark:via-background dark:to-background'
+          : 'bg-gradient-to-b from-sky-50/50 via-background to-background dark:from-sky-950/20 dark:via-background dark:to-background',
     )}>
       <div className="flex-1 p-5 lg:p-10 max-w-xl mx-auto w-full space-y-6 lg:space-y-8 pb-10">
 
@@ -191,15 +493,43 @@ function BriefingContent() {
           <div className="flex items-center gap-2 text-muted-foreground/40">
             {phase === 'morning' ? (
               <Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} />
-            ) : (
+            ) : phase === 'evening' ? (
               <Moon className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
+            ) : (
+              <CalendarRange className="h-4 w-4 text-sky-500" strokeWidth={1.5} />
             )}
             <span className="text-[11px] uppercase tracking-[0.2em] font-medium">
-              {phase === 'morning' ? (hockeyMode ? 'Morgenbriefing' : 'Morning Briefing') : (hockeyMode ? 'Abendbriefing' : 'Evening Briefing')}
+              {phase === 'morning'
+                ? t('briefing.morningTitle')
+                : phase === 'evening'
+                  ? t('briefing.eveningTitle')
+                  : t('briefing.weekTitle')}
             </span>
           </div>
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{greeting}</h1>
           <p className="text-[13px] text-muted-foreground/50">{dayLabel}</p>
+        </div>
+
+        <div className="grid grid-cols-3 rounded-xl bg-foreground/[0.035] p-1" aria-label={t('briefing.period')}>
+          {([
+            { id: 'morning' as const, label: t('briefing.morning'), icon: Sun },
+            { id: 'evening' as const, label: t('briefing.evening'), icon: Moon },
+            { id: 'week' as const, label: t('briefing.week'), icon: CalendarRange },
+          ]).map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => router.replace(`/briefing?type=${option.id}`)}
+              aria-pressed={phase === option.id}
+              className={cn(
+                'flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium transition-all',
+                phase === option.id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/45 hover:text-foreground',
+              )}
+            >
+              <option.icon className="h-3 w-3" />
+              {option.label}
+            </button>
+          ))}
         </div>
 
         {phase === 'morning' ? (
@@ -214,10 +544,10 @@ function BriefingContent() {
             {/* Quick Stats Bar */}
             <div className="flex items-center gap-3">
               {[
-                { n: tasksDueToday.length + myDayTasks.length, label: hockeyMode ? 'Spielzüge' : 'Tasks', color: 'text-foreground' },
-                { n: eventsToday.length, label: hockeyMode ? 'Anpfiffe' : 'Events', color: 'text-foreground' },
-                { n: habitsToday.length, label: hockeyMode ? 'Training' : 'Habits', color: 'text-foreground' },
-                ...(overdue.length > 0 ? [{ n: overdue.length, label: hockeyMode ? 'Überfällig' : 'Overdue', color: 'text-red-500' }] : []),
+                { n: tasksDueToday.length + myDayTasks.length, label: t('briefing.tasks'), color: 'text-foreground' },
+                { n: eventsToday.length, label: t('briefing.events'), color: 'text-foreground' },
+                { n: habitsToday.length, label: t('briefing.habits'), color: 'text-foreground' },
+                ...(overdue.length > 0 ? [{ n: overdue.length, label: t('briefing.overdue'), color: 'text-red-500' }] : []),
               ].map(({ n, label, color }) => (
                 <div key={label} className="flex-1 rounded-xl border border-border/40 bg-card/50 p-3 text-center">
                   <p className={cn('text-xl font-bold tabular-nums', color)}>{n}</p>
@@ -226,12 +556,63 @@ function BriefingContent() {
               ))}
             </div>
 
+            <BriefingCard
+              icon={<Target className="h-3.5 w-3.5 text-amber-500" />}
+              title={t('briefing.todayFocus', { count: journal.daily.priorityIds.length })}
+            >
+              {briefingCandidates.length === 0 ? (
+                <p className="px-1 py-2 text-[12px] text-muted-foreground/40">{t('briefing.noFocusTasks')}</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {briefingCandidates.map((task) => {
+                    const selected = journal.daily.priorityIds.includes(task.id);
+                    const disabled = !selected && journal.daily.priorityIds.length >= 3;
+                    return (
+                      <button
+                        key={task.id}
+                        type="button"
+                        onClick={() => togglePriority(task.id)}
+                        disabled={disabled}
+                        aria-pressed={selected}
+                        className={cn(
+                          'w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors',
+                          selected ? 'bg-amber-500/10 text-foreground' : 'text-muted-foreground/55 hover:bg-foreground/[0.03]',
+                          disabled && 'opacity-35 cursor-not-allowed',
+                        )}
+                      >
+                        <span className={cn(
+                          'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-semibold',
+                          selected ? 'border-amber-500 bg-amber-500 text-white' : 'border-border/70',
+                        )}>
+                          {selected ? journal.daily.priorityIds.indexOf(task.id) + 1 : ''}
+                        </span>
+                        <span className="truncate">{task.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <textarea
+                value={journal.daily.morningIntention}
+                onChange={(event) => commitJournal((current) => ({
+                  ...current,
+                  daily: { ...current.daily, morningIntention: event.target.value },
+                }))}
+                maxLength={4000}
+                rows={2}
+                placeholder={t('briefing.intentionPlaceholder')}
+                aria-label={t('briefing.intentionLabel')}
+                className="mt-2 w-full resize-none rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[12px] placeholder:text-muted-foreground/30 focus:outline-none focus:border-amber-500/40"
+              />
+            </BriefingCard>
+
             {/* Top Priority */}
             {topTask && (
-              <div
+              <button
+                type="button"
                 onClick={() => setSelectedItemId(topTask.id)}
                 className={cn(
-                  'rounded-2xl border p-4 cursor-pointer transition-all hover:shadow-sm',
+                  'w-full rounded-2xl border p-4 text-left transition-all hover:shadow-sm',
                   phase === 'morning'
                     ? 'border-amber-200/50 bg-amber-50/30 dark:border-amber-900/30 dark:bg-amber-950/10'
                     : 'border-border/40 bg-card/50',
@@ -240,37 +621,38 @@ function BriefingContent() {
                 <div className="flex items-center gap-2 mb-1.5">
                   <Zap className="h-3.5 w-3.5 text-amber-500" />
                   <span className="text-[10px] uppercase tracking-[0.15em] font-medium text-amber-600 dark:text-amber-400">
-                    {hockeyMode ? 'Notfall-Spielzug' : 'Top Priority'}
+                    {t('briefing.topPriority')}
                   </span>
                 </div>
                 <p className="text-[14px] font-medium">{topTask.title}</p>
                 {topTask.dueDate && (
                   <p className="text-[11px] text-muted-foreground/40 mt-1">
-                    {hockeyMode ? 'Fällig' : 'Due'}: {format(parseISO(topTask.dueDate), 'd MMM', { locale })}
+                    {t('briefing.due')}: {format(parseISO(topTask.dueDate), 'PP', { locale })}
                   </p>
                 )}
-              </div>
+              </button>
             )}
 
             {/* Schedule Timeline */}
             {eventsToday.length > 0 && (
               <BriefingCard
                 icon={<CalendarDays className="h-3.5 w-3.5 text-blue-400" />}
-                title={hockeyMode ? 'Spielplan' : 'Today\'s Schedule'}
+                title={t('briefing.todaySchedule')}
               >
                 <div className="space-y-0">
                   {eventsToday.map(event => (
-                    <div
+                    <button
                       key={event.id}
+                      type="button"
                       onClick={() => setSelectedItemId(event.id)}
-                      className="flex items-center gap-3 py-2 px-1 cursor-pointer rounded-lg hover:bg-foreground/[0.02] transition-colors"
+                      className="flex w-full items-center gap-3 rounded-lg px-1 py-2 text-left transition-colors hover:bg-foreground/[0.02]"
                     >
                       <span className="text-[12px] text-muted-foreground/50 font-mono w-12 shrink-0 tabular-nums">
                         {event.startTime || '—'}
                       </span>
                       <div className="h-6 w-px bg-blue-400/20 shrink-0" />
                       <span className="text-[13px] truncate">{event.title}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </BriefingCard>
@@ -280,14 +662,14 @@ function BriefingContent() {
             {(tasksDueToday.length > 0 || overdue.length > 0) && (
               <BriefingCard
                 icon={<Clock className="h-3.5 w-3.5 text-amber-500" />}
-                title={hockeyMode ? 'Deadlines' : 'Deadlines'}
+                title={t('briefing.deadlines')}
               >
                 <div className="space-y-0">
                   {overdue.slice(0, 5).map(task => (
-                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="overdue" />
+                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="overdue" locale={locale} />
                   ))}
                   {tasksDueToday.map(task => (
-                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="due" />
+                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="due" locale={locale} />
                   ))}
                 </div>
               </BriefingCard>
@@ -297,11 +679,11 @@ function BriefingContent() {
             {myDayTasks.length > 0 && (
               <BriefingCard
                 icon={<Sun className="h-3.5 w-3.5 text-amber-500" />}
-                title={hockeyMode ? 'Mein Spieltag' : 'My Day'}
+                title={t('briefing.myDay')}
               >
                 <div className="space-y-0">
                   {myDayTasks.map(task => (
-                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="normal" />
+                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="normal" locale={locale} />
                   ))}
                 </div>
               </BriefingCard>
@@ -311,7 +693,7 @@ function BriefingContent() {
             {habitsToday.length > 0 && (
               <BriefingCard
                 icon={<Flame className="h-3.5 w-3.5 text-orange-400" />}
-                title={`${hockeyMode ? 'Training' : 'Habits'} · ${habitsCompleted.length}/${habitsToday.length}`}
+                title={`${t('briefing.habits')} · ${habitsCompleted.length}/${habitsToday.length}`}
               >
                 <div className="space-y-0">
                   {habitsToday.map(habit => {
@@ -323,7 +705,10 @@ function BriefingContent() {
                         className="flex items-center gap-3 py-2 px-1"
                       >
                         <button
+                          type="button"
                           onClick={() => toggleHabit(habit)}
+                          aria-pressed={done}
+                          aria-label={t(done ? 'briefing.markHabitIncomplete' : 'briefing.markHabitComplete', { title: habit.title })}
                           className={cn(
                             'h-5 w-5 rounded-md border-[1.5px] flex items-center justify-center shrink-0 transition-all',
                             'before:absolute before:inset-[-6px] relative',
@@ -352,21 +737,22 @@ function BriefingContent() {
             {activeGoals.length > 0 && (
               <BriefingCard
                 icon={<Target className="h-3.5 w-3.5 text-purple-400" />}
-                title={hockeyMode ? 'Saisonziele' : 'Active Goals'}
+                title={t('briefing.activeGoals')}
               >
                 <div className="space-y-0">
                   {activeGoals.slice(0, 4).map(goal => (
-                    <div
+                    <button
                       key={goal.id}
+                      type="button"
                       onClick={() => setSelectedItemId(goal.id)}
-                      className="flex items-center gap-3 py-2 px-1 cursor-pointer rounded-lg hover:bg-foreground/[0.02] transition-colors"
+                      className="flex w-full items-center gap-3 rounded-lg px-1 py-2 text-left transition-colors hover:bg-foreground/[0.02]"
                     >
                       <div className="h-1.5 w-1.5 rounded-full bg-purple-400/50 shrink-0" />
                       <span className="text-[13px] truncate flex-1">{goal.title}</span>
                       {goal.timeframe && (
-                        <span className="text-[10px] text-muted-foreground/30">{goal.timeframe}</span>
+                        <span className="text-[10px] text-muted-foreground/30">{t(`timeframe.${goal.timeframe}`)}</span>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
               </BriefingCard>
@@ -377,15 +763,15 @@ function BriefingContent() {
               <div className="text-center py-8">
                 <Sparkles className="h-6 w-6 mx-auto text-muted-foreground/20 mb-3" />
                 <p className="text-[14px] font-medium text-muted-foreground/50">
-                  {hockeyMode ? 'Spielfrei — plane deine Züge, Dr.' : 'Clear runway ahead.'}
+                  {t('briefing.emptyTitle')}
                 </p>
                 <p className="text-[12px] text-muted-foreground/30 mt-1">
-                  {hockeyMode ? 'Der nächste Spielzug wartet.' : 'The next plan is ready when you are.'}
+                  {t('briefing.emptyDescription')}
                 </p>
               </div>
             )}
           </div>
-        ) : (
+        ) : phase === 'evening' ? (
           // ═══════════════════════════════════════════════════
           // EVENING BRIEFING
           // ═══════════════════════════════════════════════════
@@ -397,16 +783,16 @@ function BriefingContent() {
             {/* Score Cards */}
             <div className="grid grid-cols-2 gap-3">
               <ScoreCard
-                label={hockeyMode ? 'Tore' : 'Tasks Done'}
+                label={t('briefing.tasksDone')}
                 value={completedToday.length}
-                subtitle={totalScheduled > 0 ? `of ${totalScheduled}` : undefined}
+                subtitle={totalScheduled > 0 ? t('briefing.ofCount', { count: totalScheduled }) : undefined}
                 score={completionScore}
                 icon={<Trophy className="h-4 w-4 text-amber-500" />}
               />
               <ScoreCard
-                label={hockeyMode ? 'Training' : 'Habits'}
+                label={t('briefing.habits')}
                 value={habitsCompleted.length}
-                subtitle={habitsToday.length > 0 ? `of ${habitsToday.length}` : undefined}
+                subtitle={habitsToday.length > 0 ? t('briefing.ofCount', { count: habitsToday.length }) : undefined}
                 score={habitScore}
                 icon={<Flame className="h-4 w-4 text-orange-400" />}
               />
@@ -419,8 +805,10 @@ function BriefingContent() {
                   <Flame className="h-5 w-5 text-orange-500" />
                 </div>
                 <div>
-                  <p className="text-[14px] font-semibold">{bestStreak} {hockeyMode ? 'Tage Siegesserie' : 'day streak'}</p>
-                  <p className="text-[11px] text-muted-foreground/40">{hockeyMode ? 'Weiter so, Dr.!' : 'Keep the momentum going.'}</p>
+                  <p className="text-[14px] font-semibold">
+                    {tp('briefing.streak.one', 'briefing.streak.other', bestStreak)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/40">{t('briefing.keepMomentum')}</p>
                 </div>
               </div>
             )}
@@ -429,7 +817,7 @@ function BriefingContent() {
             {completedToday.length > 0 && (
               <BriefingCard
                 icon={<CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
-                title={`${hockeyMode ? 'Geschossene Tore' : 'Completed'} · ${completedToday.length}`}
+                title={t('briefing.completedTitle', { count: completedToday.length })}
               >
                 <div className="space-y-0">
                   {completedToday.slice(0, 8).map(item => (
@@ -446,11 +834,11 @@ function BriefingContent() {
             {(tasksDueToday.length > 0 || myDayTasks.length > 0) && (
               <BriefingCard
                 icon={<AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
-                title={`${hockeyMode ? 'Noch auf dem Platz' : 'Carried Over'} · ${tasksDueToday.length + myDayTasks.length}`}
+                title={t('briefing.carriedOverTitle', { count: tasksDueToday.length + myDayTasks.length })}
               >
                 <div className="space-y-0">
                   {[...tasksDueToday, ...myDayTasks].slice(0, 6).map(task => (
-                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="normal" />
+                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="normal" locale={locale} />
                   ))}
                 </div>
               </BriefingCard>
@@ -460,7 +848,7 @@ function BriefingContent() {
             {habitsToday.length > 0 && (
               <BriefingCard
                 icon={<Flame className="h-3.5 w-3.5 text-orange-400" />}
-                title={`${hockeyMode ? 'Training' : 'Habits'} · ${habitsCompleted.length}/${habitsToday.length}`}
+                title={`${t('briefing.habits')} · ${habitsCompleted.length}/${habitsToday.length}`}
               >
                 <div className="space-y-0">
                   {habitsToday.map(habit => {
@@ -485,7 +873,7 @@ function BriefingContent() {
             {(dueTomorrow.length > 0 || eventsTomorrow.length > 0) && (
               <BriefingCard
                 icon={<TrendingUp className="h-3.5 w-3.5 text-blue-400" />}
-                title={hockeyMode ? 'Nächstes Spiel' : 'Tomorrow'}
+                title={t('briefing.tomorrow')}
               >
                 <div className="space-y-0">
                   {eventsTomorrow.slice(0, 3).map(event => (
@@ -498,11 +886,32 @@ function BriefingContent() {
                     </div>
                   ))}
                   {dueTomorrow.slice(0, 4).map(task => (
-                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="normal" />
+                    <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="normal" locale={locale} />
                   ))}
                 </div>
               </BriefingCard>
             )}
+
+            <div>
+              <label htmlFor="evening-reflection" className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
+                {t('briefing.reflection')}
+              </label>
+              <textarea
+                id="evening-reflection"
+                value={journal.daily.eveningReflection}
+                onChange={(event) => commitJournal((current) => ({
+                  ...current,
+                  daily: { ...current.daily, eveningReflection: event.target.value },
+                }))}
+                maxLength={4000}
+                rows={3}
+                placeholder={t('briefing.reflectionPlaceholder')}
+                className="mt-1.5 w-full resize-none rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-indigo-500/40"
+              />
+              {journal.daily.eveningCompletedAt && (
+                <p className="mt-1 text-[10px] text-emerald-600/70">{t('briefing.savedToday')}</p>
+              )}
+            </div>
 
             {/* Evening Verdict */}
             <div className={cn(
@@ -513,32 +922,106 @@ function BriefingContent() {
                 <>
                   <Trophy className="h-8 w-8 mx-auto text-amber-500/40 mb-3" />
                   <p className="text-[15px] font-semibold text-foreground/80">
-                    {hockeyMode ? 'Starkes Spiel, Dr. 🏆' : 'Outstanding day.'}
+                    {t('briefing.outstandingTitle')}
                   </p>
                   <p className="text-[12px] text-muted-foreground/40 mt-1">
-                    {hockeyMode ? 'Du hast es verdient — Feierabend!' : 'You\'ve earned your rest.'}
+                    {t('briefing.outstandingDescription')}
                   </p>
                 </>
               ) : completionScore !== null && completionScore >= 50 ? (
                 <>
                   <TrendingUp className="h-8 w-8 mx-auto text-blue-400/40 mb-3" />
                   <p className="text-[15px] font-semibold text-foreground/80">
-                    {hockeyMode ? 'Solide Leistung.' : 'Solid progress.'}
+                    {t('briefing.solidTitle')}
                   </p>
                   <p className="text-[12px] text-muted-foreground/40 mt-1">
-                    {hockeyMode ? 'Morgen geht\'s weiter.' : 'Tomorrow\'s another chance.'}
+                    {t('briefing.solidDescription')}
                   </p>
                 </>
               ) : (
                 <>
                   <Moon className="h-8 w-8 mx-auto text-indigo-400/30 mb-3" />
                   <p className="text-[15px] font-semibold text-foreground/80">
-                    {hockeyMode ? 'Ruh dich aus, Dr.' : 'Rest well.'}
+                    {t('briefing.restTitle')}
                   </p>
                   <p className="text-[12px] text-muted-foreground/40 mt-1">
-                    {hockeyMode ? 'Morgen ist ein neues Spiel.' : 'Fresh start tomorrow.'}
+                    {t('briefing.restDescription')}
                   </p>
                 </>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className={cn(
+            'space-y-5 transition-all duration-1000 delay-200',
+            mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8',
+          )}>
+            <div className="grid grid-cols-3 gap-3">
+              <ScoreCard
+                label={t('briefing.completedThisWeek')}
+                value={completedThisWeek.length}
+                score={null}
+                icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+              />
+              <ScoreCard
+                label={t('briefing.dueThisWeek')}
+                value={tasksDueThisWeek.length}
+                score={null}
+                icon={<Clock className="h-4 w-4 text-amber-500" />}
+              />
+              <ScoreCard
+                label={t('briefing.activeGoals')}
+                value={activeGoals.length}
+                score={null}
+                icon={<Target className="h-4 w-4 text-purple-500" />}
+              />
+            </div>
+
+            <BriefingCard
+              icon={<CalendarRange className="h-3.5 w-3.5 text-sky-500" />}
+              title={`${format(weekStart, 'd MMM', { locale })} – ${format(weekEnd, 'd MMM', { locale })}`}
+            >
+              {tasksDueThisWeek.length === 0 ? (
+                <p className="px-1 py-2 text-[12px] text-muted-foreground/40">{t('briefing.nothingDueThisWeek')}</p>
+              ) : tasksDueThisWeek.slice(0, 12).map((task) => (
+                <TaskItem key={task.id} task={task} onClick={() => setSelectedItemId(task.id)} variant="normal" locale={locale} />
+              ))}
+            </BriefingCard>
+
+            {activeGoals.length > 0 && (
+              <BriefingCard icon={<Target className="h-3.5 w-3.5 text-purple-500" />} title={t('briefing.goalsInView')}>
+                {activeGoals.slice(0, 6).map((goal) => (
+                  <button
+                    key={goal.id}
+                    type="button"
+                    onClick={() => setSelectedItemId(goal.id)}
+                    className="flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-[13px] hover:bg-foreground/[0.02]"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-purple-400/60" />
+                    <span className="truncate">{goal.title}</span>
+                  </button>
+                ))}
+              </BriefingCard>
+            )}
+
+            <div>
+              <label htmlFor="week-focus" className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
+                {t('briefing.weeklyAnchor')}
+              </label>
+              <textarea
+                id="week-focus"
+                value={journal.weekly.focus}
+                onChange={(event) => commitJournal((current) => ({
+                  ...current,
+                  weekly: { ...current.weekly, focus: event.target.value },
+                }))}
+                maxLength={4000}
+                rows={3}
+                placeholder={t('briefing.weeklyAnchorPlaceholder')}
+                className="mt-1.5 w-full resize-none rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-sky-500/40"
+              />
+              {journal.weekly.completedAt && (
+                <p className="mt-1 text-[10px] text-emerald-600/70">{t('briefing.savedWeek')}</p>
               )}
             </div>
           </div>
@@ -550,10 +1033,17 @@ function BriefingContent() {
           mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8',
         )}>
           <button
-            onClick={() => router.push('/')}
-            className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-[14px] font-semibold bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98]"
+            type="button"
+            onClick={completeBriefing}
+            disabled={!journalReady || isCompleting}
+            aria-busy={isCompleting}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-[14px] font-semibold bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {phase === 'morning' ? (hockeyMode ? 'Ab aufs Spielfeld' : 'Start My Day') : (hockeyMode ? 'Gute Nacht, Dr.' : 'Good Night')}
+            {phase === 'morning'
+              ? t('briefing.saveStartDay')
+              : phase === 'evening'
+                ? t('briefing.saveCloseDay')
+                : t('briefing.saveWeekPlan')}
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>
@@ -580,11 +1070,17 @@ function BriefingCard({ icon, title, children }: { icon: React.ReactNode; title:
   );
 }
 
-function TaskItem({ task, onClick, variant }: { task: OrbitItem; onClick: () => void; variant: 'overdue' | 'due' | 'normal' }) {
+function TaskItem({ task, onClick, variant, locale }: {
+  task: OrbitItem;
+  onClick: () => void;
+  variant: 'overdue' | 'due' | 'normal';
+  locale: Locale;
+}) {
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className="flex items-center gap-3 py-2 px-1 cursor-pointer rounded-lg hover:bg-foreground/[0.02] transition-colors"
+      className="flex w-full items-center gap-3 rounded-lg px-1 py-2 text-left transition-colors hover:bg-foreground/[0.02]"
     >
       <div className={cn(
         'h-1.5 w-1.5 rounded-full shrink-0',
@@ -602,10 +1098,10 @@ function TaskItem({ task, onClick, variant }: { task: OrbitItem; onClick: () => 
           'text-[10px] shrink-0',
           variant === 'overdue' ? 'text-red-400/50' : 'text-muted-foreground/30'
         )}>
-          {format(parseISO(task.dueDate), 'd MMM')}
+          {format(parseISO(task.dueDate), 'PP', { locale })}
         </span>
       )}
-    </div>
+    </button>
   );
 }
 

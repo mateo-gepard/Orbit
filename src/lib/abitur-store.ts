@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import {
   type AbiturProfile,
   type Semester,
@@ -12,12 +12,18 @@ import {
   createDefaultProfile,
   eKey,
   isMandatory,
-  isEingebracht,
   optimizeEinbringungen,
   selectAllEinbringungen,
   calculateSemesterPoints,
+  canSubjectBeLF,
+  canSubjectBeOralExam,
+  reconcileExamSlots,
+  reconcileSubjectSelection,
+  subjectsConflict,
 } from './abitur';
-import { saveToolData } from './firestore';
+import { saveToolData, ToolDataConflictError } from './firestore';
+import { prepareScopedStorage } from './account-storage';
+import { verifiedLocalStateStorage } from './verified-storage';
 
 // ═══════════════════════════════════════════════════════════
 // Debounced Firestore sync — saves after 500ms of inactivity
@@ -25,23 +31,50 @@ import { saveToolData } from './firestore';
 
 let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
-let _pendingSave = false;
-let _cloudReceived = false;
+let _localRevision = 0;
+let _cloudSnapshotReceived = false;
+let _scopeGeneration = 0;
 
 function scheduleSave(profile: AbiturProfile) {
-  if (!_syncUserId) return;
+  if (!_syncUserId) {
+    useAbiturStore.setState({ cloudDirty: false });
+    return;
+  }
   if (_saveTimer) clearTimeout(_saveTimer);
-  _pendingSave = true;
-  _saveTimer = setTimeout(async () => {
-    if (!_syncUserId) { _pendingSave = false; return; }
+  const scheduledUserId = _syncUserId;
+  const scheduledGeneration = _scopeGeneration;
+  const revision = ++_localRevision;
+  const persist = async () => {
+    if (_syncUserId !== scheduledUserId
+        || _scopeGeneration !== scheduledGeneration
+        || revision !== _localRevision) return;
     try {
-      await saveToolData(_syncUserId, 'abitur', { profile });
-    } catch (err) {
-      console.error('[THREADMAP] Failed to save Abitur data:', err);
-    } finally {
-      _pendingSave = false;
+      await saveToolData(scheduledUserId, 'abitur', { profile });
+      if (_syncUserId === scheduledUserId
+          && _scopeGeneration === scheduledGeneration
+          && revision === _localRevision) {
+        useAbiturStore.setState({ cloudDirty: false });
+      }
+    } catch (error) {
+      console.error('[THREADMAP] Failed to save Abitur data:', error);
+      if (_syncUserId !== scheduledUserId
+          || _scopeGeneration !== scheduledGeneration
+          || revision !== _localRevision) return;
+      if (error instanceof ToolDataConflictError) {
+        // Keep the losing payload dirty and in the persisted local store. The
+        // central sync layer has preserved both versions for export/recovery.
+        useAbiturStore.setState({ cloudDirty: true });
+        return;
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
+          detail: { message: 'Abitur changes are saved on this device, but cloud sync will retry.' },
+        }));
+      }
+      _saveTimer = setTimeout(() => void persist(), 5_000);
     }
-  }, 500);
+  };
+  _saveTimer = setTimeout(() => void persist(), 500);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -50,6 +83,7 @@ function scheduleSave(profile: AbiturProfile) {
 
 interface AbiturState {
   profile: AbiturProfile;
+  cloudDirty: boolean;
 
   // Onboarding
   completeOnboarding: () => void;
@@ -58,7 +92,7 @@ interface AbiturState {
   setStudentName: (name: string) => void;
   setSchoolYear: (year: string) => void;
   setCurrentSemester: (semester: Semester) => void;
-  setLeistungsfach: (subjectId: string) => void;
+  setLeistungsfach: (subjectId: string) => boolean;
   setSubjects: (subjectIds: string[]) => void;
 
   // Grades
@@ -73,9 +107,9 @@ interface AbiturState {
   toggleEinbringung: (subjectId: string, semester: Semester) => void;
 
   // Exams
-  setExamSubject: (index: number, subjectId: string) => void;
+  setExamSubject: (index: number, subjectId: string) => boolean;
   setExamType: (index: number, examType: ExamType) => void;
-  setExamPoints: (subjectId: string, points: number | null) => void;
+  setExamPoints: (index: number, points: number | null) => void;
 
   // Seminar
   setSeminarPaperPoints: (points: number | null) => void;
@@ -102,16 +136,63 @@ interface AbiturState {
 function updateProfile(
   s: AbiturState,
   updater: (profile: AbiturProfile) => AbiturProfile
-): { profile: AbiturProfile } {
+): { profile: AbiturProfile; cloudDirty: boolean } {
   const profile = updater(s.profile);
   scheduleSave(profile);
-  return { profile };
+  return { profile, cloudDirty: Boolean(_syncUserId) };
+}
+
+function ensureGradeRows(profile: AbiturProfile, subjectIds: string[]): SemesterGrade[] {
+  const existingGrades = Array.isArray(profile.grades) ? profile.grades : [];
+  const selected = new Set(subjectIds);
+  const existingKeys = new Set(existingGrades.map((grade) => `${grade.subjectId}:${grade.semester}`));
+  const grades = existingGrades.filter((grade) => selected.has(grade.subjectId));
+  for (const subjectId of subjectIds) {
+    for (const semester of SEMESTERS) {
+      if (!existingKeys.has(`${subjectId}:${semester}`)) {
+        grades.push({ subjectId, semester, points: null });
+      }
+    }
+  }
+  return grades;
+}
+
+function recalculateDerivedGrades(profile: AbiturProfile): AbiturProfile {
+  const individualGrades = Array.isArray(profile.individualGrades) ? profile.individualGrades : [];
+  if (individualGrades.length === 0) return profile;
+  const grades = profile.grades.map((grade) => {
+    const hasIndividualGrades = individualGrades.some((individual) => (
+      individual.subjectId === grade.subjectId && individual.semester === grade.semester
+    ));
+    if (!hasIndividualGrades) return grade;
+    return {
+      ...grade,
+      points: calculateSemesterPoints(
+        individualGrades,
+        grade.subjectId,
+        grade.semester,
+        profile.leistungsfach,
+      ),
+    };
+  });
+  return { ...profile, grades };
+}
+
+function normalizeExamIdentity(profile: AbiturProfile): AbiturProfile {
+  const normalized = reconcileExamSlots(profile);
+  const subjects = reconcileSubjectSelection(normalized, normalized.subjects ?? []);
+  return {
+    ...normalized,
+    subjects,
+    grades: ensureGradeRows(normalized, subjects),
+  };
 }
 
 export const useAbiturStore = create<AbiturState>()(
   persist(
     (set, get) => ({
       profile: createDefaultProfile(),
+      cloudDirty: false,
 
       completeOnboarding: () =>
         set((s) => updateProfile(s, (p) => ({
@@ -129,28 +210,45 @@ export const useAbiturStore = create<AbiturState>()(
       setCurrentSemester: (semester) =>
         set((s) => updateProfile(s, (p) => ({ ...p, currentSemester: semester }))),
 
-      setLeistungsfach: (subjectId) =>
-        set((s) => updateProfile(s, (p) => ({ ...p, leistungsfach: subjectId }))),
+      setLeistungsfach: (subjectId) => {
+        if (!canSubjectBeLF(subjectId).valid) return false;
+        const current = get().profile;
+        if (!current.subjects.includes(subjectId)) return false;
+        const conflictingExam = (current.examSubjects ?? [])
+          .slice(3, 5)
+          .find((examId) => subjectsConflict(subjectId, examId));
+        if (conflictingExam) return false;
+
+        set((s) => updateProfile(s, (p) => {
+          const withExamIdentity = reconcileExamSlots({ ...p, leistungsfach: subjectId });
+          const subjects = reconcileSubjectSelection(
+            withExamIdentity,
+            [...(p.subjects ?? []), subjectId],
+          );
+          const next = {
+            ...withExamIdentity,
+            subjects,
+            grades: ensureGradeRows(withExamIdentity, subjects),
+          };
+          return recalculateDerivedGrades(next);
+        }));
+        return true;
+      },
 
       setSubjects: (subjectIds) =>
         set((s) => updateProfile(s, (p) => {
-          const grades = p.grades ?? [];
+          const reconciledSubjects = reconcileSubjectSelection(p, subjectIds);
           const einbringungen = p.einbringungen ?? [];
-          const existing = new Set(grades.map((g) => `${g.subjectId}:${g.semester}`));
-          const newGrades: SemesterGrade[] = [...grades];
-          for (const sid of subjectIds) {
-            for (const sem of SEMESTERS) {
-              if (!existing.has(`${sid}:${sem}`)) {
-                newGrades.push({ subjectId: sid, semester: sem, points: null });
-              }
-            }
-          }
-          const filteredGrades = newGrades.filter((g) => subjectIds.includes(g.subjectId));
           const filteredEin = einbringungen.filter((k) => {
             const [sid] = k.split(':');
-            return subjectIds.includes(sid);
+            return reconciledSubjects.includes(sid);
           });
-          return { ...p, subjects: subjectIds, grades: filteredGrades, einbringungen: filteredEin };
+          return {
+            ...p,
+            subjects: reconciledSubjects,
+            grades: ensureGradeRows(p, reconciledSubjects),
+            einbringungen: filteredEin,
+          };
         })),
 
       setGrade: (subjectId, semester, points) =>
@@ -168,7 +266,12 @@ export const useAbiturStore = create<AbiturState>()(
           const newGrade: IndividualGrade = { ...grade, id: crypto.randomUUID() };
           const individualGrades = [...(p.individualGrades ?? []), newGrade];
           // Auto-update the semester grade from individual grades
-          const semesterPoints = calculateSemesterPoints(individualGrades, grade.subjectId, grade.semester);
+          const semesterPoints = calculateSemesterPoints(
+            individualGrades,
+            grade.subjectId,
+            grade.semester,
+            p.leistungsfach
+          );
           const grades = (p.grades ?? []).map((g) =>
             g.subjectId === grade.subjectId && g.semester === grade.semester ? { ...g, points: semesterPoints } : g
           );
@@ -185,7 +288,12 @@ export const useAbiturStore = create<AbiturState>()(
           // Find the grade to know which subject/semester to recalc
           const updated = individualGrades.find((g) => g.id === id);
           if (!updated) return { ...p, individualGrades };
-          const semesterPoints = calculateSemesterPoints(individualGrades, updated.subjectId, updated.semester);
+          const semesterPoints = calculateSemesterPoints(
+            individualGrades,
+            updated.subjectId,
+            updated.semester,
+            p.leistungsfach
+          );
           const grades = (p.grades ?? []).map((g) =>
             g.subjectId === updated.subjectId && g.semester === updated.semester ? { ...g, points: semesterPoints } : g
           );
@@ -197,7 +305,12 @@ export const useAbiturStore = create<AbiturState>()(
           const toRemove = (p.individualGrades ?? []).find((g) => g.id === id);
           if (!toRemove) return p;
           const individualGrades = (p.individualGrades ?? []).filter((g) => g.id !== id);
-          const semesterPoints = calculateSemesterPoints(individualGrades, toRemove.subjectId, toRemove.semester);
+          const semesterPoints = calculateSemesterPoints(
+            individualGrades,
+            toRemove.subjectId,
+            toRemove.semester,
+            p.leistungsfach
+          );
           const grades = (p.grades ?? []).map((g) =>
             g.subjectId === toRemove.subjectId && g.semester === toRemove.semester ? { ...g, points: semesterPoints } : g
           );
@@ -216,14 +329,28 @@ export const useAbiturStore = create<AbiturState>()(
           return { ...p, einbringungen: has ? current.filter((k) => k !== key) : [...current, key] };
         })),
 
-      setExamSubject: (index, subjectId) =>
+      setExamSubject: (index, subjectId) => {
+        if (index !== 3 && index !== 4) return false;
+        const current = get().profile;
+        if (subjectId) {
+          if (!current.subjects.includes(subjectId) || !canSubjectBeOralExam(subjectId).valid) return false;
+          const otherIndex = index === 3 ? 4 : 3;
+          const otherSubject = current.examSubjects[otherIndex] || '';
+          const usedSubjects = new Set(['deu', 'mat', current.leistungsfach, otherSubject].filter(Boolean));
+          if (usedSubjects.has(subjectId)) return false;
+          if (
+            subjectsConflict(subjectId, current.leistungsfach)
+            || subjectsConflict(subjectId, otherSubject)
+          ) return false;
+        }
+
         set((s) => updateProfile(s, (p) => {
           const subs = [...p.examSubjects];
           subs[index] = subjectId;
-          const exams = [...p.exams];
-          if (exams[index]) exams[index] = { ...exams[index], subjectId };
-          return { ...p, examSubjects: subs, exams };
-        })),
+          return reconcileExamSlots({ ...p, examSubjects: subs });
+        }));
+        return true;
+      },
 
       setExamType: (index, examType) =>
         set((s) => updateProfile(s, (p) => {
@@ -232,11 +359,18 @@ export const useAbiturStore = create<AbiturState>()(
           return { ...p, exams };
         })),
 
-      setExamPoints: (subjectId, points) =>
+      setExamPoints: (index, points) =>
         set((s) => updateProfile(s, (p) => ({
           ...p,
-          exams: p.exams.map((e) =>
-            e.subjectId === subjectId ? { ...e, points } : e
+          exams: p.exams.map((exam, examIndex) =>
+            examIndex === index
+              ? {
+                  ...exam,
+                  points: points === null || !Number.isFinite(points)
+                    ? null
+                    : Math.round(Math.max(0, Math.min(15, points))),
+                }
+              : exam
           ),
         }))),
 
@@ -269,7 +403,7 @@ export const useAbiturStore = create<AbiturState>()(
         set((s) => updateProfile(s, (p) => {
           // Keep only mandatory einbringungen (Pflichteinbringungen)
           const mandatory = (selectAllEinbringungen(p)).filter((key) => {
-            const [subjectId, semester] = key.split(':') as [string, Semester];
+            const [subjectId] = key.split(':') as [string, Semester];
             return isMandatory(subjectId, p);
           });
           return { ...p, einbringungen: mandatory };
@@ -277,10 +411,15 @@ export const useAbiturStore = create<AbiturState>()(
 
       _setProfileFromCloud: (cloudProfile) =>
         set((s) => {
-          // Only skip if we have a local save in-flight — the echo-back
-          // from Firestore will carry the same data we just wrote.
-          if (_pendingSave) return s;
-          _cloudReceived = true;
+          const firstSnapshot = !_cloudSnapshotReceived;
+          _cloudSnapshotReceived = true;
+          // A verified browser revision that has not reached the cloud is newer
+          // than any snapshot. Retry it after the subscription establishes the
+          // current cloud revision instead of discarding it.
+          if (s.cloudDirty) {
+            if (firstSnapshot) scheduleSave(s.profile);
+            return s;
+          }
           // Cloud wins — merge cloud over local (fills missing fields from local defaults)
           const merged: AbiturProfile = { ...s.profile, ...cloudProfile };
           // Ensure arrays are never undefined (cloud may have stored null)
@@ -290,28 +429,54 @@ export const useAbiturStore = create<AbiturState>()(
           if (!Array.isArray(merged.examSubjects)) merged.examSubjects = s.profile.examSubjects ?? [];
           if (!Array.isArray(merged.exams)) merged.exams = s.profile.exams ?? [];
           if (!Array.isArray(merged.individualGrades)) merged.individualGrades = s.profile.individualGrades ?? [];
-          return { profile: merged };
+          return { profile: normalizeExamIdentity(merged), cloudDirty: false };
         }),
 
       _setSyncUserId: (userId) => {
-        const prev = _syncUserId;
-        _syncUserId = userId;
-        if (!userId) { _cloudReceived = false; return; }
-        if (!prev && !_cloudReceived) {
-          const { profile } = get();
-          if (profile.onboardingComplete) {
-            console.log('[THREADMAP] Abitur: user signed in — pushing local profile to cloud');
-            scheduleSave(profile);
+        if (_syncUserId !== userId) {
+          _scopeGeneration += 1;
+          if (_saveTimer) {
+            clearTimeout(_saveTimer);
+            _saveTimer = null;
           }
         }
+        _syncUserId = userId;
+        _localRevision = 0;
+        _cloudSnapshotReceived = false;
+        if (!userId) return;
       },
 
       resetProfile: () => {
         const profile = createDefaultProfile();
         scheduleSave(profile);
-        set({ profile });
+        set({ profile, cloudDirty: Boolean(_syncUserId) });
       },
     }),
-    { name: 'orbit-abitur', skipHydration: true }
+    {
+      name: 'orbit-abitur',
+      skipHydration: true,
+      storage: createJSONStorage(() => verifiedLocalStateStorage),
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<AbiturState> | undefined;
+        return {
+          ...current,
+          ...saved,
+          profile: saved?.profile ? normalizeExamIdentity(saved.profile) : current.profile,
+          cloudDirty: saved?.cloudDirty === true,
+        };
+      },
+    }
   )
 );
+
+const ABITUR_STORAGE_KEY = 'orbit-abitur';
+
+export async function scopeAbiturStore(userId: string | null): Promise<void> {
+  useAbiturStore.getState()._setSyncUserId(null);
+  const target = prepareScopedStorage(ABITUR_STORAGE_KEY, userId);
+  useAbiturStore.persist.setOptions({ name: target.key });
+  if (!target.hasPersistedState) {
+    useAbiturStore.setState({ profile: createDefaultProfile(), cloudDirty: false });
+  }
+  await useAbiturStore.persist.rehydrate();
+}

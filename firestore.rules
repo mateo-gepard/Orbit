@@ -1,221 +1,252 @@
 rules_version = '2';
 
-// ═══════════════════════════════════════════════════════════
-// Threadmap — Firestore Security Rules
-// ═══════════════════════════════════════════════════════════
-//
-// Diese Rules sorgen für:
-// ✅ Jeder User sieht nur seine eigenen Items
-// ✅ Keine Cross-User-Zugriffe möglich
-// ✅ Nur authentifizierte User können schreiben
-// ✅ Data Validation (userId muss gesetzt sein)
-//
-// Deploy via Firebase Console:
-// Firestore Database → Rules → Paste & Publish
-//
-// ═══════════════════════════════════════════════════════════
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ─────────────────────────────────────────────────────────
-    // Helper Functions
-    // ─────────────────────────────────────────────────────────
-    
-    function isSignedIn() {
-      return request.auth != null;
+    function signedIn() {
+      return request.auth != null
+          && !exists(/databases/$(database)/documents/accountDeletionJobs/$(request.auth.uid));
     }
-    
-    function isOwner(userId) {
-      return request.auth.uid == userId;
+
+    function owner(userId) {
+      return signedIn() && request.auth.uid == userId;
     }
-    
-    function isValidItem() {
-      let data = request.resource.data;
+
+    function ownerPrefixed(docId) {
+      return signedIn()
+          && docId.size() > request.auth.uid.size()
+          && docId[0:request.auth.uid.size() + 1] == request.auth.uid + '_';
+    }
+
+    function validItem(data) {
       return data.userId is string
           && data.title is string
+          && data.title.size() <= 500
           && data.type in ['task', 'project', 'habit', 'event', 'goal', 'note']
           && data.status in ['active', 'waiting', 'done', 'archived']
           && data.createdAt is int
-          && data.updatedAt is int;
-      // Note: files field is optional and not validated here
+          && data.updatedAt is int
+          && data.revision is int
+          && data.revision >= 1
+          && (!('content' in data) || (data.content is string && data.content.size() <= 200000))
+          && (!('linkedIds' in data) || (data.linkedIds is list && data.linkedIds.size() <= 500))
+          && (!('tags' in data) || (data.tags is list && data.tags.size() <= 100))
+          && (!('files' in data) || (data.files is list && data.files.size() <= 50));
     }
-    
-    // ─────────────────────────────────────────────────────────
-    // Items Collection
-    // ─────────────────────────────────────────────────────────
-    
-    match /items/{itemId} {
-      // READ: User kann nur eigene Items lesen
-      allow read: if isSignedIn() 
-                  && isOwner(resource.data.userId);
-      
-      // CREATE: User kann Items erstellen mit eigenem userId
-      allow create: if isSignedIn()
-                    && isOwner(request.resource.data.userId)
-                    && isValidItem();
-      
-      // UPDATE: User kann nur eigene Items updaten
-      // userId darf NICHT geändert werden (Sicherheit!)
-      allow update: if isSignedIn()
-                    && isOwner(resource.data.userId)
-                    && isOwner(request.resource.data.userId)
-                    && resource.data.userId == request.resource.data.userId;
-      
-      // DELETE: User kann nur eigene Items löschen
-      allow delete: if isSignedIn()
-                    && isOwner(resource.data.userId);
-    }
-    
-    // ─────────────────────────────────────────────────────────
-    // Analytics Collection (append-heavy, user-scoped)
-    // ─────────────────────────────────────────────────────────
-    
-    match /analytics/{eventId} {
-      // READ: User kann nur eigene Events lesen
-      allow read: if isSignedIn()
-                  && isOwner(resource.data.userId);
-      
-      // CREATE: User kann Events für sich selbst schreiben
-      allow create: if isSignedIn()
-                    && isOwner(request.resource.data.userId)
-                    && request.resource.data.action is string
-                    && request.resource.data.timestamp is int
-                    && request.resource.data.date is string;
-      
-      // No update — analytics are immutable
-      allow update: if false;
 
-      // DELETE: User can delete their own analytics (account deletion)
-      allow delete: if isSignedIn()
-                    && isOwner(resource.data.userId);
+    function existingFilesPreserved(before, after) {
+      return !('files' in before)
+          || (('files' in after) && after.files is list && after.files.hasAll(before.files));
     }
-    
-    // ─────────────────────────────────────────────────────────
-    // User Settings Collection (tags, areas — per user)
-    // Doc ID = userId, so only the owner can read/write
-    // ─────────────────────────────────────────────────────────
+
+    function parentTypeAllowed(childType, parentType) {
+      return (childType == 'goal' && parentType == 'project')
+          || (childType in ['task', 'event', 'note', 'habit']
+              && parentType in ['project', 'goal']);
+    }
+
+    function validParentReference(itemId, data) {
+      return !('parentId' in data)
+          || (data.parentId is string
+              && data.parentId != itemId
+              && exists(/databases/$(database)/documents/items/$(data.parentId))
+              && get(/databases/$(database)/documents/items/$(data.parentId)).data.userId == request.auth.uid
+              && get(/databases/$(database)/documents/items/$(data.parentId)).data.status != 'archived'
+              && parentTypeAllowed(
+                data.type,
+                get(/databases/$(database)/documents/items/$(data.parentId)).data.type
+              ));
+    }
+
+    function validToolMetadata(docId, data, toolId) {
+      let uid = request.auth.uid;
+      return docId == uid + '_' + toolId
+          && data.userId == uid
+          && data.toolId == toolId
+          && data.updatedAt is int
+          && data.updatedAt > 0
+          && data.revision is int
+          && data.revision > 0;
+    }
+
+    function validToolDocument(docId, data) {
+      return (validToolMetadata(docId, data, 'abitur')
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'profile'])
+                && data.profile is map)
+          || (validToolMetadata(docId, data, 'toolbox')
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'enabledTools'])
+                && data.enabledTools is list
+                && data.enabledTools.size() <= 20)
+          || (validToolMetadata(docId, data, 'wishlist')
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'items', 'duels'])
+                && data.items is list
+                && data.items.size() <= 500
+                && data.duels is list
+                && data.duels.size() <= 2000)
+          || (validToolMetadata(docId, data, 'settings')
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'settings'])
+                && data.settings is map)
+          || (validToolMetadata(docId, data, 'briefing-journal')
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'version', 'dailyRecords', 'weeklyRecords'])
+                && data.version == 2
+                && data.dailyRecords is list
+                && data.dailyRecords.size() <= 90
+                && data.weeklyRecords is list
+                && data.weeklyRecords.size() <= 26)
+          || (validToolMetadata(docId, data, 'dispatch-plans')
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'version', 'plans'])
+                && data.version == 2
+                && data.plans is list
+                && data.plans.size() <= 31)
+          || (validToolMetadata(docId, data, 'flightLogs')
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'logs'])
+                && data.logs is list
+                && data.logs.size() <= 100);
+    }
+
+    match /items/{itemId} {
+      allow read: if signedIn() && owner(resource.data.userId);
+      allow create: if signedIn()
+                    && owner(request.resource.data.userId)
+                    && validParentReference(itemId, request.resource.data)
+                    && validItem(request.resource.data);
+      allow update: if signedIn()
+                    && owner(resource.data.userId)
+                    && request.resource.data.userId == resource.data.userId
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.revision == resource.data.get('revision', 0) + 1
+                    && validParentReference(itemId, request.resource.data)
+                    && existingFilesPreserved(resource.data, request.resource.data)
+                    && validItem(request.resource.data);
+      // Deletion is server-orchestrated so attachment cleanup and relationship
+      // repair cannot be bypassed by a direct SDK call.
+      allow delete: if false;
+    }
+
+    match /analytics/{eventId} {
+      // Historical records remain available through the server-orchestrated
+      // account export/delete workflow. New client telemetry is disabled.
+      allow read, write: if false;
+    }
 
     match /userSettings/{userId} {
-      allow read: if isSignedIn() && isOwner(userId);
-      allow create, update: if isSignedIn() && isOwner(userId);
-      allow delete: if isSignedIn() && isOwner(userId);
+      allow read: if owner(userId);
+      allow create: if owner(userId)
+                    && request.resource.data.keys().hasOnly([
+                      'customTags', 'removedDefaultTags', 'updatedAt', 'revision'
+                    ])
+                    && request.resource.data.customTags is list
+                    && request.resource.data.customTags.size() <= 100
+                    && request.resource.data.removedDefaultTags is list
+                    && request.resource.data.removedDefaultTags.size() <= 100
+                    && request.resource.data.updatedAt is int
+                    && request.resource.data.revision == 1;
+      allow update: if owner(userId)
+                    && request.resource.data.keys().hasOnly([
+                      'customTags', 'removedDefaultTags', 'updatedAt', 'revision'
+                    ])
+                    && request.resource.data.customTags is list
+                    && request.resource.data.customTags.size() <= 100
+                    && request.resource.data.removedDefaultTags is list
+                    && request.resource.data.removedDefaultTags.size() <= 100
+                    && request.resource.data.updatedAt is int
+                    && request.resource.data.revision == resource.data.get('revision', 0) + 1;
+      allow delete: if owner(userId);
     }
-
-    // ─────────────────────────────────────────────────────────
-    // Tool Data Collection (per-user tool state)
-    // Doc ID = userId_toolId, scoped by userId field
-    // ─────────────────────────────────────────────────────────
 
     match /toolData/{docId} {
-      // Read: allow if doc exists and user owns it,
-      // OR if the docId starts with the user's uid (handles non-existent docs
-      // which onSnapshot listens to — resource.data is null when doc missing)
-      allow read: if isSignedIn()
+      allow read: if signedIn()
+                  && ownerPrefixed(docId)
                   && (resource == null
-                      ? docId[0:request.auth.uid.size()] == request.auth.uid
-                      : isOwner(resource.data.userId));
-      allow create: if isSignedIn()
-                    && isOwner(request.resource.data.userId);
-      allow update: if isSignedIn()
-                    && isOwner(resource.data.userId)
-                    && isOwner(request.resource.data.userId);
-      allow delete: if isSignedIn()
-                    && isOwner(resource.data.userId);
+                      || owner(resource.data.userId)
+                      || (docId == request.auth.uid + '_flightLogs'
+                          && !('userId' in resource.data)));
+      allow create: if signedIn()
+                    && ownerPrefixed(docId)
+                    && owner(request.resource.data.userId)
+                    && validToolDocument(docId, request.resource.data)
+                    && request.resource.data.revision == 1;
+      allow update: if signedIn()
+                    && ownerPrefixed(docId)
+                    && owner(resource.data.userId)
+                    && request.resource.data.userId == resource.data.userId
+                    && validToolDocument(docId, request.resource.data)
+                    && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if signedIn()
+                    && ownerPrefixed(docId)
+                    && (owner(resource.data.userId)
+                        || (docId == request.auth.uid + '_flightLogs'
+                            && !('userId' in resource.data)));
     }
-
-    // ─────────────────────────────────────────────────────────
-    // FCM Tokens Collection (push notification registration)
-    // Doc ID = userId_tokenHash, scoped by userId field
-    // Cloud Function also reads this (using admin SDK, bypasses rules)
-    // ─────────────────────────────────────────────────────────
 
     match /fcmTokens/{docId} {
-      allow read: if isSignedIn()
-                  && (resource == null
-                      ? docId[0:request.auth.uid.size()] == request.auth.uid
-                      : isOwner(resource.data.userId));
-      allow create: if isSignedIn()
-                    && isOwner(request.resource.data.userId);
-      allow update: if isSignedIn()
-                    && isOwner(resource.data.userId)
-                    && isOwner(request.resource.data.userId);
-      allow delete: if isSignedIn()
-                    && isOwner(resource.data.userId);
+      allow get: if signedIn()
+                 && ownerPrefixed(docId)
+                 && (resource == null || owner(resource.data.userId));
+      // Collection queries must constrain userId to the authenticated UID;
+      // Firestore can prove that predicate, unlike a document-ID prefix.
+      allow list: if signedIn() && owner(resource.data.userId);
+      // Credential, schedule, and quota mutations are validated and serialized
+      // by authenticated Cloud Functions.
+      allow create, update, delete: if false;
     }
 
-    // ─────────────────────────────────────────────────────────
-    // User Profiles (Circles — friend discovery)
-    // Any authenticated user can read (needed for friend code lookup)
-    // Only the owner can write their own profile
-    // ─────────────────────────────────────────────────────────
+    match /flightLogs/{docId} {
+      allow get: if signedIn()
+                 && ownerPrefixed(docId)
+                 && (resource == null || owner(resource.data.userId));
+      allow list: if signedIn() && owner(resource.data.userId);
+      allow create: if signedIn()
+                    && ownerPrefixed(docId)
+                    && owner(request.resource.data.userId)
+                    && request.resource.data.id is string
+                    && request.resource.data.startedAt is int;
+      allow update: if signedIn()
+                    && ownerPrefixed(docId)
+                    && owner(resource.data.userId)
+                    && request.resource.data.userId == resource.data.userId
+                    && request.resource.data.id == resource.data.id;
+      allow delete: if signedIn() && ownerPrefixed(docId) && owner(resource.data.userId);
+    }
 
+    // The removed Circles feature retains its historical data but exposes no
+    // browser access. Account deletion uses the Admin SDK and bypasses rules.
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isOwner(userId);
-      allow delete: if isSignedIn() && isOwner(userId);
+      allow read, write: if false;
     }
-
-    // ─────────────────────────────────────────────────────────
-    // Connections (Circles — friend relationships)
-    // Only users in the connection can read/write
-    // ─────────────────────────────────────────────────────────
-
     match /connections/{connectionId} {
-      allow read: if isSignedIn()
-                  && request.auth.uid in resource.data.users;
-      allow create: if isSignedIn()
-                    && request.auth.uid in request.resource.data.users;
-      allow update: if isSignedIn()
-                    && request.auth.uid in resource.data.users;
-      allow delete: if isSignedIn()
-                    && request.auth.uid in resource.data.users;
+      allow read, write: if false;
     }
-
-    // ─────────────────────────────────────────────────────────
-    // Nudges (Circles — motivational pings)
-    // Sender can create, recipient can read/update/delete
-    // ─────────────────────────────────────────────────────────
-
     match /nudges/{nudgeId} {
-      allow read: if isSignedIn()
-                  && (resource.data.to == request.auth.uid
-                      || resource.data.from == request.auth.uid);
-      allow create: if isSignedIn()
-                    && request.resource.data.from == request.auth.uid;
-      allow update: if isSignedIn()
-                    && resource.data.to == request.auth.uid;
-      allow delete: if isSignedIn()
-                    && (resource.data.to == request.auth.uid
-                        || resource.data.from == request.auth.uid);
+      allow read, write: if false;
     }
 
-    // ─────────────────────────────────────────────────────────
-    // Deny all other paths
-    // ─────────────────────────────────────────────────────────
-    
+    // Internal deletion tombstones are Cloud Functions-only.
+    match /deletionJobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    match /accountDeletionJobs/{userId} {
+      allow read, write: if false;
+    }
+
+    match /pushDeviceRegistries/{userId} {
+      allow read, write: if false;
+    }
+
+    match /scrapeRateLimits/{quotaId} {
+      allow read, write: if false;
+    }
+
+    match /attachmentUploadIntents/{intentId} {
+      allow read, write: if false;
+    }
+
+    match /attachmentUploadRegistries/{registryId} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
-
-// ═══════════════════════════════════════════════════════════
-// Testing in Firebase Console
-// ═══════════════════════════════════════════════════════════
-//
-// Rules → "Rules Playground" Tab
-//
-// Test READ:
-// Location: /items/test-item-123
-// auth.uid: user-123
-// Simulator data: { "userId": "user-123", "title": "Test" }
-// → Should ALLOW
-//
-// Test READ (wrong user):
-// Location: /items/test-item-123
-// auth.uid: user-456
-// Simulator data: { "userId": "user-123", "title": "Test" }
-// → Should DENY
-//
-// ═══════════════════════════════════════════════════════════

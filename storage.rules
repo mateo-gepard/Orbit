@@ -2,36 +2,70 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    function isSignedIn() {
+    function signedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function owner(userId) {
+      return signedIn()
+          && request.auth.uid == userId
+          && !firestore.exists(/databases/(default)/documents/accountDeletionJobs/$(request.auth.uid));
     }
 
-    function isValidFileSize() {
+    function ownsProject(userId, projectId) {
+      return owner(userId)
+          && firestore.exists(/databases/(default)/documents/items/$(projectId))
+          && firestore.get(/databases/(default)/documents/items/$(projectId)).data.userId == userId;
+    }
+
+    function validFile() {
       return request.resource != null
-          && request.resource.size <= 10 * 1024 * 1024;
+          && request.resource.size <= 10 * 1024 * 1024
+          && request.resource.contentType in [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'text/plain',
+            'text/csv',
+            'text/markdown',
+            'image/jpeg',
+            'image/png',
+            'image/gif',
+            'image/webp',
+            'application/zip',
+            'application/x-zip-compressed'
+          ];
     }
 
-    function isAllowedFileType() {
-      return request.resource != null
-          && (request.resource.contentType.matches('image/.*')
-              || request.resource.contentType.matches('application/pdf')
-              || request.resource.contentType.matches('application/msword')
-              || request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.*')
-              || request.resource.contentType.matches('text/.*')
-              || request.resource.contentType.matches('application/zip')
-              || request.resource.contentType.matches('application/x-zip-compressed'));
-    }
-
+    // Historical one-segment attachment paths remain readable but can never be
+    // created again; all new writes require a server-issued upload intent.
     match /users/{userId}/projects/{projectId}/{fileName} {
-      allow read: if isOwner(userId);
-      allow create, update: if isOwner(userId)
-                            && isValidFileSize()
-                            && isAllowedFileType();
-      allow delete: if isOwner(userId);
+      allow read: if owner(userId);
+      allow write: if false;
+    }
+
+    match /users/{userId}/projects/{projectId}/{intentId}/{fileName} {
+      allow read: if owner(userId);
+      // The Admin SDK creates this rules-denied Firestore intent before the
+      // browser can upload. This closes raw-SDK orphan and quota bypasses.
+      allow create: if resource == null
+          && ownsProject(userId, projectId)
+          && validFile()
+          && firestore.exists(/databases/(default)/documents/attachmentUploadIntents/$(intentId))
+          && firestore.get(/databases/(default)/documents/attachmentUploadIntents/$(intentId)).data.userId == userId
+          && firestore.get(/databases/(default)/documents/attachmentUploadIntents/$(intentId)).data.itemId == projectId
+          && firestore.get(/databases/(default)/documents/attachmentUploadIntents/$(intentId)).data.storagePath == 'users/' + userId + '/projects/' + projectId + '/' + intentId + '/' + fileName
+          && firestore.get(/databases/(default)/documents/attachmentUploadIntents/$(intentId)).data.size == request.resource.size
+          && firestore.get(/databases/(default)/documents/attachmentUploadIntents/$(intentId)).data.type == request.resource.contentType
+          && firestore.get(/databases/(default)/documents/attachmentUploadIntents/$(intentId)).data.expiresAt > request.time
+          && request.resource.metadata.threadmapUploadId == intentId;
+      allow update: if false;
+      // Deletes are server-orchestrated with metadata removal and retry jobs.
+      allow delete: if false;
     }
 
     match /{allPaths=**} {

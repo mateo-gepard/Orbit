@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkRateLimit } from '@/lib/server/rate-limit';
+import {
+  acquireConcurrency,
+  checkDistributedScrapeRateLimit,
+  checkRateLimit,
+} from '@/lib/server/rate-limit';
+import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
+import { readResponseText } from '@/lib/server/url-safety';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — Google Price Search Fallback
@@ -9,7 +15,21 @@ import { checkRateLimit } from '@/lib/server/rate-limit';
 // ═══════════════════════════════════════════════════════════
 
 export async function GET(request: NextRequest) {
-  const rateLimited = checkRateLimit(request, { name: 'scrape-price', max: 30, windowMs: 60_000 });
+  const preAuthLimited = checkRateLimit(request, {
+    name: 'scrape-auth', max: 30, windowMs: 60_000,
+  });
+  if (preAuthLimited) return preAuthLimited;
+
+  let user;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    user = await requireFirebaseUser(request);
+  } catch (error) {
+    return authErrorResponse(error) || NextResponse.json({ error: 'Authentication failed.' }, { status: 500 });
+  }
+  const rateLimited = checkRateLimit(request, {
+    name: 'scrape-price', max: 10, windowMs: 60_000, identity: user.uid,
+  });
   if (rateLimited) return rateLimited;
 
   const query = request.nextUrl.searchParams.get('q');
@@ -21,12 +41,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Query too long' }, { status: 400 });
   }
 
+  const sharedRateLimited = await checkDistributedScrapeRateLimit(request, user.uid);
+  if (sharedRateLimited) return sharedRateLimited;
+
+  const release = acquireConcurrency('scrape', user.uid, 2);
+  if (!release) {
+    return NextResponse.json(
+      { code: 'SCRAPE_BUSY', error: 'Too many product imports are already running.' },
+      { status: 429, headers: { 'Retry-After': '5', 'Cache-Control': 'no-store' } }
+    );
+  }
+
   try {
     // Search Google Shopping for the product price
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query + ' preis')}&hl=de&gl=de`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    timeout = setTimeout(() => controller.abort(), 6000);
 
     const response = await fetch(searchUrl, {
       signal: controller.signal,
@@ -37,13 +68,12 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       return NextResponse.json({ error: `Google returned ${response.status}` }, { status: 502 });
     }
 
-    const html = await response.text();
+    const html = await readResponseText(response, 600_000);
 
     // Google embeds prices in various formats in search results
     const prices: { value: number; currency: string; source?: string }[] = [];
@@ -100,11 +130,17 @@ export async function GET(request: NextRequest) {
         currency: bestCurrency,
         allPrices: prices.slice(0, 10),
       },
-      { headers: { 'Cache-Control': 'public, max-age=3600' } } // cache for 1 hour
+      { headers: { 'Cache-Control': 'private, no-store' } }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[THREADMAP] Price search error:', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    if ((err as { name?: string })?.name === 'AbortError') {
+      return NextResponse.json({ error: 'Price lookup timed out.' }, { status: 504 });
+    }
+    return NextResponse.json({ error: 'Price lookup failed.' }, { status: 502 });
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    release();
   }
 }

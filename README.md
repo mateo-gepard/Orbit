@@ -4,7 +4,7 @@ Threadmap is a local-first personal productivity system for turning connected in
 
 It brings tasks, projects, habits, goals, notes, calendar work, files, and focused tools into one shared item graph instead of treating them as separate apps. A task can belong to a project, reference a note, support a goal, appear on the calendar, and stay available from the same command surface.
 
-The app runs without a backend by default. Firebase is an optional upgrade for accounts, cross-device sync, file storage, push notifications, and integrations.
+The app can run in an explicit local/demo profile without a backend. Signed-in profiles use Firebase for cross-device sync, file storage, push notifications, and account workflows.
 
 ## What It Does
 
@@ -36,7 +36,7 @@ This keeps workflows composable. A project can contain tasks and goals, a note c
 
 Threadmap can be used immediately in local mode. Local mode stores data in the browser and is meant for zero-config development, demos, and personal use on one device.
 
-When Firebase environment variables are present, Threadmap switches to cloud mode for authenticated users and realtime sync. The app is designed to degrade gracefully when Firebase is missing or unavailable.
+Authenticated users get realtime cloud sync. The repository includes public web identifiers for its default Firebase project, while production deployments should set every `NEXT_PUBLIC_FIREBASE_*` value explicitly for the intended project. Local/demo mode remains available when cloud services are unavailable or not wanted.
 
 ### Connected Workflow
 
@@ -64,7 +64,7 @@ Threadmap is built around the idea that productivity data should not be isolated
 
 ### Prerequisites
 
-- Node.js 20 or newer
+- Node.js 22 (see `.nvmrc`)
 - npm
 
 ### Install
@@ -91,7 +91,7 @@ Copy the example environment file when you want cloud features:
 cp .env.local.example .env.local
 ```
 
-Firebase is optional. If the required Firebase variables are empty, Threadmap stays in local mode.
+For production, set the full Firebase web configuration explicitly even though the repository has public defaults for its development project. Users can still choose the isolated local/demo profile.
 
 ### Required For Cloud Auth And Sync
 
@@ -116,6 +116,7 @@ NEXT_PUBLIC_FIREBASE_VAPID_KEY=
 NEXT_PUBLIC_WEBPUSH_VAPID_KEY=
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
+SCRAPE_RATE_LIMIT_SHARED_SECRET=
 ```
 
 ### Optional Integrations
@@ -135,9 +136,11 @@ npm run dev              # Start the Next.js development server
 npm run build            # Build the production app
 npm run start            # Start the production server after build
 npm run lint             # Run ESLint
+npm run typecheck        # Run TypeScript without emitting files
 npm test                 # Run unit tests with Vitest
 npm run test:watch       # Run Vitest in watch mode
-npm run deploy:rules     # Deploy Firestore and Storage rules
+npm run test:rules       # Run Firestore and Storage rules tests in emulators
+npm run deploy:rules     # Deploy Firestore rules/indexes and Storage rules
 npm run deploy:functions # Deploy Firebase Cloud Functions
 ```
 
@@ -184,19 +187,20 @@ Set VAPID secrets before deploying functions:
 ```bash
 firebase functions:secrets:set VAPID_PUBLIC_KEY --project YOUR_PROJECT_ID
 firebase functions:secrets:set VAPID_PRIVATE_KEY --project YOUR_PROJECT_ID
+firebase functions:secrets:set SCRAPE_RATE_LIMIT_SHARED_SECRET --project YOUR_PROJECT_ID
 firebase deploy --only functions --project YOUR_PROJECT_ID
 ```
 
 ## App Deployment
 
-The current app fits Vercel best because it uses Next.js App Router server routes under `src/app/api`.
+Vercel is the production host for the Next.js application. Firebase provides Auth, Firestore, Storage, Messaging, and Functions; it is not configured as a static host. The repository targets Node.js 22 in local development, CI, Vercel, and Cloud Functions.
 
 ```bash
 npm run build
 npx vercel
 ```
 
-Firebase Hosting would require an SSR adapter or a static-export redesign.
+After deployment, verify `GET /api/health` returns `status: "ok"`, then exercise sign-in, sync, uploads, push, and Google Calendar from the production origin.
 
 ## Quality Checks
 
@@ -205,10 +209,10 @@ Run these before pushing application changes:
 ```bash
 npm test
 npm run lint
+npm run typecheck
+npm run test:rules
 npm run build
 ```
-
-Current lint output may include warnings from unfinished or experimental areas; builds should complete successfully.
 
 ## Design Principles
 

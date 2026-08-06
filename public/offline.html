@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#050505" media="(prefers-color-scheme: dark)" />
+    <title>Threadmap — Offline</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --background: #f7f7f5;
+        --foreground: #171717;
+        --muted: #66665f;
+        --surface: #ffffff;
+        --border: #d9d9d4;
+        --hover: #eeeeea;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: #050505;
+          --foreground: #f5f5f5;
+          --muted: #a3a3a3;
+          --surface: #171717;
+          --border: #3f3f46;
+          --hover: #262626;
+        }
+      }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: var(--background); color: var(--foreground); }
+      main { width: min(28rem, calc(100% - 3rem)); text-align: center; }
+      .mark { width: 3rem; height: 3rem; margin: 0 auto 1.5rem; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 1rem; }
+      h1 { margin: 0; font-size: 1.25rem; }
+      p { margin: .75rem 0 1.5rem; color: var(--muted); line-height: 1.55; }
+      button { border: 1px solid var(--border); border-radius: .75rem; padding: .7rem 1rem; background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+      button:hover { background: var(--hover); }
+      button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">T</div>
+      <h1 id="offline-title">You’re offline</h1>
+      <p id="offline-description">Threadmap could not open your workspace. Reconnect, then try again.</p>
+      <button id="retry-button" type="button">Try again</button>
+    </main>
+    <script>
+      (() => {
+        const german = navigator.language.toLowerCase().startsWith('de');
+        const copy = german
+          ? {
+              title: 'Du bist offline',
+              description: 'Threadmap konnte deinen Arbeitsbereich nicht öffnen. Stelle die Verbindung wieder her und versuche es erneut.',
+              retry: 'Erneut versuchen',
+              documentTitle: 'Threadmap — Offline',
+            }
+          : {
+              title: 'You’re offline',
+              description: 'Threadmap could not open your workspace. Reconnect, then try again.',
+              retry: 'Try again',
+              documentTitle: 'Threadmap — Offline',
+            };
+
+        document.documentElement.lang = german ? 'de' : 'en';
+        document.title = copy.documentTitle;
+        document.getElementById('offline-title').textContent = copy.title;
+        document.getElementById('offline-description').textContent = copy.description;
+        const retryButton = document.getElementById('retry-button');
+        retryButton.textContent = copy.retry;
+        retryButton.addEventListener('click', () => location.reload());
+      })();
+    </script>
+  </body>
+</html>

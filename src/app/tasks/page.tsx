@@ -16,10 +16,19 @@ import {
 import { useOrbitStore } from '@/lib/store';
 import { ItemRow } from '@/components/items/item-row';
 import { cn } from '@/lib/utils';
-import { format, isPast, isToday, parseISO } from 'date-fns';
+import { format, isPast, isToday, isValid, parseISO, startOfWeek } from 'date-fns';
+import type { Locale } from 'date-fns';
 import type { OrbitItem, Priority } from '@/lib/types';
-import { useTranslation } from '@/lib/i18n';
-// Tags now fully managed via store.getAllTags()/removeTag()
+import { useTranslation, type Translate, type TranslationKey } from '@/lib/i18n';
+import { useSettingsStore } from '@/lib/settings-store';
+import { getLocale } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -34,6 +43,7 @@ interface TaskGroup {
   label: string;
   emoji?: string;
   items: OrbitItem[];
+  sortValue?: number;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -101,10 +111,16 @@ function getTaskProject(task: OrbitItem, allItems: OrbitItem[]): OrbitItem | und
 function groupTasks(
   tasks: OrbitItem[],
   groupBy: GroupBy,
-  allItems: OrbitItem[]
+  allItems: OrbitItem[],
+  weekStartsOn: 0 | 1,
+  translate: Translate,
+  locale: Locale,
+  language: string
 ): TaskGroup[] {
+  if (tasks.length === 0) return [];
+
   if (groupBy === 'none') {
-    return [{ key: 'all', label: 'All Tasks', items: tasks }];
+    return [{ key: 'all', label: translate('group.allTasks'), items: tasks }];
   }
 
   const groups = new Map<string, TaskGroup>();
@@ -118,41 +134,44 @@ function groupTasks(
       case 'project': {
         const project = getTaskProject(task, allItems);
         key = project ? project.id : '__no_project';
-        label = project ? project.title : 'No Project';
+        label = project ? project.title : translate('group.noProject');
         emoji = project?.emoji;
         break;
       }
       case 'goal': {
         const goal = getTaskGoal(task, allItems);
         key = goal ? goal.id : '__no_goal';
-        label = goal ? goal.title : 'No Goal';
+        label = goal ? goal.title : translate('group.noGoal');
         emoji = undefined;
         break;
       }
       case 'priority': {
         key = task.priority || 'none';
         label = task.priority
-          ? task.priority.charAt(0).toUpperCase() + task.priority.slice(1) + ' Priority'
-          : 'No Priority';
+          ? translate(`group.${task.priority}Priority`)
+          : translate('group.noPriority');
         break;
       }
       case 'dueDate': {
         if (!task.dueDate) {
           key = '__no_date';
-          label = 'No Due Date';
+          label = translate('group.noDueDate');
         } else {
           const d = parseISO(task.dueDate);
-          if (isPast(d) && !isToday(d)) {
+          if (!isValid(d)) {
+            key = '__invalid_date';
+            label = translate('common.dateUnavailable');
+          } else if (isPast(d) && !isToday(d)) {
             key = '__overdue';
-            label = 'Overdue';
+            label = translate('common.overdue');
           } else if (isToday(d)) {
             key = '__today';
-            label = 'Today';
+            label = translate('common.today');
           } else {
             // Group by week
-            const weekStart = format(d, 'yyyy-ww');
-            key = weekStart;
-            label = format(d, "'Week of' MMM d");
+            const weekStart = startOfWeek(d, { weekStartsOn });
+            key = format(weekStart, 'yyyy-MM-dd');
+            label = translate('tasks.weekOf', { date: format(weekStart, 'PP', { locale }) });
           }
         }
         break;
@@ -161,7 +180,7 @@ function groupTasks(
         const tags = task.tags?.length ? task.tags : ['__untagged'];
         for (const t of tags) {
           const tagKey = t;
-          const tagLabel = t === '__untagged' ? 'Untagged' : t;
+          const tagLabel = t === '__untagged' ? translate('group.untagged') : t;
           if (!groups.has(tagKey)) {
             groups.set(tagKey, { key: tagKey, label: tagLabel, items: [] });
           }
@@ -171,11 +190,19 @@ function groupTasks(
       }
       default:
         key = 'all';
-        label = 'All Tasks';
+        label = translate('group.allTasks');
     }
 
     if (!groups.has(key)) {
-      groups.set(key, { key, label, emoji, items: [] });
+      groups.set(key, {
+        key,
+        label,
+        emoji,
+        items: [],
+        sortValue: groupBy === 'dueDate' && /^\d{4}-\d{2}-\d{2}$/.test(key)
+          ? parseISO(key).getTime()
+          : undefined,
+      });
     }
     groups.get(key)!.items.push(task);
   }
@@ -194,10 +221,13 @@ function groupTasks(
     const oa = pinOrder[a.key] ?? 50;
     const ob = pinOrder[b.key] ?? 50;
     if (oa !== ob) return oa - ob;
+    if (a.sortValue !== undefined && b.sortValue !== undefined) return a.sortValue - b.sortValue;
     // Move "no X" groups to the end
-    if (a.key.startsWith('__no_')) return 1;
-    if (b.key.startsWith('__no_')) return -1;
-    return a.label.localeCompare(b.label);
+    const aHasNoDate = a.key.startsWith('__no_') || a.key === '__invalid_date';
+    const bHasNoDate = b.key.startsWith('__no_') || b.key === '__invalid_date';
+    if (aHasNoDate && !bHasNoDate) return 1;
+    if (bHasNoDate && !aHasNoDate) return -1;
+    return a.label.localeCompare(b.label, language);
   });
 }
 
@@ -205,25 +235,27 @@ function groupTasks(
 // Component
 // ═══════════════════════════════════════════════════════════
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: 'dueDate', label: 'Due Date' },
-  { key: 'priority', label: 'Priority' },
-  { key: 'createdAt', label: 'Newest' },
-  { key: 'title', label: 'Title' },
+const SORT_OPTIONS: { key: SortKey; labelKey: TranslationKey }[] = [
+  { key: 'dueDate', labelKey: 'sort.dueDate' },
+  { key: 'priority', labelKey: 'sort.priority' },
+  { key: 'createdAt', labelKey: 'sort.newest' },
+  { key: 'title', labelKey: 'sort.title' },
 ];
 
-const GROUP_OPTIONS: { key: GroupBy; label: string; icon: typeof FolderKanban }[] = [
-  { key: 'none', label: 'No Grouping', icon: CheckSquare },
-  { key: 'project', label: 'By Project', icon: FolderKanban },
-  { key: 'goal', label: 'By Goal', icon: Target },
-  { key: 'priority', label: 'By Priority', icon: SlidersHorizontal },
-  { key: 'dueDate', label: 'By Due Date', icon: CalendarDays },
-  { key: 'tag', label: 'By Tag', icon: Tag },
+const GROUP_OPTIONS: { key: GroupBy; labelKey: TranslationKey; icon: typeof FolderKanban }[] = [
+  { key: 'none', labelKey: 'group.none', icon: CheckSquare },
+  { key: 'project', labelKey: 'group.byProject', icon: FolderKanban },
+  { key: 'goal', labelKey: 'group.byGoal', icon: Target },
+  { key: 'priority', labelKey: 'group.byPriority', icon: SlidersHorizontal },
+  { key: 'dueDate', labelKey: 'group.byDueDate', icon: CalendarDays },
+  { key: 'tag', labelKey: 'group.byTag', icon: Tag },
 ];
 
 export default function TasksPage() {
-  const { items, getAllTags, removeTag } = useOrbitStore();
-  const { t } = useTranslation();
+  const { items, getAllTags } = useOrbitStore();
+  const { t, lang } = useTranslation();
+  const locale = getLocale(lang);
+  const configuredWeekStart = useSettingsStore((state) => state.settings.weekStart);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('active');
@@ -243,34 +275,7 @@ export default function TasksPage() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showGroupMenu, setShowGroupMenu] = useState(false);
 
-  // Tag delete confirmation
-  const [tagToDelete, setTagToDelete] = useState<string | null>(null);
-  const [tagLongPressTimer, setTagLongPressTimer] = useState<NodeJS.Timeout | null>(null);
-
   const allTags = getAllTags();
-
-  const handleDeleteTag = (tag: string) => {
-    removeTag(tag);
-    if (tagFilter === tag) {
-      setTagFilter(null);
-    }
-    setTagToDelete(null);
-  };
-
-  const handleTagLongPressStart = (tag: string) => {
-    // Allow deletion of ALL tags (including life area tags)
-    const timer = setTimeout(() => {
-      setTagToDelete(tag);
-    }, 500); // 500ms long press
-    setTagLongPressTimer(timer);
-  };
-
-  const handleTagLongPressEnd = () => {
-    if (tagLongPressTimer) {
-      clearTimeout(tagLongPressTimer);
-      setTagLongPressTimer(null);
-    }
-  };
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((prev) => {
@@ -318,12 +323,41 @@ export default function TasksPage() {
 
   // Group
   const groups = useMemo(
-    () => groupTasks(filteredTasks, groupBy, items),
-    [filteredTasks, groupBy, items]
+    () => groupTasks(
+      filteredTasks,
+      groupBy,
+      items,
+      configuredWeekStart === 'sunday' ? 0 : 1,
+      t,
+      locale,
+      lang
+    ),
+    [configuredWeekStart, filteredTasks, groupBy, items, lang, locale, t]
   );
 
   const totalCount = filteredTasks.length;
-  const activeFilters = [tagFilter, priorityFilter].filter(Boolean).length;
+  const hasCustomView = Boolean(
+    tagFilter ||
+      priorityFilter ||
+      searchQuery ||
+      statusFilter !== 'active' ||
+      groupBy !== 'none' ||
+      sortKey !== 'dueDate' ||
+      !sortAsc
+  );
+
+  const resetView = () => {
+    setTagFilter(null);
+    setPriorityFilter(null);
+    setSearchQuery('');
+    setStatusFilter('active');
+    setGroupBy('none');
+    setSortKey('dueDate');
+    setSortAsc(true);
+    setCollapsedGroups(new Set());
+    setShowSortMenu(false);
+    setShowGroupMenu(false);
+  };
 
   return (
     <div className="mobile-page-gutter mx-auto max-w-3xl space-y-4 py-4 lg:space-y-5 lg:p-8" data-slot="page-content">
@@ -338,7 +372,11 @@ export default function TasksPage() {
 
       {/* Search */}
       <div className="relative">
+        <label htmlFor="task-search" className="sr-only">
+          {t('tasks.searchLabel')}
+        </label>
         <input
+          id="task-search"
           type="text"
           placeholder={t('tasks.searchPlaceholder')}
           value={searchQuery}
@@ -351,7 +389,9 @@ export default function TasksPage() {
         />
         {searchQuery && (
           <button
+            type="button"
             onClick={() => setSearchQuery('')}
+            aria-label={t('tasks.clearSearch')}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground"
           >
             <X className="h-4 w-4" />
@@ -362,11 +402,13 @@ export default function TasksPage() {
       {/* Filter bar — horizontally scrollable on mobile */}
       <div className="space-y-2.5">
         {/* Status tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0">
+        <div className="-mx-4 flex items-center gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
           {(['active', 'done', 'all'] as FilterStatus[]).map((s) => (
             <button
               key={s}
+              type="button"
               onClick={() => setStatusFilter(s)}
+              aria-pressed={statusFilter === s}
               className={cn(
                 'mobile-touch-target shrink-0 rounded-xl px-3 py-1.5 text-[12px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
                 statusFilter === s
@@ -374,7 +416,7 @@ export default function TasksPage() {
                   : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
               )}
             >
-              {s === 'active' ? 'Active' : s === 'done' ? 'Completed' : 'All'}
+              {s === 'active' ? t('filter.active') : s === 'done' ? t('filter.completed') : t('filter.all')}
             </button>
           ))}
 
@@ -384,7 +426,9 @@ export default function TasksPage() {
           {(['high', 'medium', 'low'] as Priority[]).map((p) => (
             <button
               key={p}
+              type="button"
               onClick={() => setPriorityFilter(priorityFilter === p ? null : p)}
+              aria-pressed={priorityFilter === p}
               className={cn(
                 'mobile-touch-target flex shrink-0 items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
                 priorityFilter === p
@@ -399,86 +443,36 @@ export default function TasksPage() {
                   priorityFilter === p && 'bg-background/60'
                 )}
               />
-              {p.charAt(0).toUpperCase() + p.slice(1)}
+              {t(`priority.${p}`)}
             </button>
           ))}
         </div>
 
         {/* Tag filters */}
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0">
+        <div className="-mx-4 flex items-center gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
           <Tag className="h-3 w-3 text-muted-foreground/30 shrink-0 mr-0.5" />
           {allTags.map((tag) => (
-            <div key={tag} className="relative">
-              <button
-                onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-                onTouchStart={() => {
-                  handleTagLongPressStart(tag);
-                }}
-                onTouchEnd={() => {
-                  handleTagLongPressEnd();
-                }}
-                onTouchCancel={() => {
-                  handleTagLongPressEnd();
-                }}
-                onMouseEnter={() => {
-                  // Allow deletion of ALL tags
-                  setTagToDelete(tag);
-                }}
-                onMouseLeave={() => {
-                  setTagToDelete(null);
-                }}
-                className={cn(
-                  'mobile-touch-target shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0',
-                  tagFilter === tag
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground/50 hover:bg-foreground/[0.05] hover:text-muted-foreground'
-                )}
-              >
-                {tag}
-              </button>
-              {tagToDelete === tag && (
-                <div 
-                  className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border/60 rounded-lg shadow-lg p-2 min-w-[180px]"
-                  onMouseEnter={() => setTagToDelete(tag)}
-                  onMouseLeave={() => setTagToDelete(null)}
-                >
-                  <p className="text-[11px] text-muted-foreground/80 mb-2">Delete tag &ldquo;{tag}&rdquo;?</p>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTag(tag);
-                      }}
-                      onTouchEnd={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTag(tag);
-                      }}
-                      className="flex-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 px-2 py-1 text-[11px] font-medium transition-colors"
-                    >
-                      Delete
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setTagToDelete(null);
-                      }}
-                      onTouchEnd={(e) => {
-                        e.stopPropagation();
-                        setTagToDelete(null);
-                      }}
-                      className="flex-1 rounded-md bg-foreground/[0.05] hover:bg-foreground/[0.1] text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
+              aria-pressed={tagFilter === tag}
+              className={cn(
+                'mobile-touch-target shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0',
+                tagFilter === tag
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground/50 hover:bg-foreground/[0.05] hover:text-muted-foreground'
               )}
-            </div>
+            >
+              {tag}
+            </button>
           ))}
           {tagFilter && (
             <button
+              type="button"
               onClick={() => setTagFilter(null)}
-              className="shrink-0 text-[10px] text-muted-foreground/40 hover:text-foreground ml-1"
+              aria-label={t('tasks.clearTagFilter', { tag: tagFilter })}
+              className="mobile-touch-target ml-1 shrink-0 text-[10px] text-muted-foreground/40 hover:text-foreground lg:min-h-0"
             >
               <X className="h-3 w-3" />
             </button>
@@ -486,117 +480,120 @@ export default function TasksPage() {
         </div>
 
         {/* Sort & Group controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Sort dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowSortMenu(!showSortMenu);
-                setShowGroupMenu(false);
-              }}
-              className={cn(
-                'mobile-touch-target flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
-                'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
-              )}
+          <DropdownMenu
+            open={showSortMenu}
+            onOpenChange={(open) => {
+              setShowSortMenu(open);
+              if (open) setShowGroupMenu(false);
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'mobile-touch-target flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
+                  'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
+                )}
+              >
+                <ArrowUpDown className="h-3 w-3" />
+                <span className="hidden sm:inline">{t('tasks.sort')}:</span>
+                {t(SORT_OPTIONS.find((o) => o.key === sortKey)?.labelKey ?? 'sort.dueDate')}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              aria-label={t('tasks.sortMenuLabel')}
+              className="min-w-[160px]"
             >
-              <ArrowUpDown className="h-3 w-3" />
-              <span className="hidden sm:inline">Sort:</span>
-              {SORT_OPTIONS.find((o) => o.key === sortKey)?.label}
-            </button>
-            {showSortMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowSortMenu(false)} />
-                <div className="absolute left-0 top-full mt-1 z-50 rounded-xl border border-border/60 bg-card shadow-lg py-1 min-w-[160px] animate-scale-in">
-                  {SORT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.key}
-                      onClick={() => {
-                        if (sortKey === opt.key) {
-                          setSortAsc(!sortAsc);
-                        } else {
-                          setSortKey(opt.key);
-                          setSortAsc(true);
-                        }
-                        setShowSortMenu(false);
-                      }}
-                      className={cn(
-                        'flex items-center justify-between w-full px-3 py-2 text-[12px] transition-colors',
-                        'hover:bg-foreground/[0.04] active:bg-foreground/[0.06]',
-                        sortKey === opt.key && 'text-foreground font-medium'
-                      )}
-                    >
-                      {opt.label}
-                      {sortKey === opt.key && (
-                        <span className="text-[10px] text-muted-foreground/50">
-                          {sortAsc ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+              <DropdownMenuRadioGroup value={sortKey}>
+                {SORT_OPTIONS.map((opt) => (
+                  <DropdownMenuRadioItem
+                    key={opt.key}
+                    value={opt.key}
+                    onSelect={() => {
+                      if (sortKey === opt.key) {
+                        setSortAsc((ascending) => !ascending);
+                      } else {
+                        setSortKey(opt.key);
+                        setSortAsc(true);
+                      }
+                    }}
+                    className="min-h-10 justify-between text-[12px]"
+                  >
+                    <span>{t(opt.labelKey)}</span>
+                    {sortKey === opt.key && (
+                      <span aria-hidden="true" className="text-[10px] text-muted-foreground/50">
+                        {sortAsc ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Group dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowGroupMenu(!showGroupMenu);
-                setShowSortMenu(false);
-              }}
-              className={cn(
-                'mobile-touch-target flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
-                groupBy !== 'none'
-                  ? 'bg-foreground text-background'
-                  : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
-              )}
+          <DropdownMenu
+            open={showGroupMenu}
+            onOpenChange={(open) => {
+              setShowGroupMenu(open);
+              if (open) setShowSortMenu(false);
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'mobile-touch-target flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
+                  groupBy !== 'none'
+                    ? 'bg-foreground text-background'
+                    : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
+                )}
+              >
+                <SlidersHorizontal className="h-3 w-3" />
+                <span className="hidden sm:inline">{t('tasks.group')}:</span>
+                {t(GROUP_OPTIONS.find((o) => o.key === groupBy)?.labelKey ?? 'group.none')}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              aria-label={t('tasks.groupMenuLabel')}
+              className="min-w-[170px]"
             >
-              <SlidersHorizontal className="h-3 w-3" />
-              <span className="hidden sm:inline">Group:</span>
-              {GROUP_OPTIONS.find((o) => o.key === groupBy)?.label}
-            </button>
-            {showGroupMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowGroupMenu(false)} />
-                <div className="absolute left-0 top-full mt-1 z-50 rounded-xl border border-border/60 bg-card shadow-lg py-1 min-w-[170px] animate-scale-in">
-                  {GROUP_OPTIONS.map((opt) => {
-                    const Icon = opt.icon;
-                    return (
-                      <button
-                        key={opt.key}
-                        onClick={() => {
-                          setGroupBy(opt.key);
-                          setShowGroupMenu(false);
-                          setCollapsedGroups(new Set());
-                        }}
-                        className={cn(
-                          'flex items-center gap-2 w-full px-3 py-2 text-[12px] transition-colors',
-                          'hover:bg-foreground/[0.04] active:bg-foreground/[0.06]',
-                          groupBy === opt.key && 'text-foreground font-medium'
-                        )}
-                      >
-                        <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
+              <DropdownMenuRadioGroup
+                value={groupBy}
+                onValueChange={(value) => {
+                  setGroupBy(value as GroupBy);
+                  setCollapsedGroups(new Set());
+                }}
+              >
+                {GROUP_OPTIONS.map((opt) => {
+                  const Icon = opt.icon;
+                  return (
+                    <DropdownMenuRadioItem
+                      key={opt.key}
+                      value={opt.key}
+                      className="min-h-10 text-[12px]"
+                    >
+                      <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
+                      {t(opt.labelKey)}
+                    </DropdownMenuRadioItem>
+                  );
+                })}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Clear all filters */}
-          {(activeFilters > 0 || searchQuery) && (
+          {hasCustomView && (
             <button
-              onClick={() => {
-                setTagFilter(null);
-                setPriorityFilter(null);
-                setSearchQuery('');
-              }}
+              type="button"
+              onClick={resetView}
               className="mobile-touch-target ml-auto text-[11px] text-muted-foreground/40 transition-colors hover:text-foreground lg:min-h-0"
             >
-              Clear filters
+              {t('tasks.clearFilters')}
             </button>
           )}
         </div>
@@ -613,7 +610,9 @@ export default function TasksPage() {
               {/* Group header — only show when grouping is active */}
               {!isUngrouped && (
                 <button
+                  type="button"
                   onClick={() => toggleGroup(group.key)}
+                  aria-expanded={!isCollapsed}
                   className={cn(
                     'flex items-center gap-2 w-full px-1 py-2 text-left transition-colors',
                     'hover:bg-foreground/[0.02] rounded-lg active:scale-[0.99]'
@@ -643,7 +642,7 @@ export default function TasksPage() {
                     ))
                   ) : (
                     <p className="px-4 py-6 text-center text-[12px] text-muted-foreground/40">
-                      No tasks
+                      {t('tasks.noTasks')}
                     </p>
                   )}
                 </div>
@@ -657,10 +656,10 @@ export default function TasksPage() {
             <CheckSquare className="h-8 w-8 mx-auto mb-3 text-muted-foreground/20" strokeWidth={1} />
             <p className="text-[13px] text-muted-foreground/40">
               {searchQuery
-                ? 'No tasks match your search'
+                ? t('tasks.noMatchSearch')
                 : statusFilter === 'done'
-                ? 'No completed tasks'
-                : 'No active tasks'}
+                ? t('tasks.noCompleted')
+                : t('tasks.noActiveHint')}
             </p>
           </div>
         )}
