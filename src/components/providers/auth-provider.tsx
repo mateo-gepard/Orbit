@@ -12,7 +12,9 @@ import {
 } from 'react';
 import {
   onAuthStateChanged,
+  getRedirectResult,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -34,6 +36,50 @@ const EMAIL_LINK_KEY = 'orbitEmailForSignIn';
 const LOCAL_MODE_KEY = 'orbitLocalMode';
 const FIREBASE_NOT_CONFIGURED_MESSAGE =
   'Firebase is not configured. Local mode is available on this device.';
+const GOOGLE_POPUP_ERROR_CODES = new Set([
+  'auth/popup-blocked',
+  'auth/operation-not-supported-in-this-environment',
+  'auth/operation-not-allowed',
+  'auth/network-request-failed',
+  'auth/cancelled-popup-request',
+]);
+
+function isPopupUnavailableError(error: unknown): boolean {
+  const code = (error as { code?: string })?.code || '';
+  if (GOOGLE_POPUP_ERROR_CODES.has(code)) return true;
+
+  const message = String((error as { message?: string })?.message || '').toLowerCase();
+  if (!message) return false;
+
+  return message.includes('popup')
+    || message.includes('blocked')
+    || message.includes('not supported')
+    || message.includes('err_blocked_by_client')
+    || message.includes('operation-not-allowed');
+}
+
+function canUsePopupWindow(): boolean {
+  if (typeof window === 'undefined' || typeof window.open !== 'function') return false;
+
+  let testPopup: Window | null = null;
+  try {
+    testPopup = window.open('', '_blank', 'noopener=yes');
+  } catch (error) {
+    console.warn('[THREADMAP Auth] Popup capability probe failed:', error);
+  }
+
+  if (!testPopup || testPopup.closed || typeof testPopup.closed === 'undefined') {
+    return false;
+  }
+
+  try {
+    testPopup.close();
+  } catch {
+    // No-op. If close fails, the environment is still likely popup-capable.
+  }
+
+  return true;
+}
 
 export type EmailLinkState = 'idle' | 'needs-email' | 'signing-in' | 'error';
 
@@ -119,6 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [emailLinkError, setEmailLinkError] = useState<string | null>(null);
   const [pendingEmailLinkUrl, setPendingEmailLinkUrl] = useState<string | null>(null);
   const emailLinkCheckedRef = useRef(false);
+  const popupSupportRef = useRef<boolean | null>(null);
 
   const unregisterCurrentDevice = useCallback(async () => {
     const currentUser = auth?.currentUser;
@@ -207,14 +254,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       await unregisterCurrentDevice();
+
+      if (popupSupportRef.current === null) {
+        popupSupportRef.current = canUsePopupWindow();
+      }
+
+      if (popupSupportRef.current === false) {
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+
       await signInWithPopup(auth, googleProvider);
+      return;
     } catch (error: unknown) {
+      if (isPopupUnavailableError(error)) {
+        popupSupportRef.current = false;
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+
       const code = (error as { code?: string })?.code || '';
       if (code === 'auth/popup-closed-by-user') {
         throw new Error('Google sign-in was cancelled.');
-      }
-      if (code === 'auth/popup-blocked') {
-        throw new Error('Google sign-in popup was blocked. Enable popups or use local mode.');
       }
       if (error instanceof Error) {
         console.error('[THREADMAP Auth] Sign-in error:', error);
@@ -225,6 +286,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('Google sign-in failed.');
     }
   }, [unregisterCurrentDevice]);
+
+  useEffect(() => {
+    if (!auth) return;
+    void getRedirectResult(auth).catch((error: unknown) => {
+      const code = (error as { code?: string })?.code;
+      if (code === 'auth/no-auth-event') return;
+      console.error('[THREADMAP Auth] Redirect sign-in error:', error);
+    });
+  }, []);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     if (!auth) {
