@@ -269,6 +269,24 @@ interface OAuthClientDocument {
   createdAt: number;
   updatedAt: number;
   revokedAt?: number;
+  revocationReason?: string;
+}
+
+export interface ThreadmapOAuthClientRecord {
+  clientId: string;
+  clientName: string;
+  platform: RedirectUriPlatform;
+  redirectUris: string[];
+  tokenEndpointAuthMethod: SupportedClientAuthenticationMethod;
+  grantTypes: OAuthGrantType[];
+  responseTypes: ['code'];
+  scopes: string[];
+  resource: string;
+  createdAt: number;
+  updatedAt: number;
+  revokedAt?: number;
+  status: 'active' | 'revoked';
+  revocationReason?: string;
 }
 
 interface AuthorizationRequestDocument {
@@ -312,6 +330,20 @@ interface TokenFamilyDocument {
   expireAt: Date;
   latestSequence: number;
   latestRefreshTokenHash?: string;
+  lastRotatedAt?: number;
+  revokedAt?: number;
+  revocationReason?: string;
+}
+
+export interface ThreadmapMcpTokenFamilyRecord {
+  tokenFamilyId: string;
+  clientId: string;
+  userId: string;
+  resource: string;
+  status: 'active' | 'revoked';
+  createdAt: number;
+  expiresAt: number;
+  latestSequence: number;
   lastRotatedAt?: number;
   revokedAt?: number;
   revocationReason?: string;
@@ -932,6 +964,71 @@ export class ThreadmapOAuthService {
       createdAt: request.createdAt,
       expiresAt: request.expiresAt,
     };
+  }
+
+  async listClients(
+    authenticatedUid: string,
+    includeRevoked = false
+  ): Promise<ThreadmapOAuthClientRecord[]> {
+    this.assertOwner(authenticatedUid);
+    const snapshot = await this.db.collection(OAUTH_COLLECTIONS.clients).get();
+    const rows: ThreadmapOAuthClientRecord[] = [];
+    for (const doc of snapshot.docs) {
+      const current = clientDocument(doc.data());
+      if (!current) continue;
+      const revokedAt = current.revokedAt;
+      const status = revokedAt === undefined ? 'active' : 'revoked';
+      if (!includeRevoked && status !== 'active') continue;
+      rows.push({
+        clientId: current.clientId || doc.id,
+        clientName: current.clientName,
+        platform: current.platform,
+        redirectUris: [...current.redirectUris],
+        tokenEndpointAuthMethod: current.tokenEndpointAuthMethod,
+        grantTypes: [...current.grantTypes],
+        responseTypes: [...current.responseTypes],
+        scopes: [...current.scopes],
+        resource: current.resource,
+        createdAt: current.createdAt,
+        updatedAt: current.updatedAt,
+        revokedAt,
+        status,
+        revocationReason: current.revocationReason,
+      });
+    }
+    rows.sort((left, right) => right.updatedAt - left.updatedAt);
+    return rows;
+  }
+
+  async listTokenFamilies(
+    authenticatedUid: string,
+    includeRevoked = false
+  ): Promise<ThreadmapMcpTokenFamilyRecord[]> {
+    this.assertOwner(authenticatedUid);
+    const snapshot = await this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
+      .where('userId', '==', authenticatedUid)
+      .get();
+    const rows: ThreadmapMcpTokenFamilyRecord[] = [];
+    for (const doc of snapshot.docs) {
+      const current = tokenFamilyDocument(doc.data());
+      if (!current) continue;
+      if (!includeRevoked && current.status === 'revoked') continue;
+      rows.push({
+        tokenFamilyId: doc.id,
+        clientId: current.clientId,
+        userId: current.userId,
+        resource: current.resource,
+        status: current.status,
+        createdAt: current.createdAt,
+        expiresAt: current.expiresAt,
+        latestSequence: current.latestSequence,
+        lastRotatedAt: current.lastRotatedAt,
+        revokedAt: current.revokedAt,
+        revocationReason: current.revocationReason,
+      });
+    }
+    rows.sort((left, right) => right.createdAt - left.createdAt);
+    return rows;
   }
 
   async approveAuthorizationRequest(

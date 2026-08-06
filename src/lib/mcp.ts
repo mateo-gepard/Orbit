@@ -17,6 +17,37 @@ export interface ThreadmapMcpAuthorizationDecision {
   location: string;
 }
 
+export interface ThreadmapMcpClient {
+  clientId: string;
+  clientName: string;
+  platform: string;
+  redirectUris: string[];
+  tokenEndpointAuthMethod: 'none' | 'client_secret_basic' | 'client_secret_post';
+  grantTypes: string[];
+  responseTypes: ['code'];
+  scopes: string[];
+  resource: string;
+  createdAt: number;
+  updatedAt: number;
+  revokedAt?: number;
+  status: 'active' | 'revoked';
+  revocationReason?: string;
+}
+
+export interface ThreadmapMcpTokenFamily {
+  tokenFamilyId: string;
+  clientId: string;
+  userId: string;
+  resource: string;
+  status: 'active' | 'revoked';
+  createdAt: number;
+  expiresAt: number;
+  latestSequence: number;
+  lastRotatedAt?: number;
+  revokedAt?: number;
+  revocationReason?: string;
+}
+
 async function callMcpFunction<TData>(name: string, data: unknown): Promise<TData> {
   if (!cloudFunctions) throw new Error('Cloud Functions are unavailable.');
   const callable = httpsCallable<unknown, TData>(cloudFunctions, name);
@@ -62,4 +93,49 @@ export async function denyThreadmapMcpAuthorizationRequest(
     'denyThreadmapMcpAuthorizationRequest',
     { request: requestToken.trim() },
   );
+}
+
+export async function listThreadmapMcpClients(includeRevoked = false): Promise<ThreadmapMcpClient[]> {
+  const result = await callMcpFunction<{ clients: ThreadmapMcpClient[] }>(
+    'listThreadmapMcpClients',
+    { includeRevoked },
+  );
+  return result.clients;
+}
+
+export async function listThreadmapMcpTokenFamilies(
+  clientId?: string,
+  includeRevoked = false,
+): Promise<ThreadmapMcpTokenFamily[]> {
+  const result = await callMcpFunction<{ tokenFamilies: ThreadmapMcpTokenFamily[] }>(
+    'listThreadmapMcpTokenFamilies',
+    { clientId: clientId?.trim() || undefined, includeRevoked },
+  );
+  return result.tokenFamilies;
+}
+
+export async function revokeThreadmapMcpClient(
+  clientId: string,
+): Promise<boolean> {
+  if (!clientId.trim()) {
+    throw new Error('The client ID is missing.');
+  }
+  const result = await callMcpFunction<{ success: boolean }>(
+    'revokeThreadmapMcpClient',
+    { clientId: clientId.trim() },
+  );
+  return result.success;
+}
+
+export async function revokeThreadmapMcpTokenFamily(
+  tokenFamilyId: string,
+): Promise<boolean> {
+  if (!tokenFamilyId.trim()) {
+    throw new Error('The session token family ID is missing.');
+  }
+  const result = await callMcpFunction<{ success: boolean }>(
+    'revokeThreadmapMcpTokenFamily',
+    { tokenFamilyId: tokenFamilyId.trim() },
+  );
+  return result.success;
 }

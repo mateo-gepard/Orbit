@@ -17,10 +17,10 @@ The following high-impact items are now completed:
 - All recent type issues in those touched UI paths were fixed.
 - Root app build and TypeScript checks are clean.
 
-Remaining risks are focused on product completeness, not correctness:
-- There is still no in-app MCP client management workflow (connected clients, token/session revocation UI, rotation helpers).
-- The full OAuth user journey still relies on the Firebase Functions gateway and external MCP client configuration, so onboarding copy and docs should be expanded before production rollout.
-- Firebase Emulator-based rule verification is blocked in this environment due missing Java runtime.
+Current risks are narrowed to operational/docs readiness and environment hardening:
+- In-app MCP management is now implemented in settings, including connected clients and session revocation.
+- The full OAuth journey still relies on proper MCP client setup and external docs for onboarding.
+- Firebase Emulator-based rule verification remains blocked in this environment because Java runtime is unavailable (`java -version`).
 
 ---
 
@@ -79,10 +79,28 @@ Remaining risks are focused on product completeness, not correctness:
     - Inline help text for where/when to register these URLs.
 - Added/strengthened translation coverage:
   - [src/lib/i18n.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/src/lib/i18n.ts)
-  - New settings keys for MCP authorization/consent and integrational text.
+  - Added MCP management section text (connected clients, client/session statuses, revoke actions and feedback copy).
   - Added `common.loading` for existing loading copy.
 
-### 4) Type/Build fixes in Functions MCP runtime path (supporting code health)
+### 4) Settings in-app MCP client/session management
+
+- Added a new "MCP Clients & Sessions" management card inside the Integrations tab:
+  - [src/app/settings/page.tsx](/Users/mateomamaladze/Desktop/Projects/Orbit/src/app/settings/page.tsx)
+  - Fetches and displays MCP clients and their active sessions via new callables.
+  - Shows active/revoked status, created/updated timestamps, and client-scoped session family IDs.
+  - Supports explicit client revoke and explicit session revoke actions.
+  - Refreshes state after every mutation and surfaces actionable error/success toasts.
+- Added backend management callables for settings:
+  - [functions/src/index.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/functions/src/index.ts)
+    - `listThreadmapMcpClients`
+    - `listThreadmapMcpTokenFamilies`
+    - `revokeThreadmapMcpClient`
+    - `revokeThreadmapMcpTokenFamily`
+- Added typed client wrappers for those functions:
+  - [src/lib/mcp.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/src/lib/mcp.ts)
+- Implemented backend-safe validation for owner-only MCP management calls and parameter checks.
+
+### 5) Type/Build fixes in Functions MCP runtime path (supporting code health)
 
 - Fixed request-header typing in Functions gateway request adaptor:
   - [functions/src/index.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/functions/src/index.ts)
@@ -124,11 +142,10 @@ Remaining risks are focused on product completeness, not correctness:
   - One clear discoverability panel with all MCP endpoints and scope meanings.
   - Consent route path is visible and copy is explicit.
   - Scope selector on consent requires at least one scope.
-- Still missing for full production usability:
-  - A dedicated "Connected clients / active grants" list in-app.
-  - Session/token status and explicit revoke UX.
-  - “Try this client” guidance in onboarding (copy/examples for ChatGPT, Claude, etc.).
-  - Post-approve error/success messaging if redirect returns query-state or code issues.
+- Remaining production items to close:
+  - Onboarding and examples for specific MCP clients (for example ChatGPT/Claude).
+  - Post-approve/error visibility when MCP returns token-exchange or callback errors.
+  - A “revoke all sessions” bulk action (optional quality-of-life improvement).
 
 ### Consent flow logic audit
 - Works for the intended browser-to-function path:
@@ -147,10 +164,10 @@ Remaining risks are focused on product completeness, not correctness:
 
 ## Remaining open work (priority order)
 
-### P1 – Product completeness
-- Add MCP client/session management UI in settings.
-- Add explicit revoke-by-token and revoke-all UX.
-- Add per-client "last used / created / scopes" metadata table.
+### P1 – Production readiness
+- Add onboarding docs for MCP clients (ChatGPT/Claude flow examples, quick setup checklist).
+- Add bulk session management (all sessions for one client) if needed for admin UX.
+- Add retry-safe UX copy if network errors occur between revoke call and local state refresh.
 
 ### P2 – Deployment readiness
 - Add README/system docs:

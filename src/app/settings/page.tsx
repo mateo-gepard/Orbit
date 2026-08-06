@@ -72,6 +72,14 @@ import {
   reauthenticateWithCredential,
   reauthenticateWithPopup,
 } from 'firebase/auth';
+import {
+  listThreadmapMcpClients,
+  listThreadmapMcpTokenFamilies,
+  revokeThreadmapMcpClient,
+  revokeThreadmapMcpTokenFamily,
+  type ThreadmapMcpClient,
+  type ThreadmapMcpTokenFamily,
+} from '@/lib/mcp';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { t as translate, useTranslation, type TranslationKey } from '@/lib/i18n';
 import type {
@@ -156,6 +164,22 @@ const MCP_INTEGRATION_ENDPOINTS = [
     value: 'https://threadmap.app/integrations/authorize',
   },
 ] satisfies McpIntegrationEndpoint[];
+
+function formatMcpDate(dateValue: number, lang: 'en' | 'de') {
+  if (!Number.isFinite(dateValue)) return '-';
+  try {
+    return new Date(dateValue).toLocaleString(
+      lang === 'de' ? 'de-DE' : 'en-US',
+      { dateStyle: 'medium', timeStyle: 'short' }
+    );
+  } catch {
+    return String(dateValue);
+  }
+}
+
+function truncateMcpId(value: string) {
+  return value.length <= 16 ? value : `${value.slice(0, 12)}…${value.slice(-4)}`;
+}
 
 // ═══════════════════════════════════════════════════════════
 // Shared UI elements
@@ -819,6 +843,12 @@ export default function SettingsPage() {
   const [deletionPassword, setDeletionPassword] = useState('');
   const [deletionReauthError, setDeletionReauthError] = useState<string | null>(null);
   const [reauthenticatingDeletion, setReauthenticatingDeletion] = useState(false);
+  const [mcpClients, setMcpClients] = useState<ThreadmapMcpClient[]>([]);
+  const [mcpTokenFamilies, setMcpTokenFamilies] = useState<ThreadmapMcpTokenFamily[]>([]);
+  const [mcpLoading, setMcpLoading] = useState(false);
+  const [mcpManagementError, setMcpManagementError] = useState<string | null>(null);
+  const [mcpRevokingClientId, setMcpRevokingClientId] = useState<string | null>(null);
+  const [mcpRevokingTokenFamilyId, setMcpRevokingTokenFamilyId] = useState<string | null>(null);
   const [timezoneEditor, setTimezoneEditor] = useState<{
     savedValue: string;
     draft: string;
@@ -914,6 +944,74 @@ export default function SettingsPage() {
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
     };
   }, [cloudSaveState]);
+
+  const loadMcpConnections = async () => {
+    if (!user || isDemo) {
+      setMcpClients([]);
+      setMcpTokenFamilies([]);
+      return;
+    }
+    setMcpLoading(true);
+    setMcpManagementError(null);
+    try {
+      const [clients, tokenFamilies] = await Promise.all([
+        listThreadmapMcpClients(),
+        listThreadmapMcpTokenFamilies(),
+      ]);
+      setMcpClients(clients);
+      setMcpTokenFamilies(tokenFamilies);
+    } catch (error) {
+      setMcpManagementError(error instanceof Error ? error.message : 'Unable to load MCP connections.');
+      setMcpClients([]);
+      setMcpTokenFamilies([]);
+    } finally {
+      setMcpLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSection !== 'integrations') return;
+    void loadMcpConnections();
+  }, [activeSection, user, isDemo]);
+
+  const handleRevokeMcpClient = async (clientId: string) => {
+    if (!user || mcpRevokingClientId || mcpRevokingTokenFamilyId) return;
+    if (!window.confirm(t('settings.mcpRevokeClientConfirm'))) return;
+    setMcpRevokingClientId(clientId);
+    try {
+      const revoked = await revokeThreadmapMcpClient(clientId);
+      if (!revoked) throw new Error(t('settings.mcpRevokeNoMatch'));
+      await loadMcpConnections();
+      toast.success(t('settings.mcpClientRevoked'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('settings.mcpRevokeClientFailed'));
+    } finally {
+      setMcpRevokingClientId(null);
+    }
+  };
+
+  const handleRevokeMcpSession = async (tokenFamilyId: string) => {
+    if (!user || mcpRevokingClientId || mcpRevokingTokenFamilyId) return;
+    if (!window.confirm(t('settings.mcpRevokeSessionConfirm'))) return;
+    setMcpRevokingTokenFamilyId(tokenFamilyId);
+    try {
+      const revoked = await revokeThreadmapMcpTokenFamily(tokenFamilyId);
+      if (!revoked) throw new Error(t('settings.mcpRevokeNoMatch'));
+      await loadMcpConnections();
+      toast.success(t('settings.mcpSessionRevoked'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('settings.mcpRevokeSessionFailed'));
+    } finally {
+      setMcpRevokingTokenFamilyId(null);
+    }
+  };
+
+  const sessionsByClientId = mcpTokenFamilies.reduce((acc, family) => {
+    const bucket = acc.get(family.clientId) || [];
+    bucket.push(family);
+    acc.set(family.clientId, bucket);
+    return acc;
+  }, new Map<string, ThreadmapMcpTokenFamily[]>());
 
   // SettingsEffects applies this account-scoped preference to next-themes.
   const handleThemeChange = (mode: ThemeMode) => {
@@ -1974,6 +2072,133 @@ export default function SettingsPage() {
                 <code className="rounded-md bg-muted/30 px-1.5 py-0.5 text-[11px] mr-1.5">threadmap.write</code>
                 {t('settings.mcpScopeWrite')}
               </p>
+
+              <div className="rounded-2xl border border-border/40 bg-card mt-6 overflow-hidden">
+                <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/20">
+                  <div>
+                    <p className="text-[12px] font-semibold">{t('settings.mcpClientsTitle')}</p>
+                    <p className="text-[10px] text-muted-foreground/60">{t('settings.mcpClientsHelp')}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void loadMcpConnections()}
+                    className="rounded-md border border-border/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground/75 hover:bg-foreground/[0.03]"
+                  >
+                    {mcpLoading ? t('common.loading') : t('settings.mcpRefresh')}
+                  </button>
+                </div>
+
+                {mcpManagementError && (
+                  <p className="px-4 py-3 text-xs text-destructive">
+                    {mcpManagementError}
+                  </p>
+                )}
+
+                {mcpLoading && mcpClients.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-muted-foreground/60">{t('common.loading')}</p>
+                ) : (
+                  <>
+                    {mcpClients.length === 0 ? (
+                      <p className="px-4 py-3 text-xs text-muted-foreground/60">{t('settings.mcpNoClients')}</p>
+                    ) : (
+                      mcpClients.map((client) => {
+                        const sessionsForClient = sessionsByClientId.get(client.clientId) || [];
+                        return (
+                          <div
+                            key={client.clientId}
+                            className="px-4 py-3 border-b border-border/10 last:border-b-0 space-y-2"
+                          >
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium break-all">{client.clientName}</p>
+                                  <p className="text-[10px] text-muted-foreground/65">
+                                    {truncateMcpId(client.clientId)}
+                                  </p>
+                                </div>
+                                <span className={cn(
+                                  'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                                  client.status === 'active'
+                                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                                    : 'bg-destructive/10 text-destructive/90'
+                                )}>
+                                  {client.status === 'active' ? t('settings.mcpStatusActive') : t('settings.mcpStatusRevoked')}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground/65">
+                                {t('settings.mcpCreatedAt')}: {formatMcpDate(client.createdAt, lang)}
+                                <span className="mx-1.5">·</span>
+                                {t('settings.mcpUpdatedAt')}: {formatMcpDate(client.updatedAt, lang)}
+                              </div>
+                              <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground/65">
+                                {client.scopes.map((scope) => (
+                                  <code
+                                    key={`${client.clientId}-${scope}`}
+                                    className="rounded border border-border/30 px-1.5 py-0.5"
+                                  >
+                                    {scope}
+                                  </code>
+                                ))}
+                              </div>
+                            </div>
+
+                            {client.status === 'active' && (
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  disabled={mcpRevokingClientId === client.clientId}
+                                  onClick={() => void handleRevokeMcpClient(client.clientId)}
+                                  className="rounded-lg border border-destructive/30 px-3 py-1.5 text-[11px] font-medium text-destructive/80 hover:bg-destructive/5 disabled:opacity-50"
+                                >
+                                  {mcpRevokingClientId === client.clientId
+                                    ? t('settings.mcpRevoking')
+                                    : t('settings.mcpRevokeClient')}
+                                </button>
+                              </div>
+                            )}
+
+                            {sessionsForClient.length > 0 && (
+                              <div className="pt-2 border-t border-border/10 mt-2 space-y-2">
+                                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                                  {t('settings.mcpSessionsTitle')}
+                                </p>
+                                {sessionsForClient.map((session) => (
+                                  <div
+                                    key={session.tokenFamilyId}
+                                    className="flex items-center justify-between gap-2 rounded-md border border-border/15 p-2.5"
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-medium">
+                                        {t('settings.mcpSession')}: {truncateMcpId(session.tokenFamilyId)}
+                                      </p>
+                                      <p className="text-[10px] text-muted-foreground/60">
+                                        {t('settings.mcpExpiresAt')}: {formatMcpDate(session.expiresAt, lang)}
+                                      </p>
+                                      <p className="text-[10px] text-muted-foreground/60">
+                                        {t('settings.mcpSequence')}: {session.latestSequence}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleRevokeMcpSession(session.tokenFamilyId)}
+                                      disabled={mcpRevokingTokenFamilyId === session.tokenFamilyId}
+                                      className="shrink-0 rounded-lg border border-destructive/25 px-2.5 py-1 text-[10px] font-medium text-destructive/80 hover:bg-destructive/5 disabled:opacity-50"
+                                    >
+                                      {mcpRevokingTokenFamilyId === session.tokenFamilyId
+                                        ? t('settings.mcpRevoking')
+                                        : t('settings.mcpRevokeSession')}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </>
+                )}
+              </div>
 
               <p className="mt-4 text-[11px] text-muted-foreground/60">
                 {t('settings.integrationsHelp')}

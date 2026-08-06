@@ -16,6 +16,10 @@ import {
   createThreadmapOAuthService,
   serializeOAuthError,
 } from './mcp/oauth';
+import type {
+  ThreadmapOAuthClientRecord,
+  ThreadmapMcpTokenFamilyRecord,
+} from './mcp/oauth';
 import { OAUTH_JSON_HEADERS } from './mcp/metadata';
 import { parseBearerToken } from './mcp/security';
 
@@ -327,6 +331,29 @@ function createThreadmapOAuthForRequest(request: HttpRequestLike) {
   return createThreadmapOAuthService(db, buildThreadmapMcpConfiguration(request));
 }
 
+function createThreadmapOAuthAdminService() {
+  return createThreadmapOAuthService(db, {
+    ownerUid: MCP_DEFAULT_OWNER_UID,
+    issuer: 'https://threadmap.app',
+    resource: 'https://threadmap.app',
+    authorizationEndpoint: 'https://threadmap.app/authorize',
+    tokenEndpoint: 'https://threadmap.app/token',
+    registrationEndpoint: 'https://threadmap.app/register',
+    revocationEndpoint: 'https://threadmap.app/revoke',
+    protectedResourceMetadataUrl: 'https://threadmap.app/.well-known/oauth-protected-resource',
+    scopesSupported: MCP_FUNCTION_SCOPES,
+    resourceName: 'Threadmap',
+  });
+}
+
+function requireThreadmapOwner(request: { auth?: { uid: string } | null }) {
+  const subject = requireUid(request);
+  if (subject !== MCP_DEFAULT_OWNER_UID) {
+    throw new HttpsError('permission-denied', 'Only the configured owner may manage MCP clients.');
+  }
+  return subject;
+}
+
 function normalizePath(path: string): string {
   if (!path) return '';
   if (path === '/') return '';
@@ -351,7 +378,6 @@ function buildThreadmapMcpConfiguration(request: HttpRequestLike) {
     registrationEndpoint: `${origin}${joinPath(basePath, '/register')}`,
     revocationEndpoint: `${origin}${joinPath(basePath, '/revoke')}`,
     protectedResourceMetadataUrl: `${origin}${joinPath(basePath, '/.well-known/oauth-protected-resource')}`,
-    authorizationConsentUrl: `${authorizationConsentOrigin}/integrations/authorize`,
     scopesSupported: [...MCP_FUNCTION_SCOPES],
     dynamicClientScopes: [
       'threadmap.read',
@@ -1244,30 +1270,13 @@ export const getThreadmapMcpAuthorizationRequest = onCall(
     enforceAppCheck: ENFORCE_APP_CHECK,
   },
   async (request) => {
+    const oauthService = createThreadmapOAuthAdminService();
     const data = recordValue(request.data, 'request');
     if (!hasOnlyKeys(data, ['request']) || typeof data.request !== 'string') {
       throw new HttpsError('invalid-argument', 'The authorization request must include a request token.');
     }
-    const oauthService = createThreadmapOAuthService(
-      db,
-      {
-        ownerUid: MCP_DEFAULT_OWNER_UID,
-        issuer: 'https://threadmap.app',
-        resource: 'https://threadmap.app',
-        authorizationEndpoint: 'https://threadmap.app/authorize',
-        tokenEndpoint: 'https://threadmap.app/token',
-        registrationEndpoint: 'https://threadmap.app/register',
-        revocationEndpoint: 'https://threadmap.app/revoke',
-        protectedResourceMetadataUrl: 'https://threadmap.app/.well-known/oauth-protected-resource',
-        scopesSupported: MCP_FUNCTION_SCOPES,
-        resourceName: 'Threadmap',
-      }
-    );
-    const subject = requireUid(request);
-    if (subject !== MCP_DEFAULT_OWNER_UID) {
-      throw new HttpsError('permission-denied', 'Only the configured owner may view authorization requests.');
-    }
-    return oauthService.getAuthorizationRequest(data.request, subject);
+    const uid = requireThreadmapOwner(request);
+    return oauthService.getAuthorizationRequest(data.request, uid);
   }
 );
 
@@ -1279,6 +1288,7 @@ export const approveThreadmapMcpAuthorizationRequest = onCall(
     enforceAppCheck: ENFORCE_APP_CHECK,
   },
   async (request) => {
+    const oauthService = createThreadmapOAuthAdminService();
     const data = recordValue(request.data, 'request');
     if (!hasOnlyKeys(data, ['request', 'approvedScopes'])) {
       throw new HttpsError('invalid-argument', 'The approval request contains unsupported fields.');
@@ -1286,22 +1296,7 @@ export const approveThreadmapMcpAuthorizationRequest = onCall(
     if (typeof data.request !== 'string') {
       throw new HttpsError('invalid-argument', 'The request token is invalid.');
     }
-    const oauthService = createThreadmapOAuthService(
-      db,
-      {
-        ownerUid: MCP_DEFAULT_OWNER_UID,
-        issuer: 'https://threadmap.app',
-        resource: 'https://threadmap.app',
-        authorizationEndpoint: 'https://threadmap.app/authorize',
-        tokenEndpoint: 'https://threadmap.app/token',
-        registrationEndpoint: 'https://threadmap.app/register',
-        revocationEndpoint: 'https://threadmap.app/revoke',
-        protectedResourceMetadataUrl: 'https://threadmap.app/.well-known/oauth-protected-resource',
-        scopesSupported: MCP_FUNCTION_SCOPES,
-        resourceName: 'Threadmap',
-      }
-    );
-    const uid = requireUid(request);
+    const uid = requireThreadmapOwner(request);
     const result = await oauthService.approveAuthorizationRequest(
       data.request,
       uid,
@@ -1319,6 +1314,7 @@ export const denyThreadmapMcpAuthorizationRequest = onCall(
     enforceAppCheck: ENFORCE_APP_CHECK,
   },
   async (request) => {
+    const oauthService = createThreadmapOAuthAdminService();
     const data = recordValue(request.data, 'request');
     if (!hasOnlyKeys(data, ['request'])) {
       throw new HttpsError('invalid-argument', 'The denial request contains unsupported fields.');
@@ -1326,24 +1322,119 @@ export const denyThreadmapMcpAuthorizationRequest = onCall(
     if (typeof data.request !== 'string') {
       throw new HttpsError('invalid-argument', 'The request token is invalid.');
     }
-    const oauthService = createThreadmapOAuthService(
-      db,
-      {
-        ownerUid: MCP_DEFAULT_OWNER_UID,
-        issuer: 'https://threadmap.app',
-        resource: 'https://threadmap.app',
-        authorizationEndpoint: 'https://threadmap.app/authorize',
-        tokenEndpoint: 'https://threadmap.app/token',
-        registrationEndpoint: 'https://threadmap.app/register',
-        revocationEndpoint: 'https://threadmap.app/revoke',
-        protectedResourceMetadataUrl: 'https://threadmap.app/.well-known/oauth-protected-resource',
-        scopesSupported: MCP_FUNCTION_SCOPES,
-        resourceName: 'Threadmap',
-      }
-    );
-    const uid = requireUid(request);
+    const uid = requireThreadmapOwner(request);
     const result = await oauthService.denyAuthorizationRequest(data.request, uid);
     return result;
+  }
+);
+
+export const listThreadmapMcpClients = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 20,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['includeRevoked'])) {
+      throw new HttpsError('invalid-argument', 'The list request contains unsupported fields.');
+    }
+    if (data.includeRevoked !== undefined && typeof data.includeRevoked !== 'boolean') {
+      throw new HttpsError('invalid-argument', 'The includeRevoked flag is invalid.');
+    }
+    const uid = requireThreadmapOwner(request);
+    const oauthService = createThreadmapOAuthAdminService();
+    const clients: ThreadmapOAuthClientRecord[] = await oauthService.listClients(
+      uid,
+      data.includeRevoked === true
+    );
+    return { clients };
+  }
+);
+
+export const listThreadmapMcpTokenFamilies = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 20,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['clientId', 'includeRevoked'])) {
+      throw new HttpsError('invalid-argument', 'The list request contains unsupported fields.');
+    }
+    if (data.clientId !== undefined && typeof data.clientId !== 'string') {
+      throw new HttpsError('invalid-argument', 'The client ID filter is invalid.');
+    }
+    if (data.includeRevoked !== undefined && typeof data.includeRevoked !== 'boolean') {
+      throw new HttpsError('invalid-argument', 'The includeRevoked flag is invalid.');
+    }
+    const uid = requireThreadmapOwner(request);
+    const oauthService = createThreadmapOAuthAdminService();
+    const families: ThreadmapMcpTokenFamilyRecord[] = await oauthService.listTokenFamilies(
+      uid,
+      data.includeRevoked === true
+    );
+    const requestedClientId = data.clientId?.trim();
+    return {
+      tokenFamilies: requestedClientId
+        ? families.filter((family) => family.clientId === requestedClientId)
+        : families,
+    };
+  }
+);
+
+export const revokeThreadmapMcpClient = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 20,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['clientId'])) {
+      throw new HttpsError('invalid-argument', 'The revoke request contains unsupported fields.');
+    }
+    if (typeof data.clientId !== 'string') {
+      throw new HttpsError('invalid-argument', 'The client ID is invalid.');
+    }
+    const clientId = data.clientId.trim();
+    if (clientId.length === 0) {
+      throw new HttpsError('invalid-argument', 'The client ID is invalid.');
+    }
+    const uid = requireThreadmapOwner(request);
+    const oauthService = createThreadmapOAuthAdminService();
+    const success = await oauthService.revokeClient(clientId, uid, 'administrative');
+    return { success };
+  }
+);
+
+export const revokeThreadmapMcpTokenFamily = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 20,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['tokenFamilyId'])) {
+      throw new HttpsError('invalid-argument', 'The revoke request contains unsupported fields.');
+    }
+    if (typeof data.tokenFamilyId !== 'string') {
+      throw new HttpsError('invalid-argument', 'The token family ID is invalid.');
+    }
+    const tokenFamilyId = data.tokenFamilyId.trim();
+    if (tokenFamilyId.length === 0) {
+      throw new HttpsError('invalid-argument', 'The token family ID is invalid.');
+    }
+    const uid = requireThreadmapOwner(request);
+    const oauthService = createThreadmapOAuthAdminService();
+    const success = await oauthService.revokeTokenFamily(tokenFamilyId, uid, 'administrative');
+    return { success };
   }
 );
 
