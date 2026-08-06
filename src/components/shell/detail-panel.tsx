@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { useSwipeToClose } from '@/lib/hooks/use-swipe-to-close';
+import { DESKTOP_MEDIA_QUERY, useMediaQuery } from '@/lib/hooks/use-media-query';
 import {
   X,
   Trash2,
@@ -367,6 +368,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pendingTypeChange, setPendingTypeChange] = useState<ItemType | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const detailMountedRef = useRef(false);
@@ -1720,8 +1722,12 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
         {content}
       </div>
 
-      {/* Mobile — full-screen sheet */}
-      <div className="lg:hidden">
+      {/* Mobile — full-screen sheet.
+          Gated on a JS media query, not `lg:hidden`: the sheet portals to
+          document.body, so a responsive wrapper class cannot hide it. Left as
+          CSS it renders on desktop too, stacking a second copy of `content`
+          over the panel and locking body scroll across the whole app. */}
+      {!isDesktop && (
         <Sheet
           open={detailPanelOpen}
           onOpenChange={(open) => {
@@ -1752,8 +1758,8 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           </div>
         </SheetContent>
       </Sheet>
-      </div>
-      
+      )}
+
       {/* Link Graph */}
       {item && (
         <LinkGraph

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useSwipeToClose } from '@/lib/hooks/use-swipe-to-close';
+import { DESKTOP_MEDIA_QUERY, useMediaQuery } from '@/lib/hooks/use-media-query';
 import {
   X,
   Trash2,
@@ -63,6 +64,7 @@ export function ProjectDashboard() {
   const [showLinkGraph, setShowLinkGraph] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY);
   const [doneCollapsed, setDoneCollapsed] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const { confirmBeforeDelete, archiveInsteadOfDelete, dateFormat, timeFormat } = useSettingsStore((state) => state.settings);
@@ -703,8 +705,12 @@ export function ProjectDashboard() {
         {content}
       </div>
 
-      {/* Mobile */}
-      <div className="lg:hidden">
+      {/* Mobile.
+          Gated on a JS media query, not `lg:hidden`: the sheet portals to
+          document.body, so a responsive wrapper class cannot hide it. Left as
+          CSS it renders on desktop too, stacking a second copy of `content`
+          over the panel and locking body scroll across the whole app. */}
+      {!isDesktop && (
         <Sheet open={detailPanelOpen} onOpenChange={setDetailPanelOpen}>
           <SheetContent
             side="bottom"
@@ -729,7 +735,7 @@ export function ProjectDashboard() {
             </div>
           </SheetContent>
         </Sheet>
-      </div>
+      )}
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
