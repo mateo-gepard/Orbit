@@ -29,13 +29,14 @@ let _pendingSave = false;
 let _cloudReceived = false;
 
 function scheduleSave(profile: AbiturProfile) {
-  if (!_syncUserId) return;
+  const scheduledUserId = _syncUserId;
+  if (!scheduledUserId) return;
   if (_saveTimer) clearTimeout(_saveTimer);
   _pendingSave = true;
   _saveTimer = setTimeout(async () => {
-    if (!_syncUserId) { _pendingSave = false; return; }
+    if (_syncUserId !== scheduledUserId) { _pendingSave = false; return; }
     try {
-      await saveToolData(_syncUserId, 'abitur', { profile });
+      await saveToolData(scheduledUserId, 'abitur', { profile });
     } catch (err) {
       console.error('[ORBIT] Failed to save Abitur data:', err);
     } finally {
@@ -294,16 +295,13 @@ export const useAbiturStore = create<AbiturState>()(
         }),
 
       _setSyncUserId: (userId) => {
-        const prev = _syncUserId;
-        _syncUserId = userId;
-        if (!userId) { _cloudReceived = false; return; }
-        if (!prev && !_cloudReceived) {
-          const { profile } = get();
-          if (profile.onboardingComplete) {
-            console.log('[ORBIT] Abitur: user signed in — pushing local profile to cloud');
-            scheduleSave(profile);
-          }
+        if (_syncUserId !== userId && _saveTimer) {
+          clearTimeout(_saveTimer);
+          _saveTimer = null;
+          _pendingSave = false;
         }
+        _syncUserId = userId;
+        _cloudReceived = false;
       },
 
       resetProfile: () => {
@@ -315,3 +313,19 @@ export const useAbiturStore = create<AbiturState>()(
     { name: 'orbit-abitur', skipHydration: true }
   )
 );
+
+/** Switch the persisted fallback to an account-specific namespace. */
+export async function scopeAbiturPersistence(userId: string): Promise<void> {
+  useAbiturStore.getState()._setSyncUserId(null);
+  const key = `orbit-abitur:${encodeURIComponent(userId)}`;
+  if (typeof window !== 'undefined' && userId === 'demo-user' && !localStorage.getItem(key)) {
+    const legacy = localStorage.getItem('orbit-abitur');
+    if (legacy) localStorage.setItem(key, legacy);
+  }
+  useAbiturStore.persist.setOptions({ name: key });
+  if (typeof window !== 'undefined' && localStorage.getItem(key)) {
+    await useAbiturStore.persist.rehydrate();
+  } else {
+    useAbiturStore.setState({ profile: createDefaultProfile() });
+  }
+}

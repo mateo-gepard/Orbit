@@ -96,8 +96,9 @@ export const TOOLS: ToolDefinition[] = [
 let _syncUserId: string | null = null;
 
 function scheduleSave(enabledTools: ToolId[]) {
-  if (!_syncUserId) return;
-  saveToolData(_syncUserId, 'toolbox', { enabledTools }).catch((err) => {
+  const userId = _syncUserId;
+  if (!userId) return;
+  saveToolData(userId, 'toolbox', { enabledTools }).catch((err) => {
     console.error('[ORBIT] Failed to save Toolbox data:', err);
   });
 }
@@ -152,3 +153,19 @@ export const useToolboxStore = create<ToolboxStore>()(
     }
   )
 );
+
+/** Switch the persisted fallback to an account-specific namespace. */
+export async function scopeToolboxPersistence(userId: string): Promise<void> {
+  useToolboxStore.getState()._setSyncUserId(null);
+  const key = `orbit-toolbox:${encodeURIComponent(userId)}`;
+  if (typeof window !== 'undefined' && userId === 'demo-user' && !localStorage.getItem(key)) {
+    const legacy = localStorage.getItem('orbit-toolbox');
+    if (legacy) localStorage.setItem(key, legacy);
+  }
+  useToolboxStore.persist.setOptions({ name: key });
+  if (typeof window !== 'undefined' && localStorage.getItem(key)) {
+    await useToolboxStore.persist.rehydrate();
+  } else {
+    useToolboxStore.setState({ enabledTools: [] });
+  }
+}

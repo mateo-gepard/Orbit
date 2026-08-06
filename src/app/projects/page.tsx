@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { format, isValid, parseISO } from "date-fns";
 import {
   FolderKanban,
   Plus,
@@ -42,7 +43,7 @@ export default function ProjectsPage() {
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   const projects = useMemo(
-    () => items.filter((i) => i.type === "project" && i.status !== "archived"),
+    () => items.filter((i) => i.type === "project" && i.status !== "archived" && i.status !== "done"),
     [items],
   );
 
@@ -89,11 +90,11 @@ export default function ProjectsPage() {
   };
 
   const handleNewProject = async (tier: ProjectTier = 3) => {
-    if (!user) return;
+    if (!user || !newTitle.trim()) return;
     const id = await createItem({
       type: "project",
       status: "active",
-      title: newTitle.trim() || 'Untitled Project',
+      title: newTitle.trim(),
       content: newDescription.trim() || undefined,
       emoji: "\ud83d\ude80",
       color: "#6366f1",
@@ -120,6 +121,18 @@ export default function ProjectsPage() {
     setNewDescription('');
   };
 
+  useEffect(() => {
+    if (!isCreating) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setIsCreating(false);
+      setNewTitle("");
+      setNewDescription("");
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isCreating]);
+
   const handleNewTask = async (
     projectId: string,
     status: "active" | "waiting" | "done" = "active",
@@ -134,6 +147,7 @@ export default function ProjectsPage() {
       userId: user.uid,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      ...(status === "done" ? { completedAt: Date.now() } : {}),
     });
     setSelectedItemId(id);
   };
@@ -141,6 +155,18 @@ export default function ProjectsPage() {
   const getProjectTasks = (projectId: string, status?: string) => {
     const all = getAllProjectTasks(projectId);
     return status ? all.filter((i) => i.status === status) : all;
+  };
+
+  const formatDueDate = (date: string) => {
+    const parsed = parseISO(date);
+    return isValid(parsed) ? format(parsed, "MMM d, yyyy") : "Date unavailable";
+  };
+
+  const handleTaskStatus = async (task: OrbitItem, status: "active" | "waiting" | "done") => {
+    await updateItem(task.id, {
+      status,
+      completedAt: status === "done" ? task.completedAt ?? Date.now() : null,
+    });
   };
 
   // ═══ Tier 1 Card — Large & Prominent ═══
@@ -347,20 +373,37 @@ export default function ProjectsPage() {
               </div>
               <div className="p-2 space-y-1.5 min-h-[80px]">
                 {column.tasks.map((task) => (
-                  <button
+                  <div
                     key={task.id}
-                    onClick={() => setSelectedItemId(task.id)}
-                    className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
+                    className="w-full rounded-lg border border-border/30 bg-background px-3 py-2 text-left transition-colors hover:border-border hover:bg-foreground/[0.02] group"
                   >
-                    <p className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground transition-colors">
-                      {task.title}
-                    </p>
+                    <button
+                      onClick={() => setSelectedItemId(task.id)}
+                      className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="block text-[13px] font-medium text-foreground/80 transition-colors group-hover:text-foreground">
+                        {task.title}
+                      </span>
+                    </button>
                     {task.dueDate && (
-                      <p className="text-[11px] text-muted-foreground/40 mt-0.5">
-                        Due {task.dueDate}
+                      <p className="mt-0.5 text-[11px] text-muted-foreground/60">
+                        Due {formatDueDate(task.dueDate)}
                       </p>
                     )}
-                  </button>
+                    <label className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span>Move to</span>
+                      <select
+                        value={task.status}
+                        onChange={(event) => handleTaskStatus(task, event.target.value as "active" | "waiting" | "done")}
+                        aria-label={`Move ${task.title} to column`}
+                        className="min-h-8 flex-1 rounded-md border border-border bg-background px-2 text-[12px] text-foreground"
+                      >
+                        <option value="active">In Progress</option>
+                        <option value="waiting">Waiting</option>
+                        <option value="done">Done</option>
+                      </select>
+                    </label>
+                  </div>
                 ))}
                 <button
                   onClick={() => handleNewTask(project.id, column.id as "active" | "waiting" | "done")}
@@ -473,16 +516,24 @@ export default function ProjectsPage() {
               'animate-slide-down-spring lg:animate-scale-in'
             )}
           >
-            <div className={cn(
-              'overflow-hidden bg-popover',
-              'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
-              'rounded-2xl lg:rounded-xl',
-              'border border-border/60'
-            )}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="new-project-title"
+              className={cn(
+                'overflow-hidden bg-popover',
+                'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
+                'rounded-2xl lg:rounded-xl',
+                'border border-border/60'
+              )}
+            >
+              <h2 id="new-project-title" className="sr-only">Create a project</h2>
               {/* Title Input */}
               <div className="flex items-center gap-3 px-4 py-3 lg:py-3">
                 <FolderKanban className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
+                <label htmlFor="new-project-name" className="sr-only">Project name</label>
                 <input
+                  id="new-project-name"
                   ref={titleInputRef}
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
@@ -515,7 +566,9 @@ export default function ProjectsPage() {
 
               {/* Description Input */}
               <div className="px-4 py-3 lg:py-3">
+                <label htmlFor="new-project-description" className="sr-only">Project description</label>
                 <textarea
+                  id="new-project-description"
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
                   onKeyDown={(e) => {
@@ -541,7 +594,8 @@ export default function ProjectsPage() {
                 </p>
                 <button
                   onClick={() => handleNewProject()}
-                  className="rounded-lg px-3 py-1.5 text-[12px] lg:text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors active:scale-95"
+                  disabled={!newTitle.trim()}
+                  className="rounded-lg px-3 py-1.5 text-[12px] lg:text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Create
                 </button>
@@ -563,9 +617,11 @@ export default function ProjectsPage() {
         </div>
         <div className="flex items-center gap-3">
           {/* View mode toggle */}
-          <div className="hidden lg:flex items-center rounded-lg border border-border/50 bg-muted/40 p-1">
+          <div className="flex items-center rounded-lg border border-border/50 bg-muted/40 p-1" role="group" aria-label="Project view">
             <button
               onClick={() => setViewMode("grid")}
+              aria-pressed={viewMode === "grid"}
+              aria-label="Grid view"
               className={cn(
                 "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all",
                 viewMode === "grid"
@@ -573,10 +629,12 @@ export default function ProjectsPage() {
                   : "text-muted-foreground/60 hover:text-foreground",
               )}
             >
-              <LayoutGrid className="h-3.5 w-3.5" /> Grid
+              <LayoutGrid className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Grid</span>
             </button>
             <button
               onClick={() => setViewMode("kanban")}
+              aria-pressed={viewMode === "kanban"}
+              aria-label="Kanban view"
               className={cn(
                 "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all",
                 viewMode === "kanban"
@@ -584,7 +642,7 @@ export default function ProjectsPage() {
                   : "text-muted-foreground/60 hover:text-foreground",
               )}
             >
-              <LayoutList className="h-3.5 w-3.5" /> Kanban
+              <LayoutList className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Kanban</span>
             </button>
           </div>
           <button

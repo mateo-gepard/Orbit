@@ -166,8 +166,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   },
 
   privacy: {
-    analyticsEnabled: true,
-    crashReportsEnabled: true,
+    analyticsEnabled: false,
+    crashReportsEnabled: false,
     showProfilePhoto: true,
   },
 
@@ -193,11 +193,17 @@ export const DEFAULT_SETTINGS: UserSettings = {
 let _syncUserId: string | null = null;
 let _saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
+function createDefaultSettings(): UserSettings {
+  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as UserSettings;
+}
+
 function scheduleSave(settings: UserSettings) {
-  if (!_syncUserId) return;
+  const scheduledUserId = _syncUserId;
+  if (!scheduledUserId) return;
   if (_saveTimeout) clearTimeout(_saveTimeout);
   _saveTimeout = setTimeout(() => {
-    saveToolData(_syncUserId!, 'settings', { settings }).catch((err) => {
+    if (_syncUserId !== scheduledUserId) return;
+    saveToolData(scheduledUserId, 'settings', { settings }).catch((err) => {
       console.error('[ORBIT] Failed to save settings:', err);
     });
   }, 500);
@@ -220,7 +226,7 @@ interface SettingsStore {
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
-      settings: { ...DEFAULT_SETTINGS },
+      settings: createDefaultSettings(),
 
       update: (patch) => {
         const next = { ...get().settings, ...patch, updatedAt: Date.now() };
@@ -253,6 +259,10 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       _setSyncUserId: (userId) => {
+        if (_syncUserId !== userId && _saveTimeout) {
+          clearTimeout(_saveTimeout);
+          _saveTimeout = null;
+        }
         _syncUserId = userId;
       },
     }),
@@ -263,3 +273,19 @@ export const useSettingsStore = create<SettingsStore>()(
     }
   )
 );
+
+/** Switch the persisted fallback to an account-specific namespace. */
+export async function scopeSettingsPersistence(userId: string): Promise<void> {
+  useSettingsStore.getState()._setSyncUserId(null);
+  const key = `orbit-settings:${encodeURIComponent(userId)}`;
+  if (typeof window !== 'undefined' && userId === 'demo-user' && !localStorage.getItem(key)) {
+    const legacy = localStorage.getItem('orbit-settings');
+    if (legacy) localStorage.setItem(key, legacy);
+  }
+  useSettingsStore.persist.setOptions({ name: key });
+  if (typeof window !== 'undefined' && localStorage.getItem(key)) {
+    await useSettingsStore.persist.rehydrate();
+  } else {
+    useSettingsStore.setState({ settings: createDefaultSettings() });
+  }
+}

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
+  Inbox,
   Sun,
   FolderKanban,
   Repeat,
@@ -51,6 +52,7 @@ const NAV_SECTIONS: { labelKey?: TranslationKey; items: { href: string; labelKey
   {
     items: [
       { href: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+      { href: '/inbox', labelKey: 'nav.inbox', icon: Inbox },
       { href: '/today', labelKey: 'nav.today', icon: Sun },
       { href: '/tasks', labelKey: 'nav.tasks', icon: CheckSquare },
     ],
@@ -109,7 +111,7 @@ export function Sidebar() {
       '/projects': active.filter((i) => i.type === 'project').length,
       '/habits': active.filter((i) => i.type === 'habit').length,
       '/goals': active.filter((i) => i.type === 'goal').length,
-      '/inbox': active.filter((i) => !i.type || i.status === 'active').length,
+      '/inbox': storeItems.filter((i) => i.type === 'task' && i.status === 'waiting' && !i.dueDate && !i.parentId).length,
     } as Record<string, number>;
   }, [showBadges, storeItems]);
 
@@ -193,6 +195,7 @@ export function Sidebar() {
             </span>
           </div>
           <Button
+            aria-label="Close navigation"
             variant="ghost"
             size="icon"
             className="h-7 w-7 lg:hidden"
@@ -456,6 +459,7 @@ export function Sidebar() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Link
+                  aria-label={t('nav.settings')}
                   href="/settings"
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
@@ -495,6 +499,7 @@ export function Sidebar() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
+                      aria-label={t('sidebar.signOut')}
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"

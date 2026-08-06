@@ -18,6 +18,9 @@ import type { OrbitItem } from './types';
 
 let syncInterval: NodeJS.Timeout | null = null;
 let lastSyncTime: number = 0;
+let syncInFlight: Promise<void> | null = null;
+let syncUserId: string | null = null;
+let syncGeneration = 0;
 const SYNC_INTERVAL_MS = 30000; // 30 seconds
 
 // ═══════════════════════════════════════════════════════════
@@ -28,6 +31,16 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
   if (!hasCalendarPermission()) {
     return;
   }
+
+  if (syncInFlight) return syncInFlight;
+  const generation = syncGeneration;
+  syncInFlight = performGoogleCalendarSync(userId, generation).finally(() => {
+    syncInFlight = null;
+  });
+  return syncInFlight;
+}
+
+async function performGoogleCalendarSync(userId: string, generation: number): Promise<void> {
 
   try {
     const now = new Date();
@@ -40,14 +53,17 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
     const timeMax = twoYearsLater.toISOString();
 
     const googleEvents = await fetchGoogleEvents(timeMin, timeMax);
+    if (generation !== syncGeneration || (syncUserId && syncUserId !== userId)) return;
     const orbitItems = useOrbitStore.getState().items;
     const syncedItems = orbitItems.filter(i => i.googleCalendarId);
 
     // Map Google Calendar events by ID
     const googleEventMap = new Map<string, GCalEvent>();
+    const cancelledGoogleIds = new Set<string>();
     for (const gcalEvent of googleEvents) {
       if (gcalEvent.id) {
-        googleEventMap.set(gcalEvent.id, gcalEvent);
+        if (gcalEvent.status === 'cancelled') cancelledGoogleIds.add(gcalEvent.id);
+        else googleEventMap.set(gcalEvent.id, gcalEvent);
       }
     }
 
@@ -60,10 +76,10 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
       if (existing) {
         const existingItem = orbitItems.find(i => i.id === existing);
         if (existingItem && item.createdAt > existingItem.createdAt) {
-          await deleteItem(existing);
+          await deleteItem(existing, { skipCalendar: true });
           seenGoogleIds.set(item.googleCalendarId, item.id);
         } else {
-          await deleteItem(item.id);
+          await deleteItem(item.id, { skipCalendar: true });
         }
       } else {
         seenGoogleIds.set(item.googleCalendarId, item.id);
@@ -98,13 +114,12 @@ export async function syncGoogleCalendar(userId: string): Promise<void> {
       }
     }
 
-    // 3. DELETE: Remove events deleted from Google Calendar
+    // 3. DELETE: only explicit cancellation is destructive. Absence from a
+    // paginated/windowed list is not proof that an event was deleted.
     for (const orbitItem of cleanedSyncedItems) {
       if (!orbitItem.googleCalendarId) continue;
-
-      const stillExistsInGoogle = googleEventMap.has(orbitItem.googleCalendarId);
-      if (!stillExistsInGoogle && orbitItem.calendarSynced) {
-        await deleteItem(orbitItem.id);
+      if (cancelledGoogleIds.has(orbitItem.googleCalendarId) && orbitItem.calendarSynced) {
+        await deleteItem(orbitItem.id, { skipCalendar: true });
       }
     }
 
@@ -147,11 +162,11 @@ async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: GCalEvent, 
   const updates: Partial<OrbitItem> = {
     title: convertedEvent.title || 'Untitled Event',
     updatedAt: Date.now(),
-    ...(convertedEvent.content !== undefined && { content: convertedEvent.content }),
-    ...(convertedEvent.startDate && { startDate: convertedEvent.startDate }),
-    ...(convertedEvent.endDate && { endDate: convertedEvent.endDate }),
-    ...(convertedEvent.startTime && { startTime: convertedEvent.startTime }),
-    ...(convertedEvent.endTime && { endTime: convertedEvent.endTime }),
+    content: convertedEvent.content,
+    startDate: convertedEvent.startDate,
+    endDate: convertedEvent.endDate,
+    startTime: convertedEvent.startTime,
+    endTime: convertedEvent.endTime,
   };
 
   await updateItem(orbitItemId, updates);
@@ -166,6 +181,7 @@ function eventHasChanges(orbitItem: OrbitItem, gcalEvent: GCalEvent): boolean {
   if (converted.endDate !== orbitItem.endDate) return true;
   if (converted.startTime !== orbitItem.startTime) return true;
   if (converted.endTime !== orbitItem.endTime) return true;
+  if ((converted.content || '') !== (orbitItem.content || '')) return true;
 
   return false;
 }
@@ -175,9 +191,12 @@ function eventHasChanges(orbitItem: OrbitItem, gcalEvent: GCalEvent): boolean {
 // ═══════════════════════════════════════════════════════════
 
 export function startGoogleCalendarSync(userId: string): void {
-  if (syncInterval) {
+  if (syncInterval && syncUserId === userId) {
     return;
   }
+  stopGoogleCalendarSync();
+  syncUserId = userId;
+  syncGeneration++;
 
   // Initial sync
   syncGoogleCalendar(userId);
@@ -189,6 +208,8 @@ export function startGoogleCalendarSync(userId: string): void {
 }
 
 export function stopGoogleCalendarSync(): void {
+  syncGeneration++;
+  syncUserId = null;
   if (syncInterval) {
     clearInterval(syncInterval);
     syncInterval = null;

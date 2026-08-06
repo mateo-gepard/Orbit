@@ -160,11 +160,6 @@
 
 /* ─── PWA Standalone Mode ─── */
 @media all and (display-mode: standalone) {
-  /* Disable text selection on non-editable elements */
-  *:not(input):not(textarea):not([contenteditable="true"]) {
-    -webkit-user-select: none;
-    user-select: none;
-  }
   input, textarea, [contenteditable="true"], [data-selectable] {
     -webkit-user-select: auto;
     user-select: auto;
@@ -542,6 +537,14 @@
   --border: oklch(0.6 0 0);
 }
 
+.high-contrast [class*="text-muted-foreground/"] {
+  color: var(--muted-foreground) !important;
+}
+
+.high-contrast [class*="border-border/"] {
+  border-color: var(--border) !important;
+}
+
 /* Accent color — applied via --accent-color CSS variable from settings */
 :root[style*="--accent-color"] [data-slot="nav-item"].active,
 :root[style*="--accent-color"] [data-slot="nav-item"][data-active="true"] {
@@ -634,4 +637,30 @@
 }
 [data-font-size="large"] {
   font-size: 18px;
+}
+
+[data-font-size="large"] :where(.text-\[9px\], .text-\[10px\], .text-\[11px\]) {
+  font-size: 0.75rem !important;
+}
+
+[data-font-size="large"] :where(.text-\[12px\], .text-\[13px\]) {
+  font-size: 0.875rem !important;
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 200;
+  transform: translateY(-200%);
+  border-radius: 0.5rem;
+  background: var(--foreground);
+  color: var(--background);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }

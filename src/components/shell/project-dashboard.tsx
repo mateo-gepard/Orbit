@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useSwipeToClose } from '@/lib/hooks/use-swipe-to-close';
 import {
   X,
@@ -75,9 +75,9 @@ export function ProjectDashboard() {
   }, [items, item?.id, milestoneIds]);
 
   // Sync title when item changes
-  if (item && title !== item.title && !document.activeElement?.closest('input')) {
-    setTitle(item.title);
-  }
+  useEffect(() => {
+    setTitle(item?.title || '');
+  }, [item?.id, item?.title]);
 
   if (!item || item.type !== 'project') return null;
 
@@ -106,7 +106,10 @@ export function ProjectDashboard() {
     }
   };
 
-  const handleArchive = () => handleUpdate({ status: 'archived' });
+  const handleArchive = async () => {
+    await handleUpdate({ status: 'archived' });
+    setSelectedItemId(null);
+  };
   const handleRestore = () => handleUpdate({ status: 'active' });
 
   const validItemTags = (item.tags || []).filter(tag => allTags.includes(tag));
@@ -130,6 +133,7 @@ export function ProjectDashboard() {
       userId: user.uid,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      ...(status === 'done' ? { completedAt: Date.now() } : {}),
     });
     setSelectedItemId(id);
   };
@@ -141,6 +145,22 @@ export function ProjectDashboard() {
       status: 'active',
       title: 'New Milestone',
       parentId: projectId,
+      tags: [],
+      userId: user.uid,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    setSelectedItemId(id);
+  };
+
+  const handleNewNote = async (projectId: string) => {
+    if (!user) return;
+    const id = await createItem({
+      type: 'note',
+      status: 'active',
+      title: 'New Note',
+      parentId: projectId,
+      noteSubtype: 'general',
       tags: [],
       userId: user.uid,
       createdAt: Date.now(),

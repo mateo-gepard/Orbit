@@ -20,6 +20,14 @@ const PUSH_TOKEN_COLLECTION = 'fcmTokens';
 const PUSH_TOKEN_LOCAL_KEY = 'orbit-fcm-token';
 const PUSH_SUB_LOCAL_KEY = 'orbit-push-subscription';
 
+function pushTokenKey(userId: string): string {
+  return `${PUSH_TOKEN_LOCAL_KEY}:${encodeURIComponent(userId)}`;
+}
+
+function pushSubscriptionKey(userId: string): string {
+  return `${PUSH_SUB_LOCAL_KEY}:${encodeURIComponent(userId)}`;
+}
+
 // ── Platform detection ────────────────────────────────────
 
 function isIOSorSafari(): boolean {
@@ -30,7 +38,7 @@ function isIOSorSafari(): boolean {
     (ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Firefox'));
 }
 
-function useNativeWebPush(): boolean {
+function shouldUseNativeWebPush(): boolean {
   // On iOS/Safari, Firebase messaging doesn't work — use native Web Push
   return isIOSorSafari();
 }
@@ -61,6 +69,10 @@ async function getMessagingInstance() {
  */
 export async function registerFCMToken(userId: string): Promise<string | null> {
   try {
+    const { notifications } = useSettingsStore.getState().settings;
+    if (!notifications.enabled || (!notifications.dailyBriefing && !notifications.eveningBriefing)) {
+      return null;
+    }
     // Ensure notification permission
     if (Notification.permission !== 'granted') {
       const perm = await Notification.requestPermission();
@@ -72,7 +84,7 @@ export async function registerFCMToken(userId: string): Promise<string | null> {
 
     const swRegistration = await navigator.serviceWorker.ready;
 
-    if (useNativeWebPush()) {
+    if (shouldUseNativeWebPush()) {
       // Native Web Push uses the web push VAPID key (for iOS/Safari)
       const vapidKey = process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY || process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
       if (!vapidKey) {
@@ -119,8 +131,8 @@ async function registerFCM(
       return null;
     }
 
-    localStorage.setItem(PUSH_TOKEN_LOCAL_KEY, token);
-    localStorage.removeItem(PUSH_SUB_LOCAL_KEY);
+    localStorage.setItem(pushTokenKey(userId), token);
+    localStorage.removeItem(pushSubscriptionKey(userId));
 
     await saveTokenToFirestore(userId, token);
     console.log('[ORBIT] FCM token registered');
@@ -147,8 +159,8 @@ async function registerNativeWebPush(
     });
 
     const subJson = JSON.stringify(subscription.toJSON());
-    localStorage.setItem(PUSH_SUB_LOCAL_KEY, subJson);
-    localStorage.removeItem(PUSH_TOKEN_LOCAL_KEY);
+    localStorage.setItem(pushSubscriptionKey(userId), subJson);
+    localStorage.removeItem(pushTokenKey(userId));
 
     await saveSubscriptionToFirestore(userId, subscription);
     console.log('[ORBIT] Native Web Push subscription registered');
@@ -167,23 +179,23 @@ export async function unregisterFCMToken(userId: string): Promise<void> {
 
   try {
     // Try FCM token first
-    const token = localStorage.getItem(PUSH_TOKEN_LOCAL_KEY);
+    const token = localStorage.getItem(pushTokenKey(userId));
     if (token) {
-      const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${tokenHash(token)}`);
+      const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${await tokenFingerprint(token)}`);
       await deleteDoc(docRef);
-      localStorage.removeItem(PUSH_TOKEN_LOCAL_KEY);
+      localStorage.removeItem(pushTokenKey(userId));
       console.log('[ORBIT] FCM token unregistered');
       return;
     }
 
     // Try Web Push subscription
-    const subJson = localStorage.getItem(PUSH_SUB_LOCAL_KEY);
+    const subJson = localStorage.getItem(pushSubscriptionKey(userId));
     if (subJson) {
       const sub = JSON.parse(subJson);
-      const subId = tokenHash(sub.endpoint || subJson);
+      const subId = await tokenFingerprint(sub.endpoint || subJson);
       const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${subId}`);
       await deleteDoc(docRef);
-      localStorage.removeItem(PUSH_SUB_LOCAL_KEY);
+      localStorage.removeItem(pushSubscriptionKey(userId));
 
       // Also unsubscribe from PushManager
       const swReg = await navigator.serviceWorker?.ready;
@@ -204,7 +216,7 @@ async function saveTokenToFirestore(userId: string, token: string): Promise<void
   if (!db) return;
 
   const { settings } = useSettingsStore.getState();
-  const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${tokenHash(token)}`);
+  const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${await tokenFingerprint(token)}`);
 
   await setDoc(docRef, {
     userId,
@@ -231,7 +243,7 @@ async function saveSubscriptionToFirestore(
 
   const { settings } = useSettingsStore.getState();
   const subJson = subscription.toJSON();
-  const subId = tokenHash(subJson.endpoint || JSON.stringify(subJson));
+  const subId = await tokenFingerprint(subJson.endpoint || JSON.stringify(subJson));
   const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${subId}`);
 
   await setDoc(docRef, {
@@ -258,16 +270,16 @@ export async function updateFCMSchedule(userId: string): Promise<void> {
   if (!db) return;
 
   // Find the right doc ID
-  const token = localStorage.getItem(PUSH_TOKEN_LOCAL_KEY);
-  const subJson = localStorage.getItem(PUSH_SUB_LOCAL_KEY);
+  const token = localStorage.getItem(pushTokenKey(userId));
+  const subJson = localStorage.getItem(pushSubscriptionKey(userId));
   if (!token && !subJson) return;
 
   let docId: string;
   if (token) {
-    docId = `${userId}_${tokenHash(token)}`;
+    docId = `${userId}_${await tokenFingerprint(token)}`;
   } else {
     const sub = JSON.parse(subJson!);
-    docId = `${userId}_${tokenHash(sub.endpoint || subJson!)}`;
+    docId = `${userId}_${await tokenFingerprint(sub.endpoint || subJson!)}`;
   }
 
   const { settings } = useSettingsStore.getState();
@@ -297,7 +309,7 @@ export async function updateFCMSchedule(userId: string): Promise<void> {
  * go through the SW push event handler.
  */
 export function setupForegroundMessageHandler(): void {
-  if (useNativeWebPush()) {
+  if (shouldUseNativeWebPush()) {
     // On iOS/Safari, foreground messages come through SW push event
     // which already calls showNotification. Nothing extra needed.
     console.log('[ORBIT] Push: foreground handler skipped (native Web Push — handled by SW)');
@@ -308,8 +320,6 @@ export function setupForegroundMessageHandler(): void {
     if (!msg) return;
     import('firebase/messaging').then(({ onMessage }) => {
       onMessage(msg, (payload) => {
-        console.log('[ORBIT] FCM foreground message:', payload);
-
         const title = payload.notification?.title || 'ORBIT';
         const body = payload.notification?.body || '';
 
@@ -333,15 +343,13 @@ export function setupForegroundMessageHandler(): void {
 
 // ── Helpers ────────────────────────────────────────────────
 
-/** Simple hash to make doc IDs shorter */
-function tokenHash(token: string): string {
-  let hash = 0;
-  for (let i = 0; i < token.length; i++) {
-    const char = token.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
+/** Stable, non-reversible identifier for token document IDs. */
+async function tokenFingerprint(token: string): Promise<string> {
+  const bytes = new TextEncoder().encode(token);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest).slice(0, 12))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /** Convert a base64url VAPID key to Uint8Array for pushManager.subscribe() */
@@ -363,15 +371,15 @@ export function isFCMAvailable(): boolean {
     'serviceWorker' in navigator &&
     'PushManager' in window &&
     'Notification' in window &&
-    process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
+    (process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY)
   );
 }
 
 /** Check if user has a push token/subscription registered */
-export function hasFCMToken(): boolean {
+export function hasFCMToken(userId: string): boolean {
   return !!(
-    localStorage.getItem(PUSH_TOKEN_LOCAL_KEY) ||
-    localStorage.getItem(PUSH_SUB_LOCAL_KEY)
+    localStorage.getItem(pushTokenKey(userId)) ||
+    localStorage.getItem(pushSubscriptionKey(userId))
   );
 }
 
@@ -382,8 +390,13 @@ export function hasFCMToken(): boolean {
  */
 export async function refreshPushSubscription(userId: string): Promise<void> {
   if (!isFCMAvailable()) return;
+  const { notifications } = useSettingsStore.getState().settings;
+  if (!notifications.enabled || (!notifications.dailyBriefing && !notifications.eveningBriefing)) {
+    await unregisterFCMToken(userId);
+    return;
+  }
   if (Notification.permission !== 'granted') return;
-  if (!hasFCMToken()) return; // User never registered — don't auto-register
+  if (!hasFCMToken(userId)) return; // User never registered — don't auto-register
 
   try {
     const swReg = await navigator.serviceWorker.ready;
@@ -449,8 +462,8 @@ export async function getRegisteredDevices(userId: string): Promise<RegisteredDe
   try {
     const q = query(collection(db, PUSH_TOKEN_COLLECTION), where('userId', '==', userId));
     const snapshot = await getDocs(q);
-    const currentToken = localStorage.getItem(PUSH_TOKEN_LOCAL_KEY);
-    const currentSub = localStorage.getItem(PUSH_SUB_LOCAL_KEY);
+    const currentToken = localStorage.getItem(pushTokenKey(userId));
+    const currentSub = localStorage.getItem(pushSubscriptionKey(userId));
 
     return snapshot.docs.map((d) => {
       const data = d.data();
@@ -478,28 +491,31 @@ export async function getRegisteredDevices(userId: string): Promise<RegisteredDe
 }
 
 /** Remove a specific registered device */
-export async function removeDevice(docId: string): Promise<void> {
+export async function removeDevice(userId: string, docId: string): Promise<void> {
   if (!db) return;
+  if (!docId.startsWith(`${userId}_`)) {
+    throw new Error('Cannot remove a device owned by another account');
+  }
   try {
     await deleteDoc(doc(db, PUSH_TOKEN_COLLECTION, docId));
     // If this is the current device, clear local tokens too
-    const currentToken = localStorage.getItem(PUSH_TOKEN_LOCAL_KEY);
-    const currentSub = localStorage.getItem(PUSH_SUB_LOCAL_KEY);
-    if (currentToken && docId.includes(tokenHash(currentToken))) {
-      localStorage.removeItem(PUSH_TOKEN_LOCAL_KEY);
+    const currentToken = localStorage.getItem(pushTokenKey(userId));
+    const currentSub = localStorage.getItem(pushSubscriptionKey(userId));
+    if (currentToken && docId === `${userId}_${await tokenFingerprint(currentToken)}`) {
+      localStorage.removeItem(pushTokenKey(userId));
     }
     if (currentSub) {
       try {
         const sub = JSON.parse(currentSub);
-        if (docId.includes(tokenHash(sub.endpoint || currentSub))) {
-          localStorage.removeItem(PUSH_SUB_LOCAL_KEY);
+        if (docId === `${userId}_${await tokenFingerprint(sub.endpoint || currentSub)}`) {
+          localStorage.removeItem(pushSubscriptionKey(userId));
           const swReg = await navigator.serviceWorker?.ready;
           const existingSub = await swReg?.pushManager?.getSubscription();
           if (existingSub) await existingSub.unsubscribe();
         }
       } catch {}
     }
-    console.log('[ORBIT] Device removed:', docId);
+    console.log('[ORBIT] Push device removed');
   } catch (err) {
     console.error('[ORBIT] Failed to remove device:', err);
   }

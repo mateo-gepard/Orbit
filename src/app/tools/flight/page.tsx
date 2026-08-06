@@ -65,6 +65,10 @@ import type { OrbitItem } from '@/lib/types';
 
 const FLIGHT_SESSION_KEY = 'orbit-flight-session';
 
+function flightSessionKey(userId: string): string {
+  return `${FLIGHT_SESSION_KEY}:${encodeURIComponent(userId)}`;
+}
+
 interface FlightSession {
   status: FlightStatus;
   startTimestamp: number;       // Date.now() when flight first started
@@ -81,19 +85,24 @@ interface FlightSession {
   seatLetter: string;
 }
 
-function saveFlightSession(session: FlightSession | null) {
+function saveFlightSession(userId: string, session: FlightSession | null) {
   try {
     if (session) {
-      localStorage.setItem(FLIGHT_SESSION_KEY, JSON.stringify(session));
+      localStorage.setItem(flightSessionKey(userId), JSON.stringify(session));
     } else {
-      localStorage.removeItem(FLIGHT_SESSION_KEY);
+      localStorage.removeItem(flightSessionKey(userId));
     }
   } catch { /* quota exceeded etc */ }
 }
 
-function loadFlightSession(): FlightSession | null {
+function loadFlightSession(userId: string): FlightSession | null {
   try {
-    const raw = localStorage.getItem(FLIGHT_SESSION_KEY);
+    const key = flightSessionKey(userId);
+    if (userId === 'demo-user' && !localStorage.getItem(key)) {
+      const legacy = localStorage.getItem(FLIGHT_SESSION_KEY);
+      if (legacy) localStorage.setItem(key, legacy);
+    }
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const session = JSON.parse(raw) as FlightSession;
     // Validate it has the required fields
@@ -121,6 +130,7 @@ type FlightView = 'preflight' | 'inflight' | 'debrief' | 'logbook';
 export default function FlightPage() {
   const { items } = useOrbitStore();
   const { user } = useAuth();
+  const accountId = user?.uid || 'demo-user';
   const [mounted, setMounted] = useState(false);
 
   // ── Preflight state ──
@@ -157,7 +167,7 @@ export default function FlightPage() {
 
   // Generate random values on mount OR restore active session
   useEffect(() => {
-    const session = loadFlightSession();
+    const session = loadFlightSession(accountId);
     if (session && (session.status === 'inflight' || session.status === 'paused')) {
       // Check if the flight should have ended while we were away
       const sessionElapsed = getSessionElapsed(session);
@@ -188,9 +198,9 @@ export default function FlightPage() {
       setSeatRow(Math.floor(Math.random() * 30) + 1);
       setSeatLetter(['A', 'B', 'C', 'D', 'E', 'F'][Math.floor(Math.random() * 6)]);
     }
-    setFlightLogs(loadFlightLogsLocal());
+    setFlightLogs(loadFlightLogsLocal(accountId));
     setMounted(true);
-  }, []);
+  }, [accountId]);
 
   const isPrivate = flightClass === 'private';
 
@@ -257,7 +267,7 @@ export default function FlightPage() {
   useEffect(() => {
     if (status === 'inflight') {
       // Record the resume timestamp for computing elapsed
-      const session = loadFlightSession();
+      const session = loadFlightSession(accountId);
       const resumeTs = session?.status === 'inflight' ? session.resumeTimestamp : Date.now();
       resumeTimestampRef.current = resumeTs;
       const base = pausedElapsed;
@@ -270,14 +280,14 @@ export default function FlightPage() {
           clearInterval(timerRef.current!);
           setCompletedNormally(true);
           setStatus('debrief');
-          saveFlightSession(null);
+          saveFlightSession(accountId, null);
         }
       }, 250);
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [status, duration, pausedElapsed]);
+  }, [status, duration, pausedElapsed, accountId]);
 
   const phaseInfo = useMemo(() => getCurrentPhase(elapsed, duration), [elapsed, duration]);
 
@@ -307,7 +317,7 @@ export default function FlightPage() {
     const finalTasks = isPrivate && tasks.length > 1
       ? tasks.slice(0, 1).map(t => ({ ...t, type: 'primary' as const }))
       : tasks;
-    saveFlightSession({
+    saveFlightSession(accountId, {
       status: 'inflight',
       startTimestamp: now,
       resumeTimestamp: now,
@@ -329,9 +339,9 @@ export default function FlightPage() {
     setPausedElapsed(elapsed);
     setStatus('paused');
     // Persist session
-    const session = loadFlightSession();
+    const session = loadFlightSession(accountId);
     if (session) {
-      saveFlightSession({
+      saveFlightSession(accountId, {
         ...session,
         status: 'paused',
         accumulatedBeforePause: elapsed,
@@ -345,9 +355,9 @@ export default function FlightPage() {
     const now = Date.now();
     setStatus('inflight');
     // Persist session with new resume timestamp
-    const session = loadFlightSession();
+    const session = loadFlightSession(accountId);
     if (session) {
-      saveFlightSession({
+      saveFlightSession(accountId, {
         ...session,
         status: 'inflight',
         resumeTimestamp: now,
@@ -361,7 +371,7 @@ export default function FlightPage() {
     if (timerRef.current) clearInterval(timerRef.current);
     setCompletedNormally(false);
     setStatus('debrief');
-    saveFlightSession(null);
+    saveFlightSession(accountId, null);
   };
 
   const handleLogTurbulence = (type: TurbulenceLog['type']) => {
@@ -369,8 +379,8 @@ export default function FlightPage() {
     setTurbulence((prev) => {
       const updated = [...prev, newEntry];
       // Persist turbulence to session
-      const session = loadFlightSession();
-      if (session) saveFlightSession({ ...session, turbulence: updated });
+      const session = loadFlightSession(accountId);
+      if (session) saveFlightSession(accountId, { ...session, turbulence: updated });
       return updated;
     });
     // Screen shake intensity by distraction type (gated by settings)
@@ -391,8 +401,8 @@ export default function FlightPage() {
     setTasks((prev) => {
       const updated = prev.map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t));
       // Persist task state to session
-      const session = loadFlightSession();
-      if (session) saveFlightSession({ ...session, tasks: updated });
+      const session = loadFlightSession(accountId);
+      if (session) saveFlightSession(accountId, { ...session, tasks: updated });
       return updated;
     });
   };
@@ -452,10 +462,10 @@ export default function FlightPage() {
     };
     saveFlightLog(log, user?.uid);
     // Clear persisted session
-    saveFlightSession(null);
+    saveFlightSession(accountId, null);
     // Firestore subscription will update flightLogs automatically;
     // also update local state immediately for instant feedback
-    setFlightLogs(loadFlightLogsLocal());
+    setFlightLogs(loadFlightLogsLocal(accountId));
 
     // Mark completed tasks as done
     for (const t of tasks.filter((t) => t.completed)) {

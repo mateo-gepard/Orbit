@@ -644,6 +644,10 @@ export const TURBULENCE_TYPES: { type: TurbulenceLog['type']; label: string; ico
 
 const FLIGHT_LOGS_KEY = 'orbit-flight-logs';
 
+function flightLogsKey(userId: string): string {
+  return `${FLIGHT_LOGS_KEY}:${encodeURIComponent(userId)}`;
+}
+
 /** Sanitise a flight log so it only contains Firestore-safe plain values. */
 function sanitiseLog(log: FlightLog): FlightLog {
   return JSON.parse(JSON.stringify(log)) as FlightLog;
@@ -651,34 +655,37 @@ function sanitiseLog(log: FlightLog): FlightLog {
 
 /** Save a completed flight — writes to both localStorage (instant) and Firestore (synced) */
 export function saveFlightLog(log: FlightLog, userId?: string): void {
+  const uid = userId || log.userId || 'demo-user';
   // 1. Instant local update
   try {
-    const existing = loadFlightLogsLocal();
+    const existing = loadFlightLogsLocal(uid);
     existing.unshift(log);
     const trimmed = existing.slice(0, 100);
-    localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(trimmed));
+    localStorage.setItem(flightLogsKey(uid), JSON.stringify(trimmed));
   } catch (e) {
     console.warn('[ORBIT] Flight log localStorage save failed:', e);
   }
 
   // 2. Sync to Firestore if we have a real user
-  const uid = userId || log.userId;
   if (uid && uid !== 'local' && uid !== 'demo-user') {
-    const allLogs = loadFlightLogsLocal();
+    const allLogs = loadFlightLogsLocal(uid);
     // Sanitise logs to ensure only plain JSON values (no undefined, functions, etc.)
     const safeLogs = allLogs.map(sanitiseLog);
     saveToolData(uid, 'flightLogs', { logs: safeLogs }).catch((err) => {
       console.error('[ORBIT] Flight log Firestore save failed:', err);
     });
-  } else {
-    console.warn('[ORBIT] Flight log NOT synced — no valid userId:', uid);
   }
 }
 
 /** Load flight logs from localStorage (synchronous, for initial render) */
-export function loadFlightLogsLocal(): FlightLog[] {
+export function loadFlightLogsLocal(userId = 'demo-user'): FlightLog[] {
   try {
-    const stored = localStorage.getItem(FLIGHT_LOGS_KEY);
+    const key = flightLogsKey(userId);
+    if (userId === 'demo-user' && !localStorage.getItem(key)) {
+      const legacy = localStorage.getItem(FLIGHT_LOGS_KEY);
+      if (legacy) localStorage.setItem(key, legacy);
+    }
+    const stored = localStorage.getItem(key);
     if (!stored) return [];
     return JSON.parse(stored) as FlightLog[];
   } catch {
@@ -694,64 +701,21 @@ export function subscribeToFlightLogs(
   userId: string,
   callback: (logs: FlightLog[]) => void
 ): () => void {
-  console.info('[ORBIT] Subscribing to flight logs for user:', userId);
   return subscribeToToolData<{ logs: FlightLog[] }>(
     userId,
     'flightLogs',
     (data) => {
       if (data?.logs && Array.isArray(data.logs)) {
-        console.info(`[ORBIT] Flight logs received from cloud: ${data.logs.length} entries`);
-        // Merge cloud logs with any local-only logs (by id)
-        const local = loadFlightLogsLocal();
-        const cloudIds = new Set(data.logs.map((l) => l.id));
-        const localOnly = local.filter((l) => !cloudIds.has(l.id));
-
-        // If there are local-only logs, push them to cloud too
-        if (localOnly.length > 0) {
-          console.info(`[ORBIT] Syncing ${localOnly.length} local-only flight logs to cloud`);
-          const merged = [...localOnly, ...data.logs]
-            .sort((a, b) => b.startedAt - a.startedAt)
-            .slice(0, 100);
-
-          try {
-            localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(merged));
-          } catch { /* ignore */ }
-
-          // Push merged set back to cloud so local-only logs are persisted
-          const safeLogs = merged.map(sanitiseLog);
-          saveToolData(userId, 'flightLogs', { logs: safeLogs }).catch((err) => {
-            console.error('[ORBIT] Flight log merge-back to Firestore failed:', err);
-          });
-
-          callback(merged);
-        } else {
-          const merged = [...data.logs]
-            .sort((a, b) => b.startedAt - a.startedAt)
-            .slice(0, 100);
-
-          try {
-            localStorage.setItem(FLIGHT_LOGS_KEY, JSON.stringify(merged));
-          } catch { /* ignore */ }
-
-          callback(merged);
-        }
+        const cloudLogs = [...data.logs]
+          .sort((a, b) => b.startedAt - a.startedAt)
+          .slice(0, 100);
+        try {
+          localStorage.setItem(flightLogsKey(userId), JSON.stringify(cloudLogs));
+        } catch { /* ignore */ }
+        callback(cloudLogs);
       } else {
-        console.info('[ORBIT] Flight logs: no cloud data or empty, using local');
-        const local = loadFlightLogsLocal();
-        if (local.length > 0) {
-          callback(local);
-        }
+        callback(loadFlightLogsLocal(userId));
       }
-    },
-    () => {
-      // Seed Firestore with local logs on first connect
-      const local = loadFlightLogsLocal();
-      console.info(`[ORBIT] Flight logs seed check: ${local.length} local logs`);
-      if (local.length > 0) {
-        const safeLogs = local.map(sanitiseLog);
-        return { logs: safeLogs };
-      }
-      return null;
     }
   );
 }

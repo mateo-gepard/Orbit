@@ -21,6 +21,7 @@ interface GCalDateTime {
 
 export interface GCalEvent {
   id?: string;
+  status?: 'confirmed' | 'tentative' | 'cancelled';
   summary?: string;
   description?: string;
   start?: GCalDateTime;
@@ -29,6 +30,7 @@ export interface GCalEvent {
 
 interface GCalEventListResponse {
   items?: GCalEvent[];
+  nextPageToken?: string;
 }
 
 interface GoogleTokenResponse {
@@ -52,22 +54,38 @@ interface GoogleTokenClientConfig {
 // ═══════════════════════════════════════════════════════════
 
 let accessToken: string | null = null;
+let calendarOwnerId: string | null = null;
+
+function accountTokenKey(base: string): string | null {
+  return calendarOwnerId ? `${base}:${encodeURIComponent(calendarOwnerId)}` : null;
+}
+
+export function setGoogleCalendarOwner(userId: string | null): void {
+  if (calendarOwnerId !== userId) accessToken = null;
+  calendarOwnerId = userId;
+}
 
 export function setGoogleAccessToken(token: string, expiresInSeconds?: number) {
+  const tokenKey = accountTokenKey(TOKEN_STORAGE_KEY);
+  const expiryKey = accountTokenKey(TOKEN_EXPIRY_KEY);
+  if (!tokenKey || !expiryKey) throw new Error('Google Calendar account is not selected');
   accessToken = token;
   if (typeof window !== 'undefined') {
-    sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    sessionStorage.setItem(tokenKey, token);
     if (expiresInSeconds) {
-      const expiryTime = Date.now() + expiresInSeconds * 1000;
-      sessionStorage.setItem(TOKEN_EXPIRY_KEY, String(expiryTime));
+      const expiryTime = Date.now() + Math.max(0, expiresInSeconds - 60) * 1000;
+      sessionStorage.setItem(expiryKey, String(expiryTime));
     }
   }
 }
 
 export function getGoogleAccessToken(): string | null {
+  const tokenKey = accountTokenKey(TOKEN_STORAGE_KEY);
+  const expiryKey = accountTokenKey(TOKEN_EXPIRY_KEY);
+  if (!tokenKey || !expiryKey) return null;
   if (typeof window !== 'undefined') {
     // Check expiration
-    const expiry = sessionStorage.getItem(TOKEN_EXPIRY_KEY);
+    const expiry = sessionStorage.getItem(expiryKey);
     if (expiry && Date.now() > Number(expiry)) {
       clearGoogleAccessToken();
       return null;
@@ -75,16 +93,18 @@ export function getGoogleAccessToken(): string | null {
   }
   if (accessToken) return accessToken;
   if (typeof window !== 'undefined') {
-    accessToken = sessionStorage.getItem(TOKEN_STORAGE_KEY);
+    accessToken = sessionStorage.getItem(tokenKey);
   }
   return accessToken;
 }
 
 export function clearGoogleAccessToken() {
+  const tokenKey = accountTokenKey(TOKEN_STORAGE_KEY);
+  const expiryKey = accountTokenKey(TOKEN_EXPIRY_KEY);
   accessToken = null;
   if (typeof window !== 'undefined') {
-    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-    sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
+    if (tokenKey) sessionStorage.removeItem(tokenKey);
+    if (expiryKey) sessionStorage.removeItem(expiryKey);
   }
 }
 
@@ -94,6 +114,10 @@ export function clearGoogleAccessToken() {
 
 export function requestCalendarPermission(): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (!calendarOwnerId) {
+      reject(new Error('Sign in before connecting Google Calendar'));
+      return;
+    }
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID;
     if (!clientId) {
       reject(new Error('Google Calendar Client ID not configured'));
@@ -151,11 +175,16 @@ async function calendarFetch<T = unknown>(
     throw new Error('Google Calendar token expired');
   }
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Google Calendar API error: ${error}`);
+  if (options.method === 'DELETE' && response.status === 404) {
+    return undefined as T;
   }
 
+  if (!response.ok) {
+    const error = (await response.text()).slice(0, 300);
+    throw new Error(`Google Calendar API error (${response.status}): ${error}`);
+  }
+
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -303,13 +332,13 @@ export async function updateGoogleEvent(
 ): Promise<void> {
   const gcalEvent = orbitToGoogleEvent(item);
   await calendarFetch(`/calendars/primary/events/${googleCalendarId}`, {
-    method: 'PUT',
+    method: 'PATCH',
     body: JSON.stringify(gcalEvent),
   });
 }
 
 export async function deleteGoogleEvent(googleCalendarId: string): Promise<void> {
-  await calendarFetch(`/calendars/primary/events/${googleCalendarId}`, {
+  await calendarFetch(`/calendars/primary/events/${encodeURIComponent(googleCalendarId)}`, {
     method: 'DELETE',
   });
 }
@@ -323,10 +352,19 @@ export async function fetchGoogleEvents(
     timeMax,
     singleEvents: 'true',
     orderBy: 'startTime',
+    showDeleted: 'true',
+    maxResults: '2500',
   });
 
-  const result = await calendarFetch<GCalEventListResponse>(`/calendars/primary/events?${params}`);
-  return result.items || [];
+  const events: GCalEvent[] = [];
+  let pageToken: string | undefined;
+  do {
+    if (pageToken) params.set('pageToken', pageToken);
+    const result = await calendarFetch<GCalEventListResponse>(`/calendars/primary/events?${params}`);
+    events.push(...(result.items || []));
+    pageToken = result.nextPageToken;
+  } while (pageToken);
+  return events;
 }
 
 export async function importGoogleEvent(
@@ -348,6 +386,10 @@ export function hasCalendarPermission(): boolean {
 export async function syncEventToGoogle(item: OrbitItem): Promise<string> {
   if (item.type !== 'event') {
     throw new Error('Only events can be synced');
+  }
+  const { useSettingsStore } = await import('./settings-store');
+  if (!useSettingsStore.getState().settings.calendar.googleCalendarSync) {
+    throw new Error('Google Calendar sync is disabled');
   }
 
   if (item.googleCalendarId) {

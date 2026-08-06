@@ -252,20 +252,20 @@ function cleanItems(items: VaultItem[]): VaultItem[] {
 }
 
 function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
-  if (!_syncUserId) {
+  const scheduledUserId = _syncUserId;
+  if (!scheduledUserId) {
     return;
   }
   if (_saveTimer) clearTimeout(_saveTimer);
   _pendingSave = true;
   _saveTimer = setTimeout(async () => {
-    if (!_syncUserId) {
+    if (_syncUserId !== scheduledUserId) {
       _pendingSave = false;
       return;
     }
-    const userId = _syncUserId;
     const clean = sanitizeForFirestore({ items, duels } satisfies WishlistCloudData);
     try {
-      await saveToolData(userId, 'wishlist', clean);
+      await saveToolData(scheduledUserId, 'wishlist', clean);
     } catch (err) {
     } finally {
       _pendingSave = false;
@@ -415,11 +415,13 @@ export const useWishlistStore = create<WishlistState>()(
       },
 
       _setSyncUserId: (userId) => {
-        _syncUserId = userId;
-        if (!userId) {
-          _cloudReceived = false;
-          return;
+        if (_syncUserId !== userId && _saveTimer) {
+          clearTimeout(_saveTimer);
+          _saveTimer = null;
+          _pendingSave = false;
         }
+        _syncUserId = userId;
+        _cloudReceived = false;
       },
     }),
     {
@@ -438,3 +440,19 @@ export const useWishlistStore = create<WishlistState>()(
     }
   )
 );
+
+/** Switch the persisted fallback to an account-specific namespace. */
+export async function scopeWishlistPersistence(userId: string): Promise<void> {
+  useWishlistStore.getState()._setSyncUserId(null);
+  const key = `orbit-wishlist:${encodeURIComponent(userId)}`;
+  if (typeof window !== 'undefined' && userId === 'demo-user' && !localStorage.getItem(key)) {
+    const legacy = localStorage.getItem('orbit-wishlist');
+    if (legacy) localStorage.setItem(key, legacy);
+  }
+  useWishlistStore.persist.setOptions({ name: key });
+  if (typeof window !== 'undefined' && localStorage.getItem(key)) {
+    await useWishlistStore.persist.rehydrate();
+  } else {
+    useWishlistStore.setState({ items: [], duels: [] });
+  }
+}

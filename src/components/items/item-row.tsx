@@ -5,7 +5,7 @@ import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import type { OrbitItem, Priority } from '@/lib/types';
 import { cn, shortDatePattern, getLocale } from '@/lib/utils';
-import { format, isPast, isToday, parseISO } from 'date-fns';
+import { format, isPast, isToday, isValid, parseISO } from 'date-fns';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
 import { calculateStreak } from '@/lib/habits';
@@ -73,10 +73,12 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     });
   };
 
-  const isOverdue =
-    item.dueDate && isPast(parseISO(item.dueDate)) && !isToday(parseISO(item.dueDate)) && item.status !== 'done';
-  
-  const isDueToday = item.dueDate && isToday(parseISO(item.dueDate));
+  const parsedDueDate = item.dueDate ? parseISO(item.dueDate) : null;
+  const hasValidDueDate = Boolean(parsedDueDate && isValid(parsedDueDate));
+  const isOverdue = Boolean(
+    hasValidDueDate && parsedDueDate && isPast(parsedDueDate) && !isToday(parsedDueDate) && item.status !== 'done'
+  );
+  const isDueToday = Boolean(hasValidDueDate && parsedDueDate && isToday(parsedDueDate));
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const isMyDay = item.myDay === todayStr;
@@ -99,27 +101,32 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
 
   const row = (
     <div
-      role="button"
-      tabIndex={0}
       data-slot="item-row"
-      onClick={() => {
-        haptic('light');
-        setSelectedItemId(item.id);
-      }}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedItemId(item.id); } }}
       className={cn(
-        'group relative flex w-full items-center gap-3 rounded-lg px-3 text-left transition-all cursor-pointer',
+        'group relative flex w-full items-center gap-3 rounded-lg px-3 text-left transition-all',
         'hover:bg-foreground/[0.03] active:bg-foreground/[0.05]',
         // Bigger touch targets on mobile
         compact ? 'py-2.5 lg:py-1.5' : 'py-3 lg:py-2',
       )}
     >
+      <button
+        type="button"
+        className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`Open ${item.title}`}
+        onClick={() => {
+          haptic('light');
+          setSelectedItemId(item.id);
+        }}
+      />
       {/* Completion toggle — big hit area for mobile */}
       {(item.type === 'task' || item.type === 'habit') && (
         <button
+          type="button"
+          aria-label={`${item.status === 'done' ? 'Mark incomplete' : 'Mark complete'}: ${item.title}`}
+          aria-pressed={item.status === 'done'}
           onClick={toggleComplete}
           className={cn(
-            'relative flex h-5 w-5 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border transition-all',
+            'relative z-10 flex h-5 w-5 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border transition-all',
             item.status === 'done'
               ? 'border-foreground/30 bg-foreground/10'
               : 'border-foreground/15 hover:border-foreground/40',
@@ -133,7 +140,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
 
       {/* Project indicator */}
       {item.type === 'project' && (
-        <span className="text-base lg:text-sm">{item.emoji || '📁'}</span>
+        <span className="relative z-[1] text-base lg:text-sm">{item.emoji || '📁'}</span>
       )}
 
       {/* Event indicator */}
@@ -149,7 +156,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       )}
 
       {/* Content */}
-      <div className="flex-1 min-w-0">
+      <div className="relative z-[1] flex-1 min-w-0 pointer-events-none">
         <div className="flex items-center gap-1.5">
           <span
             className={cn(
@@ -199,17 +206,19 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       {/* Add/Remove Today button - desktop hover only */}
       {item.type === 'task' && item.status !== 'done' && (
         <button
+          type="button"
+          aria-label={`${isMyDay ? 'Remove from' : 'Add to'} Today: ${item.title}`}
           onClick={handleAddToToday}
           className={cn(
-            'hidden lg:flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all shrink-0',
-            'opacity-0 group-hover:opacity-100',
+            'relative z-10 flex h-9 w-9 lg:h-auto lg:w-auto items-center justify-center gap-1 rounded-md lg:px-2 lg:py-1 text-[11px] font-medium transition-all shrink-0',
+            'opacity-60 hover:opacity-100 focus-visible:opacity-100',
             isMyDay 
               ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400'
               : 'bg-foreground/[0.04] hover:bg-foreground/[0.08] text-muted-foreground/60 hover:text-foreground',
           )}
         >
           <CalendarClock className="h-3 w-3" />
-          <span>{isMyDay ? (hockeyMode ? 'Rausnehmen' : 'Remove') : t('nav.today')}</span>
+          <span className="hidden lg:inline">{isMyDay ? (hockeyMode ? 'Rausnehmen' : 'Remove') : t('nav.today')}</span>
         </button>
       )}
 
@@ -217,14 +226,16 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       {item.dueDate && (
         <span
           className={cn(
-            'text-[11px] shrink-0 tabular-nums',
+            'relative z-[1] text-[11px] shrink-0 tabular-nums pointer-events-none',
             isDueToday ? 'text-blue-600 dark:text-blue-400 font-medium' :
             isOverdue ? 'text-destructive font-medium' : 'text-muted-foreground/60'
           )}
         >
-          {isDueToday
+          {!hasValidDueDate
+            ? 'Date unavailable'
+            : isDueToday
             ? t('date.today')
-            : format(parseISO(item.dueDate), shortDatePattern(dateFormat), { locale: getLocale(language) })}
+            : format(parsedDueDate!, shortDatePattern(dateFormat), { locale: getLocale(language) })}
         </span>
       )}
     </div>

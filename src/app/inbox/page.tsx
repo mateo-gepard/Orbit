@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Inbox as InboxIcon, ArrowRight, Trash2 } from 'lucide-react';
+import { Inbox as InboxIcon, ArrowRight, Archive } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
-import { updateItem, deleteItem } from '@/lib/firestore';
+import { updateItem } from '@/lib/firestore';
 import { ItemRow } from '@/components/items/item-row';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
@@ -19,8 +19,7 @@ export default function InboxPage() {
   const inboxItems = useMemo(
     () => items.filter((i) => 
       i.type === 'task' && 
-      i.status !== 'done' && 
-      i.status !== 'archived' && 
+      i.status === 'waiting' &&
       !i.dueDate && 
       !i.parentId
     ),
@@ -32,11 +31,6 @@ export default function InboxPage() {
     await updateItem(id, { status });
   };
 
-  const quickDelete = async (id: string) => {
-    haptic('medium');
-    await deleteItem(id);
-  };
-
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-3xl mx-auto" data-slot="page-content">
       <div>
@@ -46,8 +40,8 @@ export default function InboxPage() {
           process
         </p>
         {inboxItems.length > 0 && (
-          <p className="text-[11px] text-muted-foreground/40 mt-1 lg:hidden">
-            ← Swipe right to activate · Swipe left to delete →
+          <p className="text-xs text-muted-foreground mt-1 lg:hidden">
+            Swipe right to activate, or use the actions on each item.
           </p>
         )}
       </div>
@@ -59,21 +53,33 @@ export default function InboxPage() {
             <div className="lg:hidden">
               <SwipeableRow
                 onSwipeRight={() => quickSetStatus(item.id, 'active')}
-                onSwipeLeft={() => quickDelete(item.id)}
                 rightLabel={t('inbox.activate')}
-                leftLabel={t('common.delete')}
                 rightIcon={ArrowRight}
-                leftIcon={Trash2}
               >
                 <ItemRow item={item} showType compact enableSwipe={false} />
               </SwipeableRow>
+              <div className="flex justify-end gap-2 px-2 pb-2">
+                <button
+                  className="min-h-9 rounded-lg bg-foreground px-3 text-xs font-medium text-background"
+                  onClick={() => quickSetStatus(item.id, 'active')}
+                >
+                  {t('inbox.activate')}
+                </button>
+                <button
+                  className="min-h-9 rounded-lg border border-border px-3 text-xs font-medium text-muted-foreground"
+                  onClick={() => quickSetStatus(item.id, 'archived')}
+                >
+                  <Archive className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+                  {t('common.archive')}
+                </button>
+              </div>
             </div>
             {/* Desktop: hover buttons */}
             <div className="hidden lg:flex items-center gap-1.5">
               <div className="flex-1 min-w-0">
                 <ItemRow item={item} showType compact enableSwipe={false} />
               </div>
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+              <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
                   onClick={() => quickSetStatus(item.id, 'active')}
@@ -120,6 +126,12 @@ export default function InboxPage() {
                 <p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
                   {t('inbox.zeroDesc')}
                 </p>
+                <button
+                  onClick={() => setCommandBarOpen(true)}
+                  className="mt-4 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background"
+                >
+                  {t('sidebar.quickAdd')}
+                </button>
               </>
             )}
           </div>

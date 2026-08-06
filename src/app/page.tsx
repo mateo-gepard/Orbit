@@ -43,6 +43,7 @@ import { updateItem } from '@/lib/firestore';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
+import { auth } from '@/lib/firebase';
 
 /* ── Login ── */
 function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, onResetPassword }: {
@@ -173,12 +174,14 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
             >
               {t('login.signInEmailLink')}
             </button>
-            <button
-              onClick={onSignIn}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
-            >
-              {t('login.tryWithout')}
-            </button>
+            {!auth && (
+              <button
+                onClick={onSignIn}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
+              >
+                {t('login.tryWithout')}
+              </button>
+            )}
           </div>
         ) : mode === 'email-link-sent' ? (
           <div className="space-y-4 text-center">
@@ -199,7 +202,9 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
           </div>
         ) : mode === 'email-link' ? (
           <form onSubmit={handleSendLink} className="space-y-3">
+            <label htmlFor="email-link-address" className="sr-only">{t('login.emailPlaceholder')}</label>
             <input
+              id="email-link-address"
               type="email"
               placeholder={t('login.emailPlaceholder')}
               value={email}
@@ -258,7 +263,9 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               setSubmitting(false);
             }
           }} className="space-y-3">
+            <label htmlFor="reset-email-address" className="sr-only">{t('login.emailPlaceholder')}</label>
             <input
+              id="reset-email-address"
               type="email"
               placeholder={t('login.emailPlaceholder')}
               value={email}
@@ -312,16 +319,22 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
-              <input
-                type="text"
-                placeholder={t('login.namePlaceholder')}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
-                autoComplete="name"
-              />
+              <>
+                <label htmlFor="account-name" className="sr-only">{t('login.namePlaceholder')}</label>
+                <input
+                  id="account-name"
+                  type="text"
+                  placeholder={t('login.namePlaceholder')}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
+                  autoComplete="name"
+                />
+              </>
             )}
+            <label htmlFor="account-email" className="sr-only">{t('login.emailPlaceholder')}</label>
             <input
+              id="account-email"
               type="email"
               placeholder={t('login.emailPlaceholder')}
               value={email}
@@ -331,7 +344,9 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               autoComplete="email"
               autoFocus
             />
+            <label htmlFor="account-password" className="sr-only">{t('login.passwordPlaceholder')}</label>
             <input
+              id="account-password"
               type="password"
               placeholder={t('login.passwordPlaceholder')}
               value={password}
@@ -555,7 +570,11 @@ export default function DashboardPage() {
       inbox: '/inbox',
     };
     const route = viewRoutes[defaultView];
-    if (route) router.replace(route);
+    const alreadyApplied = window.sessionStorage.getItem('orbit-start-view-applied');
+    if (!alreadyApplied) {
+      window.sessionStorage.setItem('orbit-start-view-applied', 'true');
+      if (route) router.replace(route);
+    }
   }, [mounted, loading, user, defaultView, router]);
 
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');

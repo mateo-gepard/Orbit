@@ -13,7 +13,7 @@ import { getLocale } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
 
 export default function TodayPage() {
-  const { items, setSelectedItemId } = useOrbitStore();
+  const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
   const { t, lang } = useTranslation();
   const locale = getLocale(lang);
   const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
@@ -22,7 +22,7 @@ export default function TodayPage() {
 
   const { overdue, todayTasks, notDoneFromBefore, todayEvents, todayHabits } = useMemo(() => {
     const overdue = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate && isPast(parseISO(i.dueDate)) && !isToday(parseISO(i.dueDate))
+      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && !i.myDay && i.dueDate && isPast(parseISO(i.dueDate)) && !isToday(parseISO(i.dueDate))
     );
     // My Day tasks: myDay is set to today
     const todayTasks = items.filter(
@@ -50,9 +50,17 @@ export default function TodayPage() {
   return (
     <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-3xl mx-auto" data-slot="page-content">
       {/* Header */}
-      <div>
-        <p className="text-[13px] text-muted-foreground/60">{format(today, 'EEEE', { locale })}</p>
-        <h1 className="text-xl font-semibold tracking-tight">{format(today, 'd MMMM yyyy', { locale })}</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[13px] text-muted-foreground/70">{format(today, 'EEEE', { locale })}</p>
+          <h1 className="text-xl font-semibold tracking-tight">{format(today, 'd MMMM yyyy', { locale })}</h1>
+        </div>
+        <button
+          onClick={() => setCommandBarOpen(true)}
+          className="rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background"
+        >
+          Add task
+        </button>
       </div>
 
       {/* Overdue (tasks with dueDate in the past) */}
@@ -141,6 +149,9 @@ export default function TodayPage() {
             return (
               <div key={habit.id} className="flex items-center gap-2.5 py-1.5">
                 <button
+                  type="button"
+                  aria-label={`${completed ? 'Mark incomplete' : 'Mark complete'}: ${habit.title}`}
+                  aria-pressed={completed}
                   onClick={() => toggleHabit(habit)}
                   className={cn(
                     'relative flex h-[18px] w-[18px] items-center justify-center rounded-md border-[1.5px] transition-all shrink-0',

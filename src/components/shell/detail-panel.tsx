@@ -7,7 +7,6 @@ import {
   Trash2,
   Archive,
   RotateCcw,
-  Link2,
   Check,
   Plus,
   Calendar as CalendarIcon,
@@ -305,6 +304,7 @@ export function DetailPanel() {
         <div className="flex items-center gap-1.5">
           {/* Link Graph Button */}
           <button 
+            aria-label={t('detail.viewLinkGraph')}
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
@@ -325,7 +325,7 @@ export function DetailPanel() {
           {/* Three-dot menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
+              <button aria-label="More item options" className="rounded-md p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.05] transition-colors">
                 <MoreVertical className="h-4 w-4" />
               </button>
             </DropdownMenuTrigger>
@@ -393,6 +393,9 @@ export function DetailPanel() {
                           {DAY_LABELS.map((label, idx) => (
                             <button
                               key={idx}
+                              type="button"
+                              aria-label={label}
+                              aria-pressed={(item.customDays || []).includes(idx)}
                               onClick={() => {
                                 const days = new Set(item.customDays || []);
                                 days.has(idx) ? days.delete(idx) : days.add(idx);
@@ -566,13 +569,14 @@ export function DetailPanel() {
           )}
 
           {/* Add to Today (Task) */}
-          {item.type === 'task' && item.status !== 'done' && item.myDay !== format(new Date(), 'yyyy-MM-dd') && (
+          {item.type === 'task' && item.status !== 'done' && (
             <button
               onClick={handleAddToToday}
+              aria-pressed={item.myDay === format(new Date(), 'yyyy-MM-dd')}
               className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 h-9 text-[13px] font-medium hover:bg-foreground/[0.02] hover:border-border transition-colors"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              {t('detail.addToToday')}
+              {item.myDay === format(new Date(), 'yyyy-MM-dd') ? 'Remove from Today' : t('detail.addToToday')}
             </button>
           )}
         </div>
@@ -617,7 +621,7 @@ export function DetailPanel() {
         )}
 
         {/* Checklist (Task) - Prominent position */}
-        {item.type === 'task' && (item.checklist && item.checklist.length > 0 || newChecklistText) && (
+        {item.type === 'task' && (
           <div>
             <FieldLabel>{t('detail.checklist')}</FieldLabel>
             <div className="mt-2 space-y-1">
@@ -632,11 +636,12 @@ export function DetailPanel() {
                     {check.text}
                   </span>
                   <button
+                    aria-label={`Remove checklist item: ${check.text}`}
                     onClick={() => {
                       const updated = (item.checklist || []).filter(c => c.id !== check.id);
                       handleUpdate({ checklist: updated });
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-foreground/[0.05] transition-opacity"
+                    className="p-1 rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
                   >
                     <X className="h-3 w-3 text-muted-foreground/50" />
                   </button>
@@ -787,23 +792,6 @@ export function DetailPanel() {
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Parent/Linked Item */}
-        {parentItem && (
-          <div>
-            <FieldLabel>Part of</FieldLabel>
-            <button
-              onClick={() => setSelectedItemId(parentItem.id)}
-              className="mt-2 w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors text-left"
-            >
-              <Link2 className="h-4 w-4 text-blue-600/60" />
-              <span className="text-[13px] text-foreground/90 flex-1">
-                {parentItem.title}
-              </span>
-              <span className="text-[10px] text-muted-foreground/40 uppercase">{parentItem.type}</span>
-            </button>
           </div>
         )}
 

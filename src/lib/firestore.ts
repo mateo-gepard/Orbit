@@ -1,9 +1,7 @@
 import {
   collection,
   doc,
-  addDoc,
   updateDoc,
-  deleteDoc,
   deleteField,
   query,
   where,
@@ -13,6 +11,7 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  runTransaction,
   type Firestore,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -26,8 +25,6 @@ import { trackItemEvent } from './analytics';
 
 const ITEMS_COLLECTION = 'items';
 const LOCAL_STORAGE_KEY = 'orbit-items';
-const LOCAL_STORAGE_VERSION_KEY = 'orbit-version';
-const CURRENT_VERSION = 1;
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 500;
 
@@ -35,8 +32,35 @@ const RETRY_BASE_MS = 500;
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
+let activeUserId = 'demo-user';
+let localOnlyMode = true;
+
+/**
+ * Select the account that owns browser caches and whether writes are local-only.
+ * DataProvider must call this before subscribing or mutating data.
+ */
+export function setFirestoreDataContext(userId: string | null, localOnly: boolean): void {
+  activeUserId = userId || 'anonymous';
+  localOnlyMode = localOnly;
+  if (typeof window !== 'undefined' && activeUserId === 'demo-user') {
+    const scopedKey = `${LOCAL_STORAGE_KEY}:${encodeURIComponent(activeUserId)}`;
+    const legacy = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!localStorage.getItem(scopedKey) && legacy) {
+      localStorage.setItem(scopedKey, legacy);
+    }
+  }
+}
+
+function storageOwner(userId?: string): string {
+  return encodeURIComponent(userId || activeUserId || 'anonymous');
+}
+
+function localItemsKey(userId?: string): string {
+  return `${LOCAL_STORAGE_KEY}:${storageOwner(userId)}`;
+}
+
 function isFirebaseAvailable(): boolean {
-  return db !== null;
+  return db !== null && !localOnlyMode;
 }
 
 function getDb(): Firestore {
@@ -62,10 +86,21 @@ async function withRetry<T>(
       return await operation();
     } catch (err) {
       lastError = err;
+      const code = (err as { code?: string })?.code || '';
+      const retryable = new Set([
+        'aborted',
+        'cancelled',
+        'deadline-exceeded',
+        'internal',
+        'resource-exhausted',
+        'unavailable',
+        'unknown',
+      ]).has(code.replace(/^firestore\//, ''));
       console.warn(
         `[ORBIT] ${context} failed (attempt ${attempt + 1}/${retries}):`,
         err
       );
+      if (!retryable || attempt === retries - 1) break;
       if (attempt < retries - 1) {
         await sleep(RETRY_BASE_MS * Math.pow(2, attempt));
       }
@@ -121,15 +156,16 @@ function sanitizeItem(item: OrbitItem): OrbitItem {
 // Local (Demo) Storage — Bulletproof
 // ═══════════════════════════════════════════════════════════
 
-function loadLocalItems(): OrbitItem[] {
+function loadLocalItems(userId?: string): OrbitItem[] {
   if (typeof window === 'undefined') return [];
+  const key = localItemsKey(userId);
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
       console.warn('[ORBIT] Corrupted localStorage data — resetting');
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      localStorage.removeItem(key);
       return [];
     }
     // Sanitize each item to handle any schema drift
@@ -137,19 +173,20 @@ function loadLocalItems(): OrbitItem[] {
   } catch (err) {
     console.warn('[ORBIT] Failed to load local data, resetting:', err);
     try {
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      localStorage.removeItem(key);
     } catch { /* noop */ }
     return [];
   }
 }
 
-function saveLocalItems(items: OrbitItem[]): boolean {
+function saveLocalItems(items: OrbitItem[], userId?: string): boolean {
   if (typeof window === 'undefined') return false;
+  const key = localItemsKey(userId);
   try {
     const serialized = JSON.stringify(items);
-    localStorage.setItem(LOCAL_STORAGE_KEY, serialized);
+    localStorage.setItem(key, serialized);
     // Verify write succeeded by reading back
-    const verification = localStorage.getItem(LOCAL_STORAGE_KEY);
+    const verification = localStorage.getItem(key);
     if (verification !== serialized) {
       console.error('[ORBIT] localStorage write verification failed');
       return false;
@@ -164,7 +201,7 @@ function saveLocalItems(items: OrbitItem[]): boolean {
         const compacted = items.filter(
           (i) => i.status !== 'archived' || Date.now() - i.updatedAt < 30 * 24 * 60 * 60 * 1000
         );
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(compacted));
+        localStorage.setItem(key, JSON.stringify(compacted));
         return true;
       } catch {
         return false;
@@ -175,23 +212,19 @@ function saveLocalItems(items: OrbitItem[]): boolean {
 }
 
 /** Optimistic update: immediately update Zustand, then persist. If persistence fails, rollback. */
-function syncStoreFromLocal() {
-  const items = loadLocalItems();
-  useOrbitStore.getState().setItems(items);
-}
-
 function optimisticLocalUpdate(
   mutator: (items: OrbitItem[]) => OrbitItem[],
-  rollbackItems?: OrbitItem[]
+  rollbackItems?: OrbitItem[],
+  userId?: string
 ): boolean {
-  const oldItems = rollbackItems || loadLocalItems();
+  const oldItems = rollbackItems || loadLocalItems(userId);
   const newItems = mutator([...oldItems]);
 
   // Update store immediately (optimistic)
   useOrbitStore.getState().setItems(newItems);
 
   // Persist
-  const saved = saveLocalItems(newItems);
+  const saved = saveLocalItems(newItems, userId);
   if (!saved) {
     // Rollback on failure
     console.warn('[ORBIT] Persistence failed — rolling back optimistic update');
@@ -207,16 +240,17 @@ function optimisticLocalUpdate(
 
 export function subscribeToItems(
   userId: string,
-  callback: (items: OrbitItem[]) => void
+  callback: (items: OrbitItem[]) => void,
+  onError?: (error: Error) => void
 ): () => void {
   if (!isFirebaseAvailable()) {
     // Local mode: load and listen to storage events from other tabs
-    const items = loadLocalItems();
+    const items = loadLocalItems(userId);
     callback(items);
 
     const handler = (e: StorageEvent) => {
-      if (e.key === LOCAL_STORAGE_KEY) {
-        callback(loadLocalItems());
+      if (e.key === localItemsKey(userId)) {
+        callback(loadLocalItems(userId));
       }
     };
     window.addEventListener('storage', handler);
@@ -242,15 +276,16 @@ export function subscribeToItems(
 
       // Backup to localStorage for catastrophic recovery
       try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+        localStorage.setItem(localItemsKey(userId), JSON.stringify(items));
       } catch { /* quota exceeded — ignore */ }
 
       callback(items);
     },
     (error) => {
       console.error('[ORBIT] Firestore subscription error:', error);
-      // Fallback: load from local cache backup
-      const cached = loadLocalItems();
+      onError?.(error);
+      // The cache is account-scoped; never expose another account's backup.
+      const cached = loadLocalItems(userId);
       if (cached.length > 0) {
         console.warn('[ORBIT] Using local cache as fallback (' + cached.length + ' items)');
         callback(cached);
@@ -287,7 +322,7 @@ export async function createItem(
       updatedAt: now,
     } as OrbitItem);
 
-    const success = optimisticLocalUpdate((items) => [newItem, ...items]);
+    const success = optimisticLocalUpdate((items) => [newItem, ...items], undefined, item.userId);
     if (!success) {
       throw new Error('Failed to create item — storage error');
     }
@@ -296,7 +331,8 @@ export async function createItem(
   }
 
   return withRetry(async () => {
-    const docRef = await addDoc(collection(getDb(), ITEMS_COLLECTION), {
+    const docRef = doc(getDb(), ITEMS_COLLECTION, id);
+    await setDoc(docRef, {
       ...item,
       createdAt: now,
       updatedAt: now,
@@ -304,13 +340,15 @@ export async function createItem(
 
     // Also save to local cache as backup
     try {
-      const localItems = loadLocalItems();
-      localItems.unshift(sanitizeItem({ ...item, id: docRef.id, createdAt: now, updatedAt: now } as OrbitItem));
-      saveLocalItems(localItems);
+      const localItems = loadLocalItems(item.userId);
+      if (!localItems.some((localItem) => localItem.id === id)) {
+        localItems.unshift(sanitizeItem({ ...item, id, createdAt: now, updatedAt: now } as OrbitItem));
+      }
+      saveLocalItems(localItems, item.userId);
     } catch { /* best-effort local backup */ }
 
-    trackItemEvent('item_created', { ...item, id: docRef.id } as OrbitItem);
-    return docRef.id;
+    trackItemEvent('item_created', { ...item, id } as OrbitItem);
+    return id;
   }, 'createItem');
 }
 
@@ -332,7 +370,7 @@ export async function updateItem(
       }
       items[idx] = { ...items[idx], ...updates, updatedAt: now };
       return items;
-    });
+    }, undefined, existingItem?.userId);
     if (!success) {
       throw new Error('Failed to update item — storage error');
     }
@@ -341,8 +379,7 @@ export async function updateItem(
   }
 
   // Optimistic: update store immediately
-  const prevItems = useOrbitStore.getState().items;
-  const optimisticItems = prevItems.map((i) =>
+  const optimisticItems = useOrbitStore.getState().items.map((i) =>
     i.id === id ? { ...i, ...updates, updatedAt: now } : i
   );
   useOrbitStore.getState().setItems(optimisticItems);
@@ -361,20 +398,41 @@ export async function updateItem(
     }, 'updateItem');
     _trackUpdateAnalytics(existingItem, updates);
   } catch (err) {
-    // Rollback optimistic update
+    // Roll back only this mutation; preserve edits made while the request ran.
     console.warn('[ORBIT] Rolling back optimistic update for', id);
-    useOrbitStore.getState().setItems(prevItems);
+    if (existingItem) {
+      const current = useOrbitStore.getState().items;
+      useOrbitStore.getState().setItems(current.map((item) =>
+        item.id === id && item.updatedAt === now ? existingItem : item
+      ));
+    }
     throw err;
   }
 }
 
-export async function deleteItem(id: string): Promise<void> {
+export async function deleteItem(
+  id: string,
+  options: { skipCalendar?: boolean } = {}
+): Promise<void> {
   const existingItem = useOrbitStore.getState().items.find((i) => i.id === id);
+  const now = Date.now();
+  const cascade = (items: OrbitItem[]) => items
+    .filter((item) => item.id !== id)
+    .map((item) => {
+      const nextLinkedIds = (item.linkedIds || []).filter((linkedId) => linkedId !== id);
+      const hadLink = nextLinkedIds.length !== (item.linkedIds || []).length;
+      const wasChild = item.parentId === id;
+      if (!hadLink && !wasChild) return item;
+      return {
+        ...item,
+        ...(hadLink ? { linkedIds: nextLinkedIds } : {}),
+        ...(wasChild ? { parentId: undefined } : {}),
+        updatedAt: now,
+      };
+    });
 
   if (!isFirebaseAvailable()) {
-    const success = optimisticLocalUpdate((items) =>
-      items.filter((i) => i.id !== id)
-    );
+    const success = optimisticLocalUpdate(cascade, undefined, existingItem?.userId);
     if (!success) {
       throw new Error('Failed to delete item — storage error');
     }
@@ -382,19 +440,57 @@ export async function deleteItem(id: string): Promise<void> {
     return;
   }
 
-  // Optimistic
+  if (existingItem?.googleCalendarId && !options.skipCalendar) {
+    const { deleteGoogleEvent } = await import('./google-calendar');
+    await deleteGoogleEvent(existingItem.googleCalendarId);
+  }
+
+  if (existingItem?.files?.length) {
+    const { deleteProjectFile } = await import('./storage');
+    await Promise.all(existingItem.files.map((file) => deleteProjectFile(file.storagePath)));
+  }
+
+  // Optimistic cascade
   const prevItems = useOrbitStore.getState().items;
-  useOrbitStore.getState().setItems(prevItems.filter((i) => i.id !== id));
+  const affectedBefore = new Map(
+    prevItems
+      .filter((item) => item.id === id || item.parentId === id || item.linkedIds?.includes(id))
+      .map((item) => [item.id, item])
+  );
+  useOrbitStore.getState().setItems(cascade(prevItems));
 
   try {
     await withRetry(async () => {
-      await deleteDoc(doc(getDb(), ITEMS_COLLECTION, id));
+      const database = getDb();
+      const batch = writeBatch(database);
+      batch.delete(doc(database, ITEMS_COLLECTION, id));
+      for (const item of prevItems) {
+        if (item.id === id) continue;
+        const linkedIds = (item.linkedIds || []).filter((linkedId) => linkedId !== id);
+        const hadLink = linkedIds.length !== (item.linkedIds || []).length;
+        const wasChild = item.parentId === id;
+        if (!hadLink && !wasChild) continue;
+        batch.update(doc(database, ITEMS_COLLECTION, item.id), {
+          ...(hadLink ? { linkedIds } : {}),
+          ...(wasChild ? { parentId: deleteField() } : {}),
+          updatedAt: now,
+        });
+      }
+      await batch.commit();
     }, 'deleteItem');
     if (existingItem) trackItemEvent('item_deleted', existingItem);
   } catch (err) {
-    // Rollback
+    // Restore only cascade participants that still have this mutation's version.
     console.warn('[ORBIT] Rolling back delete for', id);
-    useOrbitStore.getState().setItems(prevItems);
+    const current = useOrbitStore.getState().items;
+    const restored = current.map((item) => {
+      const original = affectedBefore.get(item.id);
+      return original && item.updatedAt === now ? original : item;
+    });
+    if (existingItem && !restored.some((item) => item.id === id)) {
+      restored.unshift(existingItem);
+    }
+    useOrbitStore.getState().setItems(restored);
     throw err;
   }
 }
@@ -491,25 +587,20 @@ export async function linkItems(
 
   await withRetry(async () => {
     const d = getDb();
-    const batch = writeBatch(d);
     const refA = doc(d, ITEMS_COLLECTION, itemAId);
     const refB = doc(d, ITEMS_COLLECTION, itemBId);
-
-    const [snapA, snapB] = await Promise.all([getDoc(refA), getDoc(refB)]);
-    if (!snapA.exists() || !snapB.exists()) return;
-
-    const dataA = snapA.data() as OrbitItem;
-    const dataB = snapB.data() as OrbitItem;
-
-    const linkedA = new Set(dataA.linkedIds || []);
-    const linkedB = new Set(dataB.linkedIds || []);
-    linkedA.add(itemBId);
-    linkedB.add(itemAId);
-
-    batch.update(refA, { linkedIds: Array.from(linkedA), updatedAt: now });
-    batch.update(refB, { linkedIds: Array.from(linkedB), updatedAt: now });
-
-    await batch.commit();
+    await runTransaction(d, async (transaction) => {
+      const [snapA, snapB] = await Promise.all([transaction.get(refA), transaction.get(refB)]);
+      if (!snapA.exists() || !snapB.exists()) {
+        throw new Error('Cannot link missing items');
+      }
+      const linkedA = new Set((snapA.data() as OrbitItem).linkedIds || []);
+      const linkedB = new Set((snapB.data() as OrbitItem).linkedIds || []);
+      linkedA.add(itemBId);
+      linkedB.add(itemAId);
+      transaction.update(refA, { linkedIds: Array.from(linkedA), updatedAt: now });
+      transaction.update(refB, { linkedIds: Array.from(linkedB), updatedAt: now });
+    });
   }, 'linkItems');
 }
 
@@ -539,25 +630,20 @@ export async function unlinkItems(
 
   await withRetry(async () => {
     const d = getDb();
-    const batch = writeBatch(d);
     const refA = doc(d, ITEMS_COLLECTION, itemAId);
     const refB = doc(d, ITEMS_COLLECTION, itemBId);
-
-    const [snapA, snapB] = await Promise.all([getDoc(refA), getDoc(refB)]);
-    if (!snapA.exists() || !snapB.exists()) return;
-
-    const dataA = snapA.data() as OrbitItem;
-    const dataB = snapB.data() as OrbitItem;
-
-    const linkedA = new Set(dataA.linkedIds || []);
-    const linkedB = new Set(dataB.linkedIds || []);
-    linkedA.delete(itemBId);
-    linkedB.delete(itemAId);
-
-    batch.update(refA, { linkedIds: Array.from(linkedA), updatedAt: now });
-    batch.update(refB, { linkedIds: Array.from(linkedB), updatedAt: now });
-
-    await batch.commit();
+    await runTransaction(d, async (transaction) => {
+      const [snapA, snapB] = await Promise.all([transaction.get(refA), transaction.get(refB)]);
+      if (!snapA.exists() || !snapB.exists()) {
+        throw new Error('Cannot unlink missing items');
+      }
+      const linkedA = new Set((snapA.data() as OrbitItem).linkedIds || []);
+      const linkedB = new Set((snapB.data() as OrbitItem).linkedIds || []);
+      linkedA.delete(itemBId);
+      linkedB.delete(itemAId);
+      transaction.update(refA, { linkedIds: Array.from(linkedA), updatedAt: now });
+      transaction.update(refB, { linkedIds: Array.from(linkedB), updatedAt: now });
+    });
   }, 'unlinkItems');
 }
 
@@ -567,6 +653,10 @@ export async function unlinkItems(
 
 const SETTINGS_COLLECTION = 'userSettings';
 const LOCAL_SETTINGS_KEY = 'orbit-user-settings';
+
+function localSettingsKey(userId: string): string {
+  return `${LOCAL_SETTINGS_KEY}:${storageOwner(userId)}`;
+}
 
 export interface UserSettings {
   customTags: string[];
@@ -593,7 +683,8 @@ export function subscribeToUserSettings(
 ): () => void {
   if (!isFirebaseAvailable()) {
     // Local mode: load from localStorage
-    const stored = localStorage.getItem(LOCAL_SETTINGS_KEY);
+    const key = localSettingsKey(userId);
+    const stored = localStorage.getItem(key);
     if (stored) {
       try {
         callback(JSON.parse(stored));
@@ -602,7 +693,7 @@ export function subscribeToUserSettings(
       }
     }
     const handler = (e: StorageEvent) => {
-      if (e.key === LOCAL_SETTINGS_KEY && e.newValue) {
+      if (e.key === key && e.newValue) {
         try { callback(JSON.parse(e.newValue)); } catch { /* ignore */ }
       }
     };
@@ -611,8 +702,6 @@ export function subscribeToUserSettings(
   }
 
   const docRef = doc(getDb(), SETTINGS_COLLECTION, userId);
-  let isFirstSnapshot = true;
-
   const unsubscribe = onSnapshot(
     docRef,
     (snapshot) => {
@@ -623,22 +712,10 @@ export function subscribeToUserSettings(
           removedDefaultTags: data.removedDefaultTags || [],
           updatedAt: data.updatedAt || 0,
         });
-      } else if (isFirstSnapshot) {
-        // No settings doc yet — seed Firestore with current local state
-        // (don't reset local tags to empty!)
-        const store = useOrbitStore.getState();
-        const localCustom = store.customTags;
-        const localRemoved = store.removedDefaultTags;
-        if (localCustom.length > 0 || localRemoved.length > 0) {
-          // Push local tags to cloud
-          saveUserSettings(userId, {
-            customTags: localCustom,
-            removedDefaultTags: localRemoved,
-          }).catch(() => { /* ignore seed error */ });
-        }
-        // Don't call callback — keep current local state as-is
+      } else {
+        // A new account starts clean. Never seed it from another browser user's cache.
+        callback(DEFAULT_SETTINGS);
       }
-      isFirstSnapshot = false;
     },
     (error) => {
       console.error('[ORBIT] User settings subscription error:', error);
@@ -663,7 +740,7 @@ export async function saveUserSettings(
 
   // Always save locally
   try {
-    localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(data));
+    localStorage.setItem(localSettingsKey(userId), JSON.stringify(data));
   } catch { /* quota exceeded — ignore */ }
 
   if (!isFirebaseAvailable()) return;
@@ -674,11 +751,54 @@ export async function saveUserSettings(
   }, 'saveUserSettings');
 }
 
+/** Persist a tag definition change and every affected item in one Firestore batch. */
+export async function saveTagMutation(
+  userId: string,
+  settings: Omit<UserSettings, 'updatedAt'>,
+  affectedItems: Array<Pick<OrbitItem, 'id' | 'tags'>>
+): Promise<void> {
+  const updatedAt = Date.now();
+  const settingsData: UserSettings = { ...settings, updatedAt };
+
+  try {
+    localStorage.setItem(localSettingsKey(userId), JSON.stringify(settingsData));
+    const affectedById = new Map(affectedItems.map((item) => [item.id, item.tags || []]));
+    const local = loadLocalItems(userId).map((item) =>
+      affectedById.has(item.id)
+        ? { ...item, tags: affectedById.get(item.id)!, updatedAt }
+        : item
+    );
+    saveLocalItems(local, userId);
+  } catch { /* local backup is best effort in cloud mode */ }
+
+  if (!isFirebaseAvailable()) return;
+  if (affectedItems.length > 498) {
+    throw new Error('Too many items reference this tag to update atomically');
+  }
+
+  await withRetry(async () => {
+    const database = getDb();
+    const batch = writeBatch(database);
+    batch.set(doc(database, SETTINGS_COLLECTION, userId), settingsData, { merge: true });
+    for (const item of affectedItems) {
+      batch.update(doc(database, ITEMS_COLLECTION, item.id), {
+        tags: item.tags || [],
+        updatedAt,
+      });
+    }
+    await batch.commit();
+  }, 'saveTagMutation');
+}
+
 // ═══════════════════════════════════════════════════════════
 // Tool Data (per-user tool state cloud sync)
 // ═══════════════════════════════════════════════════════════
 
 const TOOL_DATA_COLLECTION = 'toolData';
+
+function localToolDataKey(userId: string, toolId: string): string {
+  return `orbit-tool-${toolId}:${storageOwner(userId)}`;
+}
 
 /**
  * Save tool data to Firestore.
@@ -693,7 +813,7 @@ export async function saveToolData<T extends Record<string, unknown>>(
 
   // Always save locally as fallback
   try {
-    localStorage.setItem(`orbit-tool-${toolId}`, JSON.stringify(payload));
+    localStorage.setItem(localToolDataKey(userId, toolId), JSON.stringify(payload));
   } catch { /* quota exceeded — ignore */ }
 
   if (!isFirebaseAvailable()) return;
@@ -712,9 +832,9 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
   userId: string,
   toolId: string,
   callback: (data: T | null) => void,
-  getLocalState?: () => T | null
+  _getLocalState?: () => T | null
 ): () => void {
-  const localKey = `orbit-tool-${toolId}`;
+  const localKey = localToolDataKey(userId, toolId);
 
   if (!isFirebaseAvailable()) {
     // Local mode
@@ -735,8 +855,6 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
   }
 
   const docRef = doc(getDb(), TOOL_DATA_COLLECTION, `${userId}_${toolId}`);
-  let isFirstSnapshot = true;
-
   const unsubscribe = onSnapshot(
     docRef,
     (snapshot) => {
@@ -744,15 +862,11 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
         // Cloud document exists — always push to store (cloud first)
         console.log(`[ORBIT] Tool data received from cloud (${toolId})`);
         callback(snapshot.data() as T);
-      } else if (isFirstSnapshot) {
-        // No cloud document yet — seed from local state so it syncs up
-        console.log(`[ORBIT] No cloud data for ${toolId} — seeding from local`);
-        const local = getLocalState?.();
-        if (local) {
-          saveToolData(userId, toolId, local).catch(() => { /* ignore seed error */ });
-        }
+      } else {
+        // Missing cloud data represents a clean account, not an invitation to
+        // upload whatever a previous account left in this browser.
+        callback(null);
       }
-      isFirstSnapshot = false;
     },
     (error) => {
       console.error(`[ORBIT] Tool data subscription error (${toolId}):`, error);

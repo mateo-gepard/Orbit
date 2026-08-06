@@ -60,23 +60,37 @@ let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 let _ignoreCloudUntil = 0; // timestamp — ignore incoming cloud updates until this time
 
 function debouncedSyncTags(get: () => OrbitStore) {
+  const scheduledUserId = get()._syncUserId;
+  if (!scheduledUserId) return;
+  const customTags = [...get().customTags];
+  const removedDefaultTags = [...get().removedDefaultTags];
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
-    const userId = get()._syncUserId;
-    if (!userId) return;
+    if (get()._syncUserId !== scheduledUserId) return;
     try {
       // Mark that we're writing — ignore the echo from onSnapshot for 2s
       _ignoreCloudUntil = Date.now() + 2000;
       const { saveUserSettings } = await import('@/lib/firestore');
-      await saveUserSettings(userId, {
-        customTags: get().customTags,
-        removedDefaultTags: get().removedDefaultTags,
-      });
+      await saveUserSettings(scheduledUserId, { customTags, removedDefaultTags });
     } catch (err) {
       console.error('[ORBIT] Failed to sync tags:', err);
       _ignoreCloudUntil = 0; // allow cloud updates on error
     }
   }, 300);
+}
+
+function persistTagMutation(get: () => OrbitStore, affectedItems: OrbitItem[]) {
+  const userId = get()._syncUserId;
+  if (!userId) return;
+  const customTags = [...get().customTags];
+  const removedDefaultTags = [...get().removedDefaultTags];
+  _ignoreCloudUntil = Date.now() + 2000;
+  import('@/lib/firestore').then(({ saveTagMutation }) =>
+    saveTagMutation(userId, { customTags, removedDefaultTags }, affectedItems)
+  ).catch((err) => {
+    _ignoreCloudUntil = 0;
+    console.error('[ORBIT] Failed to persist tag mutation:', err);
+  });
 }
 
 /** Check if we should ignore an incoming cloud update (echo suppression) */
@@ -104,7 +118,14 @@ export const useOrbitStore = create<OrbitStore>()(
       customTags: [],
       removedDefaultTags: [],
       _syncUserId: null,
-      _setSyncUserId: (userId) => set({ _syncUserId: userId }),
+      _setSyncUserId: (userId) => {
+        if (get()._syncUserId !== userId && syncTimeout) {
+          clearTimeout(syncTimeout);
+          syncTimeout = null;
+          _ignoreCloudUntil = 0;
+        }
+        set({ _syncUserId: userId });
+      },
       setTagsFromCloud: (customTags, removedDefaultTags) => {
         // Don't overwrite local state if we just wrote to cloud (echo suppression)
         if (shouldIgnoreCloudTags()) return;
@@ -135,14 +156,15 @@ export const useOrbitStore = create<OrbitStore>()(
         }
         // Remove tag from all items
         const items = get().items;
+        const now = Date.now();
         const updated = items.map((item) => {
           if (item.tags?.includes(tag)) {
-            return { ...item, tags: item.tags.filter((t) => t !== tag) };
+            return { ...item, tags: item.tags.filter((t) => t !== tag), updatedAt: now };
           }
           return item;
         });
         set({ items: updated });
-        debouncedSyncTags(get);
+        persistTagMutation(get, updated.filter((item, index) => item !== items[index]));
       },
       renameTag: (oldTag, newTag) => {
         const trimmed = newTag.trim().toLowerCase();
@@ -164,14 +186,19 @@ export const useOrbitStore = create<OrbitStore>()(
         }
         // Rename in all items
         const items = get().items;
+        const now = Date.now();
         const updated = items.map((item) => {
           if (item.tags?.includes(oldTag)) {
-            return { ...item, tags: item.tags.map((t) => (t === oldTag ? trimmed : t)) };
+            return {
+              ...item,
+              tags: item.tags.map((t) => (t === oldTag ? trimmed : t)),
+              updatedAt: now,
+            };
           }
           return item;
         });
         set({ items: updated });
-        debouncedSyncTags(get);
+        persistTagMutation(get, updated.filter((item, index) => item !== items[index]));
       },
       // Legacy aliases
       removeCustomTag: (tag) => get().removeTag(tag),
@@ -253,7 +280,7 @@ export const useOrbitStore = create<OrbitStore>()(
   },
 }),
     {
-      name: 'orbit-settings',
+      name: 'orbit-tags',
       partialize: (state) => ({
         customTags: state.customTags,
         removedDefaultTags: state.removedDefaultTags,
@@ -261,3 +288,19 @@ export const useOrbitStore = create<OrbitStore>()(
     }
   )
 );
+
+/** Switch tag persistence to an account-specific namespace. */
+export async function scopeOrbitTagPersistence(userId: string): Promise<void> {
+  useOrbitStore.getState()._setSyncUserId(null);
+  const key = `orbit-tags:${encodeURIComponent(userId)}`;
+  if (typeof window !== 'undefined' && userId === 'demo-user' && !localStorage.getItem(key)) {
+    const legacy = localStorage.getItem('orbit-tags');
+    if (legacy) localStorage.setItem(key, legacy);
+  }
+  useOrbitStore.persist.setOptions({ name: key });
+  if (typeof window !== 'undefined' && localStorage.getItem(key)) {
+    await useOrbitStore.persist.rehydrate();
+  } else {
+    useOrbitStore.setState({ customTags: [], removedDefaultTags: [] });
+  }
+}

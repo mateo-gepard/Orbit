@@ -45,23 +45,31 @@ service firebase.storage {
     }
     
     // ─────────────────────────────────────────────────────────
-    // Project Files
+    // Project Files (scoped by userId)
     // ─────────────────────────────────────────────────────────
     
-    match /projects/{projectId}/{fileName} {
-      // READ: Any authenticated user can read files
-      // (In production, you'd check if user owns the project via Firestore)
-      allow read: if isSignedIn();
+    match /files/{userId}/{projectId}/{fileName} {
+      // READ: Only the file owner can read
+      allow read: if isSignedIn()
+                  && request.auth.uid == userId;
       
-      // WRITE: Any authenticated user can upload files
+      // WRITE: Only the file owner can upload
       // Enforces file size and type restrictions
       allow write: if isSignedIn()
+                   && request.auth.uid == userId
                    && isValidFileSize()
                    && isAllowedFileType();
       
-      // DELETE: Any authenticated user can delete files
-      // (In production, you'd check if user owns the project)
-      allow delete: if isSignedIn();
+      // DELETE: Only the file owner can delete
+      allow delete: if isSignedIn()
+                    && request.auth.uid == userId;
+    }
+
+    // Legacy path — read-only for migration, deny writes
+    match /projects/{projectId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if false;
+      allow delete: if false;
     }
     
     // ─────────────────────────────────────────────────────────

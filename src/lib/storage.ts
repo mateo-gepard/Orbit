@@ -76,7 +76,7 @@ export async function uploadProjectFile(
   // Create unique filename
   const timestamp = Date.now();
   const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const storagePath = `projects/${projectId}/${timestamp}_${sanitizedName}`;
+  const storagePath = `files/${userId}/${projectId}/${timestamp}_${sanitizedName}`;
 
   // Create storage reference
   const storageRef = ref(storage, storagePath);

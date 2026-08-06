@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CheckSquare,
   ChevronDown,
@@ -86,9 +86,12 @@ function groupTasks(
 
     switch (groupBy) {
       case 'project': {
-        const parent = task.parentId
-          ? allItems.find((i) => i.id === task.parentId && i.type === 'project')
-          : undefined;
+        const directParent = task.parentId ? allItems.find((i) => i.id === task.parentId) : undefined;
+        const parent = directParent?.type === 'project'
+          ? directParent
+          : directParent?.parentId
+            ? allItems.find((i) => i.id === directParent.parentId && i.type === 'project')
+            : undefined;
         key = parent ? parent.id : '__no_project';
         label = parent ? parent.title : 'No Project';
         emoji = parent?.emoji || (parent ? '📁' : undefined);
@@ -201,7 +204,7 @@ const GROUP_OPTIONS: { key: GroupBy; label: string; icon: typeof FolderKanban }[
 ];
 
 export default function TasksPage() {
-  const { items, setSelectedItemId, getAllTags, removeTag } = useOrbitStore();
+  const { items, getAllTags } = useOrbitStore();
   const { t } = useTranslation();
 
   // Filters
@@ -222,34 +225,18 @@ export default function TasksPage() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showGroupMenu, setShowGroupMenu] = useState(false);
 
-  // Tag delete confirmation
-  const [tagToDelete, setTagToDelete] = useState<string | null>(null);
-  const [tagLongPressTimer, setTagLongPressTimer] = useState<NodeJS.Timeout | null>(null);
-
   const allTags = getAllTags();
 
-  const handleDeleteTag = (tag: string) => {
-    removeTag(tag);
-    if (tagFilter === tag) {
-      setTagFilter(null);
-    }
-    setTagToDelete(null);
-  };
-
-  const handleTagLongPressStart = (tag: string) => {
-    // Allow deletion of ALL tags (including life area tags)
-    const timer = setTimeout(() => {
-      setTagToDelete(tag);
-    }, 500); // 500ms long press
-    setTagLongPressTimer(timer);
-  };
-
-  const handleTagLongPressEnd = () => {
-    if (tagLongPressTimer) {
-      clearTimeout(tagLongPressTimer);
-      setTagLongPressTimer(null);
-    }
-  };
+  useEffect(() => {
+    const closeMenus = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowSortMenu(false);
+        setShowGroupMenu(false);
+      }
+    };
+    window.addEventListener('keydown', closeMenus);
+    return () => window.removeEventListener('keydown', closeMenus);
+  }, []);
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((prev) => {
@@ -302,7 +289,13 @@ export default function TasksPage() {
   );
 
   const totalCount = filteredTasks.length;
-  const activeFilters = [tagFilter, priorityFilter].filter(Boolean).length;
+  const activeFilters = [
+    tagFilter,
+    priorityFilter,
+    statusFilter !== 'active',
+    groupBy !== 'none',
+    sortKey !== 'dueDate' || !sortAsc,
+  ].filter(Boolean).length;
 
   return (
     <div className="p-4 lg:p-8 space-y-4 lg:space-y-5 max-w-3xl mx-auto" data-slot="page-content">
@@ -317,7 +310,9 @@ export default function TasksPage() {
 
       {/* Search */}
       <div className="relative">
+        <label htmlFor="task-search" className="sr-only">{t('tasks.searchPlaceholder')}</label>
         <input
+          id="task-search"
           type="text"
           placeholder={t('tasks.searchPlaceholder')}
           value={searchQuery}
@@ -330,6 +325,7 @@ export default function TasksPage() {
         />
         {searchQuery && (
           <button
+            aria-label="Clear task search"
             onClick={() => setSearchQuery('')}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground"
           >
@@ -341,10 +337,13 @@ export default function TasksPage() {
       {/* Filter bar — horizontally scrollable on mobile */}
       <div className="space-y-2.5">
         {/* Status tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0">
+        <div className="flex items-center gap-1 overflow-x-auto -mx-4 px-4 pb-1 lg:mx-0 lg:px-0" aria-label="Task filters">
           {(['active', 'done', 'all'] as FilterStatus[]).map((s) => (
             <button
+              aria-haspopup="menu"
+              aria-expanded={showSortMenu}
               key={s}
+              aria-pressed={statusFilter === s}
               onClick={() => setStatusFilter(s)}
               className={cn(
                 'shrink-0 rounded-xl lg:rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all active:scale-95',
@@ -363,6 +362,7 @@ export default function TasksPage() {
           {(['high', 'medium', 'low'] as Priority[]).map((p) => (
             <button
               key={p}
+              aria-pressed={priorityFilter === p}
               onClick={() => setPriorityFilter(priorityFilter === p ? null : p)}
               className={cn(
                 'shrink-0 rounded-xl lg:rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 flex items-center gap-1',
@@ -384,28 +384,13 @@ export default function TasksPage() {
         </div>
 
         {/* Tag filters */}
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0">
+        <div className="flex items-center gap-1 overflow-x-auto -mx-4 px-4 pb-1 lg:mx-0 lg:px-0" aria-label="Filter by tag">
           <Tag className="h-3 w-3 text-muted-foreground/30 shrink-0 mr-0.5" />
           {allTags.map((tag) => (
-            <div key={tag} className="relative">
+            <div key={tag} className="relative shrink-0">
               <button
+                aria-pressed={tagFilter === tag}
                 onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-                onTouchStart={(e) => {
-                  handleTagLongPressStart(tag);
-                }}
-                onTouchEnd={(e) => {
-                  handleTagLongPressEnd();
-                }}
-                onTouchCancel={(e) => {
-                  handleTagLongPressEnd();
-                }}
-                onMouseEnter={() => {
-                  // Allow deletion of ALL tags
-                  setTagToDelete(tag);
-                }}
-                onMouseLeave={() => {
-                  setTagToDelete(null);
-                }}
                 className={cn(
                   'shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-all active:scale-95',
                   tagFilter === tag
@@ -415,43 +400,6 @@ export default function TasksPage() {
               >
                 {tag}
               </button>
-              {tagToDelete === tag && (
-                <div 
-                  className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border/60 rounded-lg shadow-lg p-2 min-w-[180px]"
-                  onMouseEnter={() => setTagToDelete(tag)}
-                  onMouseLeave={() => setTagToDelete(null)}
-                >
-                  <p className="text-[11px] text-muted-foreground/80 mb-2">Delete tag "{tag}"?</p>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTag(tag);
-                      }}
-                      onTouchEnd={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTag(tag);
-                      }}
-                      className="flex-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 px-2 py-1 text-[11px] font-medium transition-colors"
-                    >
-                      Delete
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setTagToDelete(null);
-                      }}
-                      onTouchEnd={(e) => {
-                        e.stopPropagation();
-                        setTagToDelete(null);
-                      }}
-                      className="flex-1 rounded-md bg-foreground/[0.05] hover:bg-foreground/[0.1] text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           ))}
           {tagFilter && (
@@ -485,9 +433,11 @@ export default function TasksPage() {
             {showSortMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowSortMenu(false)} />
-                <div className="absolute left-0 top-full mt-1 z-50 rounded-xl border border-border/60 bg-card shadow-lg py-1 min-w-[160px] animate-scale-in">
+                <div role="menu" className="absolute left-0 top-full mt-1 z-50 rounded-xl border border-border/60 bg-card shadow-lg py-1 min-w-[160px] animate-scale-in">
                   {SORT_OPTIONS.map((opt) => (
                     <button
+                      role="menuitemradio"
+                      aria-checked={sortKey === opt.key}
                       key={opt.key}
                       onClick={() => {
                         if (sortKey === opt.key) {
@@ -520,6 +470,8 @@ export default function TasksPage() {
           {/* Group dropdown */}
           <div className="relative">
             <button
+              aria-haspopup="menu"
+              aria-expanded={showGroupMenu}
               onClick={() => {
                 setShowGroupMenu(!showGroupMenu);
                 setShowSortMenu(false);
@@ -538,11 +490,13 @@ export default function TasksPage() {
             {showGroupMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowGroupMenu(false)} />
-                <div className="absolute left-0 top-full mt-1 z-50 rounded-xl border border-border/60 bg-card shadow-lg py-1 min-w-[170px] animate-scale-in">
+                <div role="menu" className="absolute left-0 top-full mt-1 z-50 rounded-xl border border-border/60 bg-card shadow-lg py-1 min-w-[170px] animate-scale-in">
                   {GROUP_OPTIONS.map((opt) => {
                     const Icon = opt.icon;
                     return (
                       <button
+                        role="menuitemradio"
+                        aria-checked={groupBy === opt.key}
                         key={opt.key}
                         onClick={() => {
                           setGroupBy(opt.key);
@@ -572,6 +526,10 @@ export default function TasksPage() {
                 setTagFilter(null);
                 setPriorityFilter(null);
                 setSearchQuery('');
+                setStatusFilter('active');
+                setGroupBy('none');
+                setSortKey('dueDate');
+                setSortAsc(true);
               }}
               className="ml-auto text-[11px] text-muted-foreground/40 hover:text-foreground transition-colors"
             >
@@ -583,7 +541,7 @@ export default function TasksPage() {
 
       {/* Task list */}
       <div className="space-y-3">
-        {groups.map((group) => {
+        {filteredTasks.length > 0 && groups.map((group) => {
           const isCollapsed = collapsedGroups.has(group.key);
           const isUngrouped = groupBy === 'none';
 

@@ -18,6 +18,7 @@ import { useTranslation, type TranslationKey } from '@/lib/i18n';
 
 const TABS: { href: string; icon: typeof LayoutDashboard; labelKey: TranslationKey }[] = [
   { href: '/', icon: LayoutDashboard, labelKey: 'mobile.home' },
+  { href: '/inbox', icon: Inbox, labelKey: 'nav.inbox' },
   { href: '/today', icon: Sun, labelKey: 'nav.today' },
   { href: '/tasks', icon: CheckSquare, labelKey: 'mobile.tasks' },
   { href: '/habits', icon: Repeat, labelKey: 'mobile.habits' },
@@ -80,8 +81,9 @@ export function MobileNav() {
                 key={tab.href}
                 href={tab.href}
                 aria-label={t(tab.labelKey)}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
-                  'relative flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-all duration-200',
+                  'relative min-w-0 flex-1 flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-xl transition-all duration-200',
                   'active:scale-90',
                   isActive
                     ? 'text-foreground'
@@ -104,7 +106,8 @@ export function MobileNav() {
                 <span
                   className={cn(
                     'text-[10px] font-medium leading-none transition-all duration-200',
-                    isActive ? 'opacity-100' : 'opacity-0 h-0'
+                    'opacity-100',
+                    isActive ? 'text-foreground' : 'text-muted-foreground/60'
                   )}
                 >
                   {t(tab.labelKey)}

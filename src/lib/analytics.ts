@@ -41,6 +41,12 @@ let _userId: string | null = null;
 let _eventQueue: Omit<AnalyticsEvent, 'id'>[] = [];
 let _flushTimer: ReturnType<typeof setInterval> | null = null;
 let _sessionStart: number | null = null;
+let _handleUnload: (() => void) | null = null;
+let _handleVisibilityChange: (() => void) | null = null;
+
+function localAnalyticsKey(userId: string): string {
+  return `${LOCAL_ANALYTICS_KEY}:${encodeURIComponent(userId)}`;
+}
 
 function getSessionId(): string {
   if (!_sessionId) {
@@ -58,6 +64,8 @@ function getSessionId(): string {
  * Call once when the user authenticates.
  */
 export function initAnalytics(userId: string): void {
+  if (_userId === userId && _flushTimer) return;
+  if (_userId && _userId !== userId) stopAnalytics();
   _userId = userId;
   _sessionStart = Date.now();
 
@@ -71,7 +79,7 @@ export function initAnalytics(userId: string): void {
 
   // Flush on page unload
   if (typeof window !== 'undefined') {
-    const handleUnload = () => {
+    _handleUnload = () => {
       if (_sessionStart) {
         trackEvent('session_end', {
           durationMs: Date.now() - _sessionStart,
@@ -79,14 +87,24 @@ export function initAnalytics(userId: string): void {
       }
       flushEventsSync(); // Synchronous flush for unload
     };
-    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('beforeunload', _handleUnload);
     // Also handle visibility change (mobile browsers)
-    document.addEventListener('visibilitychange', () => {
+    _handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         flushEvents();
       }
-    });
+    };
+    document.addEventListener('visibilitychange', _handleVisibilityChange);
   }
+}
+
+/** Apply the user's explicit analytics preference. */
+export function configureAnalytics(userId: string | null, enabled: boolean): void {
+  if (!userId || !enabled) {
+    stopAnalytics();
+    return;
+  }
+  initAnalytics(userId);
 }
 
 /**
@@ -134,13 +152,8 @@ export function trackItemEvent(
   extra?: { durationMs?: number }
 ): void {
   trackEvent(action, {
-    itemId: item.id,
     itemType: item.type,
-    itemTitle: item.title,
-    parentId: item.parentId,
-    tags: item.tags,
     priority: item.priority,
-    dueDate: item.dueDate,
     durationMs: extra?.durationMs,
   });
 }
@@ -202,31 +215,33 @@ async function writeToFirestore(events: Omit<AnalyticsEvent, 'id'>[]): Promise<v
 
 function appendToLocalStorage(events: Omit<AnalyticsEvent, 'id'>[]): void {
   if (typeof window === 'undefined') return;
-  try {
-    const existing = loadLocalAnalytics();
-    const updated = [...existing, ...events];
-
-    // Cap to prevent storage bloat
-    const capped = updated.length > MAX_LOCAL_EVENTS
-      ? updated.slice(updated.length - MAX_LOCAL_EVENTS)
-      : updated;
-
-    localStorage.setItem(LOCAL_ANALYTICS_KEY, JSON.stringify(capped));
-  } catch {
-    // Storage full or unavailable — silently drop oldest events
+  const byUser = new Map<string, Omit<AnalyticsEvent, 'id'>[]>();
+  for (const event of events) {
+    const bucket = byUser.get(event.userId) || [];
+    bucket.push(event);
+    byUser.set(event.userId, bucket);
+  }
+  for (const [userId, userEvents] of byUser) {
     try {
-      const trimmed = events.slice(-100);
-      localStorage.setItem(LOCAL_ANALYTICS_KEY, JSON.stringify(trimmed));
+      const existing = loadLocalAnalytics(userId);
+      const updated = [...existing, ...userEvents];
+
+      // Cap to prevent storage bloat
+      const capped = updated.length > MAX_LOCAL_EVENTS
+        ? updated.slice(updated.length - MAX_LOCAL_EVENTS)
+        : updated;
+
+      localStorage.setItem(localAnalyticsKey(userId), JSON.stringify(capped));
     } catch {
-      // Give up silently — analytics should never break the app
+      // Storage full or unavailable — analytics must never break the app.
     }
   }
 }
 
-function loadLocalAnalytics(): Omit<AnalyticsEvent, 'id'>[] {
+function loadLocalAnalytics(userId: string): Omit<AnalyticsEvent, 'id'>[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(LOCAL_ANALYTICS_KEY);
+    const raw = localStorage.getItem(localAnalyticsKey(userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -269,7 +284,7 @@ export async function getAnalyticsEvents(
   }
 
   // Fallback: localStorage
-  const local = loadLocalAnalytics();
+  const local = loadLocalAnalytics(userId);
   return local
     .filter((e) => e.userId === userId && e.date >= startDate && e.date <= endDate)
     .sort((a, b) => b.timestamp - a.timestamp)
@@ -282,7 +297,7 @@ export async function getAnalyticsEvents(
  * Useful for widgets and dashboard cards.
  */
 export function getLocalAnalyticsSummary(userId: string, days = 30) {
-  const events = loadLocalAnalytics().filter((e) => e.userId === userId);
+  const events = loadLocalAnalytics(userId).filter((e) => e.userId === userId);
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
@@ -344,7 +359,18 @@ export function stopAnalytics(): void {
     clearInterval(_flushTimer);
     _flushTimer = null;
   }
+  if (_userId && _sessionStart) {
+    trackEvent('session_end', { durationMs: Date.now() - _sessionStart });
+  }
   flushEventsSync();
+  if (typeof window !== 'undefined' && _handleUnload) {
+    window.removeEventListener('beforeunload', _handleUnload);
+  }
+  if (typeof document !== 'undefined' && _handleVisibilityChange) {
+    document.removeEventListener('visibilitychange', _handleVisibilityChange);
+  }
+  _handleUnload = null;
+  _handleVisibilityChange = null;
   _userId = null;
   _sessionId = null;
   _sessionStart = null;

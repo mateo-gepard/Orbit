@@ -225,7 +225,7 @@ export function CommandBar() {
 
     const newItem: Omit<OrbitItem, 'id'> = {
       type: parsed.type,
-      status: 'active',
+      status: parsed.type === 'task' && !parsed.dueDate && !parentItemId ? 'waiting' : 'active',
       title: parsed.title, // Early returns ensure this is never empty
       tags: parsed.tags,
       userId: user.uid,

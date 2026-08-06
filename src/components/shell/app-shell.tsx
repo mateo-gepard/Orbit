@@ -1,6 +1,8 @@
 'use client';
 
+import { useEffect, useLayoutEffect } from 'react';
 import { Menu, Search } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useOrbitStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useTranslation } from '@/lib/i18n';
@@ -10,14 +12,31 @@ import { DetailPanel } from './detail-panel';
 import { CommandBar } from './command-bar';
 import { MobileNav } from './mobile-nav';
 import { CompletionAnimation } from '@/components/ui/completion-animation';
+import { useAuth } from '@/components/providers/auth-provider';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, setCommandBarOpen, completionAnimation, setCompletionAnimation } = useOrbitStore();
+  const { user, loading } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
   const { t } = useTranslation();
   const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
 
+  useLayoutEffect(() => {
+    if (window.matchMedia('(max-width: 1023px)').matches) setSidebarOpen(false);
+  }, [setSidebarOpen]);
+
+  useEffect(() => {
+    if (!loading && !user && pathname !== '/') router.replace('/');
+  }, [loading, pathname, router, user]);
+
+  if (!loading && !user) {
+    return <main id="main-content" className="min-h-screen bg-background">{children}</main>;
+  }
+
   return (
     <>
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="flex h-screen w-full overflow-hidden bg-background max-w-[100vw]">
         <Sidebar />
 
@@ -30,7 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               paddingTop: 'env(safe-area-inset-top, 0px)',
             }}
           >
-            <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1" onClick={() => setSidebarOpen(true)}>
+            <Button aria-label="Open navigation" variant="ghost" size="icon" className="h-8 w-8 -ml-1" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-4 w-4" />
             </Button>
             <div className={`flex h-6 w-6 items-center justify-center rounded-md font-semibold text-[10px] ${hockeyMode ? 'bg-cyan-600 text-white' : 'bg-foreground text-background'}`}>
@@ -41,6 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
             <div className="flex-1" />
             <Button
+              aria-label="Search or create"
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-muted-foreground"
@@ -68,7 +88,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex flex-1 overflow-hidden min-h-0">
             {/* Main content */}
-            <main 
+            <main
+              id="main-content"
+              tabIndex={-1}
               className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-0 lg:pb-0"
             >
               {/* Mobile: bottom padding so content isn't hidden behind fixed nav */}
