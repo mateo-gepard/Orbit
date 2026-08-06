@@ -104,7 +104,7 @@ const DEFAULT_INSTRUCTIONS = [
 ].join(' ');
 
 class RpcValidationError extends Error {
-  constructor(readonly code: -32600 | -32602, message: string) {
+  constructor(readonly code: -32600 | -32601 | -32602, message: string) {
     super(message);
     this.name = 'RpcValidationError';
   }
@@ -180,7 +180,7 @@ export class StatelessMcpServer {
       case 'tools/call':
         return this.callTool(request.params, context);
       default:
-        throw new RpcValidationError(-32600 - 1, 'Method not found.');
+        throw new RpcValidationError(-32601, 'Method not found.');
     }
   }
 
