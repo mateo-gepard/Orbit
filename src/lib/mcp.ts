@@ -107,9 +107,11 @@ export async function listThreadmapMcpTokenFamilies(
   clientId?: string,
   includeRevoked = false,
 ): Promise<ThreadmapMcpTokenFamily[]> {
+  const normalizedClientId = clientId?.trim();
+  const request = normalizedClientId ? { clientId: normalizedClientId, includeRevoked } : { includeRevoked };
   const result = await callMcpFunction<{ tokenFamilies: ThreadmapMcpTokenFamily[] }>(
     'listThreadmapMcpTokenFamilies',
-    { clientId: clientId?.trim() || undefined, includeRevoked },
+    request,
   );
   return result.tokenFamilies;
 }
