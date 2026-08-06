@@ -179,18 +179,15 @@ Remaining risks are focused on product completeness, not correctness:
 
 ## Commit-level snapshot
 
-- Working tree currently has these active changes since the last backup:
-  - `firestore.rules`
-  - `src/lib/mcp.ts`
-  - `src/app/integrations/authorize/page.tsx`
-  - `functions/src/index.ts`
-  - `functions/src/mcp/server.ts`
-  - `src/app/settings/page.tsx`
-  - `src/lib/i18n.ts`
-  - `src/test/firebase-rules.test.ts`
-
-When you want, I can immediately create:
-1. a backup commit in git for the current state,
-2. push it to GitHub,
-3. and open a follow-up commit for any remaining P1 items.
-
+- MCP/UI/rules hardening backup commit: [`28ee27d`](https://github.com/mateo-gepard/Orbit/commit/28ee27d)
+- Backup branch: [`codex/backup-before-full-mcp-ui-rules-2026-08-06`](https://github.com/mateo-gepard/Orbit/tree/codex/backup-before-full-mcp-ui-rules-2026-08-06)
+- Files included in this backup:
+  - [THREADMAP_AUDIT_REPORT.md](/Users/mateomamaladze/Desktop/Projects/Orbit/THREADMAP_AUDIT_REPORT.md)
+  - [firestore.rules](/Users/mateomamaladze/Desktop/Projects/Orbit/firestore.rules)
+  - [src/lib/mcp.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/src/lib/mcp.ts)
+  - [src/app/integrations/authorize/page.tsx](/Users/mateomamaladze/Desktop/Projects/Orbit/src/app/integrations/authorize/page.tsx)
+  - [functions/src/index.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/functions/src/index.ts)
+  - [functions/src/mcp/server.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/functions/src/mcp/server.ts)
+  - [src/app/settings/page.tsx](/Users/mateomamaladze/Desktop/Projects/Orbit/src/app/settings/page.tsx)
+  - [src/lib/i18n.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/src/lib/i18n.ts)
+  - [src/test/firebase-rules.test.ts](/Users/mateomamaladze/Desktop/Projects/Orbit/src/test/firebase-rules.test.ts)
