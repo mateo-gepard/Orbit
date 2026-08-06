@@ -245,6 +245,49 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // MCP OAuth metadata, authorization records, and runtime state are managed
+    // exclusively by Cloud Functions using the Admin SDK.
+    match /mcpOAuthClients/{clientId} {
+      allow read, write: if false;
+    }
+
+    match /mcpOAuthAuthorizationRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /mcpOAuthAuthorizationCodes/{authorizationCode} {
+      allow read, write: if false;
+    }
+
+    match /mcpOAuthAccessTokens/{accessToken} {
+      allow read, write: if false;
+    }
+
+    match /mcpOAuthRefreshTokens/{refreshToken} {
+      allow read, write: if false;
+    }
+
+    match /mcpOAuthTokenFamilies/{familyId} {
+      allow read, write: if false;
+    }
+
+    // MCP control-plane runtime collections.
+    match /mcpIdempotency/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /mcpRateLimits/{quotaId} {
+      allow read, write: if false;
+    }
+
+    match /mcpAuditLogs/{auditId} {
+      allow read, write: if false;
+    }
+
+    match /mcpDeleteConfirmations/{confirmationId} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -265,6 +265,42 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
     }));
   });
 
+  it('blocks all direct client access to MCP runtime collections', async () => {
+    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const mcpCollections = [
+      'mcpOAuthClients',
+      'mcpOAuthAuthorizationRequests',
+      'mcpOAuthAuthorizationCodes',
+      'mcpOAuthAccessTokens',
+      'mcpOAuthRefreshTokens',
+      'mcpOAuthTokenFamilies',
+      'mcpIdempotency',
+      'mcpRateLimits',
+      'mcpAuditLogs',
+      'mcpDeleteConfirmations',
+    ] as const;
+
+    await environment.withSecurityRulesDisabled(async (context) => {
+      const firestore = context.firestore();
+      for (const collectionName of mcpCollections) {
+        await setDoc(doc(firestore, collectionName, `${OWNER_ID}_${collectionName}`), {
+          userId: OWNER_ID,
+          createdAt: 1,
+          value: collectionName,
+        });
+      }
+    });
+
+    for (const collectionName of mcpCollections) {
+      const docRef = doc(ownerDb, collectionName, `${OWNER_ID}_${collectionName}`);
+      await assertFails(getDoc(docRef));
+      await assertFails(setDoc(docRef, { userId: OWNER_ID, createdAt: 2 }));
+      await assertFails(updateDoc(docRef, { createdAt: 3 }));
+      await assertFails(deleteDoc(docRef));
+      await assertFails(getDocs(collection(ownerDb, collectionName)));
+    }
+  });
+
   it('allows owner-constrained device and flight queries but rejects unscoped lists', async () => {
     await environment.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), 'flightLogs', `${OWNER_ID}_flight-1`), {

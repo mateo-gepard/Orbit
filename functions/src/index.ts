@@ -222,14 +222,28 @@ function nextDailyOccurrence(time: string, timezone: string, now: number): numbe
 interface HttpRequestLike {
   headers: {
     get(name: string): string | undefined;
-  };
+  } | Record<string, string | string[] | undefined>;
   url: string;
 }
 
+function getHeaderValue(
+  headers: HttpRequestLike['headers'],
+  name: string,
+): string | undefined {
+  if (typeof headers.get === 'function') {
+    return headers.get(name);
+  }
+  const normalizedName = name.toLowerCase();
+  const headerRecord = headers as Record<string, string | string[] | undefined>;
+  const raw = headerRecord[normalizedName] ?? headerRecord[name];
+  if (Array.isArray(raw)) return raw[0];
+  return raw;
+}
+
 function requestOrigin(request: HttpRequestLike): string {
-  const forwardedProto = request.headers.get('x-forwarded-proto');
-  const forwardedHost = request.headers.get('x-forwarded-host');
-  const host = request.headers.get('host');
+  const forwardedProto = getHeaderValue(request.headers, 'x-forwarded-proto');
+  const forwardedHost = getHeaderValue(request.headers, 'x-forwarded-host');
+  const host = getHeaderValue(request.headers, 'host');
   const protocol = (forwardedProto || 'https').split(',')[0]?.trim() || 'https';
   if (forwardedHost) {
     return `${protocol}://${forwardedHost.split(',')[0].trim()}`;

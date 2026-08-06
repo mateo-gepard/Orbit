@@ -13,6 +13,7 @@ import {
   Keyboard,
   Monitor,
   Calendar,
+  Link,
   RotateCcw,
   Download,
   Upload,
@@ -123,8 +124,38 @@ const SECTIONS: SettingSection[] = [
   { id: 'privacy', label: 'settings.privacy', icon: Shield },
   { id: 'accessibility', label: 'settings.accessibility', icon: Accessibility },
   { id: 'eastereggs', label: 'settings.easterEggs', icon: Sparkles },
+  { id: 'integrations', label: 'settings.integrations', icon: Link },
   { id: 'data', label: 'settings.dataStorage', icon: Database },
 ];
+
+type McpIntegrationEndpoint = {
+  key: TranslationKey;
+  description: TranslationKey;
+  value: string;
+};
+
+const MCP_INTEGRATION_ENDPOINTS = [
+  {
+    key: 'settings.mcpEndpoint',
+    description: 'settings.mcpEndpointDesc',
+    value: 'https://threadmap.app/mcp',
+  },
+  {
+    key: 'settings.mcpWellKnownAuthorizationServer',
+    description: 'settings.mcpWellKnownAuthorizationServerDesc',
+    value: 'https://threadmap.app/.well-known/oauth-authorization-server',
+  },
+  {
+    key: 'settings.mcpWellKnownProtectedResource',
+    description: 'settings.mcpWellKnownProtectedResourceDesc',
+    value: 'https://threadmap.app/.well-known/oauth-protected-resource',
+  },
+  {
+    key: 'settings.mcpConsentUrl',
+    description: 'settings.mcpConsentUrlDesc',
+    value: 'https://threadmap.app/integrations/authorize',
+  },
+] satisfies McpIntegrationEndpoint[];
 
 // ═══════════════════════════════════════════════════════════
 // Shared UI elements
@@ -1898,6 +1929,55 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ═════ INTEGRATIONS ═════ */}
+          {activeSection === 'integrations' && (
+            <div>
+              <SectionHeader icon={Link} label={t('settings.integrations')} />
+
+              <p className="text-xs text-muted-foreground/60 mb-4">
+                {t('settings.integrationsIntro')}
+              </p>
+
+              <div className="rounded-2xl border border-border/40 overflow-hidden">
+                {MCP_INTEGRATION_ENDPOINTS.map((endpoint, index) => (
+                  <div
+                    key={endpoint.key}
+                    className={cn(
+                      'px-4 py-3 text-sm',
+                      index < MCP_INTEGRATION_ENDPOINTS.length - 1 && 'border-b border-border/20'
+                    )}
+                  >
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground/70 mb-1.5">
+                      {t(endpoint.key)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/60 mb-1.5">
+                      {t(endpoint.description)}
+                    </p>
+                    <code className="text-[11px] break-all select-all rounded-md border border-border/50 px-2 py-1 bg-background/70 text-foreground/80">
+                      {endpoint.value}
+                    </code>
+                  </div>
+                ))}
+              </div>
+
+              <p className="mt-4 text-xs text-muted-foreground/60">
+                {t('settings.integrationsScopes')}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground/75">
+                <code className="rounded-md bg-muted/30 px-1.5 py-0.5 text-[11px] mr-1.5">threadmap.read</code>
+                {t('settings.mcpScopeRead')}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground/75">
+                <code className="rounded-md bg-muted/30 px-1.5 py-0.5 text-[11px] mr-1.5">threadmap.write</code>
+                {t('settings.mcpScopeWrite')}
+              </p>
+
+              <p className="mt-4 text-[11px] text-muted-foreground/60">
+                {t('settings.integrationsHelp')}
+              </p>
             </div>
           )}
 
