@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import {
   User,
   Palette,
@@ -2055,7 +2056,13 @@ export default function SettingsPage() {
 
               {/* App info */}
               <div className="mt-8 pt-4 border-t border-border/20 text-center">
-                <p className="text-[11px] text-muted-foreground/30">
+                <Link
+                  href="/privacy"
+                  className="text-[11px] text-muted-foreground/50 underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  {settings.language === 'de' ? 'Datenschutzerklärung' : 'Privacy Policy'}
+                </Link>
+                <p className="mt-2 text-[11px] text-muted-foreground/30">
                   {t('settings.version')}
                 </p>
                 <p className="text-[10px] text-muted-foreground/20 mt-0.5">
