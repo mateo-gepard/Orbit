@@ -48,6 +48,7 @@ const DEFAULT_AUTHORIZATION_CODE_TTL_SECONDS = 5 * 60;
 const MAX_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const MAX_REFRESH_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60;
 const ACCOUNT_DELETION_COLLECTION = 'accountDeletionJobs';
+const DEFAULT_OWNER_UID = 'threadmap-system';
 
 type OAuthGrantType = 'authorization_code' | 'refresh_token';
 
@@ -426,6 +427,11 @@ function validateOwnerUid(uid: string): string {
   return uid;
 }
 
+function normalizeOwnerUid(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? validateOwnerUid(trimmed) : DEFAULT_OWNER_UID;
+}
+
 function validateClientName(value: unknown, platform: RedirectUriPlatform): string {
   if (value === undefined) {
     if (platform === 'chatgpt') return 'ChatGPT';
@@ -614,7 +620,7 @@ export function resolveThreadmapOAuthConfiguration(
   configuration: ThreadmapOAuthConfiguration
 ): ResolvedThreadmapOAuthConfiguration {
   validateOAuthEndpointConfiguration(configuration);
-  validateOwnerUid(configuration.ownerUid);
+  const ownerUid = normalizeOwnerUid(configuration.ownerUid);
   const authorizationConsentUrl = configuration.authorizationConsentUrl
     || THREADMAP_AUTHORIZATION_CONSENT_URL;
   const parsedAuthorizationConsentUrl = validateHttpsUrl(authorizationConsentUrl, 'authorization consent URL', {
@@ -641,7 +647,7 @@ export function resolveThreadmapOAuthConfiguration(
 
   return {
     ...configuration,
-    ownerUid: configuration.ownerUid,
+    ownerUid,
     authorizationConsentUrl: parsedAuthorizationConsentUrl.toString(),
     scopesSupported: supportedScopes,
     dynamicClientScopes,

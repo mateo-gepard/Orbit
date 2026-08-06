@@ -217,6 +217,14 @@ test('configuration enforces a one-hour maximum access-token lifetime', () => {
   }));
 });
 
+test('configuration tolerates blank ownerUid by using the built-in MCP owner identifier', () => {
+  const normalized = resolveThreadmapOAuthConfiguration({
+    ...configuration,
+    ownerUid: '   ',
+  });
+  assert.equal(normalized.ownerUid, 'threadmap-system');
+});
+
 test('stable OAuth errors serialize without exposing unexpected exception details', () => {
   const protocolError = new OAuthProtocolError('invalid_scope', 'The requested scope is invalid.');
   assert.deepEqual(serializeOAuthError(protocolError), {
