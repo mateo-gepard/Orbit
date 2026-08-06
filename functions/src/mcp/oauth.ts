@@ -1353,12 +1353,11 @@ export class ThreadmapOAuthService {
       const familySnapshot = await transaction.get(
         this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
           .where('userId', '==', authenticatedUid)
-          .where('clientId', '==', clientId)
       );
       if (familySnapshot.empty) return false;
       for (const familyDoc of familySnapshot.docs) {
         const family = tokenFamilyDocument(familyDoc.data());
-        if (!family || family.status === 'revoked') continue;
+        if (!family || family.clientId !== clientId || family.status === 'revoked') continue;
         transaction.update(familyDoc.ref, {
           status: 'revoked',
           revokedAt: now,
