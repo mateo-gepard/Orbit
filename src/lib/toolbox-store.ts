@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { saveToolData, ToolDataConflictError } from './firestore';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
+import { reportSyncRecovered, reportSyncWarning } from './sync-warning';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — Toolbox Store
@@ -117,6 +118,7 @@ function scheduleSave(enabledTools: ToolId[]) {
           && _scopeGeneration === scheduledGeneration
           && revision === _localRevision) {
         useToolboxStore.setState({ cloudDirty: false });
+        reportSyncRecovered({ key: 'tool:toolbox', userId: scheduledUserId });
       }
     } catch (error) {
       console.error('[THREADMAP] Failed to save Toolbox data:', error);
@@ -127,11 +129,12 @@ function scheduleSave(enabledTools: ToolId[]) {
         useToolboxStore.setState({ cloudDirty: true });
         return;
       }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-          detail: { message: 'Toolbox changes are saved on this device, but cloud sync will retry.' },
-        }));
-      }
+      reportSyncWarning({
+        key: 'tool:toolbox',
+        userId: scheduledUserId,
+        toolId: 'toolbox',
+        message: 'Toolbox changes are saved on this device, but cloud sync will retry.',
+      });
       _saveTimer = setTimeout(() => void persist(), 5_000);
     }
   };

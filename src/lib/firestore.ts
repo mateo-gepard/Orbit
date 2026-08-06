@@ -18,6 +18,7 @@ import { cloudFunctions, db } from './firebase';
 import type { OrbitItem } from './types';
 import { useOrbitStore } from './store';
 import { DEMO_USER_ID, migrateLegacyStorageToDemo, scopedStorageKey } from './account-storage';
+import { DEVICE_SCOPE, reportSyncRecovered, reportSyncWarning } from './sync-warning';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import { writeLocalStorageVerified } from './verified-storage';
 import {
@@ -174,10 +175,17 @@ function reportQueuedWrite(
   message: string,
   owner?: Pick<QueueableWriteObserver, 'userId' | 'generation'>,
 ): void {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-    detail: { message, userId: owner?.userId, generation: owner?.generation },
-  }));
+  // An unattributed warning would otherwise survive an account switch, so fall
+  // back to the account this browser is currently bound to.
+  const scope = owner?.userId !== undefined
+    ? owner
+    : { userId: activeUserId ?? DEVICE_SCOPE, generation: activeDataGeneration };
+  reportSyncWarning({
+    key: 'items:queued-write',
+    userId: scope.userId!,
+    generation: scope.generation,
+    message,
+  });
 }
 
 function notifyWriteObserver(
@@ -380,13 +388,11 @@ function saveLocalItems(userId: string, items: OrbitItem[]): boolean {
     console.error('[THREADMAP] Failed to save local data:', err);
     if (err instanceof DOMException && err.name === 'QuotaExceededError') {
       console.warn('[THREADMAP] Storage quota exceeded; no user data was deleted.');
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-          detail: {
-            message: 'Browser storage is full. Your change was rolled back—export your data or free space before retrying.',
-          },
-        }));
-      }
+      reportSyncWarning({
+        key: 'device:storage-quota',
+        userId: DEVICE_SCOPE,
+        message: 'Browser storage is full. Your change was rolled back—export your data or free space before retrying.',
+      });
     }
     return false;
   }
@@ -667,6 +673,11 @@ export function retryQueuedItemMutations(
           );
         }
       }
+    }
+    // A drained queue is the only proof the warning no longer describes reality.
+    if (isFirestoreDataContextCurrent(userId, generation)
+        && listItemMutations(userId).length === 0) {
+      reportSyncRecovered({ key: 'items:queued-write', userId, generation });
     }
   });
 }
@@ -1159,9 +1170,12 @@ export async function deleteItem(
     } catch (error) {
       const message = 'This event was not deleted because Google Calendar could not confirm removal. Reconnect Google Calendar and retry.';
       console.warn(`[THREADMAP] ${message}`, error);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', { detail: { message } }));
-      }
+      reportSyncWarning({
+        key: 'calendar:delete',
+        userId: ownerId,
+        generation: contextGeneration,
+        message,
+      });
       throw new Error(message, { cause: error });
     }
   }
@@ -2132,15 +2146,13 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
           seedAttempted = true;
           void saveToolData(userId, toolId, initialData).catch((error) => {
             console.error(`[THREADMAP] Failed to seed tool data (${toolId}):`, error);
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-                detail: {
-                  userId,
-                  generation: activeDataGeneration,
-                  message: `${toolId} is saved on this device, but its first cloud sync did not finish.`,
-                },
-              }));
-            }
+            reportSyncWarning({
+              key: `tool-seed:${toolId}`,
+              userId,
+              generation: activeDataGeneration,
+              toolId,
+              message: `${toolId} is saved on this device, but its first cloud sync did not finish.`,
+            });
           });
         }
       }

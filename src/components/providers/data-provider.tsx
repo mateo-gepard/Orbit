@@ -31,6 +31,15 @@ import {
   setGoogleCalendarOwner,
 } from '@/lib/google-calendar';
 import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
+import {
+  DEVICE_SCOPE,
+  SYNC_RECOVERED_EVENT,
+  SYNC_WARNING_EVENT,
+  syncScopeMatches,
+  type SyncRecoveredDetail,
+  type SyncWarningDetail,
+  type SyncWarningKey,
+} from '@/lib/sync-warning';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
 import type { ToolId } from '@/lib/toolbox-store';
@@ -48,6 +57,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const userId = user?.uid || null;
   const localOnly = Boolean(userId && (isDemo || userId === 'demo-user'));
   const [error, setError] = useState<string | null>(null);
+  // Which condition raised the visible banner, so a recovery for one condition
+  // cannot dismiss another condition that is still failing.
+  const activeErrorKeyRef = useRef<SyncWarningKey | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const accountScopeKey = userId
@@ -58,6 +70,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const loadingFocusRef = useRef<HTMLDivElement>(null);
   const accountScopeLoading = isLoading || readyScopeKey !== accountScopeKey;
   const language = useSettingsStore((state) => state.settings.language);
+
+  const showError = useCallback((message: string, key: SyncWarningKey | null) => {
+    activeErrorKeyRef.current = key;
+    setError(message);
+  }, []);
+
+  /** Pass `null` to dismiss whatever is showing; a key clears only its own banner. */
+  const clearError = useCallback((key: SyncWarningKey | null) => {
+    if (key !== null && activeErrorKeyRef.current !== key) return;
+    activeErrorKeyRef.current = null;
+    setError(null);
+  }, []);
 
   const configureAccountServices = useCallback((
     userId: string,
@@ -122,7 +146,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const setup = async () => {
       setIsLoading(true);
-      setError(null);
+      clearError(null);
       stopGoogleCalendarSync();
       stopBriefingScheduler();
       cleanupForegroundMessageHandler();
@@ -243,14 +267,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           useOrbitStore.getState().setItems(items);
           itemsReady = true;
           configureAccountServices(accountId, localOnly, itemsReady);
-          if (source === 'cloud' || source === 'local') setError(null);
+          // Only the load banner is resolved by a snapshot. A tool whose cloud
+          // save is still retrying keeps its own warning up.
+          if (source === 'cloud' || source === 'local') clearError('items:load');
           finishLoading();
         },
         () => {
-          if (isCurrent()) setError(dataMessage(
+          if (isCurrent()) showError(dataMessage(
             'Cloud sync is unavailable. Showing this account’s local cache.',
             'Die Cloud-Synchronisierung ist nicht verfügbar. Der lokale Cache dieses Kontos wird angezeigt.',
-          ));
+          ), 'items:load');
         }
       ));
     };
@@ -258,19 +284,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     void setup().catch((cause) => {
       if (!isCurrent()) return;
       console.error('[THREADMAP] Account data setup failed:', cause);
-      setError(dataMessage(
+      showError(dataMessage(
         'Your account data could not be loaded. No cross-account fallback was used.',
         'Deine Kontodaten konnten nicht geladen werden. Es wurden keine Daten eines anderen Kontos verwendet.',
-      ));
+      ), 'items:load');
       finishLoading();
     });
 
     safetyTimer = setTimeout(() => {
       if (!isCurrent()) return;
-      setError((current) => current || dataMessage(
-        'Loading is taking longer than expected.',
-        'Das Laden dauert länger als erwartet.',
-      ));
+      // A warning already on screen is more specific than "still loading".
+      // The ref tracks the live banner, so this stays correct across renders.
+      if (activeErrorKeyRef.current === null) {
+        showError(dataMessage(
+          'Loading is taking longer than expected.',
+          'Das Laden dauert länger als erwartet.',
+        ), 'items:load');
+      }
       setIsLoading(false);
     }, MAX_LOADING_TIME);
 
@@ -288,40 +318,50 @@ export function DataProvider({ children }: { children: ReactNode }) {
       stopBriefingScheduler();
       cleanupForegroundMessageHandler();
     };
-  }, [accountScopeKey, configureAccountServices, localOnly, reconnectNonce, userId]);
+  }, [accountScopeKey, clearError, configureAccountServices, localOnly, reconnectNonce, showError, userId]);
 
   useEffect(() => {
     const reconnect = () => {
-      setError(null);
+      // Anything still broken re-announces itself on the next retry.
+      clearError(null);
       if (userId && !localOnly) {
         void retryQueuedItemMutations(userId, { includeRejected: true });
       }
     };
-    const offline = () => setError(language === 'de'
+    const offline = () => showError(language === 'de'
       ? 'Offline. Elementänderungen bleiben in diesem Browser vorgemerkt; Löschen, Google-Sync und Werkzeug-Cloud-Sync benötigen eine Verbindung.'
-      : 'Offline. Item edits remain queued in this browser; deletion, Google sync, and tool cloud sync need a connection.');
+      : 'Offline. Item edits remain queued in this browser; deletion, Google sync, and tool cloud sync need a connection.',
+      'network:offline');
+    const applies = (detail: { userId?: string; generation?: number } | undefined) => {
+      if (!detail || typeof detail.userId !== 'string') return false;
+      if (!syncScopeMatches(detail.userId, userId)) return false;
+      // A generation-stamped notice from a superseded data context describes an
+      // account this browser has already left.
+      return typeof detail.generation !== 'number'
+        || detail.userId === DEVICE_SCOPE
+        || isFirestoreDataContextCurrent(detail.userId, detail.generation);
+    };
     const syncWarning = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        message?: unknown;
-        userId?: string;
-        generation?: number;
-      }>).detail;
-      if (detail?.userId && detail.userId !== userId) return;
-      if (detail?.userId
-          && typeof detail.generation === 'number'
-          && !isFirestoreDataContextCurrent(detail.userId, detail.generation)) return;
-      const message = detail?.message;
-      if (typeof message === 'string') setError(message);
+      const detail = (event as CustomEvent<SyncWarningDetail>).detail;
+      if (!applies(detail) || typeof detail.message !== 'string') return;
+      showError(detail.message, detail.key);
+    };
+    const syncRecovered = (event: Event) => {
+      const detail = (event as CustomEvent<SyncRecoveredDetail>).detail;
+      if (!applies(detail)) return;
+      clearError(detail.key);
     };
     window.addEventListener('online', reconnect);
     window.addEventListener('offline', offline);
-    window.addEventListener('threadmap:sync-warning', syncWarning);
+    window.addEventListener(SYNC_WARNING_EVENT, syncWarning);
+    window.addEventListener(SYNC_RECOVERED_EVENT, syncRecovered);
     return () => {
       window.removeEventListener('online', reconnect);
       window.removeEventListener('offline', offline);
-      window.removeEventListener('threadmap:sync-warning', syncWarning);
+      window.removeEventListener(SYNC_WARNING_EVENT, syncWarning);
+      window.removeEventListener(SYNC_RECOVERED_EVENT, syncRecovered);
     };
-  }, [language, localOnly, userId]);
+  }, [clearError, language, localOnly, showError, userId]);
 
   useEffect(() => {
     const handleConflict = (event: Event) => {
@@ -336,14 +376,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           || typeof detail.generation !== 'number'
           || detail.userId !== userId
           || !isFirestoreDataContextCurrent(detail.userId, detail.generation)) return;
-      setError(detail?.message || dataMessage(
+      // Keyed by tool so the tool's next successful save clears the conflict.
+      showError(detail.message || dataMessage(
         'A cloud edit conflict needs your attention.',
         'Ein Cloud-Bearbeitungskonflikt benötigt deine Aufmerksamkeit.',
-      ));
+      ), detail.toolId ? `tool:${detail.toolId}` : 'items:load');
     };
     window.addEventListener('threadmap:sync-conflict', handleConflict);
     return () => window.removeEventListener('threadmap:sync-conflict', handleConflict);
-  }, [userId]);
+  }, [showError, userId]);
 
   return (
     <>
@@ -379,7 +420,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                   <button
                     type="button"
                     onClick={() => {
-                      setError(null);
+                      clearError(null);
                       if (userId && !localOnly) {
                         void retryQueuedItemMutations(userId, { includeRejected: true });
                       }
@@ -405,7 +446,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => {
-              setError(null);
+              clearError(null);
               if (userId && !localOnly) {
                 void retryQueuedItemMutations(userId, { includeRejected: true });
               }
@@ -417,7 +458,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           </button>
           <button
             type="button"
-            onClick={() => setError(null)}
+            onClick={() => clearError(null)}
             aria-label={language === 'de' ? 'Meldung schließen' : 'Dismiss message'}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 lg:h-9 lg:w-9"
           >

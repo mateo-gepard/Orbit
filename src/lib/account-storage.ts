@@ -1,4 +1,5 @@
 import { removeLocalStorageVerified, writeLocalStorageVerified } from './verified-storage';
+import { DEVICE_SCOPE, reportSyncWarning } from './sync-warning';
 
 export const DEMO_USER_ID = 'demo-user';
 export const SIGNED_OUT_STORAGE_SCOPE = 'signed-out';
@@ -54,11 +55,11 @@ export function prepareScopedStorage(
     const recoveryKey = `${baseKey}:corrupt-${Date.now()}:${accountSuffix}`;
     writeLocalStorageVerified(recoveryKey, raw);
     removeLocalStorageVerified(key);
-    window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-      detail: {
-        message: 'A damaged local cache was preserved for recovery and safely reset. Cloud data was not changed.',
-      },
-    }));
+    reportSyncWarning({
+      key: 'device:cache-reset',
+      userId: userId || DEVICE_SCOPE,
+      message: 'A damaged local cache was preserved for recovery and safely reset. Cloud data was not changed.',
+    });
     return { key, hasPersistedState: false };
   }
 }

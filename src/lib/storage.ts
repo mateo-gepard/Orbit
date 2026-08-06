@@ -12,6 +12,7 @@ import {
 import { app, isFirebaseStorageConfigured } from './firebase';
 import { cloudFunctions, db } from './firebase';
 import { httpsCallable } from 'firebase/functions';
+import { reportSyncWarning } from './sync-warning';
 import type { OrbitItem, ProjectFile } from './types';
 import { useOrbitStore } from './store';
 
@@ -215,11 +216,11 @@ export async function uploadAndAttachProjectFile(
   } catch (error) {
     await cleanupUnattachedUpload(projectId, uploaded.storagePath).catch((cleanupError) => {
       console.error('[Storage] Unattached upload cleanup could not be queued:', cleanupError);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-          detail: { message: 'The file could not be attached, and server cleanup could not be confirmed. It will be removed with account cleanup.' },
-        }));
-      }
+      reportSyncWarning({
+        key: 'files:cleanup',
+        userId,
+        message: 'The file could not be attached, and server cleanup could not be confirmed. It will be removed with account cleanup.',
+      });
     });
     throw error;
   }

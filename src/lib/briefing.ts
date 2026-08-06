@@ -1,6 +1,7 @@
 import { db } from './firebase';
 import { DEMO_USER_ID, scopedStorageKey } from './account-storage';
 import { saveToolData, subscribeToToolData, ToolDataConflictError } from './firestore';
+import { reportSyncRecovered, reportSyncWarning as emitSyncWarning } from './sync-warning';
 
 export interface DailyBriefingJournal {
   date: string;
@@ -145,9 +146,16 @@ function reportSyncWarning(userId: string | null | undefined, message: string): 
   const previous = warningTimes.get(warningKey);
   if (previous !== undefined && now - previous < WARNING_THROTTLE_MS) return;
   warningTimes.set(warningKey, now);
-  window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-    detail: { userId: owner, toolId: TOOL_ID, message },
-  }));
+  emitSyncWarning({ key: 'tool:briefing', userId: owner, toolId: TOOL_ID, message });
+}
+
+/** Clear the banner and the throttle so a later failure notifies again. */
+function reportSyncSuccess(userId: string | null | undefined): void {
+  const owner = userId || DEMO_USER_ID;
+  for (const key of [...warningTimes.keys()]) {
+    if (key.startsWith(`${owner}:`)) warningTimes.delete(key);
+  }
+  reportSyncRecovered({ key: 'tool:briefing', userId: owner });
 }
 
 function journalFromArchive(archive: BriefingArchive, date: string, weekKey: string): BriefingJournal {
@@ -261,6 +269,8 @@ export async function flushBriefingJournal(
       }
     }
   }
+
+  if (localCommitted && (cloudCommitted || !usesCloud)) reportSyncSuccess(userId);
 
   if (!localCommitted && !cloudCommitted) {
     localCommitted = writeArchive(userId, archive);

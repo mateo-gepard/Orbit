@@ -1,12 +1,15 @@
 import type { StateStorage } from 'zustand/middleware';
+import { DEVICE_SCOPE, reportSyncWarning } from './sync-warning';
 
 const STORAGE_WARNING = 'Browser storage is full or unavailable. Your latest change was not saved; export data or free space before retrying.';
 
 function reportStorageFailure(): void {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-    detail: { message: STORAGE_WARNING },
-  }));
+  // A failed browser write is a property of this device, not of one account.
+  reportSyncWarning({
+    key: 'device:storage-write',
+    userId: DEVICE_SCOPE,
+    message: STORAGE_WARNING,
+  });
 }
 
 export function writeStorageVerified(

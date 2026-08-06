@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { saveToolData, ToolDataConflictError } from './firestore';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
+import { reportSyncRecovered, reportSyncWarning } from './sync-warning';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — Personal Settings Store (cloud-synced)
@@ -210,16 +211,16 @@ let _localRevision = 0;
 let _cloudSnapshotReceived = false;
 let _scopeGeneration = 0;
 
-function reportSettingsSyncFailure(): void {
-  if (typeof window === 'undefined') return;
+function reportSettingsSyncFailure(userId: string): void {
   const german = useSettingsStore.getState().settings.language === 'de';
-  window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-    detail: {
-      message: german
-        ? 'Die Einstellungen sind auf diesem Gerät gespeichert, aber die Cloud-Synchronisierung ist noch nicht abgeschlossen. Threadmap versucht es erneut.'
-        : 'Settings are saved on this device, but cloud sync has not finished. Threadmap will retry.',
-    },
-  }));
+  reportSyncWarning({
+    key: 'tool:settings',
+    userId,
+    toolId: 'settings',
+    message: german
+      ? 'Die Einstellungen sind auf diesem Gerät gespeichert, aber die Cloud-Synchronisierung ist noch nicht abgeschlossen. Threadmap versucht es erneut.'
+      : 'Settings are saved on this device, but cloud sync has not finished. Threadmap will retry.',
+  });
 }
 
 function scheduleSave(settings: UserSettings) {
@@ -243,6 +244,7 @@ function scheduleSave(settings: UserSettings) {
           && _scopeGeneration === scheduledGeneration
           && revision === _localRevision) {
         useSettingsStore.setState({ cloudDirty: false, cloudSaveState: 'saved' });
+        reportSyncRecovered({ key: 'tool:settings', userId: scheduledUserId });
       }
     } catch (error) {
       console.error('[THREADMAP] Failed to save settings:', error);
@@ -254,7 +256,7 @@ function scheduleSave(settings: UserSettings) {
         return;
       }
       useSettingsStore.setState({ cloudSaveState: 'error' });
-      reportSettingsSyncFailure();
+      reportSettingsSyncFailure(scheduledUserId);
       _saveTimeout = setTimeout(() => void persist(), 5_000);
     }
   };

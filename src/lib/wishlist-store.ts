@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { saveToolData, ToolDataConflictError } from './firestore';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
+import { reportSyncRecovered, reportSyncWarning } from './sync-warning';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — The Vault: Wishlist Engine
@@ -362,6 +363,7 @@ function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
           || revision !== _localRevision) return;
       _syncedRevision = Math.max(_syncedRevision, revision);
       useWishlistStore.setState({ cloudDirty: false });
+      reportSyncRecovered({ key: 'tool:wishlist', userId: scheduledUserId });
     } catch (error) {
       if (_syncUserId !== scheduledUserId
           || _scopeGeneration !== scheduledGeneration
@@ -370,11 +372,12 @@ function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
         useWishlistStore.setState({ cloudDirty: true });
         return;
       }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-          detail: { message: 'Wishlist changes are saved on this device, but cloud sync will retry.' },
-        }));
-      }
+      reportSyncWarning({
+        key: 'tool:wishlist',
+        userId: scheduledUserId,
+        toolId: 'wishlist',
+        message: 'Wishlist changes are saved on this device, but cloud sync will retry.',
+      });
       _saveTimer = setTimeout(() => void persist(), 5_000);
     }
   };

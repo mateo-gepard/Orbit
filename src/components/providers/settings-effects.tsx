@@ -6,6 +6,8 @@ import { useSettingsStore } from '@/lib/settings-store';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import { getAutoArchiveTaskIds } from '@/lib/auto-archive';
+import { DEVICE_SCOPE, reportSyncRecovered, reportSyncWarning } from '@/lib/sync-warning';
+import { useAuth } from './auth-provider';
 
 /**
  * Applies user settings as global CSS classes / variables on the document.
@@ -18,6 +20,8 @@ import { getAutoArchiveTaskIds } from '@/lib/auto-archive';
 export function SettingsEffects() {
   const settings = useSettingsStore((s) => s.settings);
   const { setTheme } = useTheme();
+  const { user } = useAuth();
+  const userId = user?.uid || null;
   const pendingArchiveIds = useRef(new Set<string>());
 
   // Account-scoped settings are authoritative across hydration and switches.
@@ -93,18 +97,20 @@ export function SettingsEffects() {
 
       ids.forEach((id) => pendingArchiveIds.current.delete(id));
       if (failed.length > 0) {
-        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-          detail: {
-            message: failed.length === 1
-              ? 'A completed task could not be auto-archived. It is still safe in your task list.'
-              : `${failed.length} completed tasks could not be auto-archived. They are still safe in your task list.`,
-          },
-        }));
+        reportSyncWarning({
+          key: 'items:auto-archive',
+          userId: userId ?? DEVICE_SCOPE,
+          message: failed.length === 1
+            ? 'A completed task could not be auto-archived. It is still safe in your task list.'
+            : `${failed.length} completed tasks could not be auto-archived. They are still safe in your task list.`,
+        });
+      } else {
+        reportSyncRecovered({ key: 'items:auto-archive', userId: userId ?? DEVICE_SCOPE });
       }
     };
 
     void archive();
-  }, [items, autoArchiveDays]);
+  }, [items, autoArchiveDays, userId]);
 
   return null;
 }

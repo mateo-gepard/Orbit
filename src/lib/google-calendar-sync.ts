@@ -20,6 +20,7 @@ import type { OrbitItem } from './types';
 import { useSettingsStore } from './settings-store';
 import { scopedStorageKey } from './account-storage';
 import { removeLocalStorageVerified, writeLocalStorageVerified } from './verified-storage';
+import { reportSyncRecovered, reportSyncWarning as emitSyncWarning } from './sync-warning';
 
 // ═══════════════════════════════════════════════════════════
 // Sync State
@@ -65,9 +66,17 @@ function isOutboundContextCurrent(userId: string, generation: number): boolean {
 }
 
 function reportSyncWarning(message: string): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('threadmap:sync-warning', { detail: { message } }));
-  }
+  if (!syncOwnerId) return;
+  emitSyncWarning({
+    key: 'calendar:outbound',
+    userId: syncOwnerId,
+    generation: syncGeneration,
+    message,
+  });
+}
+
+function reportOutboundRecovered(userId: string, generation: number): void {
+  reportSyncRecovered({ key: 'calendar:outbound', userId, generation });
 }
 
 function outboundFailureMessage(): string {
@@ -485,7 +494,10 @@ async function performOutboundFlush(
   }
 
   const contextCurrent = isOutboundContextCurrent(userId, generation);
-  if (failed > 0 && contextCurrent) reportSyncWarning(outboundFailureMessage());
+  if (contextCurrent) {
+    if (failed > 0) reportSyncWarning(outboundFailureMessage());
+    else reportOutboundRecovered(userId, generation);
+  }
   return { success: failed === 0 && contextCurrent, pushed, failed };
 }
 

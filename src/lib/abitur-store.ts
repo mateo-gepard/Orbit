@@ -24,6 +24,7 @@ import {
 import { saveToolData, ToolDataConflictError } from './firestore';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
+import { reportSyncRecovered, reportSyncWarning } from './sync-warning';
 
 // ═══════════════════════════════════════════════════════════
 // Debounced Firestore sync — saves after 500ms of inactivity
@@ -54,6 +55,7 @@ function scheduleSave(profile: AbiturProfile) {
           && _scopeGeneration === scheduledGeneration
           && revision === _localRevision) {
         useAbiturStore.setState({ cloudDirty: false });
+        reportSyncRecovered({ key: 'tool:abitur', userId: scheduledUserId });
       }
     } catch (error) {
       console.error('[THREADMAP] Failed to save Abitur data:', error);
@@ -66,11 +68,12 @@ function scheduleSave(profile: AbiturProfile) {
         useAbiturStore.setState({ cloudDirty: true });
         return;
       }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
-          detail: { message: 'Abitur changes are saved on this device, but cloud sync will retry.' },
-        }));
-      }
+      reportSyncWarning({
+        key: 'tool:abitur',
+        userId: scheduledUserId,
+        toolId: 'abitur',
+        message: 'Abitur changes are saved on this device, but cloud sync will retry.',
+      });
       _saveTimer = setTimeout(() => void persist(), 5_000);
     }
   };
