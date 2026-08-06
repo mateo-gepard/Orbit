@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:rules": "firebase emulators:exec --project demo-threadmap-rules-test --only firestore,storage \"vitest run src/test/firebase-rules.test.ts\"",
     "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage",
-    "deploy:functions": "firebase deploy --only functions"
+    "deploy:functions": "firebase deploy --only functions:sendBriefingNotifications,functions:upsertThreadmapPushDevice,functions:updateThreadmapPushSchedule,functions:deleteThreadmapPushDevice,functions:consumeThreadmapScrapeQuota,functions:repairThreadmapHierarchy,functions:deleteThreadmapItem,functions:deleteThreadmapAttachment,functions:beginThreadmapUpload,functions:attachThreadmapUpload,functions:cleanupThreadmapUpload,functions:cleanupDeletedItemFiles,functions:exportThreadmapAccount,functions:deleteThreadmapAccount,functions:retryThreadmapAccountDeletions",
+    "deploy:functions:unsafe-prune": "firebase deploy --only functions"
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.19.0",

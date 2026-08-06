@@ -171,7 +171,6 @@ storage.rules           Firebase Storage security rules
 - [LINKING_SYSTEM.md](./LINKING_SYSTEM.md): item relationships, graph utilities, and link APIs.
 - [BACKEND_SETUP.md](./BACKEND_SETUP.md): Firebase, Storage, Functions, push, and deployment setup.
 - [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md): production launch checklist.
-- [BADGE_SYSTEM.md](./BADGE_SYSTEM.md): badge and achievement system notes.
 - [STORAGE_CORS_SETUP.md](./STORAGE_CORS_SETUP.md): Storage CORS configuration.
 
 ## Firebase Deployment
