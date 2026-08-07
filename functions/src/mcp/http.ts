@@ -5,7 +5,7 @@ import type { OAuthPrincipal, ThreadmapOAuthService } from './oauth';
 import { OAuthProtocolError, createAuthorizationErrorRedirect, serializeOAuthError } from './oauth';
 import { MCP_PUBLIC_PATHS, type ResolvedMcpEndpoints } from './config';
 import { buildThreadmapMcpServer } from './sdk-server';
-import { parseBearerToken, safeHeaderValue } from './security';
+import { parseBearerToken } from './security';
 
 /**
  * Web-standard HTTP surface for the Threadmap MCP integration.
@@ -222,8 +222,13 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
       principal = await oauth.authenticateAccessToken(token);
     } catch (error) {
       const serialized = serializeOAuthError(error);
+      // Emit the challenge verbatim. It is built server-side from an already
+      // validated HTTPS URL, and `createBearerChallenge` sanitizes the parts it
+      // interpolates — running it through `safeHeaderValue` here would strip the
+      // RFC 9728 quotes around `resource_metadata` and leave a value clients
+      // cannot parse.
       return jsonResponse(serialized.status, serialized.body, {
-        'WWW-Authenticate': safeHeaderValue(oauth.bearerChallenge()),
+        'WWW-Authenticate': oauth.bearerChallenge(),
       });
     }
 

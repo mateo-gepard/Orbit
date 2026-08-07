@@ -144,12 +144,19 @@ test('an unauthenticated MCP call is refused with a discovery pointer', async ()
 
 test('a malformed or unknown bearer token is refused', async () => {
   const { router } = buildHarness();
+  const expectedChallenge =
+    `Bearer resource_metadata="${ORIGIN}${MCP_PUBLIC_PATHS.protectedResourceMetadata}"`;
+
   for (const authorization of ['Bearer not-a-token', 'Bearer tmat_aaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'Basic abc']) {
     const response = await router(
       postJson(MCP_PUBLIC_PATHS.mcp, { jsonrpc: '2.0', id: 1, method: 'ping' }, { authorization }),
     );
     assert.equal(response.status, 401, authorization);
-    assert.ok(response.headers.get('www-authenticate'), 'a challenge is always present');
+    // The quotes are load-bearing: RFC 9728 clients parse `resource_metadata="…"`,
+    // and an unquoted value leaves them unable to discover the metadata URL. This
+    // must hold on the rejected-token path exactly as it does on the absent-token
+    // path — the two build the header separately.
+    assert.equal(response.headers.get('www-authenticate'), expectedChallenge, authorization);
   }
 });
 
