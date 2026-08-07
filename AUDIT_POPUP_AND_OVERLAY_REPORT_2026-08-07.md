@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-07  
 **Current branch before latest fix:** `codex/backup-before-popup-fix-2026-08-07-0944` (`8258cd4`)  
-**Active fix branch:** `codex/fix-popup-menu-logic-2026-08-07` (`073ed1a`)
+**Active fix branch:** `codex/fix-popup-menu-logic-2026-08-07` (`c9bb495`)
 
 ## Scope
 
@@ -19,7 +19,6 @@
   - `npm run typecheck`
   - `npm run lint`
   - `npm run test src/components/notes/note-editor.test.ts src/components/notes/note-draft.test.ts`
-  - `npm run typecheck`
   - `npm run build`
 
 ## What changed
