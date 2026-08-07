@@ -5,6 +5,47 @@ import { fileURLToPath } from "node:url";
 const root = dirname(fileURLToPath(import.meta.url));
 const isDevelopment = process.env.NODE_ENV === "development";
 
+/**
+ * MCP transport routing.
+ *
+ * The MCP server runs as the `threadmapMcpGateway` Cloud Function, but clients
+ * discover it at the app's own origin — the OAuth metadata advertises
+ * `https://threadmap.app/register`, `/authorize`, `/token`, and so on. These
+ * rewrites are what make those paths reach the gateway.
+ *
+ * Without them every one of these routes falls through to the Next.js 404 page
+ * and answers with HTML, so a client's registration POST gets markup where it
+ * expects JSON and the connect flow fails at the first step. Deleting this
+ * block silently breaks every MCP integration; the endpoints are a published
+ * contract, not internal wiring.
+ */
+const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+const mcpGatewayOrigin = process.env.MCP_GATEWAY_ORIGIN
+  || process.env.NEXT_PUBLIC_MCP_GATEWAY_ORIGIN
+  || (projectId ? `https://us-central1-${projectId}.cloudfunctions.net/threadmapMcpGateway` : "");
+
+/** Paths the OAuth metadata advertises, each proxied to the gateway. */
+const MCP_GATEWAY_PATHS = [
+  "/mcp",
+  "/.well-known/oauth-authorization-server",
+  "/.well-known/oauth-protected-resource",
+  "/authorize",
+  "/register",
+  "/token",
+  "/revoke",
+];
+
+function buildMcpRewrites() {
+  // No gateway origin means no Firebase project is configured — a local or
+  // self-hosted run without MCP. Routing to an empty origin would be worse
+  // than not routing at all.
+  if (!mcpGatewayOrigin) return [];
+  return MCP_GATEWAY_PATHS.map((path) => ({
+    source: path,
+    destination: `${mcpGatewayOrigin}${path}`,
+  }));
+}
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""} https://accounts.google.com https://apis.google.com https://www.gstatic.com`,
@@ -36,6 +77,9 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   turbopack: {
     root,
+  },
+  async rewrites() {
+    return buildMcpRewrites();
   },
   async headers() {
     return [
