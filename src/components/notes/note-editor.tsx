@@ -271,6 +271,11 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
     });
   };
 
+  const handleSettingsOpenChange = useCallback((nextOpen: boolean) => {
+    if (actionPending) return;
+    setShowSettings(nextOpen);
+  }, [actionPending]);
+
   const handleDelete = () => {
     if (confirmBeforeDelete) setDeleteDialogOpen(true);
     else void performDelete();
@@ -368,7 +373,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
                 )}
               </div>
 
-              <Popover open={showSettings} onOpenChange={setShowSettings}>
+              <Popover open={showSettings} onOpenChange={handleSettingsOpenChange} modal>
                 <PopoverTrigger asChild>
                   <button
                     type="button"

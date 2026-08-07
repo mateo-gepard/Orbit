@@ -271,9 +271,9 @@ export default function TasksPage() {
   // Expanded groups
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
-  // Toolbar open states (mobile)
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  // Ensure only one task-menu popover can be open at once.
+  const [activeTaskMenu, setActiveTaskMenu] = useState<'none' | 'sort' | 'group'>('none');
+  const closeTaskMenus = () => setActiveTaskMenu('none');
 
   const allTags = getAllTags();
 
@@ -355,8 +355,7 @@ export default function TasksPage() {
     setSortKey('dueDate');
     setSortAsc(true);
     setCollapsedGroups(new Set());
-    setShowSortMenu(false);
-    setShowGroupMenu(false);
+    closeTaskMenus();
   };
 
   return (
@@ -483,11 +482,8 @@ export default function TasksPage() {
         <div className="flex flex-wrap items-center gap-2">
           {/* Sort dropdown */}
           <DropdownMenu
-            open={showSortMenu}
-            onOpenChange={(open) => {
-              setShowSortMenu(open);
-              if (open) setShowGroupMenu(false);
-            }}
+            open={activeTaskMenu === 'sort'}
+            onOpenChange={(open) => setActiveTaskMenu(open ? 'sort' : 'none')}
           >
             <DropdownMenuTrigger asChild>
               <button
@@ -513,6 +509,7 @@ export default function TasksPage() {
                     key={opt.key}
                     value={opt.key}
                     onSelect={() => {
+                      closeTaskMenus();
                       if (sortKey === opt.key) {
                         setSortAsc((ascending) => !ascending);
                       } else {
@@ -536,10 +533,9 @@ export default function TasksPage() {
 
           {/* Group dropdown */}
           <DropdownMenu
-            open={showGroupMenu}
+            open={activeTaskMenu === 'group'}
             onOpenChange={(open) => {
-              setShowGroupMenu(open);
-              if (open) setShowSortMenu(false);
+              setActiveTaskMenu(open ? 'group' : 'none');
             }}
           >
             <DropdownMenuTrigger asChild>
@@ -565,6 +561,7 @@ export default function TasksPage() {
               <DropdownMenuRadioGroup
                 value={groupBy}
                 onValueChange={(value) => {
+                  closeTaskMenus();
                   setGroupBy(value as GroupBy);
                   setCollapsedGroups(new Set());
                 }}
