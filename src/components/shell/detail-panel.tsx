@@ -1107,7 +1107,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           </button>
           
           {/* Keyboard-safe settings popover */}
-          <Popover open={optionsOpen} onOpenChange={setOptionsOpen} modal>
+          <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
