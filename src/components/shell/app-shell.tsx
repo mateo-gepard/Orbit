@@ -9,6 +9,11 @@ import { useSettingsStore } from '@/lib/settings-store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { haptic } from '@/lib/mobile';
+import {
+  MCP_CONSENT_PATH,
+  clearPendingConsentPath,
+  readPendingConsentPath,
+} from '@/lib/mcp-consent-return';
 import { Sidebar } from './sidebar';
 import { CommandBar } from './command-bar';
 import { MobileNav } from './mobile-nav';
@@ -52,10 +57,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!loading && !user && pathname !== '/') {
+    if (loading) return;
+
+    if (!user) {
+      // The MCP consent screen owns its own signed-out state: bouncing it to '/'
+      // would discard the one-time `?request=` token and dead-end the client's
+      // authorization flow.
+      if (pathname === MCP_CONSENT_PATH || pathname === '/') return;
       router.replace('/');
+      return;
+    }
+
+    // Returning from sign-in that started on the consent screen.
+    const pending = readPendingConsentPath();
+    if (pending) {
+      clearPendingConsentPath();
+      if (pathname !== pending) router.replace(pending);
     }
   }, [loading, pathname, router, user]);
+
+  // The MCP consent screen is a standalone decision surface. It renders without
+  // the sidebar, bottom nav, or detail panel so that the grant being approved is
+  // the only thing on screen — and because it provides its own <main>, wrapping
+  // it here would nest two landmarks. It also renders while auth is still
+  // resolving, since it shows its own progress and sign-in states.
+  if (pathname === MCP_CONSENT_PATH) {
+    return <>{children}</>;
+  }
 
   if (loading) {
     return <main className="min-h-screen bg-background text-foreground" />;

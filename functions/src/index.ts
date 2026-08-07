@@ -10,6 +10,14 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import * as webpush from 'web-push';
 import { isSafeAttachmentPath, safeAttachmentPaths } from './attachment-paths';
+import {
+  McpConfigurationError,
+  resolveMcpEndpoints,
+  resolveMcpOAuthConfiguration,
+} from './mcp/config';
+import { createMcpRouter, runMcpRouterOnNode, type McpRouter } from './mcp/http';
+import { createThreadmapOAuthService } from './mcp/oauth';
+import { ThreadmapDal } from './mcp/dal';
 
 initializeApp();
 
@@ -1927,6 +1935,75 @@ export const deleteThreadmapAccount = onCall(
       await recordAccountDeletionFailure(jobRef, job, error);
       return { success: true, pending: true };
     }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════
+// MCP endpoint (Streamable HTTP) and its OAuth authorization server
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Built once per instance and reused across invocations. Configuration errors
+ * are captured rather than thrown at module scope, so a missing `MCP_OWNER_UID`
+ * degrades this one endpoint to `503` instead of breaking every function in the
+ * deployment at cold start.
+ */
+let mcpRouterResult: { router: McpRouter; origin: string } | { error: Error } | undefined;
+
+function getMcpRouter(): { router: McpRouter; origin: string } | { error: Error } {
+  if (mcpRouterResult) return mcpRouterResult;
+  try {
+    const endpoints = resolveMcpEndpoints();
+    const oauth = createThreadmapOAuthService(db, resolveMcpOAuthConfiguration(endpoints));
+    mcpRouterResult = {
+      origin: endpoints.origin,
+      router: createMcpRouter({
+        oauth,
+        endpoints,
+        createDataAccess: (principal) => new ThreadmapDal(db, principal),
+        verifyOwnerIdToken: async (idToken) => (await auth.verifyIdToken(idToken)).uid,
+        log: (entry) => {
+          // Cloud Logging picks structured JSON off stdout. Only identifiers and
+          // outcomes are logged: never tokens, arguments, or item content.
+          console.log(JSON.stringify({ component: 'mcp', ...entry }));
+        },
+      }),
+    };
+  } catch (error) {
+    const wrapped = error instanceof Error ? error : new Error('MCP configuration failed.');
+    if (wrapped instanceof McpConfigurationError) {
+      console.error(`[THREADMAP MCP] ${wrapped.message}`);
+    } else {
+      console.error('[THREADMAP MCP] The MCP endpoint could not be configured:', wrapped);
+    }
+    mcpRouterResult = { error: wrapped };
+  }
+  return mcpRouterResult;
+}
+
+export const threadmapMcp = onRequest(
+  {
+    region: 'us-central1',
+    // Claude.ai allows up to 300s per tool call; staying under it means a slow
+    // call surfaces as a Threadmap timeout rather than a host-side disconnect.
+    timeoutSeconds: 120,
+    memory: '512MiB',
+    // Every MCP request is authorized by an opaque bearer token this server
+    // issued, so no additional invoker restriction applies.
+    invoker: 'public',
+    cors: false,
+  },
+  async (request, response) => {
+    const resolved = getMcpRouter();
+    if ('error' in resolved) {
+      response.setHeader('Cache-Control', 'no-store');
+      response.status(503).json({
+        error: 'temporarily_unavailable',
+        error_description: 'The Threadmap MCP endpoint is not configured.',
+      });
+      return;
+    }
+    await runMcpRouterOnNode(resolved.router, request, response, resolved.origin);
   }
 );
 

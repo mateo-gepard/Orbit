@@ -481,14 +481,47 @@ function decodeHtmlEntity(entity: string): string {
   return named[entity.toLowerCase()] ?? '';
 }
 
-export function htmlToPlainText(value: unknown, maximum: number = MCP_LIMITS.outputContent): string {
-  if (typeof value !== 'string' || !value) return '';
-  const plain = value
+/**
+ * Item content is plain text in current Threadmap builds; only legacy records hold
+ * HTML. Markup stripping is therefore gated twice, because a single `<` in prose or
+ * code must never swallow the text up to the next `>`:
+ *   1. Tag matching is restricted to real HTML element names, so `<result>`,
+ *      `Array<string>`, `5<10`, and `<name@example.com>` survive intact.
+ *   2. The HTML passes run at all only when a recognized tag is present, which also
+ *      keeps literal entities such as `&amp;` unchanged in plain-text notes.
+ */
+const HTML_TAG_NAMES = [
+  'a', 'abbr', 'address', 'article', 'aside', 'b', 'bdi', 'bdo', 'blockquote', 'br',
+  'button', 'caption', 'cite', 'code', 'col', 'colgroup', 'data', 'datalist', 'dd',
+  'del', 'details', 'dfn', 'dialog', 'div', 'dl', 'dt', 'em', 'embed', 'fieldset',
+  'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'head', 'header', 'hgroup', 'hr', 'html', 'i', 'iframe', 'img', 'input', 'ins',
+  'kbd', 'label', 'legend', 'li', 'link', 'main', 'map', 'mark', 'menu', 'meta',
+  'meter', 'nav', 'noscript', 'object', 'ol', 'optgroup', 'option', 'output', 'p',
+  'param', 'picture', 'pre', 'progress', 'q', 'rp', 'rt', 'ruby', 's', 'samp',
+  'script', 'search', 'section', 'select', 'slot', 'small', 'source', 'span',
+  'strong', 'style', 'sub', 'summary', 'sup', 'table', 'tbody', 'td', 'template',
+  'textarea', 'tfoot', 'th', 'thead', 'time', 'title', 'tr', 'track', 'u', 'ul',
+  'var', 'video', 'wbr',
+].join('|');
+const HTML_TAG_SOURCE = `</?(?:${HTML_TAG_NAMES})(?:\\s[^>]{0,2000})?\\s*/?>`;
+/** Non-global so `.test()` cannot carry `lastIndex` between calls. */
+const HTML_MARKUP_DETECTOR = new RegExp(HTML_TAG_SOURCE, 'i');
+const HTML_TAG = new RegExp(HTML_TAG_SOURCE, 'gi');
+const HTML_LINE_BREAK_TAG = /<(?:br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/blockquote)\s*\/?>/gi;
+
+function stripHtmlMarkup(value: string): string {
+  return value
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
-    .replace(/<(?:br|\/p|\/div|\/li|\/h[1-6]|\/tr)\s*\/?>/gi, '\n')
-    .replace(/<[^>]{0,2000}>/g, ' ')
-    .replace(/&([A-Za-z]+|#\d+|#x[0-9A-Fa-f]+);/g, (_match, entity: string) => decodeHtmlEntity(entity))
+    .replace(HTML_LINE_BREAK_TAG, '\n')
+    .replace(HTML_TAG, ' ')
+    .replace(/&([A-Za-z]+|#\d+|#x[0-9A-Fa-f]+);/g, (_match, entity: string) => decodeHtmlEntity(entity));
+}
+
+export function htmlToPlainText(value: unknown, maximum: number = MCP_LIMITS.outputContent): string {
+  if (typeof value !== 'string' || !value) return '';
+  const plain = (HTML_MARKUP_DETECTOR.test(value) ? stripHtmlMarkup(value) : value)
     .replace(/\r/g, '')
     .replace(/[ \t]+/g, ' ')
     .replace(/ *\n */g, '\n')

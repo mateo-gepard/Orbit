@@ -245,6 +245,23 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // MCP integration state is written exclusively by the authenticated Cloud
+    // Function, which uses the Admin SDK and bypasses these rules. Browser access
+    // is denied on purpose: an access token, refresh token, or authorization code
+    // must never be readable by a signed-in client, and quota and audit records
+    // must not be forgeable. These blocks are redundant with the catch-all below
+    // and exist so the intent is explicit rather than inferred.
+    match /mcpOAuthClients/{clientId} { allow read, write: if false; }
+    match /mcpOAuthAuthorizationRequests/{requestHash} { allow read, write: if false; }
+    match /mcpOAuthAuthorizationCodes/{codeHash} { allow read, write: if false; }
+    match /mcpOAuthAccessTokens/{tokenHash} { allow read, write: if false; }
+    match /mcpOAuthRefreshTokens/{tokenHash} { allow read, write: if false; }
+    match /mcpOAuthTokenFamilies/{familyId} { allow read, write: if false; }
+    match /mcpIdempotency/{recordId} { allow read, write: if false; }
+    match /mcpDeleteConfirmations/{tokenHash} { allow read, write: if false; }
+    match /mcpRateLimits/{quotaId} { allow read, write: if false; }
+    match /mcpAuditLogs/{auditId} { allow read, write: if false; }
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -18,7 +18,11 @@
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log",
-        "*.local"
+        "*.local",
+        "lib/**/*.test.js",
+        "lib/**/*.test.js.map",
+        "lib/**/memory-firestore.js",
+        "lib/**/memory-firestore.js.map"
       ]
     }
   ],

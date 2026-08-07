@@ -2,5 +2,27 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "npm ci",
-  "buildCommand": "npm run build"
+  "buildCommand": "npm run build",
+  "rewrites": [
+    {
+      "source": "/mcp",
+      "destination": "https://us-central1-orbit-9e0b6.cloudfunctions.net/threadmapMcp/mcp"
+    },
+    {
+      "source": "/.well-known/oauth-authorization-server",
+      "destination": "https://us-central1-orbit-9e0b6.cloudfunctions.net/threadmapMcp/.well-known/oauth-authorization-server"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "https://us-central1-orbit-9e0b6.cloudfunctions.net/threadmapMcp/.well-known/oauth-protected-resource"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource/mcp",
+      "destination": "https://us-central1-orbit-9e0b6.cloudfunctions.net/threadmapMcp/.well-known/oauth-protected-resource/mcp"
+    },
+    {
+      "source": "/api/mcp/oauth/:path*",
+      "destination": "https://us-central1-orbit-9e0b6.cloudfunctions.net/threadmapMcp/api/mcp/oauth/:path*"
+    }
+  ]
 }
