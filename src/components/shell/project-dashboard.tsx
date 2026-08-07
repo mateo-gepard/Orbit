@@ -48,6 +48,11 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+type OptionsMenuState = {
+  optionsOpen: boolean;
+  setOptionsOpen: (open: boolean) => void;
+};
+
 export function ProjectDashboard() {
   const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags } = useOrbitStore();
   const { user } = useAuth();
@@ -62,7 +67,8 @@ export function ProjectDashboard() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showLinkGraph, setShowLinkGraph] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
-  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [optionsOpenDesktop, setOptionsOpenDesktop] = useState(false);
+  const [optionsOpenMobile, setOptionsOpenMobile] = useState(false);
   const [doneCollapsed, setDoneCollapsed] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const { confirmBeforeDelete, archiveInsteadOfDelete, dateFormat, timeFormat } = useSettingsStore((state) => state.settings);
@@ -217,7 +223,18 @@ export function ProjectDashboard() {
     { locale }
   );
 
-  const content = (
+  useEffect(() => {
+    setOptionsOpenDesktop(false);
+    setOptionsOpenMobile(false);
+  }, [item?.id]);
+
+  useEffect(() => {
+    if (detailPanelOpen) return;
+    setOptionsOpenDesktop(false);
+    setOptionsOpenMobile(false);
+  }, [detailPanelOpen]);
+
+  const renderContent = ({ optionsOpen, setOptionsOpen }: OptionsMenuState) => (
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
@@ -700,7 +717,10 @@ export function ProjectDashboard() {
         'hidden lg:block border-l border-border/60 bg-background transition-all duration-200',
         detailPanelOpen ? 'w-96' : 'w-0 overflow-hidden'
       )}>
-        {content}
+        {renderContent({
+          optionsOpen: optionsOpenDesktop,
+          setOptionsOpen: setOptionsOpenDesktop,
+        })}
       </div>
 
       {/* Mobile */}
@@ -725,7 +745,10 @@ export function ProjectDashboard() {
               )} />
             </div>
             <div className="h-full overflow-hidden pt-14">
-              {content}
+              {renderContent({
+                optionsOpen: optionsOpenMobile,
+                setOptionsOpen: setOptionsOpenMobile,
+              })}
             </div>
           </SheetContent>
         </Sheet>

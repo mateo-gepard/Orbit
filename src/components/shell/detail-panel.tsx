@@ -111,6 +111,11 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+type OptionsMenuState = {
+  optionsOpen: boolean;
+  setOptionsOpen: (open: boolean) => void;
+};
+
 type DetailSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
 function BufferedTextFields({
@@ -361,7 +366,9 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
   const [calendarAuthorizationLoading, setCalendarAuthorizationLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pendingTypeChange, setPendingTypeChange] = useState<ItemType | null>(null);
-  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [optionsOpenDesktop, setOptionsOpenDesktop] = useState(false);
+  const [optionsOpenMobile, setOptionsOpenMobile] = useState(false);
+  const isOptionsOpen = optionsOpenDesktop || optionsOpenMobile;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const detailMountedRef = useRef(false);
@@ -379,7 +386,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
       : [];
 
   useEffect(() => {
-    if (!optionsOpen || item?.type !== 'event' || hasCalendarPermission()) {
+    if (!isOptionsOpen || item?.type !== 'event' || hasCalendarPermission()) {
       if (hasCalendarPermission()) setCalendarAuthorizationReady(true);
       return;
     }
@@ -398,7 +405,12 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
     return () => {
       cancelled = true;
     };
-  }, [item?.id, item?.type, optionsOpen]);
+  }, [item?.id, item?.type, isOptionsOpen]);
+  useEffect(() => {
+    if (detailPanelOpen) return;
+    setOptionsOpenDesktop(false);
+    setOptionsOpenMobile(false);
+  }, [detailPanelOpen]);
 
   // Link graph state
   const [showLinkGraph, setShowLinkGraph] = useState(false);
@@ -1044,7 +1056,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
     }
   };
 
-  const content = (
+  const renderContent = ({ optionsOpen, setOptionsOpen }: OptionsMenuState) => (
     <div className="flex h-full flex-col">
       {/* ── Header ── */}
       <div className="flex items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3.5 backdrop-blur-xl">
@@ -1722,7 +1734,10 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
         aria-label={t('detail.itemDetails')}
         tabIndex={detailPanelOpen ? -1 : undefined}
       >
-        {content}
+        {renderContent({
+          optionsOpen: optionsOpenDesktop,
+          setOptionsOpen: setOptionsOpenDesktop,
+        })}
       </div>
 
       {/* Mobile — full-screen sheet */}
@@ -1753,7 +1768,10 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             )} />
           </div>
           <div className="h-full overflow-hidden pt-14">
-            {content}
+            {renderContent({
+              optionsOpen: optionsOpenMobile,
+              setOptionsOpen: setOptionsOpenMobile,
+            })}
           </div>
         </SheetContent>
       </Sheet>
