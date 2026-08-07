@@ -858,11 +858,19 @@ export class ThreadmapOAuthService {
     } catch {
       throw redirectingError('invalid_scope', 'scope is invalid.');
     }
-    if (scopes.length < 1 || !areScopesAllowed(scopes, client.scopes)) {
-      throw redirectingError('invalid_scope', 'The client is not allowed to request these scopes.');
+    // Narrow to what this client actually holds, for the same reason registration
+    // does (RFC 6749 §3.3): hosts re-request the full advertised scope set here,
+    // having been granted less at registration. The consent screen then shows the
+    // narrowed set — which is what the user is actually being asked to approve —
+    // and the token response reports it back. Downstream of this point every scope
+    // check stays a strict subset test, because from here on the set has been
+    // validated and any mismatch is tampering rather than host variance.
+    scopes = scopes.filter((scope) => client.scopes.includes(scope));
+    if (!client.grantTypes.includes('refresh_token')) {
+      scopes = scopes.filter((scope) => scope !== 'offline_access');
     }
-    if (scopes.includes('offline_access') && !client.grantTypes.includes('refresh_token')) {
-      throw redirectingError('invalid_scope', 'offline_access is not available to this client.');
+    if (scopes.length < 1) {
+      throw redirectingError('invalid_scope', 'The client holds none of the requested scopes.');
     }
 
     const now = this.now();

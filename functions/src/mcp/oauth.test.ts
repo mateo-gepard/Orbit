@@ -293,6 +293,27 @@ test('registration narrows an over-broad scope request instead of refusing it', 
     assert.deepEqual(noRefresh.scope.split(' '), ['threadmap.read']);
     assert.deepEqual(noRefresh.grant_types, ['authorization_code']);
 
+    // The same narrowing must hold at the authorize step, where a host re-requests
+    // the full advertised set after being granted less at registration. Rejecting
+    // here sent `error=invalid_scope` back to the callback and dead-ended the
+    // connector even though registration had succeeded.
+    const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    const authorization = await service.startAuthorization({
+      response_type: 'code',
+      client_id: registered.client_id,
+      redirect_uri: CLAUDE_REDIRECT_URI,
+      resource: configuration.resource,
+      scope: 'threadmap.read threadmap.write threadmap.delete offline_access',
+      state: 'client-state',
+      code_challenge: createPkceS256Challenge(verifier),
+      code_challenge_method: 'S256',
+    });
+    const handle = new URL(authorization.location).searchParams.get('request');
+    if (!handle) throw new Error('Missing authorization request handle.');
+    const view = await service.getAuthorizationRequest(handle, configuration.ownerUid);
+    // The user is asked to approve only what is actually grantable.
+    assert.deepEqual(view.scopes.sort(), ['offline_access', 'threadmap.read']);
+
     // Nothing grantable at all is still a refusal.
     await assert.rejects(
       () => service.registerClient({
