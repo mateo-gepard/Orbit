@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-07  
 **Current branch before latest fix:** `codex/backup-before-popup-fix-2026-08-07-0944` (`8258cd4`)  
-**Active fix branch:** `codex/fix-popup-menu-logic-2026-08-07` (`c9bb495`)
+**Active fix branch:** `codex/fix-popup-menu-logic-2026-08-07` (`df86b99`)
 
 ## Scope
 
