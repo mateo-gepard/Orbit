@@ -6,6 +6,8 @@ import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
 import { cn, getLocale } from '@/lib/utils';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { searchItems } from '@/lib/item-search';
 import { format, isValid } from 'date-fns';
 import type { NoteSubtype } from '@/lib/types';
 import { NoteEditor } from '@/components/notes/note-editor';
@@ -60,12 +62,8 @@ export default function NotesPage() {
 		const categorized = filter === 'all'
 			? all
 			: all.filter((i) => i.noteSubtype === filter || i.tags?.includes(filter));
-			const query = searchQuery.trim().toLocaleLowerCase(lang);
-		if (!query) return categorized;
-		return categorized.filter((note) =>
-			note.title.toLocaleLowerCase().includes(query) ||
-			(note.content || '').toLocaleLowerCase().includes(query)
-		);
+		// The shared definition — tags match here too now, as they do everywhere.
+		return searchItems(categorized, searchQuery, lang);
 		}, [items, filter, lang, searchQuery]);
 
 	const editingNote = editingNoteId
@@ -325,24 +323,14 @@ export default function NotesPage() {
 			</div>
 
 			{/* Filter tabs — scrollable on mobile */}
-			<div className="-mx-4 flex gap-0.5 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
-				{FILTERS.map((f) => (
-					<button
-						key={f.value}
-						type="button"
-						onClick={() => setFilter(f.value)}
-						aria-pressed={filter === f.value}
-						className={cn(
-							'rounded-xl lg:rounded-md px-3 lg:px-2.5 py-1.5 lg:py-1 text-[13px] lg:text-[12px] font-medium transition-colors shrink-0 active:scale-95',
-							filter === f.value
-								? 'bg-foreground text-background'
-								: 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]'
-						)}
-					>
-						{t(f.labelKey)}
-					</button>
-				))}
-			</div>
+			<SegmentedControl
+				variant="pill"
+				label={t('notes.filterLabel')}
+				value={filter}
+				onChange={setFilter}
+				options={FILTERS.map((f) => ({ value: f.value, label: t(f.labelKey) }))}
+				className="-mx-4 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0"
+			/>
 
 			<div className="relative">
 				<Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/45" />

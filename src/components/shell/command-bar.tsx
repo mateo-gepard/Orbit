@@ -16,6 +16,7 @@ import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { parseCommand } from '@/lib/command-parser';
 import { resolveMention } from '@/lib/mention-resolution';
+import { searchItems } from '@/lib/item-search';
 import { createItem, linkItems } from '@/lib/firestore';
 import { hasCalendarPermission } from '@/lib/google-calendar';
 import { flushPendingGoogleCalendarEvents } from '@/lib/google-calendar-sync';
@@ -43,6 +44,9 @@ const COMMAND_ROW =
   'mx-1.5 flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[14px] outline-none transition-colors lg:py-2 lg:text-[13px] focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-wait disabled:opacity-50';
 const COMMAND_ROW_ACTIVE = 'bg-foreground/[0.055] shadow-[var(--shadow-hairline)]';
 const COMMAND_ROW_IDLE = 'hover:bg-foreground/[0.035] active:bg-foreground/[0.055]';
+
+/** The command bar shows a slice; the rest are reachable from a page. */
+const MAX_COMMAND_RESULTS = 6;
 
 /**
  * The capture language, spelled out where capture happens. It was previously
@@ -154,16 +158,15 @@ export function CommandBar() {
 
   const parsed = useMemo(() => parseCommand(input, { knownTitles }), [input, knownTitles]);
 
-  const searchQuery = input.toLowerCase().replace(/^\/\w+\s*/, '');
-  const filteredItems = searchQuery
-    ? items
-        .filter(
-          (item) =>
-            item.title.toLowerCase().includes(searchQuery) ||
-            item.tags?.some((t) => t.includes(searchQuery))
-        )
-        .slice(0, 6)
+  // One search definition for the whole app, so note bodies are reachable from
+  // the global command bar — the one place a user would look for them — and
+  // archived items no longer appear here unlabelled.
+  const searchQuery = input.replace(/^\/\w+\s*/, '');
+  const searchMatches = searchQuery.trim()
+    ? searchItems(items, searchQuery, language)
     : [];
+  const filteredItems = searchMatches.slice(0, MAX_COMMAND_RESULTS);
+  const hiddenResultCount = Math.max(0, searchMatches.length - filteredItems.length);
 
   const submitCommand = async () => {
     if (!input.trim() || !user) return;
@@ -637,6 +640,11 @@ export function CommandBar() {
                     </button>
                   );
                 })}
+                {hiddenResultCount > 0 && (
+                  <p className="px-4 py-1.5 text-[10px] text-muted-foreground/40">
+                    {t('commandBar.moreResults', { count: hiddenResultCount })}
+                  </p>
+                )}
               </div>
             )}
 

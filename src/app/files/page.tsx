@@ -5,7 +5,8 @@ import { useOrbitStore } from '@/lib/store';
 import { FileText, Search, Download, Eye } from 'lucide-react';
 import { downloadProjectFile, formatFileSize, getFileIcon } from '@/lib/storage';
 import { Input } from '@/components/ui/input';
-import { cn, getLocale } from '@/lib/utils';
+import { getLocale } from '@/lib/utils';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { format, isValid } from 'date-fns';
 import type { OrbitItem, ProjectFile } from '@/lib/types';
 import { FileViewer } from '@/components/files/file-viewer';
@@ -109,39 +110,21 @@ export default function FilesPage() {
         {/* Project Filter */}
         {itemsWithFiles.length > 0 && (
           <div className="px-4 lg:px-8 py-4 border-b border-border/40">
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 lg:mx-0 lg:px-0">
-              <button
-                type="button"
-                onClick={() => setSelectedProject(null)}
-                aria-pressed={!selectedProject}
-                className={cn(
-                  'px-2.5 py-1.5 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors',
-                  !selectedProject
-                    ? 'bg-foreground text-background'
-                    : 'bg-foreground/[0.05] text-muted-foreground hover:bg-foreground/[0.1]'
-                )}
-              >
-                {t('files.allProjects')}
-              </button>
-              {itemsWithFiles.map(project => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => setSelectedProject(project.id)}
-                  aria-pressed={selectedProject === project.id}
-                  className={cn(
-                    'px-2.5 py-1.5 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors flex items-center gap-2',
-                    selectedProject === project.id
-                      ? 'bg-foreground text-background'
-                      : 'bg-foreground/[0.05] text-muted-foreground hover:bg-foreground/[0.1]'
-                  )}
-                >
-                  <span>{project.emoji || '📁'}</span>
-                  <span>{project.title}</span>
-                  <span className="text-xs opacity-60">({project.fileCount})</span>
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              variant="pill"
+              label={t('files.filterLabel')}
+              value={selectedProject ?? '__all'}
+              onChange={(value) => setSelectedProject(value === '__all' ? null : value)}
+              options={[
+                { value: '__all', label: t('files.allProjects') },
+                ...itemsWithFiles.map(owner => ({
+                  value: owner.id,
+                  label: `${owner.emoji || '📁'} ${owner.title}`,
+                  badge: owner.fileCount,
+                })),
+              ]}
+              className="-mx-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:px-0"
+            />
           </div>
         )}
 

@@ -1,4 +1,4 @@
-import { format, subDays, startOfWeek, addDays, isToday, differenceInCalendarDays, startOfDay } from 'date-fns';
+import { format, subDays, startOfWeek, addDays, differenceInCalendarDays, startOfDay } from 'date-fns';
 import type { OrbitItem } from './types';
 
 /**

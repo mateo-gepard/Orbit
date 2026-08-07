@@ -20,8 +20,10 @@ import {
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem, deleteItem, updateItem } from '@/lib/firestore';
+import { searchItems } from '@/lib/item-search';
 import { useBulkSelection } from '@/lib/hooks/use-bulk-selection';
 import { BulkActionBar, type BulkAction } from '@/components/items/bulk-action-bar';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { toast } from 'sonner';
 import { ItemRow } from '@/components/items/item-row';
 import { cn } from '@/lib/utils';
@@ -307,17 +309,16 @@ export default function TasksPage() {
       tasks = tasks.filter((i) => i.priority === priorityFilter);
     }
 
-    // Search
+    // Search — the shared definition, so a task's notes are findable here too.
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      tasks = tasks.filter((i) => i.title.toLowerCase().includes(q));
+      tasks = searchItems(tasks, searchQuery, lang, { includeArchived: true });
     }
 
     // Sort
     tasks = sortTasks(tasks, sortKey, sortAsc);
 
     return tasks;
-  }, [items, statusFilter, tagFilter, priorityFilter, searchQuery, sortKey, sortAsc]);
+  }, [items, statusFilter, tagFilter, priorityFilter, searchQuery, sortKey, sortAsc, lang]);
 
   // Group
   const groups = useMemo(
@@ -457,22 +458,18 @@ export default function TasksPage() {
       <div className="space-y-2.5">
         {/* Status tabs */}
         <div className="-mx-4 flex items-center gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
-          {(['active', 'waiting', 'done', 'all'] as FilterStatus[]).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setStatusFilter(s)}
-              aria-pressed={statusFilter === s}
-              className={cn(
-                'mobile-touch-target shrink-0 rounded-xl px-3 py-1.5 text-[12px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
-                statusFilter === s
-                  ? 'bg-foreground text-background'
-                  : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
-              )}
-            >
-              {s === 'active' ? t('filter.active') : s === 'waiting' ? t('status.waiting') : s === 'done' ? t('filter.completed') : t('filter.all')}
-            </button>
-          ))}
+          <SegmentedControl
+            variant="pill"
+            label={t('tasks.statusFilterLabel')}
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: 'active' as FilterStatus, label: t('filter.active') },
+              { value: 'waiting' as FilterStatus, label: t('status.waiting') },
+              { value: 'done' as FilterStatus, label: t('filter.completed') },
+              { value: 'all' as FilterStatus, label: t('filter.all') },
+            ]}
+          />
 
           <div className="h-4 w-px bg-border/40 mx-1 shrink-0" />
 

@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, addWeeks, isSameMonth, getDay } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate, getWeekCompletionRate } from '@/lib/habits';
 import { QuickCreateDialog } from '@/components/items/quick-create-dialog';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { formatHabitTime } from '@/lib/habit-reminders';
 import type { OrbitItem } from '@/lib/types';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
@@ -322,62 +323,26 @@ export default function HabitsPage() {
           )}
 
           {/* Status filter — so a paused habit is still reachable. */}
-          <div
-            className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5"
-            role="group"
-            aria-label={t('habits.filterLabel')}
-          >
-            {FILTERS.map(({ key, labelKey }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setFilter(key)}
-                aria-pressed={filter === key}
-                className={cn(
-                  'mobile-touch-target flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all lg:min-h-0',
-                  filter === key
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground/60 hover:text-foreground'
-                )}
-              >
-                {t(labelKey)}
-                {key === 'paused' && pausedCount > 0 && (
-                  <span className="tabular-nums text-[10px] text-muted-foreground/50">{pausedCount}</span>
-                )}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label={t('habits.filterLabel')}
+            value={filter}
+            onChange={setFilter}
+            options={FILTERS.map(({ key, labelKey }) => ({
+              value: key,
+              label: t(labelKey),
+              ...(key === 'paused' && pausedCount > 0 ? { badge: pausedCount } : {}),
+            }))}
+          />
           {/* View mode toggle */}
-          <div className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5" role="group" aria-label={t('habits.calendarView')}>
-            <button
-              type="button"
-              onClick={() => setViewMode('week')}
-              aria-pressed={viewMode === 'week'}
-              className={cn(
-                'mobile-touch-target flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all lg:min-h-0',
-                viewMode === 'week'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground/60 hover:text-foreground'
-              )}
-            >
-              <CalendarDays className="h-3.5 w-3.5" />
-              {t('habits.week')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('month')}
-              aria-pressed={viewMode === 'month'}
-              className={cn(
-                'mobile-touch-target flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all lg:min-h-0',
-                viewMode === 'month'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground/60 hover:text-foreground'
-              )}
-            >
-              <Calendar className="h-3.5 w-3.5" />
-              {t('habits.month')}
-            </button>
-          </div>
+          <SegmentedControl
+            label={t('habits.calendarView')}
+            value={viewMode}
+            onChange={setViewMode}
+            options={[
+              { value: 'week', label: t('habits.week'), icon: CalendarDays },
+              { value: 'month', label: t('habits.month'), icon: Calendar },
+            ]}
+          />
           <button
             type="button"
             onClick={() => { setCreateError(null); setCreateDialogOpen(true); }}

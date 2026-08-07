@@ -99,9 +99,8 @@ export function Sidebar() {
   const settingsBio = useSettingsStore((s) => s.settings.bio);
   const showProfilePhoto = useSettingsStore((s) => s.settings.privacy.showProfilePhoto);
   const accentColor = useSettingsStore((s) => s.settings.accentColor);
-  const { t } = useTranslation();
+  const { t, tp } = useTranslation();
   const storeItems = useOrbitStore((s) => s.items);
-  const language = useSettingsStore((s) => s.settings.language);
   const affectedTagItemCount = deletingTag
     ? storeItems.filter((item) => item.tags?.includes(deletingTag)).length
     : 0;
@@ -186,7 +185,7 @@ export function Sidebar() {
 
   const sidebarPanel = (
       <aside
-        aria-label={language === 'de' ? 'Hauptnavigation' : 'Primary navigation'}
+        aria-label={t('sidebar.primaryNav')}
         className={cn(
           'flex h-full flex-col border-r border-sidebar-border/60 bg-sidebar/95 backdrop-blur-xl outline-none',
           isDesktop
@@ -201,12 +200,10 @@ export function Sidebar() {
         {!isDesktop && (
           <>
             <DialogPrimitive.Title className="sr-only">
-              {language === 'de' ? 'Hauptnavigation' : 'Primary navigation'}
+              {t('sidebar.primaryNav')}
             </DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">
-              {language === 'de'
-                ? 'Navigiere zu Bereichen und Werkzeugen oder erstelle einen neuen Eintrag.'
-                : 'Navigate to areas and tools, or create a new item.'}
+              {t('sidebar.primaryNavDesc')}
             </DialogPrimitive.Description>
           </>
         )}
@@ -225,7 +222,7 @@ export function Sidebar() {
             </span>
           </div>
           <Button
-            aria-label={language === 'de' ? 'Navigation schließen' : 'Close navigation'}
+            aria-label={t('sidebar.closeNav')}
             variant="ghost"
             size="icon"
             className="h-11 w-11 lg:hidden"
@@ -598,23 +595,17 @@ export function Sidebar() {
           <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[6px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 motion-reduce:animate-none" />
           <DialogPrimitive.Content className="surface-float fixed left-1/2 top-1/2 z-[70] grid w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl p-6 outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 motion-reduce:animate-none">
             <DialogPrimitive.Title className="text-lg font-semibold leading-none tracking-tight">
-              {language === 'de'
-                ? `Bereich „${deletingTag ?? ''}“ löschen?`
-                : `Delete “${deletingTag ?? ''}” area?`}
+              {t('sidebar.deleteAreaTitle', { tag: deletingTag ?? '' })}
             </DialogPrimitive.Title>
             <DialogPrimitive.Description className="text-sm leading-relaxed text-muted-foreground/75">
-              {language === 'de'
-                ? affectedTagItemCount === 0
-                  ? 'Der Bereich wird aus deiner Seitenleiste entfernt. Es sind keine Einträge betroffen.'
-                  : `Der Bereich wird aus der Seitenleiste entfernt und das Tag wird dauerhaft von ${affectedTagItemCount} ${affectedTagItemCount === 1 ? 'Eintrag' : 'Einträgen'} entfernt. Die Einträge selbst werden nicht gelöscht.`
-                : affectedTagItemCount === 0
-                  ? 'This area will be removed from your sidebar. No items are affected.'
-                  : `This area will be removed from your sidebar and its tag will be permanently removed from ${affectedTagItemCount} ${affectedTagItemCount === 1 ? 'item' : 'items'}. The items themselves will not be deleted.`}
+              {affectedTagItemCount === 0
+                ? t('sidebar.deleteAreaNoItems')
+                : tp('sidebar.deleteAreaItems.one', 'sidebar.deleteAreaItems.other', affectedTagItemCount)}
             </DialogPrimitive.Description>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <DialogPrimitive.Close asChild>
                 <Button type="button" variant="outline" className="min-h-11">
-                  {language === 'de' ? 'Abbrechen' : 'Cancel'}
+                  {t('common.cancel')}
                 </Button>
               </DialogPrimitive.Close>
               <Button
@@ -625,7 +616,7 @@ export function Sidebar() {
                   if (deletingTag) handleDeleteTag(deletingTag);
                 }}
               >
-                {language === 'de' ? 'Bereich löschen' : 'Delete area'}
+                {t('sidebar.deleteAreaAction')}
               </Button>
             </div>
           </DialogPrimitive.Content>

@@ -5,9 +5,11 @@ import { Hash, Plus, Search, X } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { ItemRow } from '@/components/items/item-row';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useOrbitStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settings-store';
+import { useTranslation } from '@/lib/i18n';
+import { matchesSearch } from '@/lib/item-search';
 
 type AreaView = 'active' | 'completed' | 'archived' | 'all';
 
@@ -28,6 +30,7 @@ export default function AreaPage() {
   const setActiveTag = useOrbitStore((state) => state.setActiveTag);
   const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
   const language = useSettingsStore((state) => state.settings.language);
+  const { t, tp } = useTranslation();
   const [view, setView] = useState<AreaView>('active');
   const [search, setSearch] = useState('');
 
@@ -42,7 +45,7 @@ export default function AreaPage() {
 
   const areaItems = useMemo(() => items.filter((item) => item.tags?.includes(tag)), [items, tag]);
   const visibleItems = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase(language === 'de' ? 'de' : 'en');
+    const query = search.trim();
     return areaItems
       .filter((item) => {
         if (view === 'active') return item.status === 'active' || item.status === 'waiting';
@@ -50,13 +53,16 @@ export default function AreaPage() {
         if (view === 'archived') return item.status === 'archived';
         return true;
       })
-      .filter((item) => !query || item.title.toLocaleLowerCase(language === 'de' ? 'de' : 'en').includes(query))
+      .filter((item) => matchesSearch(item, query, language, { includeArchived: true }))
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [areaItems, language, search, view]);
 
-  const labels = language === 'de'
-    ? { active: 'Aktiv', completed: 'Erledigt', archived: 'Archiviert', all: 'Alle' }
-    : { active: 'Active', completed: 'Completed', archived: 'Archived', all: 'All' };
+  const labels: Record<AreaView, string> = {
+    active: t('area.active'),
+    completed: t('area.completed'),
+    archived: t('area.archived'),
+    all: t('area.all'),
+  };
 
   return (
     <div className="flex flex-col">
@@ -68,29 +74,29 @@ export default function AreaPage() {
               <h1 className="truncate text-xl font-semibold tracking-tight">{tag}</h1>
             </div>
             <p className="mt-1 text-[13px] text-muted-foreground/75">
-              {language === 'de'
-                ? `${areaItems.length} ${areaItems.length === 1 ? 'Eintrag' : 'Einträge'} in diesem Bereich`
-                : `${areaItems.length} ${areaItems.length === 1 ? 'item' : 'items'} in this area`}
+              {tp('area.itemCount.one', 'area.itemCount.other', areaItems.length)}
             </p>
           </div>
           <Button type="button" size="sm" onClick={() => setCommandBarOpen(true)}>
             <Plus className="h-4 w-4" aria-hidden="true" />
-            {language === 'de' ? 'Hinzufügen' : 'Add item'}
+            {t('area.addItem')}
           </Button>
         </div>
       </header>
 
       <div className="border-b border-border/40 bg-background px-4 lg:px-8">
         <div className="mx-auto max-w-3xl">
-          <Tabs value={view} onValueChange={(value) => setView(value as AreaView)}>
-            <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto bg-transparent p-0 py-2">
-              {(Object.keys(labels) as AreaView[]).map((key) => (
-                <TabsTrigger key={key} value={key} className="min-h-10 px-3 text-[12px]">
-                  {labels[key]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+          <SegmentedControl
+            variant="pill"
+            label={t('area.viewLabel')}
+            value={view}
+            onChange={setView}
+            options={(Object.keys(labels) as AreaView[]).map((key) => ({
+              value: key,
+              label: labels[key],
+            }))}
+            className="w-full justify-start overflow-x-auto py-2"
+          />
         </div>
       </div>
 
@@ -102,15 +108,15 @@ export default function AreaPage() {
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              aria-label={language === 'de' ? `Bereich ${tag} durchsuchen` : `Search ${tag} area`}
-              placeholder={language === 'de' ? 'Bereich durchsuchen…' : 'Search this area…'}
+              aria-label={t('area.searchLabel', { tag })}
+              placeholder={t('area.searchPlaceholder')}
               className="min-h-11 w-full rounded-xl border border-border/60 bg-background py-2 pl-10 pr-11 text-[13px] outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring/30"
             />
             {search && (
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                aria-label={language === 'de' ? 'Suche löschen' : 'Clear search'}
+                aria-label={t('area.clearSearch')}
                 className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
@@ -130,12 +136,12 @@ export default function AreaPage() {
                 <Hash className="h-5 w-5 text-muted-foreground/50" aria-hidden="true" />
               </div>
               <h2 className="text-[15px] font-medium">
-                {language === 'de' ? 'Keine passenden Einträge' : 'No matching items'}
+                {t('area.noMatches')}
               </h2>
               <p className="mt-1 max-w-sm text-[12px] text-muted-foreground/75">
                 {search
-                  ? (language === 'de' ? 'Versuche einen anderen Suchbegriff.' : 'Try a different search term.')
-                  : (language === 'de' ? 'In dieser Ansicht gibt es noch keine Einträge.' : 'There are no items in this view yet.')}
+                  ? t('area.noMatchesHint')
+                  : t('area.emptyHint')}
               </p>
             </div>
           )}

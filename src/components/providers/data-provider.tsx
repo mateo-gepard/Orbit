@@ -2,7 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
+import Link from 'next/link';
 import { useAuth } from './auth-provider';
+
+/**
+ * Sync notices, one per kind. Two warnings of different kinds can be true at
+ * the same time; only one message slot meant the later one erased the earlier.
+ */
+type SyncNoticeKind = 'offline' | 'warning' | 'conflict' | 'loading';
+
+interface SyncNotice {
+  kind: SyncNoticeKind;
+  message: string;
+}
+
 import {
   isFirestoreDataContextCurrent,
   retryQueuedItemMutations,
@@ -47,7 +60,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const { user, isDemo } = useAuth();
   const userId = user?.uid || null;
   const localOnly = Boolean(userId && (isDemo || userId === 'demo-user'));
-  const [error, setError] = useState<string | null>(null);
+  // ── F-54 ──
+  // A single `error` string meant concurrent warnings overwrote each other and
+  // only the last survived — and being offline (which clears itself) got the
+  // same banner and the same two buttons as a cloud conflict (which cannot be
+  // resolved from a banner at all). Notices are now kept per kind, and each
+  // kind offers the action that actually applies to it.
+  const [notices, setNotices] = useState<SyncNotice[]>([]);
+
+  const pushNotice = useCallback((kind: SyncNoticeKind, message: string) => {
+    setNotices((current) => {
+      const rest = current.filter((notice) => notice.kind !== kind);
+      return [...rest, { kind, message }];
+    });
+  }, []);
+
+  const dismissNotice = useCallback((kind: SyncNoticeKind) => {
+    setNotices((current) => current.filter((notice) => notice.kind !== kind));
+  }, []);
+
+  const clearNotices = useCallback(() => setNotices([]), []);
   const [isLoading, setIsLoading] = useState(true);
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const accountScopeKey = userId
@@ -122,7 +154,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const setup = async () => {
       setIsLoading(true);
-      setError(null);
+      clearNotices();
       stopGoogleCalendarSync();
       stopBriefingScheduler();
       cleanupForegroundMessageHandler();
@@ -243,11 +275,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           useOrbitStore.getState().setItems(items);
           itemsReady = true;
           configureAccountServices(accountId, localOnly, itemsReady);
-          if (source === 'cloud' || source === 'local') setError(null);
+          if (source === 'cloud' || source === 'local') dismissNotice('warning');
           finishLoading();
         },
         () => {
-          if (isCurrent()) setError(dataMessage(
+          if (isCurrent()) pushNotice('warning', dataMessage(
             'Cloud sync is unavailable. Showing this account’s local cache.',
             'Die Cloud-Synchronisierung ist nicht verfügbar. Der lokale Cache dieses Kontos wird angezeigt.',
           ));
@@ -258,7 +290,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     void setup().catch((cause) => {
       if (!isCurrent()) return;
       console.error('[THREADMAP] Account data setup failed:', cause);
-      setError(dataMessage(
+      pushNotice('warning', dataMessage(
         'Your account data could not be loaded. No cross-account fallback was used.',
         'Deine Kontodaten konnten nicht geladen werden. Es wurden keine Daten eines anderen Kontos verwendet.',
       ));
@@ -267,7 +299,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     safetyTimer = setTimeout(() => {
       if (!isCurrent()) return;
-      setError((current) => current || dataMessage(
+      pushNotice('loading', dataMessage(
         'Loading is taking longer than expected.',
         'Das Laden dauert länger als erwartet.',
       ));
@@ -288,16 +320,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       stopBriefingScheduler();
       cleanupForegroundMessageHandler();
     };
-  }, [accountScopeKey, configureAccountServices, localOnly, reconnectNonce, userId]);
+  }, [accountScopeKey, clearNotices, configureAccountServices, dismissNotice, localOnly, pushNotice, reconnectNonce, userId]);
 
   useEffect(() => {
     const reconnect = () => {
-      setError(null);
+      dismissNotice('offline');
       if (userId && !localOnly) {
         void retryQueuedItemMutations(userId, { includeRejected: true });
       }
     };
-    const offline = () => setError(language === 'de'
+    const offline = () => pushNotice('offline', language === 'de'
       ? 'Offline. Elementänderungen bleiben in diesem Browser vorgemerkt; Löschen, Google-Sync und Werkzeug-Cloud-Sync benötigen eine Verbindung.'
       : 'Offline. Item edits remain queued in this browser; deletion, Google sync, and tool cloud sync need a connection.');
     const syncWarning = (event: Event) => {
@@ -311,7 +343,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           && typeof detail.generation === 'number'
           && !isFirestoreDataContextCurrent(detail.userId, detail.generation)) return;
       const message = detail?.message;
-      if (typeof message === 'string') setError(message);
+      if (typeof message === 'string') pushNotice('warning', message);
     };
     window.addEventListener('online', reconnect);
     window.addEventListener('offline', offline);
@@ -321,7 +353,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('offline', offline);
       window.removeEventListener('threadmap:sync-warning', syncWarning);
     };
-  }, [language, localOnly, userId]);
+  }, [dismissNotice, language, localOnly, pushNotice, userId]);
 
   useEffect(() => {
     const handleConflict = (event: Event) => {
@@ -336,14 +368,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           || typeof detail.generation !== 'number'
           || detail.userId !== userId
           || !isFirestoreDataContextCurrent(detail.userId, detail.generation)) return;
-      setError(detail?.message || dataMessage(
+      pushNotice('conflict', detail?.message || dataMessage(
         'A cloud edit conflict needs your attention.',
         'Ein Cloud-Bearbeitungskonflikt benötigt deine Aufmerksamkeit.',
       ));
     };
     window.addEventListener('threadmap:sync-conflict', handleConflict);
     return () => window.removeEventListener('threadmap:sync-conflict', handleConflict);
-  }, [userId]);
+  }, [pushNotice, userId]);
 
   return (
     <>
@@ -368,18 +400,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
                   : 'This account’s data is loading securely.'}
               </DialogPrimitive.Description>
               <LoadingScreen />
-              {error && (
+              {notices.length > 0 && (
                 <div
                   role="alert"
                   className="fixed bottom-[max(env(safe-area-inset-bottom,0px),1rem)] left-1/2 z-[10000] flex w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 flex-col gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-xl sm:flex-row sm:items-center"
                 >
                   <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted-foreground/80">
-                    {error}
+                    {notices[0].message}
                   </p>
                   <button
                     type="button"
                     onClick={() => {
-                      setError(null);
+                      clearNotices();
                       if (userId && !localOnly) {
                         void retryQueuedItemMutations(userId, { includeRejected: true });
                       }
@@ -395,34 +427,56 @@ export function DataProvider({ children }: { children: ReactNode }) {
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
-      {error && !accountScopeLoading && (
-        <div
-          role="alert"
-          aria-live="assertive"
-          className="fixed bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom,0px)+1rem)] left-1/2 z-[35] flex w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-lg lg:bottom-4"
-        >
-          <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted-foreground/80">{error}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              if (userId && !localOnly) {
-                void retryQueuedItemMutations(userId, { includeRejected: true });
-              }
-              setReconnectNonce((value) => value + 1);
-            }}
-            className="min-h-11 rounded-lg px-2.5 text-[11px] font-medium text-foreground hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-9"
-          >
-            {language === 'de' ? 'Erneut versuchen' : 'Retry'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            aria-label={language === 'de' ? 'Meldung schließen' : 'Dismiss message'}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 lg:h-9 lg:w-9"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+      {notices.length > 0 && !accountScopeLoading && (
+        <div className="fixed bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom,0px)+1rem)] left-1/2 z-[35] flex w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 flex-col gap-2 lg:bottom-4">
+          {notices.map((notice) => (
+            <div
+              key={notice.kind}
+              role="alert"
+              aria-live={notice.kind === 'offline' ? 'polite' : 'assertive'}
+              className="flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-lg"
+            >
+              <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted-foreground/80">{notice.message}</p>
+
+              {/* Offline resolves itself when the connection returns, so it
+                  offers no retry. A conflict cannot be resolved from a banner
+                  at all — it links to the screen that can. */}
+              {notice.kind === 'conflict' && (
+                <Link
+                  href="/settings?section=data"
+                  onClick={() => dismissNotice('conflict')}
+                  className="min-h-11 shrink-0 rounded-lg px-2.5 text-[11px] font-medium leading-[44px] text-foreground hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-9 lg:leading-9"
+                >
+                  {language === 'de' ? 'Ansehen' : 'Review'}
+                </Link>
+              )}
+
+              {(notice.kind === 'warning' || notice.kind === 'loading') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissNotice(notice.kind);
+                    if (userId && !localOnly) {
+                      void retryQueuedItemMutations(userId, { includeRejected: true });
+                    }
+                    setReconnectNonce((value) => value + 1);
+                  }}
+                  className="min-h-11 shrink-0 rounded-lg px-2.5 text-[11px] font-medium text-foreground hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-9"
+                >
+                  {language === 'de' ? 'Erneut versuchen' : 'Retry'}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => dismissNotice(notice.kind)}
+                aria-label={language === 'de' ? 'Meldung schließen' : 'Dismiss message'}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 lg:h-9 lg:w-9"
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+          ))}
         </div>
       )}
       <div

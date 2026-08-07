@@ -376,7 +376,7 @@ const en = {
   'dashboard.noTasksPast': 'No tasks were scheduled for this day',
   'dashboard.noHabitsScheduled': 'No habits scheduled',
   'dashboard.allCaughtUp': 'All caught up!',
-  'dashboard.tasks': 'tasks',
+  'dashboard.tasks': 'Tasks',
   'dashboard.habitsLabel': 'habits',
 
   // ── Dashboard date context ───────────────────────────────
@@ -429,7 +429,7 @@ const en = {
   'today.myDay': 'My Day',
   'today.habits': 'Habits',
   'today.noHabits': 'No habits scheduled',
-  'today.notDoneFromBefore': 'Not Done from Before',
+  'today.notDoneFromBefore': 'Carried over',
 
   // ── Habits page ──────────────────────────────────────────
   'habits.week': 'Week',
@@ -491,6 +491,35 @@ const en = {
 
   // ── Notes page ───────────────────────────────────────────
   'notes.all': 'All',
+  // ── Sidebar dialogs ──────────────────────────────────────
+  'sidebar.primaryNav': 'Primary navigation',
+  'sidebar.primaryNavDesc': 'Navigate to areas and tools, or create a new item.',
+  'sidebar.closeNav': 'Close navigation',
+  'sidebar.deleteAreaTitle': 'Delete “{tag}” area?',
+  'sidebar.deleteAreaNoItems': 'This area will be removed from your sidebar. No items are affected.',
+  'sidebar.deleteAreaItems.one': 'This area will be removed from your sidebar and its tag will be permanently removed from {count} item. The item itself will not be deleted.',
+  'sidebar.deleteAreaItems.other': 'This area will be removed from your sidebar and its tag will be permanently removed from {count} items. The items themselves will not be deleted.',
+  'sidebar.deleteAreaAction': 'Delete area',
+
+  // ── Area (tag) page ──────────────────────────────────────
+  'area.active': 'Active',
+  'area.completed': 'Completed',
+  'area.archived': 'Archived',
+  'area.all': 'All',
+  'area.viewLabel': 'Filter this area',
+  'area.itemCount.one': '{count} item in this area',
+  'area.itemCount.other': '{count} items in this area',
+  'area.addItem': 'Add item',
+  'area.searchLabel': 'Search the {tag} area',
+  'area.searchPlaceholder': 'Search this area…',
+  'area.clearSearch': 'Clear search',
+  'area.noMatches': 'No matching items',
+  'area.noMatchesHint': 'Try a different search term.',
+  'area.emptyHint': 'There are no items in this view yet.',
+
+  'notes.filterLabel': 'Filter notes',
+  'files.filterLabel': 'Filter files by item',
+  'tasks.statusFilterLabel': 'Filter by status',
   'notes.general': 'Note',
   'notes.subtypeLabel': 'Note type',
   'notes.ideas': 'Ideas',
@@ -596,6 +625,7 @@ const en = {
   'commandBar.priority': 'Priority',
   'commandBar.linkTo': 'Link to',
   'commandBar.results': 'Results',
+  'commandBar.moreResults': '{count} more — open the page to see them all',
   'commandBar.commands': 'Commands',
   'commandBar.createTag': 'Create tag',
   'commandBar.createTags': 'Create tags',
@@ -1522,6 +1552,35 @@ const de: Record<TranslationKey, string> = {
 
   // ── Notes page ───────────────────────────────────────────
   'notes.all': 'Alle',
+  // ── Seitenleisten-Dialoge ────────────────────────────────
+  'sidebar.primaryNav': 'Hauptnavigation',
+  'sidebar.primaryNavDesc': 'Navigiere zu Bereichen und Werkzeugen oder erstelle einen neuen Eintrag.',
+  'sidebar.closeNav': 'Navigation schließen',
+  'sidebar.deleteAreaTitle': 'Bereich „{tag}“ löschen?',
+  'sidebar.deleteAreaNoItems': 'Der Bereich wird aus deiner Seitenleiste entfernt. Es sind keine Einträge betroffen.',
+  'sidebar.deleteAreaItems.one': 'Der Bereich wird aus der Seitenleiste entfernt und das Tag wird dauerhaft von {count} Eintrag entfernt. Der Eintrag selbst wird nicht gelöscht.',
+  'sidebar.deleteAreaItems.other': 'Der Bereich wird aus der Seitenleiste entfernt und das Tag wird dauerhaft von {count} Einträgen entfernt. Die Einträge selbst werden nicht gelöscht.',
+  'sidebar.deleteAreaAction': 'Bereich löschen',
+
+  // ── Bereichsseite ────────────────────────────────────────
+  'area.active': 'Aktiv',
+  'area.completed': 'Erledigt',
+  'area.archived': 'Archiviert',
+  'area.all': 'Alle',
+  'area.viewLabel': 'Diesen Bereich filtern',
+  'area.itemCount.one': '{count} Eintrag in diesem Bereich',
+  'area.itemCount.other': '{count} Einträge in diesem Bereich',
+  'area.addItem': 'Hinzufügen',
+  'area.searchLabel': 'Bereich {tag} durchsuchen',
+  'area.searchPlaceholder': 'Bereich durchsuchen…',
+  'area.clearSearch': 'Suche löschen',
+  'area.noMatches': 'Keine passenden Einträge',
+  'area.noMatchesHint': 'Versuche einen anderen Suchbegriff.',
+  'area.emptyHint': 'In dieser Ansicht gibt es noch keine Einträge.',
+
+  'notes.filterLabel': 'Notizen filtern',
+  'files.filterLabel': 'Dateien nach Eintrag filtern',
+  'tasks.statusFilterLabel': 'Nach Status filtern',
   'notes.general': 'Notiz',
   'notes.subtypeLabel': 'Notiztyp',
   'notes.ideas': 'Ideen',
@@ -1627,6 +1686,7 @@ const de: Record<TranslationKey, string> = {
   'commandBar.priority': 'Priorität',
   'commandBar.linkTo': 'Verknüpfen mit',
   'commandBar.results': 'Ergebnisse',
+  'commandBar.moreResults': '{count} weitere — öffne die Seite, um alle zu sehen',
   'commandBar.commands': 'Befehle',
   'commandBar.createTag': 'Tag erstellen',
   'commandBar.createTags': 'Tags erstellen',

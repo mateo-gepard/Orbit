@@ -57,6 +57,7 @@ import { isMobile } from '@/lib/mobile';
 import type { OrbitItem } from '@/lib/types';
 import { eventOccursOnDate } from '@/lib/dashboard';
 import { AgendaView, AGENDA_DAYS } from '@/components/shell/agenda-view';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -1033,31 +1034,17 @@ export default function CalendarPage() {
 
         <div className="flex w-full items-center justify-between gap-1.5 sm:w-auto sm:justify-end lg:gap-2">
           {/* View switcher */}
-          <div className="flex items-center bg-muted/30 rounded-xl p-[3px] border border-border/30" role="group" aria-label={german ? 'Kalenderansicht' : 'Calendar view'}>
-            {([
-              { mode: 'month' as ViewMode, icon: LayoutGrid },
-              { mode: 'week' as ViewMode, icon: CalendarRange },
-              { mode: 'day' as ViewMode, icon: CalendarDays },
-              { mode: 'agenda' as ViewMode, icon: List },
-            ]).map(({ mode, icon: Icon }) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => changeViewMode(mode)}
-                aria-label={german ? `Ansicht: ${viewLabels[mode]}` : `${viewLabels[mode]} view`}
-                aria-pressed={viewMode === mode}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-lg px-2 lg:px-3 py-1.5 text-[11px] font-semibold transition-all',
-                  viewMode === mode
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground/40 hover:text-muted-foreground/70'
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span className="hidden lg:inline">{viewLabels[mode]}</span>
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label={german ? 'Kalenderansicht' : 'Calendar view'}
+            value={viewMode}
+            onChange={changeViewMode}
+            options={[
+              { value: 'month' as ViewMode, label: viewLabels.month, icon: LayoutGrid, labelOnDesktopOnly: true },
+              { value: 'week' as ViewMode, label: viewLabels.week, icon: CalendarRange, labelOnDesktopOnly: true },
+              { value: 'day' as ViewMode, label: viewLabels.day, icon: CalendarDays, labelOnDesktopOnly: true },
+              { value: 'agenda' as ViewMode, label: viewLabels.agenda, icon: List, labelOnDesktopOnly: true },
+            ]}
+          />
 
           {/* Google Import */}
           <button type="button" onClick={handleImportFromGoogle} disabled={importing} aria-label={importing ? t('calendar.importing') : t('calendar.importFromGoogle')} className={cn(

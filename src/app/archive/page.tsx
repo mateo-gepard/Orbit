@@ -11,9 +11,9 @@ import type { OrbitItem } from '@/lib/types';
 import { ItemRow } from '@/components/items/item-row';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
-import { cn } from '@/lib/utils';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useTranslation } from '@/lib/i18n';
+import { searchItems } from '@/lib/item-search';
 import { toast } from 'sonner';
 
 type ViewTab = 'completed' | 'archived';
@@ -26,29 +26,17 @@ export default function ArchivePage() {
   const items = useOrbitStore((state) => state.items);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<ViewTab>('completed');
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
 
   const completedItems = useMemo(() => {
     const completed = items.filter((i) => i.status === 'done' && i.type !== 'habit');
-    if (!search) return completed;
-    const q = search.toLowerCase();
-    return completed.filter(
-      (i) =>
-        i.title.toLowerCase().includes(q) ||
-        i.tags?.some((tag) => tag.toLowerCase().includes(q))
-    );
-  }, [items, search]);
+    return searchItems(completed, search, lang, { includeArchived: true });
+  }, [items, search, lang]);
 
   const archivedItems = useMemo(() => {
     const archived = items.filter((i) => i.status === 'archived');
-    if (!search) return archived;
-    const q = search.toLowerCase();
-    return archived.filter(
-      (i) =>
-        i.title.toLowerCase().includes(q) ||
-        i.tags?.some((tag) => tag.toLowerCase().includes(q))
-    );
-  }, [items, search]);
+    return searchItems(archived, search, lang, { includeArchived: true });
+  }, [items, search, lang]);
 
   const handleRestore = async (id: string) => {
     haptic('success');
@@ -144,51 +132,23 @@ export default function ArchivePage() {
       </div>
 
       {/* Tabs */}
-      <Tabs 
-        value={activeTab} 
-        onValueChange={(v) => setActiveTab(v as ViewTab)}
-        className="flex flex-col"
-      >
+      <div className="flex flex-col">
         {/* Tab navigation and search stick together, so their heights can
             never disagree — the search bar used to be pinned at a hard-coded
             49px against a 37px tab bar. */}
         <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
         <div className="border-b border-border/40">
           <div className="max-w-3xl mx-auto px-4 lg:px-8">
-            <TabsList className="w-full grid grid-cols-2 bg-transparent h-auto p-0 gap-0">
-              <TabsTrigger 
-                value="completed" 
-                className={cn(
-                  "relative rounded-none border-b-2 border-transparent py-3 text-[13px] font-medium transition-all",
-                  "data-[state=active]:border-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none",
-                  "data-[state=inactive]:text-muted-foreground/60 hover:text-muted-foreground"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>{t('archive.completedTab')}</span>
-                  <span className="text-[11px] text-muted-foreground/40 font-normal">
-                    {completedItems.length}
-                  </span>
-                </div>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="archived"
-                className={cn(
-                  "relative rounded-none border-b-2 border-transparent py-3 text-[13px] font-medium transition-all",
-                  "data-[state=active]:border-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none",
-                  "data-[state=inactive]:text-muted-foreground/60 hover:text-muted-foreground"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <ArchiveIcon className="h-3.5 w-3.5" />
-                  <span>{t('archive.archivedTab')}</span>
-                  <span className="text-[11px] text-muted-foreground/40 font-normal">
-                    {archivedItems.length}
-                  </span>
-                </div>
-              </TabsTrigger>
-            </TabsList>
+            <SegmentedControl
+              label={t('nav.archive')}
+              value={activeTab}
+              onChange={setActiveTab}
+              className="my-2 w-full"
+              options={[
+                { value: 'completed' as ViewTab, label: t('archive.completedTab'), icon: CheckCircle2, badge: completedItems.length },
+                { value: 'archived' as ViewTab, label: t('archive.archivedTab'), icon: ArchiveIcon, badge: archivedItems.length },
+              ]}
+            />
           </div>
         </div>
 
@@ -234,7 +194,7 @@ export default function ArchivePage() {
               />
             )}
             {/* Completed Tab */}
-            <TabsContent value="completed" className="mt-0 space-y-px">
+            {activeTab === 'completed' && (<div className="space-y-px">
               {completedItems.map((item) => (
                 <div key={item.id} className="group">
                   {renderRow(item, (<>
@@ -277,10 +237,10 @@ export default function ArchivePage() {
                   </p>
                 </div>
               )}
-            </TabsContent>
+            </div>)}
 
             {/* Archived Tab */}
-            <TabsContent value="archived" className="mt-0 space-y-px">
+            {activeTab === 'archived' && (<div className="space-y-px">
               {archivedItems.map((item) => (
                 <div key={item.id} className="group">
                   {renderRow(item, (<>
@@ -323,10 +283,10 @@ export default function ArchivePage() {
                   </p>
                 </div>
               )}
-            </TabsContent>
+            </div>)}
           </div>
         </div>
-      </Tabs>
+      </div>
     </div>
   );
 }

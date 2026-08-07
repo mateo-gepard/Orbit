@@ -890,7 +890,11 @@ export default function DashboardPage() {
 
   const weekStartDate = startOfWeek(selectedDate, { weekStartsOn });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
-  const focusTaskCount = overdueItems.length + todayTasks.length + myDayTasks.length;
+  // Everything actually waiting today, carried-over work included. Excluding
+  // it made the headline tile read 0 while fifteen tasks sat listed
+  // underneath — the first number a user reads was the one under-reporting
+  // the day. The second tile breaks out how many of these are carried over.
+  const focusTaskCount = overdueItems.length + todayTasks.length + myDayTasks.length + notDoneFromBefore.length;
   const habitProgressLabel = todayHabits.length > 0 ? `${completedHabitsToday}/${todayHabits.length}` : '0';
   const selectedDayStart = new Date(selectedDate);
   selectedDayStart.setHours(0, 0, 0, 0);
