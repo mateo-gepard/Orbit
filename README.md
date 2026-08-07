@@ -167,6 +167,15 @@ storage.rules           Firebase Storage security rules
 
 ## Important Documents
 
+Start here:
+
+- [DOCUMENTATION.md](./DOCUMENTATION.md): how the system is built — data model, sync, routes, MCP, testing, deployment.
+- [AUDIT.md](./AUDIT.md): the 70-finding codebase audit, with what is fixed and what is open.
+- [HANDOFF.md](./HANDOFF.md): current state, recent changes, and what to pick up next.
+
+Reference:
+
+- [MCP_SETUP.md](./MCP_SETUP.md): operating the MCP server and its OAuth endpoints.
 - [ARCHITECTURE.md](./ARCHITECTURE.md): system architecture and local/cloud data flow.
 - [LINKING_SYSTEM.md](./LINKING_SYSTEM.md): item relationships, graph utilities, and link APIs.
 - [BACKEND_SETUP.md](./BACKEND_SETUP.md): Firebase, Storage, Functions, push, and deployment setup.
