@@ -52,11 +52,18 @@ import {
   getLastSyncTime,
   syncGoogleCalendar,
 } from '@/lib/google-calendar-sync';
-import { createItem } from '@/lib/firestore';
+import { createItem, updateItem } from '@/lib/firestore';
 import { isMobile } from '@/lib/mobile';
 import type { OrbitItem } from '@/lib/types';
 import { eventOccursOnDate } from '@/lib/dashboard';
 import { AgendaView, AGENDA_DAYS } from '@/components/shell/agenda-view';
+import {
+  applyDrag,
+  exceedsDragThreshold,
+  isDragMeaningful,
+  minutesToTime,
+  type DragMode,
+} from '@/lib/calendar-drag';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { toast } from 'sonner';
 import {
@@ -467,15 +474,113 @@ function AllDayOverflow({
   );
 }
 
+interface ActiveDrag {
+  itemId: string;
+  mode: DragMode;
+  originDayIndex: number;
+  startMinute: number;
+  endMinute: number;
+  pointerX: number;
+  pointerY: number;
+  /** Set once the pointer has travelled far enough to be a drag, not a click. */
+  engaged: boolean;
+  preview: { startMinute: number; endMinute: number; dayIndex: number };
+}
+
 function TimeGrid({
-  days, items, is24h, locale: loc, onEventClick, onSlotClick, showWeekNumbers,
+  days, items, is24h, locale: loc, onEventClick, onSlotClick, onEventReschedule, showWeekNumbers,
 }: {
-  days: Date[]; items: OrbitItem[]; is24h: boolean; locale: Locale; onEventClick: (id: string) => void; onSlotClick: (date: Date, time?: string) => void; showWeekNumbers: boolean;
+  days: Date[]; items: OrbitItem[]; is24h: boolean; locale: Locale; onEventClick: (id: string) => void; onSlotClick: (date: Date, time?: string) => void; onEventReschedule: (id: string, date: Date, startTime: string, endTime: string) => void; showWeekNumbers: boolean;
 }) {
   const german = loc.code.startsWith('de');
   const gridRef = useRef<HTMLDivElement>(null);
+  const columnsRef = useRef<HTMLDivElement>(null);
   const [now, setNow] = useState(new Date());
   const [hoveredSlot, setHoveredSlot] = useState<{ dayIndex: number; slotIndex: number } | null>(null);
+
+  // ── Drag to move and resize ──
+  // Rescheduling used to require opening the detail panel and editing time
+  // fields — the interaction a calendar exists to avoid. The arithmetic lives
+  // in `calendar-drag.ts`; this is only the pointer plumbing.
+  const [drag, setDrag] = useState<ActiveDrag | null>(null);
+  // Mirrored in a ref so pointer handlers can read the live drag without doing
+  // it inside a state updater, which React runs during the render phase.
+  const dragRef = useRef<ActiveDrag | null>(null);
+  const commitDrag = (next: ActiveDrag | null) => {
+    dragRef.current = next;
+    setDrag(next);
+  };
+
+  const dayWidth = () => {
+    const width = columnsRef.current?.getBoundingClientRect().width ?? 0;
+    return days.length > 0 ? width / days.length : 0;
+  };
+
+  const beginDrag = (
+    itemEvent: React.PointerEvent<HTMLElement>,
+    itemId: string,
+    dayIndex: number,
+    startMinute: number,
+    endMinute: number,
+    mode: DragMode,
+  ) => {
+    // Only a primary pointer, and never on a touch scroll.
+    if (itemEvent.button !== 0) return;
+    itemEvent.currentTarget.setPointerCapture(itemEvent.pointerId);
+    commitDrag({
+      itemId, mode, originDayIndex: dayIndex, startMinute, endMinute,
+      pointerX: itemEvent.clientX, pointerY: itemEvent.clientY,
+      engaged: false,
+      preview: { startMinute, endMinute, dayIndex },
+    });
+  };
+
+  const moveDrag = (itemEvent: React.PointerEvent<HTMLElement>) => {
+    const current = dragRef.current;
+    if (!current) return;
+    const deltaX = itemEvent.clientX - current.pointerX;
+    const deltaY = itemEvent.clientY - current.pointerY;
+    const engaged = current.engaged || exceedsDragThreshold(deltaX, deltaY);
+    if (!engaged) return;
+    commitDrag({
+      ...current,
+      engaged,
+      preview: applyDrag({
+        startMinute: current.startMinute,
+        endMinute: current.endMinute,
+        dayIndex: current.originDayIndex,
+        deltaX, deltaY,
+        hourHeight: HOUR_HEIGHT,
+        dayWidth: dayWidth(),
+        dayCount: days.length,
+        mode: current.mode,
+      }),
+    });
+  };
+
+  const endDrag = (itemEvent: React.PointerEvent<HTMLElement>) => {
+    itemEvent.currentTarget.releasePointerCapture?.(itemEvent.pointerId);
+    const current = dragRef.current;
+    commitDrag(null);
+    if (!current) return;
+
+    const origin = {
+      startMinute: current.startMinute,
+      endMinute: current.endMinute,
+      dayIndex: current.originDayIndex,
+    };
+    if (current.engaged && isDragMeaningful(origin, current.preview)) {
+      onEventReschedule(
+        current.itemId,
+        days[current.preview.dayIndex],
+        minutesToTime(current.preview.startMinute),
+        minutesToTime(current.preview.endMinute),
+      );
+    } else if (!current.engaged) {
+      // Never moved far enough: this was a click.
+      onEventClick(current.itemId);
+    }
+  };
   useEffect(() => {
     const target = Math.max(0, 7 * HOUR_HEIGHT - 40);
     gridRef.current?.scrollTo({ top: target, behavior: 'smooth' });
@@ -678,7 +783,7 @@ function TimeGrid({
           </div>
 
           {/* Day columns */}
-          <div className="flex-1 grid relative" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
+          <div ref={columnsRef} className="flex-1 grid relative" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
             {days.map((day, dayIdx) => {
               const today = isToday(day);
               return (
@@ -723,8 +828,14 @@ function TimeGrid({
                   {/* Timed events */}
                   {(timedLayouts.get(dayIdx) || []).map((slot) => {
                     const { event, column, totalColumns } = slot;
-                    const top = (event.startMinute / 60) * HOUR_HEIGHT;
-                    const height = Math.max(((event.endMinute - event.startMinute) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
+                    // While dragging, the block follows the pointer from its
+                    // preview position rather than its stored one.
+                    const dragging = drag?.engaged && drag.itemId === event.item.id;
+                    if (dragging && drag.preview.dayIndex !== dayIdx) return null;
+                    const shownStart = dragging ? drag.preview.startMinute : event.startMinute;
+                    const shownEnd = dragging ? drag.preview.endMinute : event.endMinute;
+                    const top = (shownStart / 60) * HOUR_HEIGHT;
+                    const height = Math.max(((shownEnd - shownStart) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
                     const color = getEventColor(event.item);
                     const colWidth = 100 / totalColumns;
                     const left = column * colWidth;
@@ -734,15 +845,30 @@ function TimeGrid({
                       <button
                         type="button"
                         key={`${event.item.id}-${dayIdx}`}
-                        onClick={(e) => { e.stopPropagation(); onEventClick(event.item.id); }}
+                        // Click is dispatched from the pointer handlers, so a
+                        // drag that ends over the block does not also open it.
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          beginDrag(e, event.item.id, dayIdx, event.startMinute, event.endMinute, 'move');
+                        }}
+                        onPointerMove={moveDrag}
+                        onPointerUp={(e) => { e.stopPropagation(); endDrag(e); }}
+                        onPointerCancel={() => commitDrag(null)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onEventClick(event.item.id);
+                          }
+                        }}
                         aria-label={calendarCopy(
                           german,
-                          `Open ${event.item.title}, ${formatTimeShort(event.startMinute, is24h)} to ${formatTimeShort(event.endMinute, is24h)}`,
-                          `${event.item.title} öffnen, ${formatTimeShort(event.startMinute, is24h)} bis ${formatTimeShort(event.endMinute, is24h)}`,
+                          `Open ${event.item.title}, ${formatTimeShort(shownStart, is24h)} to ${formatTimeShort(shownEnd, is24h)}. Drag to reschedule.`,
+                          `${event.item.title} öffnen, ${formatTimeShort(shownStart, is24h)} bis ${formatTimeShort(shownEnd, is24h)}. Zum Verschieben ziehen.`,
                         )}
                         className={cn(
-                          'absolute rounded-lg overflow-hidden text-left transition-all z-10 group',
-                          'border-l-[3px] hover:shadow-lg hover:z-20 hover:brightness-[0.97] active:scale-[0.99]',
+                          'absolute rounded-lg overflow-hidden text-left transition-all z-10 group touch-none',
+                          'border-l-[3px] hover:shadow-lg hover:z-20 hover:brightness-[0.97]',
+                          dragging ? 'z-30 cursor-grabbing opacity-90 shadow-xl' : 'cursor-grab active:scale-[0.99]',
                           color.bg, color.border
                         )}
                         style={{ top: top + 1, height: height - 2, left: `calc(${left}% + 3px)`, width: `calc(${colWidth}% - 6px)`, borderLeftColor: `var(--event-accent)` }}
@@ -763,6 +889,18 @@ function TimeGrid({
                             </div>
                           )}
                         </div>
+                        {/* Resize handle — end time only. */}
+                        <span
+                          role="presentation"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            beginDrag(e, event.item.id, dayIdx, event.startMinute, event.endMinute, 'resize');
+                          }}
+                          onPointerMove={moveDrag}
+                          onPointerUp={(e) => { e.stopPropagation(); endDrag(e); }}
+                          onPointerCancel={() => commitDrag(null)}
+                          className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize touch-none opacity-0 transition-opacity group-hover:opacity-100"
+                        />
                       </button>
                     );
                   })}
@@ -966,6 +1104,30 @@ export default function CalendarPage() {
   }, [viewMode, currentDate, weekDays, mobileWeekDays, mobile, locale]);
 
   const handleEventClick = useCallback((id: string) => setSelectedItemId(id), [setSelectedItemId]);
+
+  /** Persist a drag. A recurring series moves as a whole, not per occurrence. */
+  const handleEventReschedule = useCallback(async (
+    id: string,
+    date: Date,
+    startTime: string,
+    endTime: string,
+  ) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const target = items.find((item) => item.id === id);
+    const spansDays = Boolean(target?.endDate && target.endDate !== target.startDate);
+    try {
+      await updateItem(id, {
+        startDate: dateStr,
+        ...(spansDays ? {} : { endDate: dateStr }),
+        startTime,
+        endTime,
+      });
+    } catch {
+      toast.error(language === 'de'
+        ? 'Der Termin konnte nicht verschoben werden.'
+        : 'The event could not be rescheduled.');
+    }
+  }, [items, language]);
   const handleSlotClick = useCallback((date: Date, time?: string) => setQuickAdd({ date, time }), []);
   const handleMonthDayClick = useCallback((day: Date) => {
     if (mobile) {
@@ -1083,12 +1245,12 @@ export default function CalendarPage() {
 
       {/* Week View */}
       {viewMode === 'week' && (
-        <TimeGrid days={effectiveWeekDays} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} showWeekNumbers={!mobile && showWeekNumbers} />
+        <TimeGrid days={effectiveWeekDays} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onEventReschedule={handleEventReschedule} showWeekNumbers={!mobile && showWeekNumbers} />
       )}
 
       {/* Day View */}
       {viewMode === 'day' && (
-        <TimeGrid days={[startOfDay(currentDate)]} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} showWeekNumbers={false} />
+        <TimeGrid days={[startOfDay(currentDate)]} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onEventReschedule={handleEventReschedule} showWeekNumbers={false} />
       )}
 
       {/* Month View */}
