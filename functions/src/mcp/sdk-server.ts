@@ -5,6 +5,7 @@ import type { ThreadmapDataAccess } from './dal';
 import {
   THREADMAP_TOOL_DEFINITIONS,
   createThreadmapToolRegistry,
+  requiredScopeFor,
   type McpToolDefinition,
 } from './tools';
 
@@ -50,14 +51,17 @@ function standardSchema(cacheKey: string, jsonSchema: Record<string, unknown>): 
 }
 
 /**
- * The scope a tool requires. `securitySchemes` is discovery metadata that the
- * tool table derives from its own `scope:` field, so reading it back is
- * equivalent to reading that field — but enforcement never relies on this
- * value: `ThreadmapToolRegistry.call` re-checks the principal's scopes on the
- * server before dispatching. This is used only to decide what to advertise.
+ * The scope a tool requires, read from the server-side authorization map
+ * rather than from `securitySchemes` on the definition — which is the object
+ * that gets serialized to clients. Enforcement never relied on the wire
+ * payload (`ThreadmapToolRegistry.call` re-checks the principal's scopes), but
+ * deciding what to advertise from it coupled two things that should be free to
+ * move independently.
  */
 export function toolRequiredScope(definition: McpToolDefinition): string {
-  return definition.securitySchemes[0].scopes[0];
+  const scope = requiredScopeFor(definition.name);
+  if (!scope) throw new Error(`Missing scope for ${definition.name}.`);
+  return scope;
 }
 
 export interface ThreadmapMcpServerInput {

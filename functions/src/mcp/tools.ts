@@ -181,6 +181,13 @@ const LIST_FILTER_PROPERTIES: Record<string, JsonSchema> = {
   updated_before: { type: 'integer', minimum: 0 },
 };
 
+/**
+ * Every tool's required scope, recorded as the definitions are built. This is
+ * the authority for enforcement; `securitySchemes` on the definition is only
+ * what gets advertised.
+ */
+const TOOL_SCOPES = new Map<string, string>();
+
 function definition(options: {
   name: string;
   title: string;
@@ -191,6 +198,7 @@ function definition(options: {
   destructive?: boolean;
   idempotent?: boolean;
 }): McpToolDefinition {
+  TOOL_SCOPES.set(options.name, options.scope);
   return {
     name: options.name,
     title: options.title,
@@ -210,58 +218,80 @@ function definition(options: {
 
 const SECONDARY: Array<{ name: string; title: string; kind: SecondaryDataKind; description: string }> = [
   { name: 'get_wishlist', title: 'Get wishlist', kind: 'wishlist',
-    description: 'Read a bounded, typed projection of wishlist items and duel history.' },
+    description: 'Read a bounded, typed projection of wishlist items and duel history. Call this only for questions about things the owner wants to buy or has ranked against each other.' },
   { name: 'get_abitur_profile', title: 'Get Abitur profile', kind: 'abitur',
-    description: 'Read the bounded Abitur planning profile without account contact fields.' },
+    description: 'Read the bounded Abitur planning profile without account contact fields. Call this only for questions about the owner\u2019s German school-leaving exams — subjects, semester results, projected grade.' },
   { name: 'get_flight_logs', title: 'Get flight logs', kind: 'flight',
-    description: 'Read up to 50 owner-scoped flight logs.' },
+    description: 'Read up to 50 owner-scoped flight logs. Call this only for questions about focus or deep-work sessions; these are timed work sessions, not air travel.' },
   { name: 'get_briefing_journal', title: 'Get briefing journal', kind: 'briefing',
-    description: 'Read a bounded projection of recent daily and weekly briefing records.' },
+    description: 'Read a bounded projection of recent daily and weekly briefing records. Call this for questions about what past briefings said, not to build a new summary — use get_life_overview for that.' },
   { name: 'get_dispatch_plans', title: 'Get dispatch plans', kind: 'dispatch',
-    description: 'Read up to 31 bounded dispatch plans.' },
+    description: 'Read up to 31 bounded dispatch plans. Call this for questions about how specific days were time-blocked.' },
   { name: 'get_settings', title: 'Get organizational settings', kind: 'settings',
-    description: 'Read an allowlisted projection of organizational preferences; email, bio, tokens, and secrets are excluded.' },
+    description: 'Read an allowlisted projection of organizational preferences; email, bio, tokens, and secrets are excluded. Call this when behaviour depends on the owner\u2019s configuration — week start, language, working hours — not to answer questions about them as a person.' },
   { name: 'get_toolbox', title: 'Get toolbox', kind: 'toolbox',
-    description: 'Read enabled Threadmap toolbox feature flags.' },
+    description: 'Read enabled Threadmap toolbox feature flags. Call this to check whether a tool is switched on before suggesting it.' },
 ];
 
 const DEFINITION_SPECS = [
   definition({
     name: 'get_life_overview', title: 'Get life overview', kind: 'read', scope: THREADMAP_MCP_SCOPES.read,
-    description: 'Return bounded counts and current highlights across the authenticated owner’s Threadmap items.',
+    description: 'Return bounded counts and current highlights across the authenticated owner’s Threadmap items. '
+      + 'Call this first for open-ended questions about how things stand overall — "how am I doing", '
+      + '"what should I focus on", "give me a summary". It answers in one call what would otherwise '
+      + 'take several list_items calls. Do not use it to find a specific item.',
     inputSchema: objectSchema({ date: DATE_SCHEMA, timezone: { type: 'string', minLength: 1, maxLength: 100 } }),
   }),
   definition({
     name: 'get_agenda', title: 'Get agenda', kind: 'read', scope: THREADMAP_MCP_SCOPES.read,
-    description: 'Return tasks, events, and scheduled habits in an inclusive date range of at most 31 days.',
+    description: 'Return tasks, events, and scheduled habits in an inclusive date range of at most 31 days. '
+      + 'Call this for any question anchored to time — today, tomorrow, this week, a named date or a '
+      + 'span. Prefer it over list_items whenever the user names a period, because it merges dated '
+      + 'tasks, events and habit schedules that list_items returns separately.',
     inputSchema: objectSchema({ start_date: DATE_SCHEMA, end_date: DATE_SCHEMA,
       timezone: { type: 'string', minLength: 1, maxLength: 100 } }, ['start_date', 'end_date']),
   }),
   definition({
     name: 'list_items', title: 'List items', kind: 'read', scope: THREADMAP_MCP_SCOPES.read,
-    description: 'List owner-scoped items in reverse update order with opaque cursor pagination and optional filters.',
+    description: 'List owner-scoped items in reverse update order with opaque cursor pagination and optional filters. '
+      + 'Call this to enumerate by structure rather than by words or dates: all items of a type, '
+      + 'everything under a parent, everything with a tag or status. Use search_items when the user '
+      + 'gave you words to match, and get_agenda when they gave you a date range.',
     inputSchema: objectSchema(LIST_FILTER_PROPERTIES),
   }),
   definition({
     name: 'search_items', title: 'Search items', kind: 'read', scope: THREADMAP_MCP_SCOPES.read,
-    description: 'Search a bounded owner-scoped item window by plain-text title, content, and tags.',
+    description: 'Search a bounded owner-scoped item window by plain-text title, content, and tags. '
+      + 'Call this when the user refers to something by name or subject rather than by structure — '
+      + '"the note about the boiler", "anything mentioning Lisbon". It searches a bounded recent '
+      + 'window, so use list_items with filters when you need exhaustive results.',
     inputSchema: objectSchema({ query: { type: 'string', minLength: 1, maxLength: 200 }, ...LIST_FILTER_PROPERTIES }, ['query']),
   }),
   definition({
     name: 'get_item', title: 'Get item', kind: 'read', scope: THREADMAP_MCP_SCOPES.read,
-    description: 'Get one owner-scoped item. Rich HTML is returned as bounded plain text and file contents are excluded.',
+    description: 'Get one owner-scoped item, including its full content, checklist and relationships. '
+      + 'Call this once you have an item_id and need detail the list projections omit, and always '
+      + 'before an update: the response carries the revision that update_item, complete_item, '
+      + 'archive_item and preview_delete_item all require. File contents are excluded.',
     inputSchema: objectSchema({ item_id: ITEM_ID_SCHEMA }, ['item_id']),
   }),
   definition({
     name: 'create_item', title: 'Create item', kind: 'write', scope: THREADMAP_MCP_SCOPES.write,
     idempotent: true,
-    description: 'Create an owner-scoped Threadmap item with a deterministic id. Requires a unique idempotency UUID.',
+    description: 'Create an owner-scoped Threadmap item with a deterministic id. Requires a unique idempotency UUID. '
+      + 'Call this when the user asks to add, capture or note something down. Generate a fresh '
+      + 'client_request_id per distinct creation and reuse it verbatim on a retry, so a repeat never '
+      + 'produces a second item.',
     inputSchema: objectSchema({ item: CREATE_ITEM_SCHEMA, client_request_id: REQUEST_ID_SCHEMA }, ['item', 'client_request_id']),
   }),
   definition({
     name: 'update_item', title: 'Update item', kind: 'write', scope: THREADMAP_MCP_SCOPES.write,
     idempotent: true,
-    description: 'Update mutable item fields only when expected_revision matches. Null removes an optional field.',
+    description: 'Update mutable item fields only when expected_revision matches. Null removes an optional field. '
+      + 'Call this to change an item in place — retitle, reschedule, re-tag, edit content. Read the '
+      + 'item first for its revision; a mismatch means someone else changed it, so re-read rather '
+      + 'than retrying with the old value. Use complete_item to finish something and archive_item to '
+      + 'put it away.',
     inputSchema: objectSchema({ item_id: ITEM_ID_SCHEMA, expected_revision: REVISION_SCHEMA,
       patch: UPDATE_PATCH_SCHEMA, client_request_id: REQUEST_ID_SCHEMA },
     ['item_id', 'expected_revision', 'patch', 'client_request_id']),
@@ -269,19 +299,28 @@ const DEFINITION_SPECS = [
   definition({
     name: 'complete_item', title: 'Complete item', kind: 'write', scope: THREADMAP_MCP_SCOPES.write,
     idempotent: true,
-    description: 'Mark an item done when expected_revision matches.',
+    description: 'Mark an item done when expected_revision matches. '
+      + 'Call this whenever the user says something is finished, done or handled. Prefer it over '
+      + 'update_item for completion: it also records the completion time. For a habit on a specific '
+      + 'day use set_habit_completion instead.',
     inputSchema: revisionMutationSchema(),
   }),
   definition({
     name: 'archive_item', title: 'Archive item', kind: 'write', scope: THREADMAP_MCP_SCOPES.write,
     idempotent: true, destructive: true,
-    description: 'Archive an item when expected_revision matches. This is reversible in Threadmap.',
+    description: 'Archive an item when expected_revision matches. This is reversible in Threadmap. '
+      + 'Call this when the user wants something out of the way but not gone — cancelled, no longer '
+      + 'relevant, tidying up. Prefer it over deletion in every case where the user has not clearly '
+      + 'asked for permanent removal.',
     inputSchema: revisionMutationSchema(),
   }),
   definition({
     name: 'set_habit_completion', title: 'Set habit completion', kind: 'write', scope: THREADMAP_MCP_SCOPES.write,
     idempotent: true,
-    description: 'Set or clear a date in a habit’s completion history with optimistic concurrency.',
+    description: 'Set or clear a date in a habit’s completion history with optimistic concurrency. '
+      + 'Call this for any "did/didn\u2019t do my habit" statement, including about a past day. This is '
+      + 'the only correct way to tick a habit — complete_item would end the habit itself rather than '
+      + 'record one day of it.',
     inputSchema: objectSchema({ item_id: ITEM_ID_SCHEMA, expected_revision: REVISION_SCHEMA,
       date: DATE_SCHEMA, completed: { type: 'boolean' }, client_request_id: REQUEST_ID_SCHEMA },
     ['item_id', 'expected_revision', 'date', 'completed', 'client_request_id']),
@@ -289,36 +328,50 @@ const DEFINITION_SPECS = [
   definition({
     name: 'link_items', title: 'Link items', kind: 'write', scope: THREADMAP_MCP_SCOPES.write,
     idempotent: true,
-    description: 'Atomically create a symmetric relationship between two owner-scoped items.',
+    description: 'Atomically create a symmetric relationship between two owner-scoped items. '
+      + 'Call this when the user says two things are related, or when you create something that '
+      + 'belongs with an existing item. This makes a peer link; to place an item *under* a project or '
+      + 'goal, set parent_id through create_item or update_item instead.',
     inputSchema: linkMutationSchema(),
   }),
   definition({
     name: 'unlink_items', title: 'Unlink items', kind: 'write', scope: THREADMAP_MCP_SCOPES.write,
     idempotent: true,
-    description: 'Atomically remove a symmetric relationship between two owner-scoped items.',
+    description: 'Atomically remove a symmetric relationship between two owner-scoped items. '
+      + 'Call this when a link is wrong or no longer meaningful. It removes only the relationship; '
+      + 'both items survive untouched.',
     inputSchema: linkMutationSchema(),
   }),
   definition({
     name: 'list_tags', title: 'List tags', kind: 'read', scope: THREADMAP_MCP_SCOPES.read,
-    description: 'List bounded owner-scoped custom and in-use item tags.',
+    description: 'List bounded owner-scoped custom and in-use item tags. '
+      + 'Call this before filtering or tagging, to use the vocabulary the owner already has rather '
+      + 'than inventing a near-duplicate tag.',
     inputSchema: objectSchema({}),
   }),
   ...secondaryDefinitions(),
   definition({
     name: 'list_files_metadata', title: 'List file metadata', kind: 'read', scope: THREADMAP_MCP_SCOPES.read,
-    description: 'Return attachment names, MIME types, sizes, and timestamps only. URLs, paths, and file contents are never returned.',
+    description: 'Return attachment names, MIME types, sizes, and timestamps only. URLs, paths, and file contents '
+      + 'are never returned. Call this to tell the user what is attached to an item; you cannot read '
+      + 'or fetch the files themselves, so do not offer to summarise their contents.',
     inputSchema: objectSchema({ item_id: ITEM_ID_SCHEMA, limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 } }),
   }),
   definition({
     name: 'preview_delete_item', title: 'Preview item deletion', kind: 'delete', scope: THREADMAP_MCP_SCOPES.delete,
     destructive: false,
-    description: 'Preview deletion impact and mint a short-lived, owner/client/revision-bound single-use confirmation token.',
+    description: 'Preview deletion impact and mint a short-lived, owner/client/revision-bound single-use confirmation '
+      + 'token. Always call this before confirm_delete_item, and show the user what it reports — it '
+      + 'names the children and links that would go with the item. Consider archive_item instead '
+      + 'unless permanent removal was explicitly asked for.',
     inputSchema: objectSchema({ item_id: ITEM_ID_SCHEMA, expected_revision: REVISION_SCHEMA }, ['item_id', 'expected_revision']),
   }),
   definition({
     name: 'confirm_delete_item', title: 'Confirm item deletion', kind: 'delete', scope: THREADMAP_MCP_SCOPES.delete,
     destructive: true, idempotent: true,
-    description: 'Permanently delete the exact previewed revision with its short-lived token and an idempotency UUID.',
+    description: 'Permanently delete the exact previewed revision with its short-lived token and an idempotency UUID. '
+      + 'Call this only after preview_delete_item and only once the user has confirmed the impact it '
+      + 'reported. This cannot be undone; archive_item can.',
     inputSchema: objectSchema({ item_id: ITEM_ID_SCHEMA, expected_revision: REVISION_SCHEMA,
       confirmation_token: { type: 'string', pattern: '^tmdc_[A-Za-z0-9_-]{43}$', minLength: 48, maxLength: 48 },
       client_request_id: REQUEST_ID_SCHEMA },
@@ -327,6 +380,40 @@ const DEFINITION_SPECS = [
 ] satisfies McpToolDefinition[];
 
 export const THREADMAP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = Object.freeze(DEFINITION_SPECS);
+
+/**
+ * The authorization record for each tool, built on the server from the same
+ * `scope:` field the definitions are built from.
+ *
+ * The registry used to derive a tool's required scope by reading
+ * `tool.securitySchemes[0].scopes[0]` — the very object that is also serialized
+ * to clients. Deriving an authorization decision from the wire payload couples
+ * two things that should be free to move independently: a change to what is
+ * advertised should never be able to change what is enforced.
+ */
+export interface ToolAuthorization {
+  requiredScope: string;
+  quotaKind: QuotaKind;
+}
+
+function quotaKindForScope(scope: string): QuotaKind {
+  if (scope === THREADMAP_MCP_SCOPES.delete) return 'delete';
+  if (scope === THREADMAP_MCP_SCOPES.write) return 'write';
+  return 'read';
+}
+
+export const THREADMAP_TOOL_AUTHORIZATION: ReadonlyMap<string, ToolAuthorization> = new Map(
+  DEFINITION_SPECS.map((tool) => {
+    const requiredScope = TOOL_SCOPES.get(tool.name);
+    if (!requiredScope) throw new Error(`Missing scope for ${tool.name}.`);
+    return [tool.name, { requiredScope, quotaKind: quotaKindForScope(requiredScope) }];
+  })
+);
+
+/** The scope a tool requires, from the server-side map. */
+export function requiredScopeFor(toolName: string): string | undefined {
+  return THREADMAP_TOOL_AUTHORIZATION.get(toolName)?.requiredScope;
+}
 
 function revisionMutationSchema(): JsonSchema {
   return objectSchema({ item_id: ITEM_ID_SCHEMA, expected_revision: REVISION_SCHEMA,
@@ -512,10 +599,15 @@ export class ThreadmapToolRegistry {
     this.descriptors = new Map(THREADMAP_TOOL_DEFINITIONS.map((tool) => {
       const handler = handlers.get(tool.name);
       if (!handler) throw new Error(`Missing handler for ${tool.name}.`);
-      const requiredScope = tool.securitySchemes[0].scopes[0];
-      const quotaKind: QuotaKind = requiredScope === THREADMAP_MCP_SCOPES.delete
-        ? 'delete' : requiredScope === THREADMAP_MCP_SCOPES.write ? 'write' : 'read';
-      return [tool.name, { definition: tool, requiredScope, quotaKind, handler }];
+      // From the server-side map, not from the object we serialize to clients.
+      const authorization = THREADMAP_TOOL_AUTHORIZATION.get(tool.name);
+      if (!authorization) throw new Error(`Missing authorization for ${tool.name}.`);
+      return [tool.name, {
+        definition: tool,
+        requiredScope: authorization.requiredScope,
+        quotaKind: authorization.quotaKind,
+        handler,
+      }];
     }));
   }
 
