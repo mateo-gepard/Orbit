@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { McpIntegrations } from '@/components/settings/mcp-integrations';
 import {
   User,
   Palette,
@@ -29,6 +30,7 @@ import {
   EyeOff,
   Send,
   Sparkles,
+  Plug,
   Smartphone,
   MonitorSmartphone,
   AlertTriangle,
@@ -124,6 +126,7 @@ const SECTIONS: SettingSection[] = [
   { id: 'privacy', label: 'settings.privacy', icon: Shield },
   { id: 'accessibility', label: 'settings.accessibility', icon: Accessibility },
   { id: 'eastereggs', label: 'settings.easterEggs', icon: Sparkles },
+  { id: 'integrations', label: 'settings.integrations', icon: Plug },
   { id: 'data', label: 'settings.dataStorage', icon: Database },
 ];
 
@@ -1770,6 +1773,15 @@ export default function SettingsPage() {
                   {t('settings.privacyNote')}
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* ═════ INTEGRATIONS ═════ */}
+          {activeSection === 'integrations' && (
+            <div>
+              <SectionHeader icon={Plug} label={t('settings.integrations')} />
+              {/* Local mode has no account for a client to be granted against. */}
+              <McpIntegrations disabled={isDemo || !user} />
             </div>
           )}
 
