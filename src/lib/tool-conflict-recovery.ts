@@ -3,7 +3,7 @@ import { writeStorageVerified } from './verified-storage';
 export const TOOL_CONFLICT_STORAGE_PREFIX = 'orbit-tool-conflict';
 const MAX_CONFLICTS_PER_ACCOUNT = 30;
 
-type ConflictStorage = Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem'>;
+type ConflictStorage = Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'>;
 
 export interface ToolConflictRecovery {
   version: 1;
@@ -75,4 +75,61 @@ export function preserveToolConflict(
   const key = `${TOOL_CONFLICT_STORAGE_PREFIX}:${input.toolId}:${id}${suffix(input.userId)}`;
   writeStorageVerified(storage, key, JSON.stringify(record));
   return record;
+}
+
+/**
+ * The storage key a preserved conflict lives under.
+ *
+ * Records were written and never read back by anything in the app: there was
+ * no resolve path and no delete path, so they accumulated until the cap and
+ * then `preserveToolConflict` started throwing — while the conflict toast
+ * promised the user a recovery flow that did not exist.
+ */
+export function toolConflictStorageKey(record: ToolConflictRecovery): string {
+  return `${TOOL_CONFLICT_STORAGE_PREFIX}:${record.toolId}:${record.id}${suffix(record.userId)}`;
+}
+
+/** Forget one preserved conflict. Returns whether a record was removed. */
+export function removeToolConflict(
+  userId: string,
+  conflictId: string,
+  storage: ConflictStorage = browserStorage(),
+): boolean {
+  const record = listToolConflicts(userId, storage).find((entry) => entry.id === conflictId);
+  if (!record) return false;
+  storage.removeItem(toolConflictStorageKey(record));
+  return true;
+}
+
+/** Forget every preserved conflict for an account. */
+export function clearToolConflicts(
+  userId: string,
+  storage: ConflictStorage = browserStorage(),
+): number {
+  const records = listToolConflicts(userId, storage);
+  records.forEach((record) => storage.removeItem(toolConflictStorageKey(record)));
+  return records.length;
+}
+
+export function countToolConflicts(
+  userId: string,
+  storage: ConflictStorage = browserStorage(),
+): number {
+  return listToolConflicts(userId, storage).length;
+}
+
+/** How close the account is to the cap that makes `preserveToolConflict` throw. */
+export const TOOL_CONFLICT_LIMIT = MAX_CONFLICTS_PER_ACCOUNT;
+
+/** A portable copy of everything preserved, for the "export" the toast mentions. */
+export function exportToolConflicts(
+  userId: string,
+  storage: ConflictStorage = browserStorage(),
+): { version: 1; userId: string; exportedAt: number; conflicts: ToolConflictRecovery[] } {
+  return {
+    version: 1,
+    userId,
+    exportedAt: Date.now(),
+    conflicts: listToolConflicts(userId, storage),
+  };
 }

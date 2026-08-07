@@ -2,6 +2,10 @@
 // Threadmap — Universal Item Types
 // ═══════════════════════════════════════════════════════════
 
+import type { RecurrenceRule } from './recurrence';
+
+export type { RecurrenceRule };
+
 export type ItemType = 'task' | 'project' | 'habit' | 'event' | 'goal' | 'note';
 
 export type ItemStatus = 'active' | 'waiting' | 'done' | 'archived';
@@ -71,6 +75,13 @@ export interface OrbitItem {
   startTime?: string; // HH:mm
   endTime?: string;
   googleCalendarId?: string;
+  /**
+   * A repeating event is one item carrying its rule, expanded by the views
+   * that draw it — not one item per occurrence.
+   */
+  recurrence?: RecurrenceRule;
+  /** Google's series id, when this item came from a recurring Google event. */
+  googleRecurringEventId?: string;
 
   // Goal fields
   timeframe?: GoalTimeframe;

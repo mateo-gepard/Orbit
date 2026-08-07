@@ -17,6 +17,8 @@ import {
 import { createItem, updateItem, deleteItem } from './firestore';
 import { useOrbitStore } from './store';
 import type { OrbitItem } from './types';
+import { collapseRecurringInstances } from './google-calendar-recurrence';
+import type { RecurrenceRule } from './recurrence';
 import { useSettingsStore } from './settings-store';
 import { scopedStorageKey } from './account-storage';
 import { removeLocalStorageVerified, writeLocalStorageVerified } from './verified-storage';
@@ -194,7 +196,11 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
     const timeMin = recentPast.toISOString();
     const timeMax = oneYearLater.toISOString();
 
-    const googleEvents = await fetchGoogleEvents(timeMin, timeMax);
+    const fetchedEvents = await fetchGoogleEvents(timeMin, timeMax);
+    // One item per series, not one per occurrence. See
+    // `google-calendar-recurrence.ts` for why the expansion is undone here.
+    const { events: googleEvents, series: googleSeries } =
+      collapseRecurringInstances(fetchedEvents);
     if (generation !== syncGeneration || syncOwnerId !== userId) {
       return { success: false, pushed: outbound.pushed, imported: 0 };
     }
@@ -273,7 +279,7 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
       const alreadyExists = cleanedOrbitItems.some(i => i.googleCalendarId === gcalId)
         || Boolean(sourceItem);
       if (!alreadyExists && !importedInThisRun.has(gcalId)) {
-        await importGoogleEvent(gcalEvent, userId);
+        await importGoogleEvent(gcalEvent, userId, googleSeries.get(gcalId)?.rule ?? null);
         importedInThisRun.add(gcalId);
         imported += 1;
       }
@@ -286,7 +292,12 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
       const gcalEvent = googleEventMap.get(orbitItem.googleCalendarId);
       if (gcalEvent && gcalEvent.status !== 'cancelled') {
         if (eventHasChanges(orbitItem, gcalEvent)) {
-          await updateFromGoogleEvent(orbitItem.id, gcalEvent, userId);
+          await updateFromGoogleEvent(
+            orbitItem.id,
+            gcalEvent,
+            userId,
+            googleSeries.get(orbitItem.googleCalendarId)?.rule ?? null,
+          );
         }
       }
     }
@@ -608,7 +619,11 @@ function threadmapSourceItemId(gcalEvent: GCalEvent, userId: string): string | n
   }
 }
 
-async function importGoogleEvent(gcalEvent: GCalEvent, userId: string): Promise<void> {
+async function importGoogleEvent(
+  gcalEvent: GCalEvent,
+  userId: string,
+  recurrence: RecurrenceRule | null = null,
+): Promise<void> {
   const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
 
   const newEvent: Omit<OrbitItem, 'id'> = {
@@ -626,6 +641,8 @@ async function importGoogleEvent(gcalEvent: GCalEvent, userId: string): Promise<
     ...(convertedEvent.endDate && { endDate: convertedEvent.endDate }),
     ...(convertedEvent.startTime && { startTime: convertedEvent.startTime }),
     ...(convertedEvent.endTime && { endTime: convertedEvent.endTime }),
+    ...(recurrence && { recurrence }),
+    ...(gcalEvent.recurringEventId && { googleRecurringEventId: gcalEvent.recurringEventId }),
   };
 
   await createItem(newEvent, {
@@ -634,7 +651,12 @@ async function importGoogleEvent(gcalEvent: GCalEvent, userId: string): Promise<
   });
 }
 
-async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: GCalEvent, userId: string): Promise<void> {
+async function updateFromGoogleEvent(
+  orbitItemId: string,
+  gcalEvent: GCalEvent,
+  userId: string,
+  recurrence: RecurrenceRule | null = null,
+): Promise<void> {
   const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
 
   const updates: Partial<OrbitItem> = {
@@ -646,6 +668,8 @@ async function updateFromGoogleEvent(orbitItemId: string, gcalEvent: GCalEvent, 
     endTime: convertedEvent.endTime,
     calendarSynced: true,
     updatedAt: Date.now(),
+    ...(recurrence && { recurrence }),
+    ...(gcalEvent.recurringEventId && { googleRecurringEventId: gcalEvent.recurringEventId }),
   };
 
   await updateItem(orbitItemId, updates);

@@ -7,6 +7,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   onSnapshot,
   getDoc,
   setDoc,
@@ -361,6 +362,51 @@ function loadLocalItems(userId: string): OrbitItem[] {
     console.warn('[THREADMAP] Failed to load local data; the original browser value was preserved:', err);
     return [];
   }
+}
+
+/**
+ * Ceiling on the item subscription.
+ *
+ * The query had no `limit()` at all, so every session downloaded the entire
+ * item history and held it in memory. Generous enough that no realistic
+ * account is truncated, but bounded — and when the bound *is* reached the user
+ * is told, rather than quietly seeing a partial graph.
+ */
+const MAX_SUBSCRIBED_ITEMS = 5_000;
+
+/**
+ * Ceiling on the browser recovery mirror in cloud mode.
+ *
+ * `saveLocalItems` re-serialised the whole array into localStorage on every
+ * snapshot, against a hard ~5 MB ceiling. At the measured ~330 B/item this
+ * slice lands near 1.6 MB worst case. Local mode never goes through here —
+ * there localStorage *is* the data and must not be trimmed.
+ */
+const MAX_MIRRORED_ITEMS = 5_000;
+
+/** Last mirror payload per account, so an unchanged snapshot writes nothing. */
+const lastMirrorPayload = new Map<string, string>();
+
+/**
+ * Write the cloud snapshot into the browser recovery cache.
+ *
+ * Cloud mode only: the cloud holds the complete history, so this cache is
+ * allowed to be a bounded, most-recently-updated slice.
+ */
+function saveSnapshotMirror(userId: string, items: OrbitItem[]): boolean {
+  const mirrored = items.length > MAX_MIRRORED_ITEMS
+    ? [...items].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, MAX_MIRRORED_ITEMS)
+    : items;
+
+  // Snapshots fire for metadata changes too; re-writing an identical payload
+  // is pure cost.
+  const serialized = JSON.stringify(mirrored);
+  if (lastMirrorPayload.get(userId) === serialized) return true;
+
+  const saved = saveLocalItems(userId, mirrored);
+  if (saved) lastMirrorPayload.set(userId, serialized);
+  else lastMirrorPayload.delete(userId);
+  return saved;
 }
 
 function saveLocalItems(userId: string, items: OrbitItem[]): boolean {
@@ -726,7 +772,8 @@ export function subscribeToItems(
   const q = query(
     collection(getDb(), ITEMS_COLLECTION),
     where('userId', '==', userId),
-    orderBy('updatedAt', 'desc')
+    orderBy('updatedAt', 'desc'),
+    limit(MAX_SUBSCRIBED_ITEMS)
   );
 
   let unsubscribed = false;
@@ -743,9 +790,18 @@ export function subscribeToItems(
       const authoritative = !snapshot.metadata.hasPendingWrites && !snapshot.metadata.fromCache;
       const items = mergeQueuedItemMutations(userId, cloudItems, authoritative);
 
+      // A truncated result means the account has outgrown the subscription.
+      // Say so: a silently partial graph reads as data loss.
+      if (cloudItems.length >= MAX_SUBSCRIBED_ITEMS) {
+        reportQueuedWrite(
+          `Only the ${MAX_SUBSCRIBED_ITEMS} most recently updated items are loaded. Archive what you no longer need.`,
+          { userId, generation },
+        );
+      }
+
       // Preserve both the cloud view and any independently journaled browser
       // mutation. A late rejected write must never be erased by a snapshot.
-      if (!saveLocalItems(userId, items)) {
+      if (!saveSnapshotMirror(userId, items)) {
         reportQueuedWrite('The latest cloud snapshot could not be added to this browser’s recovery cache.', {
           userId,
           generation,
@@ -2020,12 +2076,13 @@ async function saveToolDataUnqueued<T extends Record<string, unknown>>(
     if (committedRevision === null) throw new Error('Tool data transaction did not commit.');
     rememberToolBaseRevision(userId, toolId, committedRevision);
     acceptedToolData.set(revisionKey, payload);
-    try {
-      localStorage.setItem(localToolDataKey(userId, toolId), JSON.stringify({
-        ...payload,
-        revision: committedRevision,
-      }));
-    } catch { /* quota exceeded — ignore */ }
+    // No local mirror in cloud mode. Nothing read it — `subscribeToToolData`
+    // only consults `localToolDataKey` on the local-mode branch — so it was a
+    // second full copy of what the tool's own `persist` middleware already
+    // holds. Wishlist carried 43,920 bytes under `orbit-wishlist:<uid>` and
+    // 43,981 under `orbit-tool-wishlist:<uid>` at the same time. Offline reads
+    // come from Firestore's own cache; first-run fallback comes from
+    // `getInitialData`.
   } catch (error) {
     if (error instanceof ToolDataConflictError && typeof window !== 'undefined') {
       const acceptedData = acceptedToolData.get(revisionKey) ?? null;
@@ -2101,6 +2158,12 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
     window.addEventListener('storage', handler);
     return () => window.removeEventListener('storage', handler);
   }
+
+  // Reclaim the duplicate mirror left by earlier versions. The cloud is
+  // authoritative here and the tool's own `persist` copy covers local reads.
+  try {
+    localStorage.removeItem(localKey);
+  } catch { /* storage unavailable — nothing to reclaim */ }
 
   const docRef = doc(getDb(), TOOL_DATA_COLLECTION, `${userId}_${toolId}`);
   const revisionKey = `${userId}_${toolId}`;

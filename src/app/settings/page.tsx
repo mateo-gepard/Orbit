@@ -102,6 +102,7 @@ import {
 } from '@/lib/auth-reauth';
 import { clearScopedBrowserData } from '@/lib/account-storage';
 import { CAPTURE_SYNTAX } from '@/components/shell/command-bar';
+import { ConflictRecoveryPanel } from '@/components/settings/conflict-recovery';
 
 // ═══════════════════════════════════════════════════════════
 // Setting section definitions
@@ -1933,6 +1934,8 @@ export default function SettingsPage() {
           {activeSection === 'data' && (
             <div>
               <SectionHeader icon={Database} label={t('settings.dataStorage')} />
+
+              <ConflictRecoveryPanel userId={user?.uid ?? null} onDownload={downloadJson} />
 
               <SettingRow label={t('settings.exportAllData')} description={t('settings.exportAllDataDesc')}>
                 <div className="flex items-center gap-2">

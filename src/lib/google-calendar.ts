@@ -38,6 +38,10 @@ export interface GCalEvent {
   start?: GCalDateTime;
   end?: GCalDateTime;
   status?: 'confirmed' | 'tentative' | 'cancelled';
+  /** Present on every expanded instance of a recurring event: the series id. */
+  recurringEventId?: string;
+  /** RRULE/EXDATE lines, present on a series master. */
+  recurrence?: string[];
   extendedProperties?: {
     private?: Record<string, string>;
   };

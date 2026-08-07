@@ -54,6 +54,7 @@ import {
 import { createItem } from '@/lib/firestore';
 import { isMobile } from '@/lib/mobile';
 import type { OrbitItem } from '@/lib/types';
+import { eventOccursOnDate } from '@/lib/dashboard';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -490,14 +491,16 @@ function TimeGrid({
         const dateStr = format(days[dayIdx], 'yyyy-MM-dd');
 
         if (item.type === 'event') {
-          const matchesSingle = item.startDate === dateStr;
-          const matchesMulti = item.startDate && item.endDate && item.startDate <= dateStr && dateStr <= item.endDate;
-          if (!matchesSingle && !matchesMulti) continue;
+          // Repeating events are one item plus a rule, so membership of a day
+          // is a question for `eventOccursOnDate`, not a date comparison.
+          if (!eventOccursOnDate(item, dateStr)) continue;
 
           const isMultiDay = item.endDate && item.endDate !== item.startDate;
           const isAllDay = !item.startTime || !!isMultiDay;
           if (isAllDay) {
-            const key = `allday-${item.id}`;
+            // A multi-day event is drawn once as a bar; a repeating one has to
+            // land on each day it recurs on.
+            const key = item.recurrence ? `allday-${item.id}-${dateStr}` : `allday-${item.id}`;
             if (!seen.has(key)) {
               seen.add(key);
               allDay.get(dayIdx)!.push({ item, startMinute: 0, endMinute: 1440, isAllDay: true });
@@ -897,7 +900,10 @@ export default function CalendarPage() {
 
   const getItemsForDate = useCallback((date: Date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    return items.filter((i) => i.status !== 'archived' && ((i.type === 'event' && (i.startDate === dateStr || (i.startDate && i.endDate && i.startDate <= dateStr && dateStr <= i.endDate))) || (i.type === 'task' && i.dueDate === dateStr)));
+    return items.filter((i) => i.status !== 'archived' && (
+      (i.type === 'event' && eventOccursOnDate(i, dateStr))
+      || (i.type === 'task' && i.dueDate === dateStr)
+    ));
   }, [items]);
 
   const handleImportFromGoogle = async () => {
