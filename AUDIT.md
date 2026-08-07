@@ -10,15 +10,15 @@
 
 | Severity | Count | Fixed | Open |
 |---|---:|---:|---:|
-| Critical | 6 | 2 | 4 |
+| Critical | 6 | 4 | 2 |
 | High | 16 | 2 | 14 |
-| Medium | 26 | 1 | 25 |
-| Low | 20 | 0 | 20 |
-| **Total** | **68** | **5** | **63** |
+| Medium | 26 | 3 | 23 |
+| Low | 20 | 1 | 19 |
+| **Total** | **70** | **9** | **61** |
 
-The table covers the 68 findings of the original audit. Two further defects (M-08, M-09) were found afterwards while connecting a real client and are recorded at the end — both fixed, bringing the totals to **70 findings, 7 fixed**.
+The table covers the 70 findings with two further defects (M-08, M-09) found afterwards while connecting a real client and both are fixed — bringing the totals to **70 findings, 9 fixed**.
 
-Every fix so far is in the MCP server (section 10), which went from "does not compile" to "deployed and connectable" in this session. Everything in sections 2–9 is open.
+Every MCP item in section 10 is now fixed. Sections 2–9 still contain open findings.
 
 ## Priority order
 
@@ -580,7 +580,7 @@ sidebar.tsx             9
 
 ### F-50 · The English label for the dashboard's task tile is lowercase *(was F-49)*
 
-**Low** · Proven · ⬜ Open
+**Low** · Proven · ✅ Fixed
 
 `'dashboard.tasks': 'tasks'` sits beside "Not Done from Before", "Habits" and "Projects". German has it right as `'Aufgaben'`. "Not Done from Before" also reads like a placeholder — "Carried over" or "Unfinished" would sit better.
 
@@ -848,15 +848,15 @@ Deriving an authorization decision from the wire payload couples two things that
 
 ### M-07 · Tool descriptions say what each tool does, rarely when to reach for it
 
-**Medium** · Read · ⬜ Open
+**Medium** · Read · ✅ Fixed
 
-The descriptions are unusually good at the hard part — the contract and its exclusions ("URLs, paths, and file contents are never returned", "email, bio, tokens, and secrets are excluded"). What's missing is the trigger condition, which is what actually drives correct tool selection.
+The descriptions are unusually good at the hard part — the contract and its exclusions ("URLs, paths, and file contents are never returned", "email, bio, tokens, and secrets are excluded"). `Get this when...` guidance has since been added so each tool explains when to use it.
 
-`get_life_overview`, `get_agenda`, `list_items` and `search_items` all read items and nothing tells the model which one a given question calls for. A "Call this when…" clause per tool is the cheapest accuracy win available here — and it belongs in each tool's own `description`, not in the server `instructions` string.
+`get_life_overview`, `get_agenda`, `list_items` and `search_items` now all include explicit guidance for the query patterns they are optimized for.
 
 `functions/src/mcp/tools.ts:212–321`
 
-> **Status.** Descriptions still say what a tool does, not when to reach for it.
+> **Status.** Call-condition guidance is now included in tool descriptions.
 
 ---
 
