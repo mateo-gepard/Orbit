@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { saveToolData, ToolDataConflictError } from './firestore';
+import { saveToolData, ToolDataConflictError, ToolDataRejectedError } from './firestore';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
 import { reportSyncRecovered, reportSyncWarning } from './sync-warning';
@@ -127,6 +127,17 @@ function scheduleSave(enabledTools: ToolId[]) {
           || revision !== _localRevision) return;
       if (error instanceof ToolDataConflictError) {
         useToolboxStore.setState({ cloudDirty: true });
+        return;
+      }
+      if (error instanceof ToolDataRejectedError) {
+        // Retrying resends the identical document, so it would fail forever.
+        useToolboxStore.setState({ cloudDirty: true });
+        reportSyncWarning({
+          key: 'tool:toolbox',
+          userId: scheduledUserId,
+          toolId: 'toolbox',
+          message: 'Toolbox is saved on this device, but the server refused the cloud copy. Export your data and contact support.',
+        });
         return;
       }
       reportSyncWarning({

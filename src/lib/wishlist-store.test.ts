@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./firestore', () => ({
   saveToolData: vi.fn(async () => undefined),
   ToolDataConflictError: class ToolDataConflictError extends Error {},
+  ToolDataRejectedError: class ToolDataRejectedError extends Error {},
 }));
 vi.mock('./verified-storage', () => ({
   verifiedLocalStateStorage: {

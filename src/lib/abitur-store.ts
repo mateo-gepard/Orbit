@@ -21,7 +21,7 @@ import {
   reconcileSubjectSelection,
   subjectsConflict,
 } from './abitur';
-import { saveToolData, ToolDataConflictError } from './firestore';
+import { saveToolData, ToolDataConflictError, ToolDataRejectedError } from './firestore';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
 import { reportSyncRecovered, reportSyncWarning } from './sync-warning';
@@ -66,6 +66,17 @@ function scheduleSave(profile: AbiturProfile) {
         // Keep the losing payload dirty and in the persisted local store. The
         // central sync layer has preserved both versions for export/recovery.
         useAbiturStore.setState({ cloudDirty: true });
+        return;
+      }
+      if (error instanceof ToolDataRejectedError) {
+        // Retrying resends the identical document, so it would fail forever.
+        useAbiturStore.setState({ cloudDirty: true });
+        reportSyncWarning({
+          key: 'tool:abitur',
+          userId: scheduledUserId,
+          toolId: 'abitur',
+          message: 'Abitur is saved on this device, but the server refused the cloud copy. Export your data and contact support.',
+        });
         return;
       }
       reportSyncWarning({

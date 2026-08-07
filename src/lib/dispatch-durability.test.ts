@@ -10,6 +10,7 @@ vi.mock('./firestore', () => ({
   saveToolData: firestore.saveToolData,
   subscribeToToolData: firestore.subscribeToToolData,
   ToolDataConflictError: class ToolDataConflictError extends Error {},
+  ToolDataRejectedError: class ToolDataRejectedError extends Error {},
 }));
 
 import {

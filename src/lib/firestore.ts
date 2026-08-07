@@ -1924,6 +1924,31 @@ const toolRevisions = new Map<string, number>();
 const acceptedToolData = new Map<string, Record<string, unknown> | null>();
 const toolSaveQueue = new KeyedSerialQueue();
 
+/**
+ * The server refused the write on its merits — rules rejection or a malformed
+ * payload. Retrying sends the identical document, so it cannot succeed; callers
+ * must stop their retry loop and tell the user something actionable instead of
+ * promising a retry that will never work.
+ */
+export class ToolDataRejectedError extends Error {
+  readonly toolId: string;
+  readonly code: string;
+
+  constructor(toolId: string, code: string) {
+    super(`${toolId} was rejected by the server and will not sync until it is corrected.`);
+    this.name = 'ToolDataRejectedError';
+    this.toolId = toolId;
+    this.code = code;
+  }
+}
+
+/** Server refusals that repeating the same write cannot resolve. */
+function permanentWriteRejectionCode(error: unknown): string | null {
+  const code = String((error as { code?: unknown })?.code || '').replace(/^[^/]+\//, '');
+  return new Set(['permission-denied', 'invalid-argument', 'failed-precondition', 'not-found'])
+    .has(code) ? code : null;
+}
+
 export class ToolDataConflictError extends Error {
   readonly toolId: string;
   readonly baseRevision: number | null;
@@ -2023,11 +2048,18 @@ async function saveToolDataUnqueued<T extends Record<string, unknown>>(
           throw new ToolDataConflictError(toolId, knownRevision ?? null, currentRevision);
         }
         const nextRevision = currentRevision + 1;
+        // Whole-document write, deliberately not a merge. The security rules
+        // require `data.keys().hasOnly([...])`, and on a merge Firestore
+        // evaluates that against the *resulting* document — so any key left
+        // over from an older schema survives, fails the check, and the write is
+        // rejected with permission-denied. The retry recomputes an identical
+        // merge, so such a document can never sync again. A full set makes the
+        // document exactly this payload, which also heals an already-stale one.
         transaction.set(docRef, {
           ...payload,
           userId,
           revision: nextRevision,
-        }, { merge: true });
+        });
         committedRevision = nextRevision;
       });
     }, `saveToolData(${toolId})`);
@@ -2069,6 +2101,11 @@ async function saveToolDataUnqueued<T extends Record<string, unknown>>(
           },
         }));
       }
+    }
+    const rejectionCode = permanentWriteRejectionCode(error);
+    if (rejectionCode && !(error instanceof ToolDataConflictError)) {
+      console.error(`[THREADMAP] ${toolId} write rejected (${rejectionCode}):`, error);
+      throw new ToolDataRejectedError(toolId, rejectionCode);
     }
     throw error;
   }

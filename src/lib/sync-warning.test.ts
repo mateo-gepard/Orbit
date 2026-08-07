@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const firestore = vi.hoisted(() => ({ saveToolData: vi.fn() }));
+const firestore = vi.hoisted(() => ({
+  saveToolData: vi.fn(),
+  ToolDataRejectedError: class ToolDataRejectedError extends Error {},
+}));
 
 vi.mock('./firestore', () => ({
   saveToolData: firestore.saveToolData,
   ToolDataConflictError: class ToolDataConflictError extends Error {},
+  ToolDataRejectedError: firestore.ToolDataRejectedError,
 }));
 vi.mock('./verified-storage', () => ({
   verifiedLocalStateStorage: {
@@ -107,6 +111,27 @@ describe('tool sync retry lifecycle', () => {
       detail: { key: 'tool:wishlist', userId: 'owner-a' },
     });
     expect(useWishlistStore.getState().cloudDirty).toBe(false);
+  });
+
+  it('stops retrying when the server rejects the document outright', async () => {
+    useWishlistStore.getState()._setSyncUserId('owner-a');
+    firestore.saveToolData.mockRejectedValue(new firestore.ToolDataRejectedError('rejected'));
+
+    useWishlistStore.getState().addItem({ name: 'Tripod', currency: 'EUR', category: 'other' });
+    await vi.advanceTimersByTimeAsync(600);
+
+    const attemptsAfterFirstFailure = firestore.saveToolData.mock.calls.length;
+    expect(attemptsAfterFirstFailure).toBe(1);
+
+    // A rejected document is byte-identical on every retry, so the old 5s loop
+    // could never succeed — it just re-promised a retry forever.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(firestore.saveToolData.mock.calls.length).toBe(attemptsAfterFirstFailure);
+
+    const warnings = events().filter((event) => event.type === SYNC_WARNING_EVENT);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].detail.message).not.toContain('will retry');
+    expect(useWishlistStore.getState().cloudDirty).toBe(true);
   });
 
   it('attributes the warning to the account that owned the failing save', async () => {

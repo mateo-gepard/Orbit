@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { saveToolData, ToolDataConflictError } from './firestore';
+import { saveToolData, ToolDataConflictError, ToolDataRejectedError } from './firestore';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
 import { reportSyncRecovered, reportSyncWarning } from './sync-warning';
@@ -370,6 +370,17 @@ function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
           || revision !== _localRevision) return;
       if (error instanceof ToolDataConflictError) {
         useWishlistStore.setState({ cloudDirty: true });
+        return;
+      }
+      if (error instanceof ToolDataRejectedError) {
+        // Retrying resends the identical document, so it would fail forever.
+        useWishlistStore.setState({ cloudDirty: true });
+        reportSyncWarning({
+          key: 'tool:wishlist',
+          userId: scheduledUserId,
+          toolId: 'wishlist',
+          message: 'Wishlist is saved on this device, but the server refused the cloud copy. Export your data and contact support.',
+        });
         return;
       }
       reportSyncWarning({

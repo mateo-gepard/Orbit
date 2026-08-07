@@ -158,6 +158,33 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
     });
   }
 
+  it('rejects a merge that leaves a legacy key behind, which a full write heals', async () => {
+    // A document written under an older schema keeps keys the current save no
+    // longer sends. `hasOnly` is evaluated against the resulting document, so a
+    // merge preserves the stale key and is refused — permanently, because every
+    // retry recomputes the same merge. saveToolData therefore writes the whole
+    // document, which both passes and clears the leftover.
+    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const staleRef = doc(ownerDb, 'toolData', `${OWNER_ID}_wishlist`);
+
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'toolData', `${OWNER_ID}_wishlist`), {
+        ...toolDocument('wishlist', { items: [], duels: [] }),
+        legacyField: 'left over from an older release',
+      });
+    });
+
+    await assertFails(setDoc(
+      staleRef,
+      toolDocument('wishlist', { items: [], duels: [] }, 2, 2),
+      { merge: true },
+    ));
+    await assertSucceeds(setDoc(
+      staleRef,
+      toolDocument('wishlist', { items: [], duels: [] }, 2, 2),
+    ));
+  });
+
   it('binds tool data to its UID, tool ID, timestamp, allowlisted shape, and monotonic revision', async () => {
     const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
     const validRef = doc(ownerDb, 'toolData', `${OWNER_ID}_settings`);
