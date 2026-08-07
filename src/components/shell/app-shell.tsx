@@ -17,6 +17,7 @@ import {
 import { Sidebar } from './sidebar';
 import { CommandBar } from './command-bar';
 import { MobileNav } from './mobile-nav';
+import { LoadingScreen } from '@/components/ui/loading-screen';
 import { CompletionAnimation } from '@/components/ui/completion-animation';
 
 const DetailPanel = dynamic(
@@ -86,7 +87,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (loading) {
-    return <main className="min-h-screen bg-background text-foreground" />;
+    // An empty <main> is indistinguishable from a broken app. Auth also has a
+    // timeout now, so this state is bounded rather than permanent.
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <LoadingScreen />
+      </main>
+    );
   }
 
   if (!user) {

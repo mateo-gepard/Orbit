@@ -32,6 +32,10 @@ const hasEmulators = Boolean(
 );
 const rulesDescribe = hasEmulators ? describe : describe.skip;
 
+// When these are skipped, `npm test` says so explicitly — see
+// `scripts/report-rules-coverage.mjs`. A "skipped" line in a summary reads
+// exactly like a pass, and these are the security rules.
+
 let environment: RulesTestEnvironment;
 
 function validItem(userId = OWNER_ID) {

@@ -13,6 +13,8 @@ import {
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -29,6 +31,14 @@ import { stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { clearGoogleAccessToken } from '@/lib/google-calendar';
 import { deleteAccountData } from '@/lib/account-data';
 import { unregisterFCMToken } from '@/lib/fcm';
+
+/**
+ * How long to wait for Firebase to report an auth state before falling back to
+ * whatever local mode the browser already has. Long enough not to pre-empt a
+ * slow but working connection; short enough that a broken one is not a blank
+ * page.
+ */
+const AUTH_STATE_TIMEOUT_MS = 8_000;
 
 const EMAIL_LINK_KEY = 'orbitEmailForSignIn';
 const LOCAL_MODE_KEY = 'orbitLocalMode';
@@ -162,11 +172,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
+    let settled = false;
+
+    // Complete a redirect started because the popup was blocked.
+    void getRedirectResult(auth).catch((error) => {
+      console.error('[THREADMAP Auth] Redirect sign-in result failed:', error);
+    });
+
+    /**
+     * `onAuthStateChanged` has an error callback but no timeout. If it never
+     * fires at all — an unreachable Firebase, a blocked request — `loading`
+     * stayed true forever and the shell rendered an empty <main>: no spinner,
+     * no message, no escape hatch. A local-first app must never be locked out
+     * of local data by a network it does not need.
+     */
+    const fallbackTimer = window.setTimeout(() => {
+      if (cancelled || settled) return;
+      settled = true;
+      console.warn('[THREADMAP Auth] No auth state after '
+        + `${AUTH_STATE_TIMEOUT_MS}ms; falling through to stored local mode.`);
+      if (isLocalModeEnabled()) {
+        setUser(createDemoUser());
+        setIsDemo(true);
+      } else {
+        setUser(null);
+        setIsDemo(false);
+      }
+      setLoading(false);
+    }, AUTH_STATE_TIMEOUT_MS);
 
     const unsubscribe = onAuthStateChanged(
       auth,
       (firebaseUser) => {
         if (cancelled) return;
+        settled = true;
+        window.clearTimeout(fallbackTimer);
         if (firebaseUser) {
           setLocalModeEnabled(false);
           setUser(firebaseUser);
@@ -183,6 +223,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (error) => {
         console.error('[THREADMAP Auth] Auth state error:', error);
         if (cancelled) return;
+        settled = true;
+        window.clearTimeout(fallbackTimer);
         if (isLocalModeEnabled()) {
           setUser(createDemoUser());
           setIsDemo(true);
@@ -196,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(fallbackTimer);
       unsubscribe();
       stopGoogleCalendarSync(); // Stop sync on unmount
     };
@@ -213,8 +256,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (code === 'auth/popup-closed-by-user') {
         throw new Error('Google sign-in was cancelled.');
       }
-      if (code === 'auth/popup-blocked') {
-        throw new Error('Google sign-in popup was blocked. Enable popups or use local mode.');
+      // A blocked or unsupported popup used to be a dead end. Browsers that
+      // enforce COOP strictly, and popup blockers generally, both land here;
+      // redirect completes the same flow without one.
+      if (code === 'auth/popup-blocked'
+          || code === 'auth/operation-not-supported-in-this-environment'
+          || code === 'auth/web-storage-unsupported') {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch (redirectError) {
+          console.error('[THREADMAP Auth] Redirect sign-in failed:', redirectError);
+          throw new Error('Google sign-in popup was blocked and the redirect fallback failed. Enable popups or use local mode.');
+        }
       }
       if (error instanceof Error) {
         console.error('[THREADMAP Auth] Sign-in error:', error);

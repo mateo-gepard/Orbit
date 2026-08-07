@@ -297,7 +297,8 @@ function validateItem(item: Partial<OrbitItem>): boolean {
   return true;
 }
 
-function sanitizeItem(item: OrbitItem): OrbitItem {
+/** Exported for tests: this is the schema-drift boundary for every read. */
+export function sanitizeItem(item: OrbitItem): OrbitItem {
   // Preserve ALL existing fields — never strip unknown/future fields.
   // Only validate & default the required ones.
   const sanitized: Record<string, unknown> = {};
