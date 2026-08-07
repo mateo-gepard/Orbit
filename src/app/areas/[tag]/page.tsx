@@ -59,7 +59,7 @@ export default function AreaPage() {
     : { active: 'Active', completed: 'Completed', archived: 'Archived', all: 'All' };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       <header className="border-b border-border/40 bg-background px-4 pb-4 pt-4 lg:px-8 lg:pt-8">
         <div className="mx-auto flex max-w-3xl items-start justify-between gap-4">
           <div className="min-w-0">
@@ -94,7 +94,7 @@ export default function AreaPage() {
         </div>
       </div>
 
-      <main className="flex-1 overflow-y-auto px-4 py-4 lg:px-8">
+      <main className="px-4 py-4 lg:px-8">
         <div className="mx-auto max-w-3xl">
           <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" aria-hidden="true" />

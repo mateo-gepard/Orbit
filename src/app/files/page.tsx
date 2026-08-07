@@ -80,7 +80,7 @@ export default function FilesPage() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="flex flex-col bg-background">
       {/* Header */}
       <div className="p-4 lg:p-8 pb-3 lg:pb-4 border-b border-border/40">
         <div className="flex items-center justify-between mb-4">
@@ -105,7 +105,7 @@ export default function FilesPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div>
         {/* Project Filter */}
         {itemsWithFiles.length > 0 && (
           <div className="px-4 lg:px-8 py-4 border-b border-border/40">

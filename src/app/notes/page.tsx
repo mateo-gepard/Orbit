@@ -28,11 +28,21 @@ const FILTERS: { labelKey: TranslationKey; value: NoteSubtype | 'all' }[] = [
 	{ labelKey: 'notes.journal', value: 'journal' },
 ];
 
+/** The subtype picker in the create dialog — "general" is a real choice. */
+const SUBTYPE_OPTIONS: { labelKey: TranslationKey; value: NoteSubtype }[] = [
+	{ labelKey: 'notes.general', value: 'general' },
+	{ labelKey: 'notes.ideas', value: 'idea' },
+	{ labelKey: 'notes.principles', value: 'principle' },
+	{ labelKey: 'notes.plans', value: 'plan' },
+	{ labelKey: 'notes.journal', value: 'journal' },
+];
+
 export default function NotesPage() {
 	const items = useOrbitStore((state) => state.items);
 	const { user } = useAuth();
 		const { t, tp, lang } = useTranslation();
 	const [filter, setFilter] = useState<NoteSubtype | 'all'>('all');
+	const [newNoteSubtype, setNewNoteSubtype] = useState<NoteSubtype>('general');
 	const [searchQuery, setSearchQuery] = useState('');
 	const [isCreating, setIsCreating] = useState(false);
 	const [newNoteTitle, setNewNoteTitle] = useState('');
@@ -103,8 +113,8 @@ export default function NotesPage() {
 				status: 'active',
 					title: newNoteTitle.trim() || t('notes.untitled'),
 				content: newNoteContent.trim(),
-				noteSubtype: filter === 'all' ? 'general' : filter,
-				tags: filter !== 'all' ? [filter] : [],
+				noteSubtype: newNoteSubtype,
+				tags: newNoteSubtype === 'general' ? [] : [newNoteSubtype],
 				userId: user.uid,
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
@@ -121,6 +131,9 @@ export default function NotesPage() {
 
 	const handleStartCreating = () => {
 		setCreateError(null);
+		// The open filter is a sensible starting point, but it is now a default
+		// the user can see and change, not a silent decision.
+		setNewNoteSubtype(filter === 'all' ? 'general' : filter);
 		setIsCreating(true);
 	};
 
@@ -260,7 +273,26 @@ export default function NotesPage() {
 
 					<div className="h-px bg-border" />
 
-					<div className="flex items-center justify-end bg-muted/30 px-4 py-2.5">
+					<div className="flex flex-wrap items-center justify-between gap-2 bg-muted/30 px-4 py-2.5">
+						<div className="flex items-center gap-1" role="group" aria-label={t('notes.subtypeLabel')}>
+							{SUBTYPE_OPTIONS.map((option) => (
+								<button
+									key={option.value}
+									type="button"
+									onClick={() => setNewNoteSubtype(option.value)}
+									aria-pressed={newNoteSubtype === option.value}
+									disabled={isSubmitting}
+									className={cn(
+										'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+										newNoteSubtype === option.value
+											? 'bg-foreground text-background'
+											: 'text-muted-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground'
+									)}
+								>
+									{t(option.labelKey)}
+								</button>
+							))}
+						</div>
 						<button
 							type="button"
 							onClick={() => void handleCreateNote()}

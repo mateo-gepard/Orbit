@@ -8,7 +8,11 @@
 import type { OrbitItem, ItemType } from './types';
 
 const ALLOWED_PARENT_TYPES: Record<ItemType, ItemType[]> = {
-  project: [],
+  // Projects nest. Goals were the only intermediate layer, so a large effort
+  // like a multi-year roadmap could not be broken into sub-projects at all.
+  // `canSetParent` already refuses any parent that is one of the item's own
+  // descendants, so the cycle guard this needs is in place.
+  project: ['project'],
   goal: ['project'],
   task: ['project', 'goal'],
   event: ['project', 'goal'],

@@ -10,6 +10,7 @@ import {
   Clock,
   CalendarDays,
   CalendarRange,
+  List,
   LayoutGrid,
   MapPin,
   ArrowRight,
@@ -55,6 +56,7 @@ import { createItem } from '@/lib/firestore';
 import { isMobile } from '@/lib/mobile';
 import type { OrbitItem } from '@/lib/types';
 import { eventOccursOnDate } from '@/lib/dashboard';
+import { AgendaView, AGENDA_DAYS } from '@/components/shell/agenda-view';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -71,7 +73,7 @@ import {
 // Types & Constants
 // ═══════════════════════════════════════════════════════════
 
-type ViewMode = 'month' | 'week' | 'day';
+type ViewMode = 'month' | 'week' | 'day' | 'agenda';
 
 interface CalendarEvent {
   item: OrbitItem;
@@ -831,7 +833,8 @@ export default function CalendarPage() {
   };
   const goPrev = () => {
     setSelectedMobileDay(null);
-    if (viewMode === 'month') setCurrentDate(subMonths(currentDate, 1));
+    if (viewMode === 'agenda') setCurrentDate(addDays(currentDate, -AGENDA_DAYS));
+    else if (viewMode === 'month') setCurrentDate(subMonths(currentDate, 1));
     else if (viewMode === 'week') {
       if (mobile) setCurrentDate(addDays(currentDate, -3));
       else setCurrentDate(subWeeks(currentDate, 1));
@@ -839,7 +842,8 @@ export default function CalendarPage() {
   };
   const goNext = () => {
     setSelectedMobileDay(null);
-    if (viewMode === 'month') setCurrentDate(addMonths(currentDate, 1));
+    if (viewMode === 'agenda') setCurrentDate(addDays(currentDate, AGENDA_DAYS));
+    else if (viewMode === 'month') setCurrentDate(addMonths(currentDate, 1));
     else if (viewMode === 'week') {
       if (mobile) setCurrentDate(addDays(currentDate, 3));
       else setCurrentDate(addWeeks(currentDate, 1));
@@ -946,6 +950,9 @@ export default function CalendarPage() {
   };
 
   const headerLabel = useMemo(() => {
+    if (viewMode === 'agenda') {
+      return `${format(currentDate, 'd MMM', { locale })} – ${format(addDays(currentDate, AGENDA_DAYS - 1), 'd MMM yyyy', { locale })}`;
+    }
     if (viewMode === 'month') return format(currentDate, 'MMMM yyyy', { locale });
     if (viewMode === 'week') {
       const days = mobile ? mobileWeekDays : weekDays;
@@ -976,14 +983,14 @@ export default function CalendarPage() {
   }, [selectedMobileDay, getItemsForDate]);
 
   const viewLabels: Record<ViewMode, string> = german
-    ? { month: 'Monat', week: 'Woche', day: 'Tag' }
-    : { month: 'Month', week: 'Week', day: 'Day' };
+    ? { month: 'Monat', week: 'Woche', day: 'Tag', agenda: 'Agenda' }
+    : { month: 'Month', week: 'Week', day: 'Day', agenda: 'Agenda' };
   const previousViewLabel: Record<ViewMode, string> = german
-    ? { month: 'Vorheriger Monat', week: 'Vorherige Woche', day: 'Vorheriger Tag' }
-    : { month: 'Previous month', week: 'Previous week', day: 'Previous day' };
+    ? { month: 'Vorheriger Monat', week: 'Vorherige Woche', day: 'Vorheriger Tag', agenda: 'Frühere Tage' }
+    : { month: 'Previous month', week: 'Previous week', day: 'Previous day', agenda: 'Earlier days' };
   const nextViewLabel: Record<ViewMode, string> = german
-    ? { month: 'Nächster Monat', week: 'Nächste Woche', day: 'Nächster Tag' }
-    : { month: 'Next month', week: 'Next week', day: 'Next day' };
+    ? { month: 'Nächster Monat', week: 'Nächste Woche', day: 'Nächster Tag', agenda: 'Spätere Tage' }
+    : { month: 'Next month', week: 'Next week', day: 'Next day', agenda: 'Later days' };
 
   return (
     <div className="h-full flex flex-col p-3 lg:p-6 lg:pr-6">
@@ -1031,6 +1038,7 @@ export default function CalendarPage() {
               { mode: 'month' as ViewMode, icon: LayoutGrid },
               { mode: 'week' as ViewMode, icon: CalendarRange },
               { mode: 'day' as ViewMode, icon: CalendarDays },
+              { mode: 'agenda' as ViewMode, icon: List },
             ]).map(({ mode, icon: Icon }) => (
               <button
                 key={mode}
@@ -1073,6 +1081,18 @@ export default function CalendarPage() {
           </button>
         </div>
       </div>
+
+      {/* Agenda — a list of what is next, which the grids cannot give. */}
+      {viewMode === 'agenda' && (
+        <AgendaView
+          items={items}
+          start={currentDate}
+          days={AGENDA_DAYS}
+          is24h={is24h}
+          locale={locale}
+          onItemClick={handleEventClick}
+        />
+      )}
 
       {/* Week View */}
       {viewMode === 'week' && (

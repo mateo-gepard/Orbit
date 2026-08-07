@@ -102,6 +102,7 @@ import {
 } from '@/lib/auth-reauth';
 import { clearScopedBrowserData } from '@/lib/account-storage';
 import { CAPTURE_SYNTAX } from '@/components/shell/command-bar';
+import { GLOBAL_SHORTCUTS } from '@/components/shell/keyboard-shortcuts';
 import { ConflictRecoveryPanel } from '@/components/settings/conflict-recovery';
 
 // ═══════════════════════════════════════════════════════════
@@ -275,13 +276,9 @@ function NumberInput({
   );
 }
 
-// The list is a reference to shortcuts that are actually implemented.
-const SHORTCUTS: { keys: string[]; action: TranslationKey }[] = [
-  { keys: ['MOD', 'K'], action: 'settings.commandBar' },
-  { keys: ['Esc'], action: 'settings.closePanel' },
-  { keys: ['Enter'], action: 'settings.submitConfirm' },
-  { keys: ['↑', '↓'], action: 'settings.navigateList' },
-];
+// Sourced from the handler itself, so the list cannot drift from what the
+// app actually binds.
+const SHORTCUTS = GLOBAL_SHORTCUTS;
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);

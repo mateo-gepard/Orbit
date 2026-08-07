@@ -1,9 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Archive as ArchiveIcon, RotateCcw, Search, CheckCircle2, Circle, X } from 'lucide-react';
+import type React from 'react';
+import { Archive as ArchiveIcon, RotateCcw, Search, CheckCircle2, Circle, X, ListChecks, Trash2 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
-import { updateItem } from '@/lib/firestore';
+import { deleteItem, updateItem } from '@/lib/firestore';
+import { useBulkSelection } from '@/lib/hooks/use-bulk-selection';
+import { BulkActionBar, type BulkAction } from '@/components/items/bulk-action-bar';
+import type { OrbitItem } from '@/lib/types';
 import { ItemRow } from '@/components/items/item-row';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
@@ -74,8 +78,61 @@ export default function ArchivePage() {
     }
   };
 
+  // Archive could restore but never purge, so removing an archived item meant
+  // opening it in the detail panel, one at a time.
+  const visibleItems = activeTab === 'completed' ? completedItems : archivedItems;
+  const selection = useBulkSelection(useMemo(() => visibleItems.map((item) => item.id), [visibleItems]));
+
+  const runBulk = async (ids: string[], apply: (id: string) => Promise<unknown>) => {
+    const results = await Promise.allSettled(ids.map(apply));
+    const failed = results.filter((result) => result.status === 'rejected').length;
+    if (failed > 0) toast.error(t('bulk.failed', { count: failed }));
+    else toast.success(t('bulk.done', { count: ids.length }));
+  };
+
+  const bulkActions: BulkAction[] = [
+    {
+      key: 'restore',
+      label: t('bulk.restore'),
+      icon: RotateCcw,
+      run: (ids) => runBulk(ids, async (id) => {
+        const target = items.find((item) => item.id === id);
+        await updateItem(id, {
+          status: target?.completedAt ? 'done' : 'active',
+          ...(target?.completedAt ? {} : { completedAt: undefined }),
+          restoredAt: getTimestamp(),
+        });
+      }),
+    },
+    {
+      key: 'delete',
+      label: t('bulk.delete'),
+      icon: Trash2,
+      confirm: t('bulk.deleteConfirm'),
+      destructive: true,
+      run: (ids) => runBulk(ids, (id) => deleteItem(id)),
+    },
+  ];
+
+  const renderRow = (item: OrbitItem, actions: React.ReactNode) => (
+    selection.selecting ? (
+      <div className="flex items-center gap-2 pl-1">
+        <input
+          type="checkbox"
+          checked={selection.isSelected(item.id)}
+          onChange={() => selection.toggle(item.id)}
+          aria-label={t('bulk.selectItem', { title: item.title })}
+          className="h-4 w-4 shrink-0 accent-current"
+        />
+        <div className="min-w-0 flex-1">
+          <ItemRow item={item} showType compact enableSwipe={false} />
+        </div>
+      </div>
+    ) : actions
+  );
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       {/* Header */}
       <div className="px-4 lg:px-8 pt-4 lg:pt-8 pb-3 lg:pb-4 border-b border-border/40 bg-background">
         <div className="max-w-3xl mx-auto">
@@ -90,10 +147,13 @@ export default function ArchivePage() {
       <Tabs 
         value={activeTab} 
         onValueChange={(v) => setActiveTab(v as ViewTab)}
-        className="flex-1 flex flex-col overflow-hidden"
+        className="flex flex-col"
       >
-        {/* Tab Navigation */}
-        <div className="sticky top-0 z-10 bg-background border-b border-border/40">
+        {/* Tab navigation and search stick together, so their heights can
+            never disagree — the search bar used to be pinned at a hard-coded
+            49px against a 37px tab bar. */}
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
+        <div className="border-b border-border/40">
           <div className="max-w-3xl mx-auto px-4 lg:px-8">
             <TabsList className="w-full grid grid-cols-2 bg-transparent h-auto p-0 gap-0">
               <TabsTrigger 
@@ -133,7 +193,7 @@ export default function ArchivePage() {
         </div>
 
         {/* Search Bar */}
-        <div className="sticky top-[49px] lg:top-[49px] z-10 bg-background/95 backdrop-blur-sm border-b border-border/40 px-4 lg:px-8 py-3">
+        <div className="border-b border-border/40 px-4 lg:px-8 py-3">
           <div className="max-w-3xl mx-auto relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 lg:h-3.5 lg:w-3.5 -translate-y-1/2 text-muted-foreground/30" />
             <input
@@ -143,17 +203,41 @@ export default function ArchivePage() {
               placeholder={t(activeTab === 'completed' ? 'archive.searchCompletedPlaceholder' : 'archive.searchArchivedPlaceholder')}
               className="w-full rounded-xl lg:rounded-lg border border-border/50 bg-background py-2.5 lg:py-2 pl-10 lg:pl-9 pr-3 text-[14px] lg:text-[13px] outline-none placeholder:text-muted-foreground/30 focus:border-foreground/20 transition-colors"
             />
+            {!selection.selecting && visibleItems.length > 0 && (
+              <button
+                type="button"
+                onClick={selection.startSelecting}
+                className="absolute right-10 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+              >
+                <ListChecks className="h-3 w-3" />
+                {t('bulk.select')}
+              </button>
+            )}
             {search && <button type="button" onClick={() => setSearch('')} aria-label={t('archive.clearSearch')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-muted-foreground/50 hover:bg-foreground/[0.05] hover:text-foreground"><X className="h-4 w-4" /></button>}
           </div>
         </div>
 
+        </div>
+
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div>
           <div className="max-w-3xl mx-auto px-4 lg:px-8 py-4">
+            {selection.selecting && (
+              <BulkActionBar
+                count={selection.count}
+                allSelected={selection.allSelected}
+                selectedIds={selection.selectedIds}
+                actions={bulkActions}
+                onSelectAll={selection.selectAll}
+                onClear={selection.clear}
+                onDone={selection.stopSelecting}
+              />
+            )}
             {/* Completed Tab */}
             <TabsContent value="completed" className="mt-0 space-y-px">
               {completedItems.map((item) => (
                 <div key={item.id} className="group">
+                  {renderRow(item, (<>
                   {/* Mobile: swipe to uncomplete */}
                   <div className="flex items-center gap-1.5 lg:hidden">
                     <div className="min-w-0 flex-1"><SwipeableRow
@@ -178,6 +262,7 @@ export default function ArchivePage() {
                       <Circle className="h-3 w-3" /> {t('archive.uncomplete')}
                     </button>
                   </div>
+                  </>))}
                 </div>
               ))}
 
@@ -198,6 +283,7 @@ export default function ArchivePage() {
             <TabsContent value="archived" className="mt-0 space-y-px">
               {archivedItems.map((item) => (
                 <div key={item.id} className="group">
+                  {renderRow(item, (<>
                   {/* Mobile: swipe to restore */}
                   <div className="flex items-center gap-1.5 lg:hidden">
                     <div className="min-w-0 flex-1"><SwipeableRow
@@ -222,6 +308,7 @@ export default function ArchivePage() {
                       <RotateCcw className="h-3 w-3" /> {t('common.restore')}
                     </button>
                   </div>
+                  </>))}
                 </div>
               ))}
 
