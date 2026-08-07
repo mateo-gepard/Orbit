@@ -53,7 +53,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { calculateStreak, isHabitScheduledForDate } from '@/lib/habits';
 import { cn, fullTimestampPattern, getLocale } from '@/lib/utils';
 import { format, isPast, isToday, isValid, parseISO } from 'date-fns';
-import { useTranslation, type TranslationKey } from '@/lib/i18n';
+import { useTranslation, type Translate, type TranslationKey } from '@/lib/i18n';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { VersionedSaveQueue } from '@/components/notes/versioned-save-queue';
@@ -188,22 +188,20 @@ function editableSchedule(item: OrbitItem): Required<CalendarEventSchedule> {
   };
 }
 
-function eventScheduleErrorMessage(error: CalendarEventScheduleError, german: boolean): string {
+function eventScheduleErrorMessage(error: CalendarEventScheduleError, t: Translate): string {
   if (error === 'missing-start-date' || error === 'invalid-start-date') {
-    return german ? 'Ein gültiges Startdatum ist erforderlich.' : 'A valid start date is required.';
+    return t('detail.aValidStartDateIs');
   }
   if (error === 'invalid-end-date') {
-    return german ? 'Das Enddatum ist ungültig.' : 'The end date is invalid.';
+    return t('detail.theEndDateIsInvalid');
   }
   if (error === 'incomplete-time-range') {
-    return german
-      ? 'Gib sowohl Start- als auch Endzeit ein oder lasse beide für einen ganztägigen Termin leer.'
-      : 'Enter both start and end times, or leave both empty for an all-day event.';
+    return t('detail.enterBothStartAndEnd');
   }
   if (error === 'invalid-start-time' || error === 'invalid-end-time') {
-    return german ? 'Gib gültige Start- und Endzeiten ein.' : 'Enter valid start and end times.';
+    return t('detail.enterValidStartAndEnd');
   }
-  return german ? 'Das Ende muss nach dem Start liegen.' : 'The end must be after the start.';
+  return t('detail.theEndMustBeAfter');
 }
 
 function EventScheduleFields({
@@ -226,7 +224,6 @@ function EventScheduleFields({
   onSave: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
-  const german = useSettingsStore((state) => state.settings.language === 'de');
   const schedule = useMemo<Required<CalendarEventSchedule>>(() => ({
     startDate: draft.startDate,
     endDate: draft.endDate,
@@ -245,12 +242,12 @@ function EventScheduleFields({
 
   const validationMessage = validation.valid
     ? null
-    : eventScheduleErrorMessage(validation.error, german);
+    : eventScheduleErrorMessage(validation.error, t);
 
   return (
     <fieldset aria-busy={saving} className="space-y-2 rounded-xl border border-border/50 p-3">
       <legend className="px-1 text-[11px] font-semibold uppercase text-muted-foreground/60">
-        {german ? 'Terminzeit' : 'Event schedule'}
+        {t('detail.eventSchedule')}
       </legend>
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -301,15 +298,11 @@ function EventScheduleFields({
         </div>
       </div>
       <p className="text-[10px] leading-relaxed text-muted-foreground/60">
-        {german
-          ? 'Für ganztägige Termine beide Zeitfelder leer lassen. Das Enddatum ist bei eintägigen Terminen optional.'
-          : 'Leave both time fields empty for an all-day event. End date is optional for a single-day event.'}
+        {t('detail.leaveBothTimeFieldsEmpty')}
       </p>
       {(validationMessage || saveFailed) && (
         <p role="alert" className="rounded-lg bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
-          {validationMessage || (german
-            ? 'Der Terminzeitraum konnte nicht gespeichert werden. Deine Eingaben bleiben erhalten.'
-            : 'The event schedule could not be saved. Your changes are still here.')}
+          {validationMessage || (t('detail.theEventScheduleCouldNot'))}
         </p>
       )}
       <div className="flex items-center justify-end gap-2 pt-1">
@@ -320,7 +313,7 @@ function EventScheduleFields({
             disabled={disabled || saving}
             className="min-h-9 rounded-lg px-3 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] disabled:opacity-50"
           >
-            {german ? 'Zurücksetzen' : 'Reset'}
+            {t('detail.reset')}
           </button>
         )}
         <button
@@ -329,7 +322,7 @@ function EventScheduleFields({
           disabled={disabled || !dirty || saving || !validation.valid}
           className="min-h-9 rounded-lg bg-foreground px-3 text-[11px] font-medium text-background disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {saving ? (german ? 'Speichern…' : 'Saving…') : t('common.save')}
+          {saving ? (t('detail.saving')) : t('common.save')}
         </button>
       </div>
     </fieldset>
@@ -590,7 +583,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
       return false;
     }
     if (item.type === 'event' && !detailScheduleValidation.valid) {
-      toast.error(eventScheduleErrorMessage(detailScheduleValidation.error, german));
+      toast.error(eventScheduleErrorMessage(detailScheduleValidation.error, t));
       return false;
     }
     try {
@@ -601,7 +594,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
       setDetailSaveState('error');
       return false;
     }
-  }, [conflictingDetailDraft, detailDraft.title, detailSaveQueue, detailScheduleValidation, german, item.type]);
+  }, [conflictingDetailDraft, detailDraft.title, detailSaveQueue, detailScheduleValidation, item.type, t]);
 
   const handleUpdate = useCallback(
     async (updates: Partial<OrbitItem>): Promise<boolean> => {
@@ -830,7 +823,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
         calendarEventScheduleFromItem(latestItem),
       );
       if (!scheduleValidation.valid) {
-        toast.error(eventScheduleErrorMessage(scheduleValidation.error, german));
+        toast.error(eventScheduleErrorMessage(scheduleValidation.error, t));
         return;
       }
       startGoogleCalendarSync(latestItem.userId);
@@ -1062,13 +1055,13 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               onClick={() => void handleComplete()}
               disabled={!canToggleCompletion}
               aria-label={!canToggleCompletion
-                ? (german ? 'Gewohnheit ist heute nicht geplant' : 'Habit not scheduled for today')
+                ? (t('detail.habitNotScheduledForToday'))
                 : isCurrentComplete
-                  ? (german ? 'Als nicht erledigt markieren' : 'Mark as incomplete')
-                  : (german ? 'Als erledigt markieren' : 'Mark as complete')}
+                  ? (t('detail.markAsIncomplete'))
+                  : (t('detail.markAsComplete'))}
               aria-pressed={isCurrentComplete}
               title={!canToggleCompletion
-                ? (german ? 'Diese Gewohnheit ist heute nicht geplant.' : 'This habit is not scheduled for today.')
+                ? (t('detail.thisHabitIsNotScheduled'))
                 : undefined}
               className={cn(
                 'relative flex h-6 w-6 items-center justify-center rounded-full border transition-all shadow-[var(--shadow-hairline)] disabled:cursor-not-allowed disabled:opacity-40',
@@ -1203,8 +1196,8 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                       <div className="mt-2">
                         <p className="mb-1.5 text-[10px] text-muted-foreground/60">
                           {item.frequency === 'weekly'
-                            ? (german ? 'Geplanter Tag' : 'Scheduled day')
-                            : (german ? 'Geplante Tage' : 'Scheduled days')}
+                            ? (t('detail.scheduledDay'))
+                            : (t('detail.scheduledDays'))}
                         </p>
                         <div className="grid grid-cols-4 gap-1">
                           {dayLabels.map((label, idx) => (
@@ -1225,8 +1218,8 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                                 handleUpdate({ customDays: Array.from(days) });
                               }}
                               aria-label={`${label}: ${scheduledHabitDays.includes(idx)
-                                ? (german ? 'geplant' : 'scheduled')
-                                : (german ? 'nicht geplant' : 'not scheduled')}`}
+                                ? (t('detail.scheduled'))
+                                : (t('detail.notScheduled'))}`}
                               aria-pressed={scheduledHabitDays.includes(idx)}
                               className={cn(
                                 'flex min-h-10 w-full items-center justify-center rounded text-[10px] font-medium',
@@ -1243,7 +1236,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                     )}
 
                     <div className="mt-2">
-                      <Input aria-label={german ? 'Erinnerungszeit der Gewohnheit' : 'Habit reminder time'} type="time" value={item.habitTime || ''} onChange={(e) => handleUpdate({ habitTime: e.target.value || undefined })} className="h-9 text-[11px]" placeholder={t('detail.timePlaceholder')} />
+                      <Input aria-label={t('detail.habitReminderTime')} type="time" value={item.habitTime || ''} onChange={(e) => handleUpdate({ habitTime: e.target.value || undefined })} className="h-9 text-[11px]" placeholder={t('detail.timePlaceholder')} />
                     </div>
 
 
@@ -1306,13 +1299,13 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                     >
                       <CalendarIcon className="h-3.5 w-3.5" />
                       {calendarAuthorizationLoading
-                        ? (german ? 'Google wird vorbereitet…' : 'Preparing Google…')
+                        ? (t('detail.preparingGoogle'))
                         : syncingCalendar
                         ? t('detail.syncing')
                         : item.calendarSynced
                           ? t('detail.syncedToCalendar')
                           : item.googleCalendarId
-                            ? (german ? 'Google-Kalender-Sync erneut versuchen' : 'Retry Google Calendar sync')
+                            ? (t('detail.retryGoogleCalendarSync'))
                             : t('detail.syncToGoogle')}
                     </button>
                   </div>
@@ -1378,19 +1371,17 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
       {conflictingDetailDraft && (
         <div role="alert" className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm">
           <p className="font-medium text-amber-950 dark:text-amber-100">
-            {german ? 'Dieser Browser-Entwurf basiert auf einer älteren Version.' : 'This browser draft is based on an older version.'}
+            {t('detail.thisBrowserDraftIsBased')}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80">
-            {german
-              ? 'Stelle ihn wieder her und setze ihn ausdrücklich auf die neueste Cloud-Version auf, oder verwirf ihn und behalte die Cloud-Version.'
-              : 'Restore and explicitly rebase it onto the latest cloud version, or discard it and keep the cloud version.'}
+            {t('detail.restoreAndExplicitlyRebaseIt')}
           </p>
           <details className="mt-2 text-xs text-amber-950 dark:text-amber-100">
             <summary className="cursor-pointer font-medium">
-              {german ? 'Browser-Entwurf ansehen' : 'Preview browser draft'}
+              {t('detail.previewBrowserDraft')}
             </summary>
             <div className="mt-2 max-h-28 overflow-auto rounded-lg bg-background/60 p-2">
-              <p className="font-medium">{conflictingDetailDraft.draft.title || (german ? 'Ohne Titel' : 'Untitled')}</p>
+              <p className="font-medium">{conflictingDetailDraft.draft.title || (t('detail.untitled'))}</p>
               {conflictingDetailDraft.draft.content && (
                 <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{conflictingDetailDraft.draft.content}</p>
               )}
@@ -1402,14 +1393,14 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               onClick={restoreAndRebaseDetailDraft}
               className="min-h-11 rounded-lg bg-foreground px-3 text-xs font-medium text-background"
             >
-              {german ? 'Wiederherstellen & neu aufsetzen' : 'Restore & rebase'}
+              {t('detail.restoreRebase')}
             </button>
             <button
               type="button"
               onClick={discardDetailDraft}
               className="min-h-11 rounded-lg px-3 text-xs font-medium hover:bg-foreground/[0.06]"
             >
-              {german ? 'Entwurf verwerfen' : 'Discard draft'}
+              {t('detail.discardDraft')}
             </button>
           </div>
         </div>
@@ -1419,7 +1410,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4" data-slot="detail-body">
         {/* Title - Large and prominent */}
         <input
-          aria-label={german ? 'Titel des Eintrags' : 'Item title'}
+          aria-label={t('detail.itemTitle')}
           ref={titleInputRef}
           value={detailDraft.title}
           disabled={Boolean(conflictingDetailDraft)}
@@ -1456,7 +1447,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           {item.type === 'task' && (
             <div className="relative">
               <Input
-                aria-label={german ? 'Fälligkeitsdatum' : 'Due date'}
+                aria-label={t('detail.dueDate')}
                 type="date"
                 value={item.dueDate || ''}
                 onChange={(e) => handleUpdate({ dueDate: e.target.value || undefined })}
@@ -1466,7 +1457,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                 <button
                   type="button"
                   onClick={() => handleUpdate({ dueDate: undefined })}
-                  aria-label={german ? 'Fälligkeitsdatum entfernen' : 'Clear due date'}
+                  aria-label={t('detail.clearDueDate')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25"
                 >
                   <X className="h-3 w-3 text-muted-foreground/50" />
@@ -1488,9 +1479,9 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             </button>
           )}
           {isAutoScheduledByDueDate && (
-            <span className="surface-card flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-muted-foreground/70" title={german ? 'Fällige und überfällige Aufgaben erscheinen automatisch auf deinem Dashboard.' : 'Due and overdue tasks appear on your dashboard automatically.'}>
+            <span className="surface-card flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-muted-foreground/70" title={t('detail.dueAndOverdueTasksAppear')}>
               <Sparkles className="h-3.5 w-3.5" />
-              {german ? 'Automatisch enthalten' : 'Included automatically'}
+              {t('detail.includedAutomatically')}
             </span>
           )}
         </div>
@@ -1520,8 +1511,8 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                     checked={check.done}
                     onCheckedChange={() => toggleChecklistItem(check.id)}
                     aria-label={`${check.done
-                      ? (german ? 'Als nicht erledigt markieren' : 'Mark incomplete')
-                      : (german ? 'Als erledigt markieren' : 'Mark complete')}: ${check.text}`}
+                      ? (t('detail.markIncomplete'))
+                      : (t('detail.markComplete'))}: ${check.text}`}
                     className="h-4 w-4"
                   />
                   <span className={cn('text-[14px] flex-1', check.done && 'text-muted-foreground/40 line-through')}>
@@ -1533,7 +1524,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                       const updated = (item.checklist || []).filter(c => c.id !== check.id);
                       handleUpdate({ checklist: updated });
                     }}
-                    aria-label={`${german ? 'Checklistenpunkt löschen' : 'Delete checklist item'}: ${check.text}`}
+                    aria-label={`${t('detail.deleteChecklistItem')}: ${check.text}`}
                     className="rounded-md p-1 opacity-100 transition-opacity hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                   >
                     <X className="h-3 w-3 text-muted-foreground/50" />
@@ -1542,7 +1533,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               ))}
               <div className="flex gap-2 mt-2">
                 <input
-                  aria-label={german ? 'Neuer Checklistenpunkt' : 'New checklist item'}
+                  aria-label={t('detail.newChecklistItem')}
                   value={newChecklistText}
                   onChange={(e) => setNewChecklistText(e.target.value)}
                   onKeyDown={(e) => {
@@ -1554,7 +1545,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                   placeholder={t('detail.checklistPlaceholder')}
                   className="flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[13px] outline-none placeholder:text-muted-foreground/30 transition-colors focus:border-border/70 focus:bg-background/50"
                 />
-                <button type="button" onClick={() => void addChecklistItem()} disabled={!newChecklistText.trim() || checklistSaving} aria-busy={checklistSaving} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40" aria-label={german ? 'Checklistenpunkt hinzufügen' : 'Add checklist item'}>
+                <button type="button" onClick={() => void addChecklistItem()} disabled={!newChecklistText.trim() || checklistSaving} aria-busy={checklistSaving} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40" aria-label={t('detail.addChecklistItem')}>
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
@@ -1621,13 +1612,13 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             {/* Milestone selector for tasks under a project */}
             {item.type === 'task' && owningProject && projectMilestones.length > 0 && (
               <div>
-                <FieldLabel>{german ? 'Meilenstein' : 'Milestone'}</FieldLabel>
+                <FieldLabel>{t('detail.milestone')}</FieldLabel>
                 <Select value={currentMilestoneId || 'none'} onValueChange={handleMilestoneChange}>
-                  <SelectTrigger aria-label={german ? 'Meilenstein auswählen' : 'Select milestone'} className="mt-1.5 h-8 text-[12px]">
-                    <SelectValue placeholder={german ? 'Kein Meilenstein' : 'No milestone'} />
+                  <SelectTrigger aria-label={t('detail.selectMilestone')} className="mt-1.5 h-8 text-[12px]">
+                    <SelectValue placeholder={t('detail.noMilestone')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none" className="text-[12px]">{german ? 'Kein Meilenstein' : 'No milestone'}</SelectItem>
+                    <SelectItem value="none" className="text-[12px]">{t('detail.noMilestone')}</SelectItem>
                     {projectMilestones.map((ms) => (
                       <SelectItem key={ms.id} value={ms.id} className="text-[12px]">
                         {ms.title}
@@ -1641,7 +1632,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             {/* Linked Items */}
             {linkedItems.length > 0 && (
               <div>
-                <FieldLabel>{german ? 'Verknüpfte Einträge' : 'Linked Items'} ({linkedItems.length})</FieldLabel>
+                <FieldLabel>{t('detail.linkedItems')} ({linkedItems.length})</FieldLabel>
                 <div className="mt-2 space-y-1">
                   {linkedItems.map((linked) => {
                     const Icon = TYPE_ICONS[linked.type];
@@ -1668,7 +1659,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             {/* Child Items */}
             {childItems.length > 0 && (
               <div>
-                <FieldLabel>{german ? 'Enthält' : 'Contains'} ({childItems.length})</FieldLabel>
+                <FieldLabel>{t('detail.contains')} ({childItems.length})</FieldLabel>
                 <div className="mt-2 space-y-1">
                   {childItems.map((child) => {
                     const Icon = TYPE_ICONS[child.type];
@@ -1712,7 +1703,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           <div className="space-y-0.5 text-[11px] text-muted-foreground/40">
             <p>{t('common.createdAt', { date: format(new Date(item.createdAt), fullTimestampPattern(settings.dateFormat, settings.timeFormat), { locale: getLocale(settings.language) }) })}</p>
             <p>{t('common.updatedAt', { date: format(new Date(item.updatedAt), fullTimestampPattern(settings.dateFormat, settings.timeFormat), { locale: getLocale(settings.language) }) })}</p>
-            {item.completedAt && <p>{german ? 'Erledigt am' : 'Completed'} {format(new Date(item.completedAt), fullTimestampPattern(settings.dateFormat, settings.timeFormat), { locale: getLocale(settings.language) })}</p>}
+            {item.completedAt && <p>{t('detail.completed')} {format(new Date(item.completedAt), fullTimestampPattern(settings.dateFormat, settings.timeFormat), { locale: getLocale(settings.language) })}</p>}
           </div>
         </div>
       </div>
@@ -1791,8 +1782,8 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           ? (german ? `„${item.title}“ archivieren?` : `Archive “${item.title}”?`)
           : (german ? `„${item.title}“ löschen?` : `Delete “${item.title}”?`)}
         description={settings.archiveInsteadOfDelete
-          ? (german ? 'Du kannst den Eintrag später aus dem Archiv wiederherstellen.' : 'You can restore it later from Archive.')
-          : (german ? 'Dadurch wird der Eintrag dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.' : 'This permanently removes the item and cannot be undone.')}
+          ? (t('detail.youCanRestoreItLater'))
+          : (t('detail.thisPermanentlyRemovesTheItem'))}
         confirmLabel={settings.archiveInsteadOfDelete ? t('common.archive') : t('common.delete')}
         onConfirm={performDelete}
       />
@@ -1811,7 +1802,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           : item.googleCalendarId && pendingTypeChange !== 'event'
             ? `This changes the item from ${t(ITEM_TYPE_KEYS[item.type])} to ${pendingTypeChange ? t(ITEM_TYPE_KEYS[pendingTypeChange]) : ''}. The Google Calendar event will remain, but it will be safely detached from this item.`
             : `This changes the item from ${t(ITEM_TYPE_KEYS[item.type])} to ${pendingTypeChange ? t(ITEM_TYPE_KEYS[pendingTypeChange]) : ''}. Shared content and links will be preserved.`}
-        confirmLabel={settings.language === 'de' ? 'Typ ändern' : 'Change type'}
+        confirmLabel={t('detail.changeType')}
         onConfirm={performTypeChange}
       />
     </>

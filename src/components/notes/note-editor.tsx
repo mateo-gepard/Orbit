@@ -368,13 +368,16 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
                 )}
               </div>
 
-              <Popover open={showSettings} onOpenChange={setShowSettings}>
+              <Popover
+                open={showSettings}
+                onOpenChange={setShowSettings}
+              >
                 <PopoverTrigger asChild>
-                  <button
+                <button
                     type="button"
                     aria-label={t('notes.options')}
                     disabled={actionPending}
-                    className="flex h-11 w-11 items-center justify-center rounded-md transition-colors hover:bg-foreground/5 disabled:cursor-wait disabled:opacity-50"
+                    className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-md transition-colors hover:bg-foreground/5 disabled:cursor-wait disabled:opacity-50"
                   >
                     <MoreVertical className="h-4 w-4 text-muted-foreground" />
                   </button>
