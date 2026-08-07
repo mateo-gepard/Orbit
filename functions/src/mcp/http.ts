@@ -357,7 +357,19 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
           return jsonResponse(404, { error: 'not_found' });
       }
     } catch (error) {
-      if (error instanceof OAuthProtocolError) return oauthErrorResponse(error);
+      if (error instanceof OAuthProtocolError) {
+        // Without this, a client-side failure such as a refused registration
+        // leaves no server-side trace and has to be reproduced by hand. The code
+        // and description are server-authored constants, never request content.
+        log({
+          route: path,
+          level: 'warn',
+          oauthError: error.code,
+          status: error.status,
+          message: error.message,
+        });
+        return oauthErrorResponse(error);
+      }
       // Never surface an unexpected exception's message: it can carry Firestore
       // detail, internal hostnames, or token material.
       log({ route: path, level: 'error', message: error instanceof Error ? error.name : 'unknown' });

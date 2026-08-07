@@ -51,7 +51,7 @@ Set these for the `threadmapMcp` function. `MCP_OWNER_UID` is the only required 
 |---|---|---|
 | `MCP_OWNER_UID` | *(none — required)* | Firebase uid of the single Threadmap account this server serves. Every token, authorization request, and tool call is checked against it. Without it the endpoint returns `503`. |
 | `MCP_ORIGIN` | `https://threadmap.app` | Public origin. Issuer, resource, and all four OAuth endpoints are derived from it. |
-| `MCP_DYNAMIC_CLIENT_SCOPES` | `threadmap.read threadmap.write offline_access` | Scopes a dynamically registered client may request. **`threadmap.delete` is deliberately excluded** — add it here only if you want agents able to delete. |
+| `MCP_DYNAMIC_CLIENT_SCOPES` | `threadmap.read threadmap.write offline_access` | Scopes a dynamically registered client may hold. **`threadmap.delete` is deliberately excluded** — add it here only if you want agents able to delete. A client asking for more is narrowed to this set, not refused (see below). |
 | `MCP_EXTRA_REDIRECT_URIS` | *(empty)* | Space-separated extra callbacks to allowlist beyond the built-in ChatGPT and Claude ones. |
 | `MCP_ALLOW_LOOPBACK_REDIRECTS` | `false` | Set `true` to accept RFC 8252 loopback callbacks — required for **Claude Code**. |
 
@@ -172,6 +172,14 @@ carries, so a read-only token is never offered a write tool.
 | `threadmap.read` | `get_life_overview`, `get_agenda`, `list_items`, `search_items`, `get_item`, `list_tags`, `list_files_metadata`, `get_wishlist`, `get_abitur_profile`, `get_flight_logs`, `get_briefing_journal`, `get_dispatch_plans`, `get_settings`, `get_toolbox` |
 | `threadmap.write` | `create_item`, `update_item`, `complete_item`, `archive_item`, `set_habit_completion`, `link_items`, `unlink_items` |
 | `threadmap.delete` | `preview_delete_item`, `confirm_delete_item` |
+
+Hosts commonly request every scope the discovery document advertises. Rather than
+refuse the registration, the endpoint grants the intersection with
+`MCP_DYNAMIC_CLIENT_SCOPES` and reports the granted scope in its response — the
+behaviour RFC 7591 §2 and RFC 6749 §3.3 both provide for. So a host asking for
+`threadmap.delete` connects successfully with read and write, and simply never
+sees the two delete tools. Registration is refused only when *nothing* requested
+is grantable.
 
 Write safety, enforced server-side regardless of what a host or model claims:
 

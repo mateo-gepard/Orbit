@@ -258,3 +258,49 @@ test('full DCR, consent, code, access, refresh rotation, and replay revocation f
     (error) => error instanceof OAuthProtocolError && error.code === 'invalid_token'
   );
 });
+
+test('registration narrows an over-broad scope request instead of refusing it', () => {
+  const store = new MemoryFirestore();
+  const service = new ThreadmapOAuthService(store as unknown as Firestore, configuration);
+
+  return (async () => {
+    // A host that requests everything `scopes_supported` advertises must still
+    // register; `threadmap.delete` is simply not granted to dynamic clients.
+    const registered = await service.registerClient({
+      client_name: 'Claude',
+      redirect_uris: [CLAUDE_REDIRECT_URI],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      scope: 'threadmap.read threadmap.write threadmap.delete offline_access',
+    });
+    assert.deepEqual(registered.scope.split(' ').sort(), ['offline_access', 'threadmap.read']);
+
+    // A software statement is ignored, not refused: every field it could assert is
+    // validated from the plain request anyway.
+    const withStatement = await service.registerClient({
+      redirect_uris: [CLAUDE_REDIRECT_URI],
+      software_statement: 'eyJhbGciOiJSUzI1NiJ9.e30.sig',
+    });
+    assert.match(withStatement.client_id, /^tmc_/);
+
+    // offline_access is dropped rather than erroring when the grant is absent.
+    const noRefresh = await service.registerClient({
+      redirect_uris: [CLAUDE_REDIRECT_URI],
+      grant_types: ['authorization_code'],
+      scope: 'threadmap.read offline_access',
+    });
+    assert.deepEqual(noRefresh.scope.split(' '), ['threadmap.read']);
+    assert.deepEqual(noRefresh.grant_types, ['authorization_code']);
+
+    // Nothing grantable at all is still a refusal.
+    await assert.rejects(
+      () => service.registerClient({
+        redirect_uris: [CLAUDE_REDIRECT_URI],
+        scope: 'threadmap.delete',
+      }),
+      (error: unknown) => error instanceof OAuthProtocolError
+        && error.code === 'invalid_client_metadata',
+    );
+  })();
+});

@@ -687,12 +687,11 @@ export class ThreadmapOAuthService {
   async registerClient(input: DynamicClientRegistrationRequest | unknown):
   Promise<DynamicClientRegistrationResponse> {
     const request = expectRecord(input, 'Dynamic client metadata must be a JSON object.');
-    if (request.software_statement !== undefined) {
-      throw new OAuthProtocolError(
-        'invalid_software_statement',
-        'Software statements are not accepted by this registration endpoint.'
-      );
-    }
+    // A software statement is a signed assertion of client metadata. This server
+    // has no issuer to trust one against, so it is ignored rather than refused —
+    // every field it could assert is independently validated below from the plain
+    // request, so ignoring it grants nothing. Refusing the registration outright
+    // would lock out any host that sends one alongside valid metadata.
     const redirectValues = expectStringArray(
       request.redirect_uris,
       'invalid_redirect_uri',
@@ -724,16 +723,23 @@ export class ThreadmapOAuthService {
     } catch {
       throw new OAuthProtocolError('invalid_client_metadata', 'The requested client scope is invalid.');
     }
-    if (scopes.length < 1 || !areScopesAllowed(scopes, this.configuration.dynamicClientScopes)) {
-      throw new OAuthProtocolError(
-        'invalid_client_metadata',
-        'The requested client scope is not permitted for dynamic clients.'
-      );
+    // Narrow to policy instead of refusing. RFC 7591 §2 and RFC 6749 §3.3 both let
+    // the authorization server issue a scope narrower than the one requested, and
+    // hosts routinely request everything `scopes_supported` advertises — which is
+    // broader than what a dynamically registered client may hold, because
+    // `threadmap.delete` is reserved for explicitly configured clients. The
+    // registration response reports the granted scope, so the client is told what
+    // it actually got. The result is always a subset of policy, so this can never
+    // grant more than `dynamicClientScopes` allows.
+    scopes = scopes.filter((scope) => this.configuration.dynamicClientScopes.includes(scope));
+    // offline_access is meaningless without the grant that uses it.
+    if (!grantTypes.includes('refresh_token')) {
+      scopes = scopes.filter((scope) => scope !== 'offline_access');
     }
-    if (scopes.includes('offline_access') && !grantTypes.includes('refresh_token')) {
+    if (scopes.length < 1) {
       throw new OAuthProtocolError(
         'invalid_client_metadata',
-        'offline_access requires the refresh_token grant.'
+        'None of the requested scopes are available to dynamically registered clients.'
       );
     }
     if (request.resource !== undefined) {
