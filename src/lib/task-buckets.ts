@@ -34,8 +34,12 @@ export function getTaskBuckets({
     if (item.type !== 'task') return false;
     if (item.dueDate !== selectedDateStr) return false;
 
+    // Looking at a past day shows what it held, finished or not — only
+    // archived tasks drop out. (This used to read
+    // `status === 'done' || status !== 'archived'`, where the first clause can
+    // never decide the result: correct behaviour, unreadable intent.)
     if (isViewingPast) {
-      return item.status === 'done' || item.status !== 'archived';
+      return item.status !== 'archived';
     }
 
     return isOpenTask(item);

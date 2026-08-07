@@ -40,6 +40,13 @@ export interface OrbitItem {
   /** Monotonic cloud revision used to reject stale cross-device writes. */
   revision?: number;
   completedAt?: number;
+  /**
+   * When the user last pulled this item back out of the Archive. The
+   * auto-archive retention clock measures from here when it is newer than
+   * `completedAt`, so restoring gives the item a fresh window instead of
+   * putting it straight back where it came from on the next render.
+   */
+  restoredAt?: number;
 
   // Task fields
   dueDate?: string; // ISO date string YYYY-MM-DD

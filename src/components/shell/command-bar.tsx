@@ -15,12 +15,13 @@ import {
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { parseCommand } from '@/lib/command-parser';
+import { resolveMention } from '@/lib/mention-resolution';
 import { createItem, linkItems } from '@/lib/firestore';
 import { hasCalendarPermission } from '@/lib/google-calendar';
 import { flushPendingGoogleCalendarEvents } from '@/lib/google-calendar-sync';
 import { LIFE_AREA_TAGS, type ItemType, type NoteSubtype, type OrbitItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { getAllowedParentTypes } from '@/lib/links';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -42,6 +43,19 @@ const COMMAND_ROW =
   'mx-1.5 flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[14px] outline-none transition-colors lg:py-2 lg:text-[13px] focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-wait disabled:opacity-50';
 const COMMAND_ROW_ACTIVE = 'bg-foreground/[0.055] shadow-[var(--shadow-hairline)]';
 const COMMAND_ROW_IDLE = 'hover:bg-foreground/[0.035] active:bg-foreground/[0.055]';
+
+/**
+ * The capture language, spelled out where capture happens. It was previously
+ * undocumented everywhere — Settings → Shortcuts lists only ⌘K/Esc/Enter/↑↓ —
+ * which left the app's headline feature as its least discoverable surface.
+ */
+export const CAPTURE_SYNTAX = [
+  { labelKey: 'commandBar.syntaxTypes', hintKey: 'commandBar.syntaxTypesHint' },
+  { labelKey: 'commandBar.syntaxTag', hintKey: 'commandBar.syntaxTagHint' },
+  { labelKey: 'commandBar.syntaxPriority', hintKey: 'commandBar.syntaxPriorityHint' },
+  { labelKey: 'commandBar.syntaxLink', hintKey: 'commandBar.syntaxLinkHint' },
+  { labelKey: 'commandBar.syntaxDate', hintKey: 'commandBar.syntaxDateHint' },
+] as const satisfies readonly { labelKey: TranslationKey; hintKey: TranslationKey }[];
 
 export function CommandBar() {
   const { user } = useAuth();
@@ -99,7 +113,14 @@ export function CommandBar() {
   const linkQuery = isTypingLink ? afterAt.toLowerCase().trim() : '';
   
   // Exclude only archived items to keep autocomplete clean
-  const linkableItems = items.filter(i => i.status !== 'archived');
+  const linkableItems = useMemo(() => items.filter(i => i.status !== 'archived'), [items]);
+
+  // Titles the parser may consume whole after an `@`. Without them a mention
+  // stops at the first space, which is what keeps it from eating the due date.
+  const knownTitles = useMemo(
+    () => linkableItems.map((item) => item.title).filter(Boolean),
+    [linkableItems]
+  );
 
   // Don't show suggestions if we already resolved a link (user selected from autocomplete)
   const suggestedLinks = isTypingLink && !resolvedLink && (linkQuery || lastAtIndex === input.length - 1)
@@ -131,7 +152,7 @@ export function CommandBar() {
     }
   }, [commandBarOpen]);
 
-  const parsed = parseCommand(input);
+  const parsed = useMemo(() => parseCommand(input, { knownTitles }), [input, knownTitles]);
 
   const searchQuery = input.toLowerCase().replace(/^\/\w+\s*/, '');
   const filteredItems = searchQuery
@@ -147,7 +168,7 @@ export function CommandBar() {
   const submitCommand = async () => {
     if (!input.trim() || !user) return;
 
-    const parsed = parseCommand(input);
+    const parsed = parseCommand(input, { knownTitles });
     const effectiveTags = activeTag && !parsed.tags.includes(activeTag)
       ? [...parsed.tags, activeTag]
       : parsed.tags;
@@ -172,10 +193,10 @@ export function CommandBar() {
       return;
     }
 
-    // If there's no title at all, don't create anything
+    // If there's no title at all, say so instead of dismissing silently.
     if (!parsed.title.trim()) {
-      setInput('');
-      setCommandBarOpen(false);
+      toast.info(t('commandBar.nothingToCreate'));
+      inputRef.current?.focus();
       return;
     }
 
@@ -191,37 +212,26 @@ export function CommandBar() {
       }
     });
 
-    // Find a related item by @title. Projects/goals become hierarchy parents when valid;
-    // all other targets become peer links after creation.
+    // Find a related item by @title. Projects/goals become hierarchy parents when
+    // valid; all other targets become peer links after creation. Because a match
+    // can move the new item in the hierarchy, only a certain one is allowed to —
+    // a guess becomes a peer link instead.
     let relationshipTarget: OrbitItem | undefined;
-    
-    // If a resolved link item was stored from autocomplete, use it
+    let targetIsCertain = false;
+
     if (resolvedLink) {
+      // Picked from the autocomplete list: the user named this item themselves.
       relationshipTarget = resolvedLink;
+      targetIsCertain = true;
     } else if (parsed.linkedItemTitles && parsed.linkedItemTitles.length > 0) {
       const firstLinkTitle = parsed.linkedItemTitles[0];
-      const linkTitleLower = firstLinkTitle.toLowerCase();
-      
-      // First try exact match
-      let matchedItem = items.find(item => 
-        item.title.toLowerCase() === linkTitleLower
-      );
-      // If no exact match, try fuzzy match (contains)
-      if (!matchedItem) {
-        matchedItem = items.find(item => 
-          item.title.toLowerCase().includes(linkTitleLower) ||
-          linkTitleLower.includes(item.title.toLowerCase())
-        );
+      const match = resolveMention(firstLinkTitle, items);
+      if (match) {
+        relationshipTarget = match.item;
+        targetIsCertain = match.confidence === 'exact';
+      } else {
+        toast.info(t('commandBar.mentionUnresolved', { title: firstLinkTitle }));
       }
-      
-      if (matchedItem) {
-        relationshipTarget = matchedItem;
-      }
-    }
-
-    // Strip any leftover @... text from the title
-    if (parsed.title.includes('@')) {
-      parsed.title = parsed.title.replace(/@[^#!]*/g, '').trim();
     }
 
     let noteSubtype: NoteSubtype | undefined;
@@ -233,7 +243,9 @@ export function CommandBar() {
     }
 
     const parentItemId =
-      relationshipTarget && getAllowedParentTypes(parsed.type).includes(relationshipTarget.type)
+      relationshipTarget
+        && targetIsCertain
+        && getAllowedParentTypes(parsed.type).includes(relationshipTarget.type)
         ? relationshipTarget.id
         : undefined;
 
@@ -359,8 +371,9 @@ export function CommandBar() {
 
   const TypeIcon = TYPE_ICONS[parsed.type] || CheckSquare;
   const isCreateMode = input.startsWith('/') || (input.trim() && filteredItems.length === 0);
-  // Clean @ text from preview title
-  const previewTitle = parsed.title.includes('@') ? parsed.title.replace(/@[^#!]*/g, '').trim() : parsed.title;
+  // The parser owns mention handling now, so the title it returns is the title
+  // that gets stored — no second cleanup pass that could disagree with it.
+  const previewTitle = parsed.title;
   const previewTags = activeTag && !parsed.tags.includes(activeTag)
     ? [...parsed.tags, activeTag]
     : parsed.tags;
@@ -498,8 +511,8 @@ export function CommandBar() {
           >
             {/* Tag suggestions */}
             {suggestedTags.length > 0 && (
-              <div>
-                <div className={COMMAND_SECTION_LABEL}>
+              <div role="group" aria-label={t('commandBar.tags')}>
+                <div className={COMMAND_SECTION_LABEL} aria-hidden="true">
                   {t('commandBar.tags')}
                 </div>
                 {suggestedTags.map((tag, idx) => (
@@ -524,8 +537,8 @@ export function CommandBar() {
 
             {/* Priority suggestions */}
             {suggestedPriorities.length > 0 && !suggestedTags.length && (
-              <div>
-                <div className={COMMAND_SECTION_LABEL}>
+              <div role="group" aria-label={t('commandBar.priority')}>
+                <div className={COMMAND_SECTION_LABEL} aria-hidden="true">
                   {t('commandBar.priority')}
                 </div>
                 {suggestedPriorities.map((priority, idx) => (
@@ -554,8 +567,8 @@ export function CommandBar() {
 
             {/* Link suggestions */}
             {suggestedLinks.length > 0 && !suggestedTags.length && !suggestedPriorities.length && (
-              <div>
-                <div className={COMMAND_SECTION_LABEL}>
+              <div role="group" aria-label={t('commandBar.linkTo')}>
+                <div className={COMMAND_SECTION_LABEL} aria-hidden="true">
                   {t('commandBar.linkTo')}
                 </div>
                 {suggestedLinks.map((item, idx) => {
@@ -597,8 +610,8 @@ export function CommandBar() {
 
             {/* Search results */}
             {filteredItems.length > 0 && !input.startsWith('/') && !showingAutocomplete && (
-              <div>
-                <div className={COMMAND_SECTION_LABEL}>
+              <div role="group" aria-label={t('commandBar.results')}>
+                <div className={COMMAND_SECTION_LABEL} aria-hidden="true">
                   {t('commandBar.results')}
                 </div>
                 {filteredItems.map((item, idx) => {
@@ -629,8 +642,13 @@ export function CommandBar() {
 
             {/* Create preview for items with titles */}
             {input.trim() && isCreateMode && !suggestedTags.length && (previewTitle || resolvedLink) && (
-              <div>
-                <div className={COMMAND_SECTION_LABEL}>
+              <div
+                role="group"
+                aria-label={language === 'de'
+                  ? `${t(`type.${parsed.type}`)} erstellen`
+                  : `Create new ${t(`type.${parsed.type}`).toLowerCase()}`}
+              >
+                <div className={COMMAND_SECTION_LABEL} aria-hidden="true">
                   {language === 'de'
                     ? `${t(`type.${parsed.type}`)} erstellen`
                     : `Create new ${t(`type.${parsed.type}`).toLowerCase()}`}
@@ -671,8 +689,11 @@ export function CommandBar() {
 
             {/* Tag creation preview (when only tags, no title) */}
             {input.trim() && isCreateMode && !suggestedTags.length && !parsed.title.trim() && parsed.tags.length > 0 && (
-              <div>
-                <div className={COMMAND_SECTION_LABEL}>
+              <div
+                role="group"
+                aria-label={parsed.tags.length === 1 ? t('commandBar.createTag') : t('commandBar.createTags')}
+              >
+                <div className={COMMAND_SECTION_LABEL} aria-hidden="true">
                   {parsed.tags.length === 1 ? t('commandBar.createTag') : t('commandBar.createTags')}
                 </div>
                 <button
@@ -725,6 +746,25 @@ export function CommandBar() {
                     </button>
                   ))}
                 </div>
+
+                <div className="text-[10px] font-semibold uppercase text-muted-foreground/50">
+                  {t('commandBar.syntax')}
+                </div>
+                <dl className="space-y-1.5">
+                  {CAPTURE_SYNTAX.map(({ labelKey, hintKey }) => (
+                    <div key={labelKey} className="flex items-baseline gap-2.5">
+                      <dt className="w-16 shrink-0 text-[11px] text-muted-foreground/60">
+                        {t(labelKey)}
+                      </dt>
+                      <dd className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                        {t(hintKey)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="text-[10px] text-muted-foreground/50">
+                  {t('commandBar.syntaxDateNote')}
+                </p>
               </div>
             )}
           </div>

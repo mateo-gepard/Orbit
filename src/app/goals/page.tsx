@@ -9,6 +9,8 @@ import { computeBadges } from '@/lib/badges';
 import { BadgesSection } from '@/components/ui/badge-stack';
 import type { GoalTimeframe } from '@/lib/types';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
+import { getGoalStats as computeGoalStats } from '@/lib/progress';
+import { QuickCreateDialog } from '@/components/items/quick-create-dialog';
 
 const TIMEFRAME_KEYS: Record<GoalTimeframe, TranslationKey> = {
   quarterly: 'goals.thisQuarter',
@@ -23,6 +25,7 @@ export default function GoalsPage() {
   const createInFlightRef = useRef(false);
   const [creatingGoal, setCreatingGoal] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const goals = useMemo(
     () => items.filter((i) => i.type === 'goal' && i.status !== 'archived'),
@@ -31,33 +34,18 @@ export default function GoalsPage() {
 
   const badgeCategories = useMemo(() => computeBadges(items), [items]);
 
-  const getGoalStats = (goalId: string) => {
-    const goal = items.find((i) => i.id === goalId);
-    if (!goal) return { progress: 0, relatedCount: 0 };
+  const getGoalStats = (goalId: string) => computeGoalStats(items, goalId);
 
-    const related = items.filter((candidate) =>
-      candidate.id !== goalId &&
-      candidate.status !== 'archived' &&
-      (
-        candidate.parentId === goalId ||
-        goal.linkedIds?.includes(candidate.id) ||
-        candidate.linkedIds?.includes(goalId)
-      )
-    );
-    const done = related.filter((candidate) => candidate.status === 'done').length;
-    return {
-      progress: related.length > 0 ? Math.round((done / related.length) * 100) : 0,
-      relatedCount: related.length,
-    };
-  };
-
-  const handleNewGoal = async () => {
-    if (createInFlightRef.current) return;
+  // Name-first creation. "New" used to write a real "New goal" item straight
+  // away, so backing out of the panel left debris in the list, the sidebar
+  // badge and the cloud.
+  const handleCreateGoal = async (title: string): Promise<boolean> => {
+    if (createInFlightRef.current) return false;
     if (!user) {
       setCreateError(lang === 'de'
         ? 'Deine Sitzung ist nicht mehr aktiv. Melde dich erneut an und versuche es noch einmal.'
         : 'Your session is no longer active. Sign in again and retry.');
-      return;
+      return false;
     }
 
     createInFlightRef.current = true;
@@ -67,7 +55,7 @@ export default function GoalsPage() {
       const id = await createItem({
         type: 'goal',
         status: 'active',
-        title: t('goals.newGoalTitle'),
+        title,
         timeframe: 'quarterly',
         tags: [],
         userId: user.uid,
@@ -75,11 +63,13 @@ export default function GoalsPage() {
         updatedAt: Date.now(),
       });
       setSelectedItemId(id);
+      return true;
     } catch (cause) {
       console.error('[THREADMAP] Goal creation failed:', cause);
       setCreateError(lang === 'de'
         ? 'Das Ziel konnte nicht erstellt werden. Versuche es erneut.'
         : 'The goal could not be created. Please retry.');
+      return false;
     } finally {
       createInFlightRef.current = false;
       setCreatingGoal(false);
@@ -114,7 +104,7 @@ export default function GoalsPage() {
         </div>
         <button
           type="button"
-          onClick={() => void handleNewGoal()}
+          onClick={() => { setCreateError(null); setCreateDialogOpen(true); }}
           disabled={creatingGoal}
           aria-busy={creatingGoal}
           className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform disabled:cursor-wait disabled:opacity-70"
@@ -126,12 +116,23 @@ export default function GoalsPage() {
         </button>
       </div>
 
+      <QuickCreateDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        title={t('goals.createTitle')}
+        description={t('goals.createDescription')}
+        placeholder={t('goals.createPlaceholder')}
+        submitting={creatingGoal}
+        error={createError}
+        onCreate={handleCreateGoal}
+      />
+
       {createError && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.05] px-3 py-2.5 text-[12px] text-destructive">
           <p>{createError}</p>
           <button
             type="button"
-            onClick={() => void handleNewGoal()}
+            onClick={() => { setCreateError(null); setCreateDialogOpen(true); }}
             disabled={creatingGoal}
             aria-busy={creatingGoal}
             className="min-h-9 rounded-lg bg-destructive/10 px-3 font-medium transition-colors hover:bg-destructive/20 disabled:cursor-wait disabled:opacity-60"

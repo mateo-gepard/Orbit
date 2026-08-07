@@ -21,6 +21,10 @@ import { cn, getLocale, shortDatePattern } from "@/lib/utils";
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import type { OrbitItem, ProjectTier } from "@/lib/types";
 import { useSettingsStore } from '@/lib/settings-store';
+import {
+  getProjectStats as computeProjectStats,
+  getProjectTasks as collectProjectTasks,
+} from '@/lib/progress';
 import { format, isValid, parseISO } from 'date-fns';
 import {
   Dialog,
@@ -92,25 +96,11 @@ export default function ProjectsPage() {
     return items.filter((i) => i.parentId === projectId && i.type === "goal" && i.status !== "archived");
   };
 
-  // Collect all tasks: direct children + tasks under milestones
-  const getAllProjectTasks = (projectId: string) => {
-    const direct = items.filter((i) => i.parentId === projectId && i.type === "task" && i.status !== "archived");
-    const milestoneIds = new Set(getProjectMilestones(projectId).map((m) => m.id));
-    const nested = milestoneIds.size > 0
-      ? items.filter((i) => i.type === "task" && i.status !== "archived" && milestoneIds.has(i.parentId!))
-      : [];
-    return [...direct, ...nested];
-  };
+  // Direct children plus tasks under milestones. Shared with the dashboard so
+  // the two views cannot drift apart.
+  const getAllProjectTasks = (projectId: string) => collectProjectTasks(items, projectId);
 
-  const getProjectStats = (projectId: string) => {
-    const tasks = getAllProjectTasks(projectId);
-    const total = tasks.length;
-    const done = tasks.filter((i) => i.status === "done").length;
-    const inProgress = tasks.filter((i) => i.status === "active").length;
-    const waiting = tasks.filter((i) => i.status === "waiting").length;
-    const progress = total > 0 ? Math.round((done / total) * 100) : 0;
-    return { total, done, inProgress, waiting, progress };
-  };
+  const getProjectStats = (projectId: string) => computeProjectStats(items, projectId);
 
   const handleNewProject = async (tier: ProjectTier = 3) => {
     if (createInFlightRef.current) return;

@@ -9,18 +9,7 @@ export function eventOccursOnDate(event: OrbitItem, dateKey: string): boolean {
   return start <= dateKey && end >= dateKey;
 }
 
-/** Match the Projects view: direct tasks plus tasks nested under project goals. */
-export function getProjectTaskProgress(items: OrbitItem[], projectId: string): number {
-  const goalIds = new Set(
-    items
-      .filter((item) => item.type === 'goal' && item.parentId === projectId && item.status !== 'archived')
-      .map((item) => item.id)
-  );
-  const tasks = items.filter((item) => (
-    item.type === 'task'
-    && item.status !== 'archived'
-    && (item.parentId === projectId || (Boolean(item.parentId) && goalIds.has(item.parentId!)))
-  ));
-  if (tasks.length === 0) return 0;
-  return Math.round((tasks.filter((item) => item.status === 'done').length / tasks.length) * 100);
-}
+// Project progress lives in `./progress`, which both the dashboard and the
+// Projects view call. Re-exported here so existing dashboard imports keep
+// working without a second definition to keep in step.
+export { getProjectTaskProgress } from './progress';

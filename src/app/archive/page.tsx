@@ -14,6 +14,10 @@ import { toast } from 'sonner';
 
 type ViewTab = 'completed' | 'archived';
 
+function getTimestamp() {
+  return Date.now();
+}
+
 export default function ArchivePage() {
   const items = useOrbitStore((state) => state.items);
   const [search, setSearch] = useState('');
@@ -49,6 +53,10 @@ export default function ArchivePage() {
       await updateItem(id, {
         status: archivedItem?.completedAt ? 'done' : 'active',
         ...(!archivedItem?.completedAt ? { completedAt: undefined } : {}),
+        // Restart the auto-archive clock. Without this the item comes back
+        // still older than the retention cutoff and is archived again
+        // immediately — `completedAt` is deliberately left as the truth.
+        restoredAt: getTimestamp(),
       });
       toast.success(t('archive.itemRestored'));
     } catch {

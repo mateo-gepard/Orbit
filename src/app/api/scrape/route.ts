@@ -6,6 +6,7 @@ import {
 } from '@/lib/server/rate-limit';
 import { fetchPublicUrl, readResponseText } from '@/lib/server/url-safety';
 import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
+import { decodeNumericEntity, normalizePrice } from '@/lib/server/scrape-parsing';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — URL Metadata Scraper
@@ -77,8 +78,8 @@ function extractMeta(html: string, url: string): ScrapeResult {
   const decode = (str: string | undefined): string | undefined => {
     if (!str) return str;
     return str
-      .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-      .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (full, hex) => decodeNumericEntity(full, parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (full, n) => decodeNumericEntity(full, parseInt(n, 10)))
       .replace(/&([a-zA-Z]+);/g, (full, name) => ENTITY_MAP[name] ?? full);
   };
 
@@ -174,7 +175,7 @@ function extractMeta(html: string, url: string): ScrapeResult {
   );
 
   // Clean the price
-  const price = priceRaw?.replace(/[^\d.,]/g, '').replace(',', '.');
+  const price = normalizePrice(priceRaw);
 
   return { title, image, price, currency, description, siteName };
 }

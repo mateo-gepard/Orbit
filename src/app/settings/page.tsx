@@ -101,6 +101,7 @@ import {
   isRecentLoginRequiredError,
 } from '@/lib/auth-reauth';
 import { clearScopedBrowserData } from '@/lib/account-storage';
+import { CAPTURE_SYNTAX } from '@/components/shell/command-bar';
 
 // ═══════════════════════════════════════════════════════════
 // Setting section definitions
@@ -1742,6 +1743,33 @@ export default function SettingsPage() {
                   </div>
                 ))}
               </div>
+
+              {/* The capture language, which nothing else in the app documents. */}
+              <h3 className="mt-6 mb-2 text-[13px] font-semibold tracking-tight text-foreground/80">
+                {t('settings.captureSyntax')}
+              </h3>
+              <p className="mb-3 text-[12px] text-muted-foreground/70">
+                {t('settings.captureSyntaxDesc')}
+              </p>
+              <dl className="rounded-2xl border border-border/40 overflow-hidden">
+                {CAPTURE_SYNTAX.map(({ labelKey, hintKey }, i) => (
+                  <div
+                    key={labelKey}
+                    className={cn(
+                      'flex items-baseline justify-between gap-4 px-4 py-3',
+                      i < CAPTURE_SYNTAX.length - 1 && 'border-b border-border/20'
+                    )}
+                  >
+                    <dt className="shrink-0 text-[13px] text-foreground/80">{t(labelKey)}</dt>
+                    <dd className="min-w-0 text-right font-mono text-[11px] text-muted-foreground/70">
+                      {t(hintKey)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-2 text-[11px] text-muted-foreground/50">
+                {t('commandBar.syntaxDateNote')}
+              </p>
             </div>
           )}
 

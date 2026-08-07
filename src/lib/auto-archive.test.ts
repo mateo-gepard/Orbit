@@ -45,4 +45,32 @@ describe('getAutoArchiveTaskIds', () => {
     expect(getAutoArchiveTaskIds(items, 0, NOW)).toEqual([]);
     expect(getAutoArchiveTaskIds(items, Number.NaN, NOW)).toEqual([]);
   });
+
+  it('does not re-archive a task that was just restored (F-01)', () => {
+    const items = [
+      item({ id: 'restored', completedAt: NOW - 40 * DAY, restoredAt: NOW }),
+    ];
+    expect(getAutoArchiveTaskIds(items, 30, NOW)).toEqual([]);
+  });
+
+  it('archives again once the restored item ages past the cutoff', () => {
+    const items = [
+      item({ id: 'restored', completedAt: NOW - 90 * DAY, restoredAt: NOW - 31 * DAY }),
+    ];
+    expect(getAutoArchiveTaskIds(items, 30, NOW)).toEqual(['restored']);
+  });
+
+  it('ignores a restore stamp older than completion', () => {
+    const items = [
+      item({ id: 'old', completedAt: NOW - 31 * DAY, restoredAt: NOW - 200 * DAY }),
+    ];
+    expect(getAutoArchiveTaskIds(items, 30, NOW)).toEqual(['old']);
+  });
+
+  it('ignores a malformed restore stamp', () => {
+    const items = [
+      item({ id: 'old', completedAt: NOW - 31 * DAY, restoredAt: Number.NaN }),
+    ];
+    expect(getAutoArchiveTaskIds(items, 30, NOW)).toEqual(['old']);
+  });
 });

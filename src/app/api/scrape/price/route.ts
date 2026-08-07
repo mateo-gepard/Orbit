@@ -6,6 +6,7 @@ import {
 } from '@/lib/server/rate-limit';
 import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
 import { readResponseText } from '@/lib/server/url-safety';
+import { AMOUNT_PATTERN, normalizePrice } from '@/lib/server/scrape-parsing';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — Google Price Search Fallback
@@ -78,32 +79,35 @@ export async function GET(request: NextRequest) {
     // Google embeds prices in various formats in search results
     const prices: { value: number; currency: string; source?: string }[] = [];
 
-    // Pattern 1: Euro prices like "199,99 €" or "€199.99" or "EUR 199,99"
-    const euroPrices = html.matchAll(/(\d{1,6}[.,]\d{2})\s*€|€\s*(\d{1,6}[.,]\d{2})|EUR\s*(\d{1,6}[.,]\d{2})/gi);
+    // Pattern 1: Euro prices like "199,99 €" or "€199.99" or "EUR 1.234,56"
+    const euroPrices = html.matchAll(
+      new RegExp(`(${AMOUNT_PATTERN})\\s*€|€\\s*(${AMOUNT_PATTERN})|EUR\\s*(${AMOUNT_PATTERN})`, 'gi')
+    );
     for (const m of euroPrices) {
-      const raw = (m[1] || m[2] || m[3]).replace(',', '.');
-      const value = parseFloat(raw);
-      if (value > 0 && value < 100000) {
+      const value = parseFloat(normalizePrice(m[1] || m[2] || m[3]) ?? '');
+      if (Number.isFinite(value) && value > 0 && value < 100000) {
         prices.push({ value, currency: 'EUR' });
       }
     }
 
-    // Pattern 2: Dollar prices like "$199.99" or "199.99 USD"
-    const dollarPrices = html.matchAll(/\$\s*(\d{1,6}[.,]\d{2})|(\d{1,6}[.,]\d{2})\s*(?:USD|\$)/gi);
+    // Pattern 2: Dollar prices like "$199.99" or "1,299.99 USD"
+    const dollarPrices = html.matchAll(
+      new RegExp(`\\$\\s*(${AMOUNT_PATTERN})|(${AMOUNT_PATTERN})\\s*(?:USD|\\$)`, 'gi')
+    );
     for (const m of dollarPrices) {
-      const raw = (m[1] || m[2]).replace(',', '.');
-      const value = parseFloat(raw);
-      if (value > 0 && value < 100000) {
+      const value = parseFloat(normalizePrice(m[1] || m[2]) ?? '');
+      if (Number.isFinite(value) && value > 0 && value < 100000) {
         prices.push({ value, currency: 'USD' });
       }
     }
 
     // Pattern 3: Pound prices
-    const poundPrices = html.matchAll(/£\s*(\d{1,6}[.,]\d{2})|(\d{1,6}[.,]\d{2})\s*(?:GBP|£)/gi);
+    const poundPrices = html.matchAll(
+      new RegExp(`£\\s*(${AMOUNT_PATTERN})|(${AMOUNT_PATTERN})\\s*(?:GBP|£)`, 'gi')
+    );
     for (const m of poundPrices) {
-      const raw = (m[1] || m[2]).replace(',', '.');
-      const value = parseFloat(raw);
-      if (value > 0 && value < 100000) {
+      const value = parseFloat(normalizePrice(m[1] || m[2]) ?? '');
+      if (Number.isFinite(value) && value > 0 && value < 100000) {
         prices.push({ value, currency: 'GBP' });
       }
     }

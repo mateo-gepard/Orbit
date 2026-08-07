@@ -1,23 +1,41 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { Repeat, Flame, Plus, CheckSquare, CalendarDays, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Repeat, Flame, Plus, CheckSquare, CalendarDays, Calendar, ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
+import { toast } from 'sonner';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem, updateItem } from '@/lib/firestore';
 import { cn } from '@/lib/utils';
-import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, getDay } from 'date-fns';
+import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, addWeeks, isSameMonth, getDay } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate, getWeekCompletionRate } from '@/lib/habits';
-import { useTranslation } from '@/lib/i18n';
+import { QuickCreateDialog } from '@/components/items/quick-create-dialog';
+import type { OrbitItem } from '@/lib/types';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
 
 type ViewMode = 'week' | 'month';
 
+/**
+ * Habits use `waiting` as "paused". It is already a first-class status with a
+ * badge, and a paused habit is precisely one that is deliberately not being
+ * played right now — so this gives `waiting` a meaning here instead of making
+ * the habit disappear from the page entirely.
+ */
+type HabitFilter = 'active' | 'paused' | 'all';
+
+const PAUSED_STATUS = 'waiting' as const;
+
 interface HabitToggleRetry {
   habitId: string;
   date: Date;
   desired: boolean;
+}
+
+/** One in-flight toggle per habit *and day*, not per habit. */
+function toggleKey(habitId: string, dateKey: string): string {
+  return `${habitId}|${dateKey}`;
 }
 
 export default function HabitsPage() {
@@ -29,16 +47,23 @@ export default function HabitsPage() {
   const weekStartsOnNum = getWeekStartsOn(weekStartSetting);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [filter, setFilter] = useState<HabitFilter>('active');
   const createInFlightRef = useRef(false);
   const toggleInFlightRef = useRef(new Set<string>());
+  const pauseInFlightRef = useRef(new Set<string>());
   const [creatingHabit, setCreatingHabit] = useState(false);
-  const [pendingHabitIds, setPendingHabitIds] = useState<Set<string>>(new Set());
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [pendingToggleKeys, setPendingToggleKeys] = useState<Set<string>>(new Set());
   const [createError, setCreateError] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<HabitToggleRetry | null>(null);
   const today = new Date();
-  const weekStart = startOfWeek(today, { weekStartsOn: weekStartsOnNum });
+  const currentWeekStart = startOfWeek(today, { weekStartsOn: weekStartsOnNum });
+  const weekStart = addWeeks(currentWeekStart, weekOffset);
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  
+  const isViewingCurrentWeek = weekOffset === 0;
+  const isViewingCurrentMonth = isSameMonth(currentMonth, today);
+
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -50,20 +75,45 @@ export default function HabitsPage() {
     addDays(startOfWeek(monthStart, { weekStartsOn: weekStartsOnNum }), index)
   );
 
+  // `waiting` habits are paused, not gone. Filtering strictly on `active` used
+  // to make any habit that left that status vanish from the page with no way
+  // to find it again.
   const habits = useMemo(
+    () => items.filter((i) => (
+      i.type === 'habit'
+      && (filter === 'all'
+        ? i.status === 'active' || i.status === PAUSED_STATUS
+        : filter === 'paused'
+          ? i.status === PAUSED_STATUS
+          : i.status === 'active')
+    )),
+    [items, filter]
+  );
+
+  const pausedCount = useMemo(
+    () => items.filter((i) => i.type === 'habit' && i.status === PAUSED_STATUS).length,
+    [items]
+  );
+
+  const activeHabits = useMemo(
     () => items.filter((i) => i.type === 'habit' && i.status === 'active'),
     [items]
   );
 
-  const completionRate = getWeekCompletionRate(habits, weekStart);
+  const completionRate = getWeekCompletionRate(activeHabits, weekStart);
 
   const toggleDay = async (habitId: string, date: Date, requestedDesired?: boolean) => {
-    if (toggleInFlightRef.current.has(habitId)) return;
-    toggleInFlightRef.current.add(habitId);
-    setPendingHabitIds((previous) => new Set(previous).add(habitId));
+    const dateKey = format(date, 'yyyy-MM-dd');
+    const key = toggleKey(habitId, dateKey);
+    // Keyed by habit *and* day: keying by habit alone silently discarded every
+    // click after the first when ticking several days in quick succession.
+    // `updateItem` already serialises per item, so a broader guard only cost
+    // input.
+    if (toggleInFlightRef.current.has(key)) return;
+    toggleInFlightRef.current.add(key);
+    setPendingToggleKeys((previous) => new Set(previous).add(key));
     setToggleError(null);
 
-    const dateKey = format(date, 'yyyy-MM-dd');
     let desired = requestedDesired;
     try {
       const latestHabit = useOrbitStore.getState().items.find(
@@ -84,22 +134,25 @@ export default function HabitsPage() {
       console.error('[THREADMAP] Habit completion update failed:', cause);
       if (desired !== undefined) setToggleError({ habitId, date, desired });
     } finally {
-      toggleInFlightRef.current.delete(habitId);
-      setPendingHabitIds((previous) => {
+      toggleInFlightRef.current.delete(key);
+      setPendingToggleKeys((previous) => {
         const next = new Set(previous);
-        next.delete(habitId);
+        next.delete(key);
         return next;
       });
     }
   };
 
-  const handleNewHabit = async () => {
-    if (createInFlightRef.current) return;
+  // Creation is name-first now: nothing is written until the user commits, so
+  // backing out no longer leaves a "New habit" record in the list, the sidebar
+  // badge and the cloud.
+  const handleCreateHabit = async (title: string): Promise<boolean> => {
+    if (createInFlightRef.current) return false;
     if (!user) {
       setCreateError(lang === 'de'
         ? 'Deine Sitzung ist nicht mehr aktiv. Melde dich erneut an und versuche es noch einmal.'
         : 'Your session is no longer active. Sign in again and retry.');
-      return;
+      return false;
     }
 
     createInFlightRef.current = true;
@@ -109,7 +162,7 @@ export default function HabitsPage() {
       const id = await createItem({
         type: 'habit',
         status: 'active',
-        title: t('habits.newHabitTitle'),
+        title,
         frequency: 'daily',
         completions: {},
         tags: [],
@@ -118,14 +171,29 @@ export default function HabitsPage() {
         updatedAt: Date.now(),
       });
       setSelectedItemId(id);
+      return true;
     } catch (cause) {
       console.error('[THREADMAP] Habit creation failed:', cause);
       setCreateError(lang === 'de'
         ? 'Die Gewohnheit konnte nicht erstellt werden. Versuche es erneut.'
         : 'The habit could not be created. Please retry.');
+      return false;
     } finally {
       createInFlightRef.current = false;
       setCreatingHabit(false);
+    }
+  };
+
+  const togglePause = async (habitId: string, paused: boolean) => {
+    if (pauseInFlightRef.current.has(habitId)) return;
+    pauseInFlightRef.current.add(habitId);
+    try {
+      await updateItem(habitId, { status: paused ? 'active' : PAUSED_STATUS });
+    } catch (cause) {
+      console.error('[THREADMAP] Habit pause update failed:', cause);
+      toast.error(t(paused ? 'habits.resumeError' : 'habits.pauseError'));
+    } finally {
+      pauseInFlightRef.current.delete(habitId);
     }
   };
 
@@ -133,6 +201,33 @@ export default function HabitsPage() {
     completed ? 'habits.markIncomplete' : 'habits.markComplete',
     { title, date: format(date, 'PPPP', { locale }) }
   );
+
+  const isTogglePending = (habitId: string, day: Date) =>
+    pendingToggleKeys.has(toggleKey(habitId, format(day, 'yyyy-MM-dd')));
+
+  /** Screen readers get silence on a bare decorative dot otherwise. */
+  const notScheduledLabel = (day: Date) =>
+    t('habits.notScheduled', { date: format(day, 'PPPP', { locale }) });
+
+  const FILTERS: { key: HabitFilter; labelKey: TranslationKey }[] = [
+    { key: 'active', labelKey: 'habits.filterActive' },
+    { key: 'paused', labelKey: 'habits.filterPaused' },
+    { key: 'all', labelKey: 'habits.filterAll' },
+  ];
+
+  const renderPauseButton = (habit: OrbitItem) => {
+    const paused = habit.status === PAUSED_STATUS;
+    return (
+      <button
+        type="button"
+        onClick={() => void togglePause(habit.id, paused)}
+        aria-label={t(paused ? 'habits.resumeItem' : 'habits.pauseItem', { title: habit.title })}
+        className="mobile-touch-target shrink-0 rounded-lg p-1.5 text-muted-foreground/50 transition-colors hover:bg-foreground/[0.05] hover:text-foreground lg:min-h-0"
+      >
+        {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+      </button>
+    );
+  };
 
   return (
     <div className="mobile-page-gutter mx-auto max-w-4xl space-y-5 py-4 lg:space-y-6 lg:p-8" data-slot="page-content">
@@ -146,6 +241,39 @@ export default function HabitsPage() {
           </p>
         </div>
         <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1">
+          {/* Week navigation — the month view had prev/next and the week view
+              did not, so last month's consistency was reviewable and last
+              week's was not. */}
+          {viewMode === 'week' && (
+            <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 p-0.5">
+              <button
+                type="button"
+                onClick={() => setWeekOffset((offset) => offset - 1)}
+                className="mobile-touch-target flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 transition-all hover:bg-background hover:text-foreground lg:min-h-0"
+                aria-label={t('habits.previousWeek')}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekOffset(0)}
+                aria-label={t('habits.jumpToToday')}
+                className="mobile-touch-target whitespace-nowrap px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:text-foreground lg:min-h-0"
+              >
+                {isViewingCurrentWeek
+                  ? `${t('common.today')} · ${format(weekStart, 'd MMM', { locale })}`
+                  : `${format(weekStart, 'd MMM', { locale })} – ${format(addDays(weekStart, 6), 'd MMM', { locale })}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekOffset((offset) => offset + 1)}
+                className="mobile-touch-target flex items-center justify-center rounded-md p-1.5 text-muted-foreground/60 transition-all hover:bg-background hover:text-foreground lg:min-h-0"
+                aria-label={t('habits.nextWeek')}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           {/* Month navigation - only show in month view */}
           {viewMode === 'month' && (
             <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 p-0.5">
@@ -160,10 +288,14 @@ export default function HabitsPage() {
               <button
                 type="button"
                 onClick={() => setCurrentMonth(new Date())}
-                aria-label={`${t('common.today')}: ${format(currentMonth, 'MMMM yyyy', { locale })}`}
-                className="mobile-touch-target px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:text-foreground lg:min-h-0"
+                aria-label={t('habits.jumpToToday')}
+                className="mobile-touch-target whitespace-nowrap px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:text-foreground lg:min-h-0"
               >
-                {t('common.today')} · {format(currentMonth, 'MMM yyyy', { locale })}
+                {/* Only say "Today" when today is actually in view — browsing
+                    October used to read "Today · Oct 2026". */}
+                {isViewingCurrentMonth
+                  ? `${t('common.today')} · ${format(currentMonth, 'MMM yyyy', { locale })}`
+                  : format(currentMonth, 'MMM yyyy', { locale })}
               </button>
               <button
                 type="button"
@@ -175,6 +307,33 @@ export default function HabitsPage() {
               </button>
             </div>
           )}
+
+          {/* Status filter — so a paused habit is still reachable. */}
+          <div
+            className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5"
+            role="group"
+            aria-label={t('habits.filterLabel')}
+          >
+            {FILTERS.map(({ key, labelKey }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                aria-pressed={filter === key}
+                className={cn(
+                  'mobile-touch-target flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-all lg:min-h-0',
+                  filter === key
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground/60 hover:text-foreground'
+                )}
+              >
+                {t(labelKey)}
+                {key === 'paused' && pausedCount > 0 && (
+                  <span className="tabular-nums text-[10px] text-muted-foreground/50">{pausedCount}</span>
+                )}
+              </button>
+            ))}
+          </div>
           {/* View mode toggle */}
           <div className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5" role="group" aria-label={t('habits.calendarView')}>
             <button
@@ -208,7 +367,7 @@ export default function HabitsPage() {
           </div>
           <button
             type="button"
-            onClick={() => void handleNewHabit()}
+            onClick={() => { setCreateError(null); setCreateDialogOpen(true); }}
             disabled={creatingHabit}
             aria-busy={creatingHabit}
             className="mobile-touch-target flex items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-transform transition-opacity hover:opacity-90 active:scale-95 disabled:cursor-wait disabled:opacity-70 lg:min-h-0 lg:rounded-lg lg:py-1.5 lg:text-[12px]"
@@ -221,6 +380,17 @@ export default function HabitsPage() {
         </div>
       </div>
 
+      <QuickCreateDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        title={t('habits.createTitle')}
+        description={t('habits.createDescription')}
+        placeholder={t('habits.createPlaceholder')}
+        submitting={creatingHabit}
+        error={createError}
+        onCreate={handleCreateHabit}
+      />
+
       {(createError || toggleError) && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.05] px-3 py-2.5 text-[12px] text-destructive">
           <p>
@@ -231,11 +401,11 @@ export default function HabitsPage() {
           <button
             type="button"
             onClick={() => {
-              if (createError) void handleNewHabit();
+              if (createError) setCreateDialogOpen(true);
               else if (toggleError) void toggleDay(toggleError.habitId, toggleError.date, toggleError.desired);
             }}
-            disabled={creatingHabit || Boolean(toggleError && pendingHabitIds.has(toggleError.habitId))}
-            aria-busy={creatingHabit || Boolean(toggleError && pendingHabitIds.has(toggleError.habitId))}
+            disabled={creatingHabit || Boolean(toggleError && isTogglePending(toggleError.habitId, toggleError.date))}
+            aria-busy={creatingHabit || Boolean(toggleError && isTogglePending(toggleError.habitId, toggleError.date))}
             className="min-h-9 rounded-lg bg-destructive/10 px-3 font-medium transition-colors hover:bg-destructive/20 disabled:cursor-wait disabled:opacity-60"
           >
             {t('common.retry')}
@@ -251,7 +421,6 @@ export default function HabitsPage() {
             {habits.map((habit) => {
               const streak = calculateStreak(habit);
               const completed = isHabitCompletedForDate(habit, today);
-              const habitBusy = pendingHabitIds.has(habit.id);
               return (
                 <div
                   key={habit.id}
@@ -262,8 +431,8 @@ export default function HabitsPage() {
                     <button
                       type="button"
                       onClick={() => void toggleDay(habit.id, today)}
-                      disabled={habitBusy}
-                      aria-busy={habitBusy}
+                      disabled={isTogglePending(habit.id, today)}
+                      aria-busy={isTogglePending(habit.id, today)}
                       aria-label={habitToggleLabel(habit.title, today, completed)}
                       aria-pressed={completed}
                       className={cn(
@@ -291,6 +460,7 @@ export default function HabitsPage() {
                         {streak}
                       </span>
                     )}
+                    {renderPauseButton(habit)}
                   </div>
                   {/* Week dots */}
                   <div className="flex items-center justify-around px-4 pb-3">
@@ -311,8 +481,8 @@ export default function HabitsPage() {
                             <button
                               type="button"
                               onClick={() => !isFuture && void toggleDay(habit.id, day)}
-                              disabled={isFuture || habitBusy}
-                              aria-busy={habitBusy}
+                              disabled={isFuture || isTogglePending(habit.id, day)}
+                              aria-busy={isTogglePending(habit.id, day)}
                               aria-label={habitToggleLabel(habit.title, day, dayCompleted)}
                               aria-pressed={dayCompleted}
                               className={cn(
@@ -329,8 +499,12 @@ export default function HabitsPage() {
                               {dayCompleted && <CheckSquare className="h-3.5 w-3.5 text-foreground/40" />}
                             </button>
                           ) : (
-                            <div className="h-8 w-8 flex items-center justify-center">
-                              <div className="h-1 w-1 rounded-full bg-foreground/10" />
+                            <div
+                              className="h-8 w-8 flex items-center justify-center"
+                              role="img"
+                              aria-label={notScheduledLabel(day)}
+                            >
+                              <div className="h-1 w-1 rounded-full bg-foreground/10" aria-hidden="true" />
                             </div>
                           )}
                         </div>
@@ -346,7 +520,6 @@ export default function HabitsPage() {
           <>
             {habits.map((habit) => {
               const streak = calculateStreak(habit);
-              const habitBusy = pendingHabitIds.has(habit.id);
               return (
                 <div
                   key={habit.id}
@@ -366,6 +539,7 @@ export default function HabitsPage() {
                         {streak}
                       </span>
                     )}
+                    {renderPauseButton(habit)}
                   </div>
                   {/* Month calendar grid */}
                   <div className="p-3">
@@ -394,8 +568,8 @@ export default function HabitsPage() {
                               <button
                                 type="button"
                                 onClick={() => !isFuture && void toggleDay(habit.id, day)}
-                                disabled={isFuture || habitBusy}
-                                aria-busy={habitBusy}
+                                disabled={isFuture || isTogglePending(habit.id, day)}
+                                aria-busy={isTogglePending(habit.id, day)}
                                 aria-label={habitToggleLabel(habit.title, day, dayCompleted)}
                                 aria-pressed={dayCompleted}
                                 className={cn(
@@ -418,8 +592,12 @@ export default function HabitsPage() {
                                 {dayCompleted && <CheckSquare className="h-2.5 w-2.5 text-foreground/30" />}
                               </button>
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <span className="text-[10px] text-muted-foreground/20 tabular-nums">
+                              <div
+                                className="w-full h-full flex items-center justify-center"
+                                role="img"
+                                aria-label={notScheduledLabel(day)}
+                              >
+                                <span aria-hidden="true" className="text-[10px] text-muted-foreground/20 tabular-nums">
                                   {format(day, 'd')}
                                 </span>
                               </div>
@@ -439,8 +617,12 @@ export default function HabitsPage() {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
               <Repeat className="h-5 w-5 text-muted-foreground/30" />
             </div>
-            <p className="text-[13px] text-muted-foreground/50">{t('habits.noHabits')}</p>
-            <p className="text-[11px] text-muted-foreground/40 mt-1">{t('habits.noHabitsDesc')}</p>
+            <p className="text-[13px] text-muted-foreground/50">
+              {t(filter === 'paused' ? 'habits.noPaused' : 'habits.noHabits')}
+            </p>
+            <p className="text-[11px] text-muted-foreground/40 mt-1">
+              {t(filter === 'paused' ? 'habits.noPausedDesc' : 'habits.noHabitsDesc')}
+            </p>
           </div>
         )}
       </div>
@@ -481,7 +663,6 @@ export default function HabitsPage() {
           {/* Habit rows */}
           {habits.map((habit) => {
             const streak = calculateStreak(habit);
-            const habitBusy = pendingHabitIds.has(habit.id);
             return (
               <div
                 key={habit.id}
@@ -504,8 +685,8 @@ export default function HabitsPage() {
                         <button
                           type="button"
                           onClick={() => !isFuture && void toggleDay(habit.id, day)}
-                          disabled={isFuture || habitBusy}
-                          aria-busy={habitBusy}
+                          disabled={isFuture || isTogglePending(habit.id, day)}
+                          aria-busy={isTogglePending(habit.id, day)}
                           aria-label={habitToggleLabel(habit.title, day, completed)}
                           aria-pressed={completed}
                           className={cn(
@@ -523,14 +704,18 @@ export default function HabitsPage() {
                           {completed && <CheckSquare className="h-3 w-3 text-foreground/40" />}
                         </button>
                       ) : (
-                        <div className="h-7 w-7 flex items-center justify-center">
-                          <div className="h-0.5 w-0.5 rounded-full bg-foreground/10" />
+                        <div
+                          className="h-7 w-7 flex items-center justify-center"
+                          role="img"
+                          aria-label={notScheduledLabel(day)}
+                        >
+                          <div className="h-0.5 w-0.5 rounded-full bg-foreground/10" aria-hidden="true" />
                         </div>
                       )}
                     </div>
                   );
                 })}
-                <div className="flex items-center justify-center">
+                <div className="flex items-center justify-center gap-0.5">
                   {streak > 0 ? (
                     <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums font-medium">
                       <Flame className="h-3 w-3" />
@@ -539,6 +724,7 @@ export default function HabitsPage() {
                   ) : (
                     <span className="text-[11px] text-muted-foreground/20">—</span>
                   )}
+                  {renderPauseButton(habit)}
                 </div>
               </div>
             );
@@ -549,7 +735,9 @@ export default function HabitsPage() {
               <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                 <Repeat className="h-4 w-4 text-muted-foreground/30" />
               </div>
-              <p className="text-[12px] text-muted-foreground/50">{t('habits.noHabits')}</p>
+              <p className="text-[12px] text-muted-foreground/50">
+                {t(filter === 'paused' ? 'habits.noPaused' : 'habits.noHabits')}
+              </p>
             </div>
           )}
         </div>
@@ -558,7 +746,6 @@ export default function HabitsPage() {
         <div className="hidden lg:block space-y-4">
           {habits.map((habit) => {
             const streak = calculateStreak(habit);
-            const habitBusy = pendingHabitIds.has(habit.id);
             return (
               <div
                 key={habit.id}
@@ -578,6 +765,7 @@ export default function HabitsPage() {
                       {streak}
                     </span>
                   )}
+                  {renderPauseButton(habit)}
                 </div>
                 {/* Month calendar */}
                 <div className="p-4">
@@ -604,8 +792,8 @@ export default function HabitsPage() {
                             <button
                               type="button"
                               onClick={() => !isFuture && void toggleDay(habit.id, day)}
-                              disabled={isFuture || habitBusy}
-                              aria-busy={habitBusy}
+                              disabled={isFuture || isTogglePending(habit.id, day)}
+                              aria-busy={isTogglePending(habit.id, day)}
                               aria-label={habitToggleLabel(habit.title, day, dayCompleted)}
                               aria-pressed={dayCompleted}
                               className={cn(
@@ -628,8 +816,12 @@ export default function HabitsPage() {
                               {dayCompleted && <CheckSquare className="h-2.5 w-2.5 text-foreground/30" />}
                             </button>
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <span className="text-[11px] text-muted-foreground/15 tabular-nums">
+                            <div
+                              className="w-full h-full flex items-center justify-center"
+                              role="img"
+                              aria-label={notScheduledLabel(day)}
+                            >
+                              <span aria-hidden="true" className="text-[11px] text-muted-foreground/15 tabular-nums">
                                 {format(day, 'd')}
                               </span>
                             </div>
@@ -647,7 +839,9 @@ export default function HabitsPage() {
               <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                 <Repeat className="h-4 w-4 text-muted-foreground/30" />
               </div>
-              <p className="text-[12px] text-muted-foreground/50">{t('habits.noHabits')}</p>
+              <p className="text-[12px] text-muted-foreground/50">
+                {t(filter === 'paused' ? 'habits.noPaused' : 'habits.noHabits')}
+              </p>
             </div>
           )}
         </div>

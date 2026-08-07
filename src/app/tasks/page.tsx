@@ -34,7 +34,7 @@ import {
 // Types
 // ═══════════════════════════════════════════════════════════
 
-type SortKey = 'dueDate' | 'priority' | 'createdAt' | 'title';
+import { defaultAscending, sortTasks, type SortKey } from '@/lib/task-sort';
 type FilterStatus = 'all' | 'active' | 'done';
 type GroupBy = 'none' | 'project' | 'goal' | 'priority' | 'dueDate' | 'tag';
 
@@ -49,33 +49,6 @@ interface TaskGroup {
 // ═══════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════
-
-const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
-
-function sortTasks(tasks: OrbitItem[], sortKey: SortKey, ascending: boolean): OrbitItem[] {
-  const sorted = [...tasks].sort((a, b) => {
-    switch (sortKey) {
-      case 'dueDate': {
-        if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return a.dueDate.localeCompare(b.dueDate);
-      }
-      case 'priority': {
-        const pa = PRIORITY_ORDER[a.priority || ''] ?? 3;
-        const pb = PRIORITY_ORDER[b.priority || ''] ?? 3;
-        return pa - pb;
-      }
-      case 'createdAt':
-        return (b.createdAt || 0) - (a.createdAt || 0);
-      case 'title':
-        return a.title.localeCompare(b.title);
-      default:
-        return 0;
-    }
-  });
-  return ascending ? sorted : sorted.reverse();
-}
 
 function getTaskGoal(task: OrbitItem, allItems: OrbitItem[]): OrbitItem | undefined {
   const parentGoal = task.parentId
@@ -517,7 +490,7 @@ export default function TasksPage() {
                         setSortAsc((ascending) => !ascending);
                       } else {
                         setSortKey(opt.key);
-                        setSortAsc(true);
+                        setSortAsc(defaultAscending(opt.key));
                       }
                     }}
                     className="min-h-10 justify-between text-[12px]"

@@ -6,6 +6,7 @@ import {
 } from '@/lib/server/rate-limit';
 import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
 import { readResponseText } from '@/lib/server/url-safety';
+import { AMOUNT_PATTERN, normalizePrice } from '@/lib/server/scrape-parsing';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — Product Image & Price Search (Multi-source)
@@ -86,8 +87,10 @@ async function searchGoogleApi(query: string, signal: AbortSignal): Promise<{ im
         if (price) {
           result.price = String(price).slice(0, 32);
         } else if (item.snippet) {
-          const m = item.snippet.match(/(\d{1,6}[.,]\d{2})\s*€|€\s*(\d{1,6}[.,]\d{2})/);
-          if (m) result.price = (m[1] || m[2]).replace(',', '.');
+          const m = item.snippet.match(
+            new RegExp(`(${AMOUNT_PATTERN})\\s*€|€\\s*(${AMOUNT_PATTERN})`)
+          );
+          if (m) result.price = normalizePrice(m[1] || m[2]);
         }
       }
       if (result.image && result.price) break;
@@ -363,7 +366,7 @@ export async function GET(request: NextRequest) {
     const image = [apiResult.image, bingImages[0], ddgImages[0], googleImages[0]]
       .find((candidate): candidate is string => Boolean(candidate && isGoodImage(candidate)));
     const rawPrice = apiResult.price || scrapedPrice;
-    const price = rawPrice?.match(/^\d{1,8}(?:[.,]\d{1,2})?/)?.[0]?.replace(',', '.');
+    const price = normalizePrice(rawPrice);
     const result: { image?: string; price?: string } = { image, price };
 
     if (controller.signal.aborted) {
