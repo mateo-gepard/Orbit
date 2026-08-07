@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { Repeat, Flame, Plus, CheckSquare, CalendarDays, Calendar, ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
+import { Repeat, Flame, Plus, CheckSquare, CalendarDays, Calendar, ChevronLeft, ChevronRight, Pause, Play, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, addWeeks, isSameMonth, getDay } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate, getWeekCompletionRate } from '@/lib/habits';
 import { QuickCreateDialog } from '@/components/items/quick-create-dialog';
+import { formatHabitTime } from '@/lib/habit-reminders';
 import type { OrbitItem } from '@/lib/types';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
@@ -44,6 +45,7 @@ export default function HabitsPage() {
   const { t, lang } = useTranslation();
   const locale = getLocale(lang);
   const weekStartSetting = useSettingsStore((s) => s.settings.weekStart);
+  const timeFormat = useSettingsStore((s) => s.settings.timeFormat);
   const weekStartsOnNum = getWeekStartsOn(weekStartSetting);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -214,6 +216,17 @@ export default function HabitsPage() {
     { key: 'paused', labelKey: 'habits.filterPaused' },
     { key: 'all', labelKey: 'habits.filterAll' },
   ];
+
+  const renderHabitTime = (habit: OrbitItem) => {
+    const label = formatHabitTime(habit.habitTime, timeFormat === '24h');
+    if (!label) return null;
+    return (
+      <span className="flex shrink-0 items-center gap-0.5 text-[11px] tabular-nums text-muted-foreground/50">
+        <Clock className="h-3 w-3" aria-hidden="true" />
+        {label}
+      </span>
+    );
+  };
 
   const renderPauseButton = (habit: OrbitItem) => {
     const paused = habit.status === PAUSED_STATUS;
@@ -454,6 +467,7 @@ export default function HabitsPage() {
                     >
                       {habit.title}
                     </button>
+                    {renderHabitTime(habit)}
                     {streak > 0 && (
                       <span className="flex items-center gap-0.5 text-[12px] text-muted-foreground/50 tabular-nums font-medium shrink-0">
                         <Flame className="h-3.5 w-3.5" />
@@ -533,6 +547,7 @@ export default function HabitsPage() {
                     >
                       {habit.title}
                     </button>
+                    {renderHabitTime(habit)}
                     {streak > 0 && (
                       <span className="flex items-center gap-0.5 text-[12px] text-muted-foreground/50 tabular-nums font-medium shrink-0">
                         <Flame className="h-3.5 w-3.5" />
@@ -759,6 +774,7 @@ export default function HabitsPage() {
                   >
                     {habit.title}
                   </button>
+                  {renderHabitTime(habit)}
                   {streak > 0 && (
                     <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums font-medium">
                       <Flame className="h-3 w-3" />

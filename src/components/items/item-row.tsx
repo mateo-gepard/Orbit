@@ -9,6 +9,7 @@ import { format, isPast, isToday, isValid, parseISO } from 'date-fns';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
 import { calculateStreak, isHabitScheduledForDate } from '@/lib/habits';
+import { formatHabitTime } from '@/lib/habit-reminders';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useTranslation } from '@/lib/i18n';
 import { toast } from 'sonner';
@@ -33,7 +34,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
   const parent = useOrbitStore((state) => item.parentId
     ? state.items.find((candidate) => candidate.id === item.parentId)
     : undefined);
-  const { dateFormat, language } = useSettingsStore((s) => s.settings);
+  const { dateFormat, language, timeFormat } = useSettingsStore((s) => s.settings);
   const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const { t } = useTranslation();
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -249,10 +250,20 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
                 {parent.emoji || '📁'} {parent.title}
               </span>
             )}
+            {/* Stored times are 24-hour; the row used to print them raw, so a
+                user on 12-hour time still read 14:00 here while the Calendar
+                and Dispatch views respected the setting. */}
             {item.type === 'event' && item.startTime && (
               <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground/50">
                 <Clock className="h-2.5 w-2.5" />
-                {item.startTime}
+                {formatHabitTime(item.startTime, timeFormat === '24h') ?? item.startTime}
+              </span>
+            )}
+            {/* The habit reminder time, which nothing used to display. */}
+            {item.type === 'habit' && item.habitTime && (
+              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground/50">
+                <Clock className="h-2.5 w-2.5" />
+                {formatHabitTime(item.habitTime, timeFormat === '24h') ?? item.habitTime}
               </span>
             )}
             {item.tags?.slice(0, 2).map((tag) => (

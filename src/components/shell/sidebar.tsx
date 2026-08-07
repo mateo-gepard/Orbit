@@ -96,6 +96,7 @@ export function Sidebar() {
   const showBadges = useSettingsStore((s) => s.settings.showSidebarBadges);
   const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const settingsDisplayName = useSettingsStore((s) => s.settings.displayName);
+  const settingsBio = useSettingsStore((s) => s.settings.bio);
   const showProfilePhoto = useSettingsStore((s) => s.settings.privacy.showProfilePhoto);
   const accentColor = useSettingsStore((s) => s.settings.accentColor);
   const { t } = useTranslation();
@@ -537,9 +538,15 @@ export function Sidebar() {
                     <span className="block truncate text-[12px] font-medium leading-tight">
                       {settingsDisplayName || user.displayName || user.email}
                     </span>
-                    {isDemo && (
+                    {isDemo ? (
                       <span className="text-[10px] leading-tight text-muted-foreground/70">{t('sidebar.localMode')}</span>
-                    )}
+                    ) : settingsBio ? (
+                      // The bio was editable, normalised, cloud-synced and
+                      // persisted — with no reader anywhere in the app.
+                      <span className="block truncate text-[10px] leading-tight text-muted-foreground/70" title={settingsBio}>
+                        {settingsBio}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 <Tooltip>

@@ -123,14 +123,6 @@ export function getAllRelatedItems(item: OrbitItem, allItems: OrbitItem[], visit
 }
 
 /**
- * Check if two items are connected (directly or indirectly)
- */
-export function areItemsConnected(item1: OrbitItem, item2: OrbitItem, allItems: OrbitItem[]): boolean {
-  const allRelated = getAllRelatedItems(item1, allItems);
-  return allRelated.some(i => i.id === item2.id);
-}
-
-/**
  * Get all items that can be linked to the given item
  * (excludes self, already linked, parent, children, archived)
  */
@@ -175,28 +167,6 @@ export function canSetParent(item: OrbitItem, potentialParent: OrbitItem, allIte
   if (descendants.some(descendant => descendant.id === potentialParent.id)) return false;
 
   return true;
-}
-
-/**
- * Add a link between two items (bidirectional is optional)
- */
-export function addLink(item: OrbitItem, targetId: string): Partial<OrbitItem> {
-  const linkedIds = item.linkedIds || [];
-  if (linkedIds.includes(targetId)) {
-    return {}; // Already linked
-  }
-  return { linkedIds: [...linkedIds, targetId] };
-}
-
-/**
- * Remove a link between two items
- */
-export function removeLink(item: OrbitItem, targetId: string): Partial<OrbitItem> {
-  const linkedIds = item.linkedIds || [];
-  if (!linkedIds.includes(targetId)) {
-    return {}; // Not linked
-  }
-  return { linkedIds: linkedIds.filter(id => id !== targetId) };
 }
 
 /**

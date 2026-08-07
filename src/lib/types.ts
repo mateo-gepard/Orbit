@@ -38,7 +38,13 @@ export interface OrbitItem {
   type: ItemType;
   status: ItemStatus;
   title: string;
-  content?: string; // Rich text (HTML from Tiptap)
+  /**
+   * Plain text. The note editor is a `<textarea>`; this said "Rich text
+   * (HTML from Tiptap)" while holding nothing of the kind, and the MCP
+   * layer's `htmlToPlainText` was written against that false claim and
+   * silently destroyed content because of it.
+   */
+  content?: string;
   createdAt: number; // timestamp
   updatedAt: number;
   /** Monotonic cloud revision used to reject stale cross-device writes. */
@@ -55,7 +61,6 @@ export interface OrbitItem {
   // Task fields
   dueDate?: string; // ISO date string YYYY-MM-DD
   priority?: Priority;
-  assignee?: string;
   checklist?: ChecklistItem[];
 
   // Project fields

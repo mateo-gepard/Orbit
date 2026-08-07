@@ -59,27 +59,6 @@ export function calculateStreak(habit: OrbitItem): number {
 }
 
 /**
- * Get the week grid data for a habit (Mon-Sun)
- */
-export function getWeekGrid(habit: OrbitItem, weekStart?: Date) {
-  const start = weekStart || startOfWeek(new Date(), { weekStartsOn: 1 });
-  const days = [];
-
-  for (let i = 0; i < 7; i++) {
-    const date = addDays(start, i);
-    days.push({
-      date,
-      dateKey: format(date, 'yyyy-MM-dd'),
-      scheduled: isHabitScheduledForDate(habit, date),
-      completed: isHabitCompletedForDate(habit, date),
-      isToday: isToday(date),
-    });
-  }
-
-  return days;
-}
-
-/**
  * Get week completion rate for all habits
  */
 export function getWeekCompletionRate(habits: OrbitItem[], weekStart?: Date): number | null {

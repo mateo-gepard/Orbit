@@ -658,7 +658,7 @@ export function ProjectDashboard() {
             <Files className="h-3.5 w-3.5 text-muted-foreground/50" />
             <FieldLabel>{t('projects.files')}</FieldLabel>
           </div>
-          <FileUpload project={item} onFilesChange={() => {}} />
+          <FileUpload item={item} />
         </div>
 
         {/* Meta */}

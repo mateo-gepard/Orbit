@@ -761,7 +761,20 @@
   border-color: var(--border) !important;
 }
 
-/* Accent color — applied via --accent-color CSS variable from settings */
+/* Accent color — applied via --accent-color CSS variable from settings.
+   Mapping it onto --primary and --ring is what makes the setting visible:
+   before this it reached one sidebar row, one checkbox and one toggle rule,
+   leaving buttons, links, focus rings and primary CTAs monochrome — so the
+   picker read as broken rather than subtle. */
+:root[style*="--accent-color"] {
+  --primary: var(--accent-color);
+  --primary-foreground: var(--accent-contrast, #ffffff);
+  --ring: var(--accent-color);
+  --sidebar-primary: var(--accent-color);
+  --sidebar-primary-foreground: var(--accent-contrast, #ffffff);
+  --sidebar-ring: var(--accent-color);
+}
+
 :root[style*="--accent-color"] [data-slot="nav-item"].active,
 :root[style*="--accent-color"] [data-slot="nav-item"][data-active="true"] {
   color: var(--accent-color);

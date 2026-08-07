@@ -612,6 +612,13 @@ function NotificationsSection({
         </div>
       </SettingRow>
 
+      <SettingRow label={t('settings.habitReminders')} description={t('settings.habitRemindersDesc')}>
+        <Toggle
+          checked={settings.notifications.habitReminders}
+          onChange={(v) => setNested('notifications', { habitReminders: v })}
+        />
+      </SettingRow>
+
       {/* Test buttons */}
       {permGranted && (
         <div className="mt-3 flex items-center gap-2">

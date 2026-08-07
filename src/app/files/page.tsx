@@ -21,25 +21,25 @@ export default function FilesPage() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [viewingFile, setViewingFile] = useState<ProjectFile | null>(null);
 
-  // Get all projects with files
-  const projectsWithFiles = useMemo(() => {
+  // Every item that holds files. This scanned only projects, so an
+  // attachment on a task or a note would have been invisible here.
+  const itemsWithFiles = useMemo(() => {
     return items
-      .filter(item => item.type === 'project' && item.status !== 'archived' && item.files && item.files.length > 0)
-      .map(project => ({
-        ...project,
-        fileCount: project.files?.length || 0,
+      .filter(item => item.status !== 'archived' && item.files && item.files.length > 0)
+      .map(owner => ({
+        ...owner,
+        fileCount: owner.files?.length || 0,
       }))
       .sort((a, b) => b.fileCount - a.fileCount);
   }, [items]);
 
-  // Get all files across all projects
   const allFiles = useMemo(() => {
     const files: Array<{
       file: ProjectFile;
       project: OrbitItem;
     }> = [];
 
-    items.filter((item) => item.type === 'project' && item.status !== 'archived').forEach(item => {
+    items.filter((item) => item.status !== 'archived').forEach(item => {
       if (item.files && item.files.length > 0) {
         item.files.forEach(file => {
           files.push({ file, project: item });
@@ -82,11 +82,11 @@ export default function FilesPage() {
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
-      <div className="px-4 lg:px-6 py-4 lg:py-5 border-b border-border/60">
+      <div className="p-4 lg:p-8 pb-3 lg:pb-4 border-b border-border/40">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold">{t('files.title')}</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <h1 className="text-xl font-semibold tracking-tight">{t('files.title')}</h1>
+            <p className="text-[13px] text-muted-foreground/60 mt-0.5">
               {tp('files.count.one', 'files.count.other', totalFiles)} · {formatFileSize(totalSize)}
             </p>
           </div>
@@ -100,22 +100,22 @@ export default function FilesPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('files.searchPlaceholder')}
-            className="pl-9 h-10 bg-background/50"
+            className="pl-9 h-9 bg-background/50 text-[13px]"
           />
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {/* Project Filter */}
-        {projectsWithFiles.length > 0 && (
-          <div className="px-4 lg:px-6 py-4 border-b border-border/40">
+        {itemsWithFiles.length > 0 && (
+          <div className="px-4 lg:px-8 py-4 border-b border-border/40">
             <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 lg:mx-0 lg:px-0">
               <button
                 type="button"
                 onClick={() => setSelectedProject(null)}
                 aria-pressed={!selectedProject}
                 className={cn(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
+                  'px-2.5 py-1.5 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors',
                   !selectedProject
                     ? 'bg-foreground text-background'
                     : 'bg-foreground/[0.05] text-muted-foreground hover:bg-foreground/[0.1]'
@@ -123,14 +123,14 @@ export default function FilesPage() {
               >
                 {t('files.allProjects')}
               </button>
-              {projectsWithFiles.map(project => (
+              {itemsWithFiles.map(project => (
                 <button
                   key={project.id}
                   type="button"
                   onClick={() => setSelectedProject(project.id)}
                   aria-pressed={selectedProject === project.id}
                   className={cn(
-                    'px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-2',
+                    'px-2.5 py-1.5 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors flex items-center gap-2',
                     selectedProject === project.id
                       ? 'bg-foreground text-background'
                       : 'bg-foreground/[0.05] text-muted-foreground hover:bg-foreground/[0.1]'
@@ -162,7 +162,7 @@ export default function FilesPage() {
             )}
           </div>
         ) : (
-          <div className="p-4 lg:p-6 space-y-2">
+          <div className="p-4 lg:p-8 space-y-2">
             {filteredFiles.map(({ file, project }) => {
               const isPrev = file.type.startsWith('image/') || file.type === 'application/pdf';
               const uploadedDate = new Date(file.uploadedAt);

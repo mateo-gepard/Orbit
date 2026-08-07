@@ -24,11 +24,15 @@ import { useTranslation } from '@/lib/i18n';
 import { getLocale } from '@/lib/utils';
 
 interface FileUploadProps {
-  project: OrbitItem;
-  onFilesChange?: () => void;
+  /**
+   * Any item. `files` has always lived on the universal item; only the project
+   * dashboard ever rendered this, so tasks, notes, goals and events could not
+   * hold an attachment — which cut against the unified-item premise.
+   */
+  item: OrbitItem;
 }
 
-export function FileUpload({ project, onFilesChange }: FileUploadProps) {
+export function FileUpload({ item }: FileUploadProps) {
   const { user, isDemo, signOut } = useAuth();
   const { t, tp, lang } = useTranslation();
   const [uploading, setUploading] = useState(false);
@@ -39,7 +43,7 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
   const [fileToDelete, setFileToDelete] = useState<ProjectFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const files = project.files || [];
+  const files = item.files || [];
   const canUpload = Boolean(user && !isDemo && user.uid !== 'demo-user');
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,7 +77,7 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
         const batch = filesToUpload.slice(start, start + MAX_PARALLEL_UPLOADS);
         const batchResults = await Promise.allSettled(batch.map((file, offset) => {
           const index = start + offset;
-          return uploadAndAttachProjectFile(file, project.id, user.uid, (progress) => {
+          return uploadAndAttachProjectFile(file, item.id, user.uid, (progress) => {
             perFileProgress.set(index, progress);
             const bytesTransferred = Array.from(perFileProgress.values()).reduce(
               (sum, current) => sum + current.bytesTransferred,
@@ -91,7 +95,6 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
 
       const uploadedCount = results.filter((result) => result.status === 'fulfilled').length;
       const failedCount = results.length - uploadedCount;
-      onFilesChange?.();
       if (uploadedCount > 0) {
         toast.success(tp('files.uploaded.one', 'files.uploaded.other', uploadedCount));
       }
@@ -129,8 +132,7 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
   const handleDeleteFile = async (file: ProjectFile): Promise<boolean> => {
     if (!user) return false;
     try {
-      await removeAttachedProjectFile(project.id, user.uid, file);
-      onFilesChange?.();
+      await removeAttachedProjectFile(item.id, user.uid, file);
       toast.success(t('files.deleted', { name: file.name }));
       return true;
     } catch (err) {
@@ -153,7 +155,7 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
       {/* Upload Button */}
       <div>
         <input
-          id={`project-files-${project.id}`}
+          id={`item-files-${item.id}`}
           ref={fileInputRef}
           type="file"
           multiple
@@ -169,7 +171,7 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
             disabled={uploading}
             className="min-h-11 w-full"
             variant="outline"
-            aria-describedby={`project-files-help-${project.id}`}
+            aria-describedby={`item-files-help-${item.id}`}
           >
             {uploading ? (
               <>
@@ -212,7 +214,7 @@ export function FileUpload({ project, onFilesChange }: FileUploadProps) {
           </div>
         )}
 
-        <p id={`project-files-help-${project.id}`} className="text-xs text-muted-foreground/60 mt-2 text-center">
+        <p id={`item-files-help-${item.id}`} className="text-xs text-muted-foreground/60 mt-2 text-center">
           {t('files.limitsHint', { batch: MAX_FILES_PER_BATCH, project: MAX_FILES_PER_PROJECT })}
         </p>
 

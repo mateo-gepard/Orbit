@@ -41,10 +41,6 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'status.waiting': 'Auf der Bank',
   'status.done': 'Tor! ✓',
   'status.archived': 'Ruhestand',
-  'status.active.desc': 'Wird gerade gespielt',
-  'status.waiting.desc': 'Sitzt auf der Ersatzbank',
-  'status.done.desc': 'Erfolgreich abgeschlossen — TOOOR!',
-  'status.archived.desc': 'Karriere beendet',
 
   // ── Priority (triage) ───────────────────────────────────
   'priority.high': 'Notfall 🚨',
@@ -63,18 +59,14 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'dashboard.events': 'Anpfiffe',
   'dashboard.tasks': 'Spielzüge',
   'dashboard.habitsLabel': 'Training',
-  'dashboard.projectsLabel': 'Saisons',
   'dashboard.nothingScheduled': 'Spielfrei — genieße die Pause, Dr. 🩺',
   'dashboard.noTasksPast': 'Kein Spiel an diesem Tag',
   'dashboard.noHabitsScheduled': 'Trainingsfreier Tag — Regeneration! 💪',
   'dashboard.allCaughtUp': 'Alles aufgeholt — stark! 💪',
 
   // ── Today page ───────────────────────────────────────────
-  'today.tasks': 'Spielzüge',
   'today.myDay': 'Mein Spieltag',
   'today.habits': 'Training',
-  'today.events': 'Anpfiffe',
-  'today.noTasks': 'Kein Spielzug für heute — die Bank ist voll',
   'today.noHabits': 'Heute kein Training geplant — Ruhetag, Dr.',
   'today.overdue': 'Nachspielzeit ⏱️',
   'today.notDoneFromBefore': 'Nachholspiele',
@@ -93,7 +85,6 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'projects.createToStart': 'Starte eine neue Saison',
   'projects.milestones': 'Spieltage',
   'projects.grid': 'Aufstellung',
-  'projects.kanban': 'Taktiktafel',
   'kanban.inProgress': 'Auf dem Feld',
   'kanban.waiting': 'Auf der Bank',
   'kanban.done': 'Tor!',
@@ -236,7 +227,6 @@ const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
   'tasks.clearFilters': 'Taktiktafel löschen',
 
   // ── Calendar ─────────────────────────────────────────────
-  'calendar.noEventsMonth': 'Spielfreier Monat',
   'calendar.eventsThisMonth': 'Spieltage diesen Monat',
   'calendar.noEventsOrTasks': 'Kein Spiel an diesem Tag',
 
@@ -314,7 +304,6 @@ const en = {
   'common.sent': 'Sent!',
   'common.saved': 'Saved',
   'common.working': 'Working…',
-  'common.export': 'Export',
   'common.import': 'Import',
   'common.today': 'Today',
   'common.overdue': 'Overdue',
@@ -332,10 +321,6 @@ const en = {
   'status.waiting': 'Waiting',
   'status.done': 'Done',
   'status.archived': 'Archived',
-  'status.active.desc': 'Currently working on this',
-  'status.waiting.desc': 'Blocked or waiting for someone',
-  'status.done.desc': 'Completed',
-  'status.archived.desc': 'No longer relevant',
 
   // ── Priority ─────────────────────────────────────────────
   'priority.high': 'High',
@@ -371,7 +356,6 @@ const en = {
   'dashboard.allCaughtUp': 'All caught up!',
   'dashboard.tasks': 'tasks',
   'dashboard.habitsLabel': 'habits',
-  'dashboard.projectsLabel': 'projects',
 
   // ── Dashboard date context ───────────────────────────────
   'date.past': 'Past',
@@ -420,11 +404,8 @@ const en = {
 
   // ── Today page ───────────────────────────────────────────
   'today.overdue': 'Overdue',
-  'today.tasks': 'Tasks',
   'today.myDay': 'My Day',
-  'today.events': 'Events',
   'today.habits': 'Habits',
-  'today.noTasks': 'No tasks for today',
   'today.noHabits': 'No habits scheduled',
   'today.notDoneFromBefore': 'Not Done from Before',
 
@@ -469,7 +450,6 @@ const en = {
 
   // ── Projects page ────────────────────────────────────────
   'projects.grid': 'Grid',
-  'projects.kanban': 'Kanban',
   'projects.newProject': 'New Project',
   'projects.noProjects': 'No projects yet',
   'projects.createToStart': 'Create one to get started',
@@ -481,11 +461,8 @@ const en = {
 
   // ── Calendar ─────────────────────────────────────────────
   'calendar.importFromGoogle': 'Import from Google',
-  'calendar.import': 'Import',
   'calendar.importing': 'Importing...',
-  'calendar.noEventsMonth': 'No events this month',
   'calendar.eventsThisMonth': 'Events this month',
-  'calendar.multiDay': 'Multi-day',
   'calendar.noEventsOrTasks': 'No events or tasks for this day',
   'calendar.wk': 'Wk',
   'calendar.untitledEvent': 'Untitled Event',
@@ -498,7 +475,6 @@ const en = {
   'notes.journal': 'Journal',
   'notes.titlePlaceholder': 'Note title...',
   'notes.contentPlaceholder': 'Take a note... (use - or • for bullets, 1. 2. 3. for numbered lists)',
-  'notes.saveHint': '⌘↵ save · esc cancel',
   'notes.takeANote': 'Take a note...',
   'notes.noNotes': 'No notes yet',
   'notes.noNotesDesc': 'Capture ideas, principles, plans, and reflections.',
@@ -531,7 +507,6 @@ const en = {
 
   // ── Item row ─────────────────────────────────────────────
   'itemRow.waiting': 'Waiting',
-  'itemRow.today': 'today',
   'itemRow.todayBtn': 'Today',
   'itemRow.removeBtn': 'Remove',
   'itemRow.doneSwipe': 'Done',
@@ -560,6 +535,7 @@ const en = {
   'detail.endTime': 'End Time',
   'detail.successMetric': 'Success Metric',
   'detail.checklist': 'Checklist',
+  'detail.attachments': 'Attachments',
   'detail.notes': 'Notes',
   'detail.tags': 'Tags',
   'detail.parent': 'Parent',
@@ -574,7 +550,6 @@ const en = {
   'detail.syncing': 'Syncing...',
   'detail.syncedToCalendar': 'Synced to Calendar ✓',
   'detail.syncToGoogle': 'Sync to Google Calendar',
-  'detail.syncFailed': 'Failed to sync with Google Calendar.',
   'links.parent': 'Parent',
   'links.linkedItems': 'Linked Items ({count})',
   'links.contains': 'Contains ({count})',
@@ -748,6 +723,8 @@ const en = {
   'settings.morningBriefingDesc': 'Your day at a glance — tasks, events, habits',
   'settings.eveningBriefing': 'Evening Briefing',
   'settings.eveningBriefingDesc': 'Review your day — what you crushed, what\'s left',
+  'settings.habitReminders': 'Habit reminders',
+  'settings.habitRemindersDesc': 'Notify at each habit\'s own reminder time, if it is still outstanding',
   'settings.testMorning': 'Test Morning',
   'settings.testEvening': 'Test Evening',
   'settings.briefings': 'Briefings',
@@ -831,7 +808,6 @@ const en = {
   'settings.settingsExportError': 'Could not export settings.',
   'settings.settingsImported': 'Settings imported.',
   'settings.settingsImportError': 'Could not import this settings file. Choose a valid Threadmap settings export.',
-  'settings.accountExportDownloaded': 'Account export downloaded.',
   'settings.accountExportError': 'Could not export account data.',
   'settings.resetSuccess': 'Settings reset to defaults.',
   'settings.accountDeleteError': 'Could not delete your account. Please try again.',
@@ -891,9 +867,7 @@ const en = {
   'tasks.clearTagFilter': 'Clear the {tag} tag filter',
   'tasks.sort': 'Sort',
   'tasks.group': 'Group',
-  'tasks.closeSortMenu': 'Close sort menu',
   'tasks.sortMenuLabel': 'Sort tasks',
-  'tasks.closeGroupMenu': 'Close grouping menu',
   'tasks.groupMenuLabel': 'Group tasks',
   'tasks.weekOf': 'Week of {date}',
 
@@ -1319,7 +1293,6 @@ const de: Record<TranslationKey, string> = {
   'common.sent': 'Gesendet!',
   'common.saved': 'Gespeichert',
   'common.working': 'Wird ausgeführt…',
-  'common.export': 'Exportieren',
   'common.import': 'Importieren',
   'common.today': 'Heute',
   'common.overdue': 'Überfällig',
@@ -1337,10 +1310,6 @@ const de: Record<TranslationKey, string> = {
   'status.waiting': 'Wartend',
   'status.done': 'Erledigt',
   'status.archived': 'Archiviert',
-  'status.active.desc': 'Wird gerade bearbeitet',
-  'status.waiting.desc': 'Blockiert oder wartet auf jemanden',
-  'status.done.desc': 'Abgeschlossen',
-  'status.archived.desc': 'Nicht mehr relevant',
 
   // ── Priority ─────────────────────────────────────────────
   'priority.high': 'Hoch',
@@ -1376,7 +1345,6 @@ const de: Record<TranslationKey, string> = {
   'dashboard.allCaughtUp': 'Alles erledigt!',
   'dashboard.tasks': 'Aufgaben',
   'dashboard.habitsLabel': 'Gewohnheiten',
-  'dashboard.projectsLabel': 'Projekte',
 
   // ── Dashboard date context ───────────────────────────────
   'date.past': 'Vergangen',
@@ -1425,11 +1393,8 @@ const de: Record<TranslationKey, string> = {
 
   // ── Today page ───────────────────────────────────────────
   'today.overdue': 'Überfällig',
-  'today.tasks': 'Aufgaben',
   'today.myDay': 'Mein Tag',
-  'today.events': 'Termine',
   'today.habits': 'Gewohnheiten',
-  'today.noTasks': 'Keine Aufgaben für heute',
   'today.noHabits': 'Keine Gewohnheiten geplant',
   'today.notDoneFromBefore': 'Noch nicht erledigt',
 
@@ -1474,7 +1439,6 @@ const de: Record<TranslationKey, string> = {
 
   // ── Projects page ────────────────────────────────────────
   'projects.grid': 'Raster',
-  'projects.kanban': 'Kanban',
   'projects.newProject': 'Neues Projekt',
   'projects.noProjects': 'Noch keine Projekte',
   'projects.createToStart': 'Erstelle eines zum Starten',
@@ -1486,11 +1450,8 @@ const de: Record<TranslationKey, string> = {
 
   // ── Calendar ─────────────────────────────────────────────
   'calendar.importFromGoogle': 'Aus Google importieren',
-  'calendar.import': 'Importieren',
   'calendar.importing': 'Importiere...',
-  'calendar.noEventsMonth': 'Keine Termine diesen Monat',
   'calendar.eventsThisMonth': 'Termine diesen Monat',
-  'calendar.multiDay': 'Mehrtägig',
   'calendar.noEventsOrTasks': 'Keine Termine oder Aufgaben für diesen Tag',
   'calendar.wk': 'KW',
   'calendar.untitledEvent': 'Ohne Titel',
@@ -1503,7 +1464,6 @@ const de: Record<TranslationKey, string> = {
   'notes.journal': 'Tagebuch',
   'notes.titlePlaceholder': 'Titel der Notiz...',
   'notes.contentPlaceholder': 'Notiz schreiben... (nutze - oder • für Listen, 1. 2. 3. für Aufzählungen)',
-  'notes.saveHint': '⌘↵ speichern · esc abbrechen',
   'notes.takeANote': 'Notiz erstellen...',
   'notes.noNotes': 'Noch keine Notizen',
   'notes.noNotesDesc': 'Halte Ideen, Prinzipien, Pläne und Gedanken fest.',
@@ -1536,7 +1496,6 @@ const de: Record<TranslationKey, string> = {
 
   // ── Item row ─────────────────────────────────────────────
   'itemRow.waiting': 'Wartend',
-  'itemRow.today': 'heute',
   'itemRow.todayBtn': 'Heute',
   'itemRow.removeBtn': 'Entfernen',
   'itemRow.doneSwipe': 'Erledigt',
@@ -1565,6 +1524,7 @@ const de: Record<TranslationKey, string> = {
   'detail.endTime': 'Endzeit',
   'detail.successMetric': 'Erfolgskriterium',
   'detail.checklist': 'Checkliste',
+  'detail.attachments': 'Anhänge',
   'detail.notes': 'Notizen',
   'detail.tags': 'Tags',
   'detail.parent': 'Übergeordnet',
@@ -1579,7 +1539,6 @@ const de: Record<TranslationKey, string> = {
   'detail.syncing': 'Synchronisiere...',
   'detail.syncedToCalendar': 'Mit Kalender synchronisiert ✓',
   'detail.syncToGoogle': 'Mit Google Kalender synchronisieren',
-  'detail.syncFailed': 'Synchronisation mit Google Kalender fehlgeschlagen.',
   'links.parent': 'Übergeordnet',
   'links.linkedItems': 'Verknüpfte Einträge ({count})',
   'links.contains': 'Enthält ({count})',
@@ -1753,6 +1712,8 @@ const de: Record<TranslationKey, string> = {
   'settings.morningBriefingDesc': 'Dein Tag auf einen Blick — Aufgaben, Termine, Gewohnheiten',
   'settings.eveningBriefing': 'Abend-Briefing',
   'settings.eveningBriefingDesc': 'Tagesrückblick — was du geschafft hast, was noch offen ist',
+  'settings.habitReminders': 'Gewohnheits-Erinnerungen',
+  'settings.habitRemindersDesc': 'Benachrichtigen zur jeweiligen Erinnerungszeit, wenn die Gewohnheit noch offen ist',
   'settings.testMorning': 'Morgen testen',
   'settings.testEvening': 'Abend testen',
   'settings.briefings': 'Briefings',
@@ -1836,7 +1797,6 @@ const de: Record<TranslationKey, string> = {
   'settings.settingsExportError': 'Einstellungen konnten nicht exportiert werden.',
   'settings.settingsImported': 'Einstellungen importiert.',
   'settings.settingsImportError': 'Diese Einstellungsdatei konnte nicht importiert werden. Wähle einen gültigen Threadmap-Einstellungsexport.',
-  'settings.accountExportDownloaded': 'Kontoexport heruntergeladen.',
   'settings.accountExportError': 'Kontodaten konnten nicht exportiert werden.',
   'settings.resetSuccess': 'Einstellungen auf Standardwerte zurückgesetzt.',
   'settings.accountDeleteError': 'Dein Konto konnte nicht gelöscht werden. Bitte versuche es erneut.',
@@ -1896,9 +1856,7 @@ const de: Record<TranslationKey, string> = {
   'tasks.clearTagFilter': 'Tag-Filter „{tag}“ entfernen',
   'tasks.sort': 'Sortieren',
   'tasks.group': 'Gruppieren',
-  'tasks.closeSortMenu': 'Sortiermenü schließen',
   'tasks.sortMenuLabel': 'Aufgaben sortieren',
-  'tasks.closeGroupMenu': 'Gruppierungsmenü schließen',
   'tasks.groupMenuLabel': 'Aufgaben gruppieren',
   'tasks.weekOf': 'Woche ab {date}',
 

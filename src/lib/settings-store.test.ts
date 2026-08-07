@@ -122,6 +122,8 @@ describe('parseSettingsImport', () => {
       dailyBriefingTime: '07:30',
       eveningBriefing: true,
       eveningBriefingTime: '20:45',
+      // Absent from the stored payload, so it takes the default.
+      habitReminders: true,
       sound: false,
     });
     expect(settings.focus).toEqual({

@@ -62,6 +62,8 @@ export interface NotificationSettings {
   dailyBriefingTime: string; // HH:mm
   eveningBriefing: boolean;
   eveningBriefingTime: string; // HH:mm
+  /** Fire a notification at each habit's own `habitTime`. */
+  habitReminders: boolean;
   sound: boolean;
 }
 
@@ -169,6 +171,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     dailyBriefingTime: '08:00',
     eveningBriefing: false,
     eveningBriefingTime: '21:00',
+    habitReminders: true,
     sound: true,
   },
 
@@ -335,6 +338,7 @@ function normalizeSettings(settings: unknown = {}): UserSettings {
       dailyBriefingTime: timeValue(notifications.dailyBriefingTime, DEFAULT_SETTINGS.notifications.dailyBriefingTime),
       eveningBriefing: booleanValue(notifications.eveningBriefing, DEFAULT_SETTINGS.notifications.eveningBriefing),
       eveningBriefingTime: timeValue(notifications.eveningBriefingTime, DEFAULT_SETTINGS.notifications.eveningBriefingTime),
+      habitReminders: booleanValue(notifications.habitReminders, DEFAULT_SETTINGS.notifications.habitReminders),
       sound: booleanValue(notifications.sound, DEFAULT_SETTINGS.notifications.sound),
     },
     focus: {

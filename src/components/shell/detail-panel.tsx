@@ -23,6 +23,7 @@ import {
   FileText,
   MoreVertical,
   Network,
+  Paperclip,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem, deleteItem, ItemRevisionConflictError } from '@/lib/firestore';
@@ -40,6 +41,7 @@ import {
 import { LinkManager } from '@/components/items/link-manager';
 import { LinkGraph } from '@/components/items/link-graph';
 import { ProjectDashboard } from './project-dashboard';
+import { FileUpload } from '@/components/files/file-upload';
 import { getItemRelationships } from '@/lib/links';
 import type { OrbitItem, ItemType, ItemStatus, Priority, ChecklistItem, GoalTimeframe, HabitFrequency, NoteSubtype } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -1691,6 +1693,18 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             )}
           </div>
         )}
+
+        {/* Attachments — on every type. `files` lives on the universal item,
+            but only the project dashboard ever rendered an uploader, so a task
+            or a note could not hold one. Projects keep theirs on the project
+            dashboard. */}
+        <div className="pt-4">
+          <div className="mb-2 flex items-center gap-1.5">
+            <Paperclip className="h-3.5 w-3.5 text-muted-foreground/50" aria-hidden="true" />
+            <FieldLabel>{t('detail.attachments')}</FieldLabel>
+          </div>
+          <FileUpload item={item} />
+        </div>
 
         {/* Metadata - Collapsed at bottom */}
         <div className="pt-2 pb-4">

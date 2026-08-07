@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/lib/settings-store';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import { getAutoArchiveTaskIds } from '@/lib/auto-archive';
+import { readableForeground } from '@/lib/utils';
 
 /**
  * Applies user settings as global CSS classes / variables on the document.
@@ -36,6 +37,9 @@ export function SettingsEffects() {
     // Set a CSS variable that components can reference
     if (settings.accentColor) {
       root.style.setProperty('--accent-color', settings.accentColor);
+      // Buttons and CTAs take the accent as `--primary`, so they need a
+      // foreground that stays legible against whatever the user picked.
+      root.style.setProperty('--accent-contrast', readableForeground(settings.accentColor));
     }
 
     // ── Compact mode / density ─────────────────────────────
@@ -60,6 +64,7 @@ export function SettingsEffects() {
 
     return () => {
       root.style.removeProperty('--accent-color');
+      root.style.removeProperty('--accent-contrast');
       body.removeAttribute('data-density');
       root.classList.remove('reduce-motion', 'high-contrast');
       root.removeAttribute('data-font-size');

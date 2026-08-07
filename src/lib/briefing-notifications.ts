@@ -8,6 +8,7 @@
 import { addDays, format } from 'date-fns';
 import type { OrbitItem } from './types';
 import { isHabitScheduledForDate, isHabitCompletedForDate, calculateStreak } from './habits';
+import { getDueHabitReminders } from './habit-reminders';
 import { useSettingsStore } from './settings-store';
 import { scopedStorageKey } from './account-storage';
 
@@ -510,6 +511,69 @@ function getDateStr(): string {
   return format(new Date(), 'yyyy-MM-dd');
 }
 
+// ── Habit reminders ────────────────────────────────────────
+
+function habitRemindersFiredKey(): string | null {
+  return currentBriefingOwnerId
+    ? scopedStorageKey('orbit-habit-reminders-fired', currentBriefingOwnerId)
+    : null;
+}
+
+/** Habit ids already reminded about today, so a reminder fires once. */
+function getRemindedHabitIds(): Set<string> {
+  try {
+    const key = habitRemindersFiredKey();
+    const raw = key ? localStorage.getItem(key) : null;
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as { date?: string; ids?: string[] };
+    if (parsed.date !== getDateStr() || !Array.isArray(parsed.ids)) return new Set();
+    return new Set(parsed.ids.filter((id): id is string => typeof id === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberRemindedHabits(ids: Set<string>): void {
+  try {
+    const key = habitRemindersFiredKey();
+    if (key) localStorage.setItem(key, JSON.stringify({ date: getDateStr(), ids: [...ids] }));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Fire reminders for habits whose set time has arrived.
+ *
+ * `habitTime` was persisted by the detail panel and read by nothing at all —
+ * no scheduling, no display, no sorting. This is the reader the input has
+ * always implied it had.
+ */
+function fireDueHabitReminders(items: OrbitItem[]): void {
+  const { settings } = useSettingsStore.getState();
+  if (!settings.notifications.enabled || !settings.notifications.habitReminders) return;
+  if (!hasNotificationPermission()) return;
+
+  const due = getDueHabitReminders(items, new Date());
+  if (due.length === 0) return;
+
+  const reminded = getRemindedHabitIds();
+  const pending = due.filter((habit) => !reminded.has(habit.id));
+  if (pending.length === 0) return;
+
+  const german = settings.language === 'de';
+  for (const habit of pending) {
+    reminded.add(habit.id);
+    const streak = calculateStreak(habit);
+    void sendNotification({
+      title: german ? `Zeit für: ${habit.title}` : `Time for: ${habit.title}`,
+      body: streak > 0
+        ? (german ? `${streak} Tage in Folge — halte die Serie.` : `${streak} day streak — keep it going.`)
+        : (german ? 'Heute fällig.' : 'Due today.'),
+      tag: `habit-reminder-${habit.id}-${getDateStr()}`,
+    });
+  }
+  rememberRemindedHabits(reminded);
+}
+
 // Background scheduling is browser-controlled and may wake late. Deliver a
 // once-per-day briefing within a useful grace period instead of requiring a
 // fragile five-minute wake-up window.
@@ -583,6 +647,9 @@ export function startBriefingScheduler(userId: string, getItems: () => OrbitItem
 
     const today = getDateStr();
     const lastFired = getLastFired();
+
+    // Habit reminders run on the same minute tick as the briefings.
+    fireDueHabitReminders(currentGetItems());
 
     // Morning briefing — only if SW/BRIEFING_FIRE didn't already handle it
     // Use 5-minute window so timer drift doesn't cause misses
