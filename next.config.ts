@@ -29,6 +29,11 @@ const MCP_GATEWAY_PATHS = [
   "/mcp",
   "/.well-known/oauth-authorization-server",
   "/.well-known/oauth-protected-resource",
+  // The 401 challenge on /mcp names this exact URL in its `resource_metadata`
+  // parameter, so a client following RFC 9728 requests it before it can begin
+  // OAuth. The gateway serves it; leaving it unrouted returned the app's HTML
+  // 404 and stalled the connect flow before registration.
+  "/mcp/.well-known/oauth-protected-resource",
   "/authorize",
   "/register",
   "/token",

@@ -12,6 +12,9 @@ const ADVERTISED_PATHS = [
   '/mcp',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
+  // Named in the `resource_metadata` parameter of the 401 challenge on /mcp,
+  // so a client requests it before OAuth can start.
+  '/mcp/.well-known/oauth-protected-resource',
   '/authorize',
   '/register',
   '/token',
