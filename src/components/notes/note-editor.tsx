@@ -373,7 +373,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
                 )}
               </div>
 
-              <Popover open={showSettings} onOpenChange={handleSettingsOpenChange} modal>
+              <Popover open={showSettings} onOpenChange={handleSettingsOpenChange}>
                 <PopoverTrigger asChild>
                   <button
                     type="button"
@@ -387,7 +387,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
                 <PopoverContent
                   align="end"
                   aria-label={t('notes.options')}
-                  className="max-h-[min(75vh,640px)] w-[min(280px,calc(100vw-1rem))] overflow-y-auto p-1"
+                  className="z-[130] max-h-[min(75vh,640px)] w-[min(280px,calc(100vw-1rem))] overflow-y-auto p-1"
                 >
                   <div className="px-2 py-1.5">
                     <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">

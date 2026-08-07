@@ -1107,7 +1107,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           </button>
           
           {/* Keyboard-safe settings popover */}
-          <Popover open={optionsOpen} onOpenChange={setOptionsOpen} modal>
+          <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
@@ -1120,7 +1120,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             <PopoverContent
               align="end"
               aria-label={t('common.moreOptions')}
-              className="max-h-[min(75vh,640px)] w-72 overflow-y-auto p-1"
+              className="z-[130] max-h-[min(75vh,640px)] w-72 overflow-y-auto p-1"
             >
               {/* Change Type */}
               <div className="px-2 py-2">

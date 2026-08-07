@@ -274,6 +274,13 @@ export default function TasksPage() {
   // Ensure only one task-menu popover can be open at once.
   const [activeTaskMenu, setActiveTaskMenu] = useState<'none' | 'sort' | 'group'>('none');
   const closeTaskMenus = () => setActiveTaskMenu('none');
+  const handleTaskMenuOpenChange = (menu: 'sort' | 'group', open: boolean) => {
+    setActiveTaskMenu((previous) => {
+      if (!open && previous === menu) return 'none';
+      if (open) return menu;
+      return previous;
+    });
+  };
 
   const allTags = getAllTags();
 
@@ -483,7 +490,7 @@ export default function TasksPage() {
           {/* Sort dropdown */}
           <DropdownMenu
             open={activeTaskMenu === 'sort'}
-            onOpenChange={(open) => setActiveTaskMenu(open ? 'sort' : 'none')}
+            onOpenChange={(open) => handleTaskMenuOpenChange('sort', open)}
           >
             <DropdownMenuTrigger asChild>
               <button
@@ -534,9 +541,7 @@ export default function TasksPage() {
           {/* Group dropdown */}
           <DropdownMenu
             open={activeTaskMenu === 'group'}
-            onOpenChange={(open) => {
-              setActiveTaskMenu(open ? 'group' : 'none');
-            }}
+            onOpenChange={(open) => handleTaskMenuOpenChange('group', open)}
           >
             <DropdownMenuTrigger asChild>
               <button
@@ -572,6 +577,9 @@ export default function TasksPage() {
                     <DropdownMenuRadioItem
                       key={opt.key}
                       value={opt.key}
+                      onSelect={() => {
+                        closeTaskMenus();
+                      }}
                       className="min-h-10 text-[12px]"
                     >
                       <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
