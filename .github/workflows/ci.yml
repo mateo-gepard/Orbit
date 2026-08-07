@@ -1,5 +1,12 @@
 name: CI
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -9,6 +16,7 @@ jobs:
   app:
     name: App checks
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,14 +24,20 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
       - name: Lint
         run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Unit tests
         run: npm test
@@ -31,9 +45,10 @@ jobs:
       - name: Build
         run: npm run build
 
-  functions:
-    name: Functions build
+  rules:
+    name: Firebase rules
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,13 +56,43 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test security rules
+        run: npm run test:rules
+
+  functions:
+    name: Functions build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
           cache: npm
           cache-dependency-path: functions/package-lock.json
 
       - name: Install dependencies
         working-directory: functions
         run: npm ci
+
+      - name: Dependency audit
+        working-directory: functions
+        run: npm audit --audit-level=high
 
       - name: Build functions
         working-directory: functions

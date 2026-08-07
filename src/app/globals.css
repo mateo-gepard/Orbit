@@ -63,6 +63,13 @@
   --secondary-foreground: oklch(0.20 0.01 60);
   --muted: oklch(0.96 0.004 75);
   --muted-foreground: oklch(0.50 0.01 60);
+  /* Opaque copy tones keep small supporting text readable while preserving
+     a clear hierarchy. They replace stacked low-alpha text, not decorative
+     icons or intentionally disabled surfaces. */
+  --copy-secondary: oklch(0.38 0.01 60);
+  --copy-tertiary: oklch(0.44 0.01 60);
+  --copy-subtle: oklch(0.49 0.01 60);
+  --copy-faint-readable: oklch(0.53 0.01 60);
   --accent: oklch(0.955 0.006 75);
   --accent-foreground: oklch(0.20 0.01 60);
   --destructive: oklch(0.55 0.22 25);
@@ -116,6 +123,10 @@
   --secondary-foreground: oklch(0.93 0.005 80);
   --muted: oklch(0.22 0.008 60);
   --muted-foreground: oklch(0.62 0.01 60);
+  --copy-secondary: oklch(0.78 0.01 60);
+  --copy-tertiary: oklch(0.68 0.01 60);
+  --copy-subtle: oklch(0.62 0.01 60);
+  --copy-faint-readable: oklch(0.58 0.01 60);
   --accent: oklch(0.24 0.01 60);
   --accent-foreground: oklch(0.93 0.005 80);
   --destructive: oklch(0.65 0.20 22);
@@ -202,11 +213,6 @@
 
 /* ─── PWA Standalone Mode ─── */
 @media all and (display-mode: standalone) {
-  /* Disable text selection on non-editable elements */
-  *:not(input):not(textarea):not([contenteditable="true"]) {
-    -webkit-user-select: none;
-    user-select: none;
-  }
   input, textarea, [contenteditable="true"], [data-selectable] {
     -webkit-user-select: auto;
     user-select: auto;
@@ -281,6 +287,44 @@
   }
   .orbit-control {
     min-height: 44px;
+  }
+
+  /* Low-opacity muted colors can make 9–12px copy illegible. Preserve the
+     original four-level hierarchy, but map semantic text nodes to opaque,
+     contrast-safe tones. Decorative SVGs retain their quieter opacity. */
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/70"],
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/75"],
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/80"] {
+    color: var(--copy-secondary);
+  }
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/50"],
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/55"],
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/60"] {
+    color: var(--copy-tertiary);
+  }
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/40"],
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/45"] {
+    color: var(--copy-subtle);
+  }
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/30"],
+  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/35"] {
+    color: var(--copy-faint-readable);
+  }
+
+  /* Hover-disclosed destructive actions stay discoverable for keyboard users
+     and become permanently visible, 44px targets on touch/coarse pointers. */
+  .group:hover .reveal-action,
+  .group:focus-within .reveal-action,
+  .reveal-action:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .reveal-action {
+    min-width: 44px;
+    min-height: 44px;
+    opacity: 1;
   }
 }
 
@@ -666,6 +710,33 @@
   transform: none !important;
 }
 
+/* Respect the OS preference even when the in-app accessibility setting is
+   off or has not hydrated yet. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  .orbit-pressable,
+  .orbit-pressable:active {
+    transform: none !important;
+  }
+
+  [class*="active:scale"]:active {
+    transform: none !important;
+  }
+}
+
 /* High contrast — boost text contrast and borders */
 .high-contrast {
   --foreground: oklch(0.05 0 0);
@@ -680,6 +751,14 @@
   --border: oklch(0.6 0 0);
   --border-subtle: oklch(0.72 0 0 / 0.72);
   --focus-ring: oklch(0.95 0 0 / 0.72);
+}
+
+.high-contrast [class*="text-muted-foreground/"] {
+  color: var(--muted-foreground) !important;
+}
+
+.high-contrast [class*="border-border/"] {
+  border-color: var(--border) !important;
 }
 
 /* Accent color — applied via --accent-color CSS variable from settings */
@@ -774,4 +853,39 @@
 }
 [data-font-size="large"] {
   font-size: 18px;
+}
+
+[data-font-size="large"] :where(.text-\[9px\], .text-\[10px\], .text-\[11px\]) {
+  font-size: 0.75rem !important;
+}
+
+[data-font-size="large"] :where(.text-\[12px\], .text-\[13px\]) {
+  font-size: 0.875rem !important;
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 200;
+  transform: translateY(-200%);
+  border-radius: 0.5rem;
+  background: var(--foreground);
+  color: var(--background);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/* Settings contain dense device/status metadata, but it must remain readable. */
+[data-slot="settings-page"] :where(.text-\[8px\], .text-\[9px\], .text-\[10px\]) {
+  font-size: 0.6875rem !important;
+}
+
+[data-slot="settings-page"] :where([class*="text-muted-foreground/20"], [class*="text-muted-foreground/25"], [class*="text-muted-foreground/30"], [class*="text-muted-foreground/35"]) {
+  color: color-mix(in oklch, var(--muted-foreground) 72%, transparent) !important;
 }

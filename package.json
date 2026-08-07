@@ -2,15 +2,21 @@
   "name": "threadmap",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy:rules": "firebase deploy --only firestore:rules,storage",
-    "deploy:functions": "firebase deploy --only functions"
+    "test:rules": "firebase emulators:exec --project demo-threadmap-rules-test --only firestore,storage \"vitest run src/test/firebase-rules.test.ts\"",
+    "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage",
+    "deploy:functions": "firebase deploy --only functions:sendBriefingNotifications,functions:upsertThreadmapPushDevice,functions:updateThreadmapPushSchedule,functions:deleteThreadmapPushDevice,functions:consumeThreadmapScrapeQuota,functions:repairThreadmapHierarchy,functions:deleteThreadmapItem,functions:deleteThreadmapAttachment,functions:beginThreadmapUpload,functions:attachThreadmapUpload,functions:cleanupThreadmapUpload,functions:cleanupDeletedItemFiles,functions:exportThreadmapAccount,functions:deleteThreadmapAccount,functions:retryThreadmapAccountDeletions",
+    "deploy:functions:unsafe-prune": "firebase deploy --only functions"
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.19.0",
@@ -26,7 +32,7 @@
     "date-fns": "^4.1.0",
     "firebase": "^12.9.0",
     "lucide-react": "^0.563.0",
-    "next": "16.2.6",
+    "next": "16.3.0",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
@@ -34,23 +40,26 @@
     "react-dom": "19.2.3",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
+    "undici": "^8.10.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.3.0",
+    "firebase-tools": "^15.26.0",
     "shadcn": "^3.8.4",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.10"
   },
   "overrides": {
-    "postcss": "8.5.15"
+    "postcss": "8.5.26"
   }
 }

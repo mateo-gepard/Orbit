@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckSquare,
   FolderKanban,
@@ -16,12 +16,16 @@ import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { parseCommand } from '@/lib/command-parser';
 import { createItem, linkItems } from '@/lib/firestore';
-import { syncEventToGoogle, hasCalendarPermission, requestCalendarPermission } from '@/lib/google-calendar';
-import type { ItemType, NoteSubtype, OrbitItem } from '@/lib/types';
+import { hasCalendarPermission } from '@/lib/google-calendar';
+import { flushPendingGoogleCalendarEvents } from '@/lib/google-calendar-sync';
+import { LIFE_AREA_TAGS, type ItemType, type NoteSubtype, type OrbitItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n';
 import { getAllowedParentTypes } from '@/lib/links';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { useSettingsStore } from '@/lib/settings-store';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 const TYPE_ICONS: Record<ItemType, typeof CheckSquare> = {
   task: CheckSquare,
@@ -32,39 +36,46 @@ const TYPE_ICONS: Record<ItemType, typeof CheckSquare> = {
   note: FileText,
 };
 
-const TYPE_LABELS: Record<ItemType, string> = {
-  task: 'Task',
-  project: 'Project',
-  habit: 'Habit',
-  event: 'Event',
-  goal: 'Goal',
-  note: 'Note',
-};
-
 const COMMAND_SECTION_LABEL =
   'px-3 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground/50';
 const COMMAND_ROW =
-  'mx-1.5 flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[14px] outline-none transition-colors lg:py-2 lg:text-[13px] focus-visible:ring-2 focus-visible:ring-ring/25';
+  'mx-1.5 flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[14px] outline-none transition-colors lg:py-2 lg:text-[13px] focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-wait disabled:opacity-50';
 const COMMAND_ROW_ACTIVE = 'bg-foreground/[0.055] shadow-[var(--shadow-hairline)]';
 const COMMAND_ROW_IDLE = 'hover:bg-foreground/[0.035] active:bg-foreground/[0.055]';
 
 export function CommandBar() {
   const { user } = useAuth();
-  const { commandBarOpen, setCommandBarOpen, items, getAllTags, addCustomTag } = useOrbitStore();
+  const commandBarOpen = useOrbitStore((state) => state.commandBarOpen);
+  const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
+  const items = useOrbitStore((state) => state.items);
+  const customTags = useOrbitStore((state) => state.customTags);
+  const removedDefaultTags = useOrbitStore((state) => state.removedDefaultTags);
+  const addCustomTag = useOrbitStore((state) => state.addCustomTag);
+  const activeTag = useOrbitStore((state) => state.activeTag);
   const { t } = useTranslation();
+  const settings = useSettingsStore((state) => state.settings);
+  const googleCalendarSyncEnabled = settings.calendar.googleCalendarSync;
+  const language = settings.language;
   const [input, setInput] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [resolvedLink, setResolvedLink] = useState<OrbitItem | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const submitInFlightRef = useRef(false);
 
-  const allTags = getAllTags();
+  const allTags = useMemo(() => {
+    const removed = new Set(removedDefaultTags);
+    return [
+      ...(LIFE_AREA_TAGS as readonly string[]).filter((tag) => !removed.has(tag)),
+      ...customTags,
+    ];
+  }, [customTags, removedDefaultTags]);
 
   // Autocomplete state
   // Tags (#)
   const lastHashIndex = input.lastIndexOf('#');
   const isTypingTag = lastHashIndex !== -1 && 
-    (lastHashIndex === input.length - 1 || /^[a-zA-Z0-9]*$/.test(input.slice(lastHashIndex + 1)));
+    (lastHashIndex === input.length - 1 || /^[\p{L}\p{M}\p{N}_-]*$/u.test(input.slice(lastHashIndex + 1)));
   const tagQuery = isTypingTag ? input.slice(lastHashIndex + 1).toLowerCase() : '';
   const suggestedTags = isTypingTag && (tagQuery || lastHashIndex === input.length - 1)
     ? allTags.filter(tag => tag.toLowerCase().startsWith(tagQuery)).slice(0, 5)
@@ -100,34 +111,12 @@ export function CommandBar() {
   // Determine which autocomplete to show
   const showingAutocomplete = suggestedTags.length > 0 || suggestedPriorities.length > 0 || suggestedLinks.length > 0;
 
-  // Prevent background scroll when command bar is open
-  useEffect(() => {
-    if (!commandBarOpen) return;
-
-    // Prevent touch scrolling on the backdrop
-    const preventScroll = (e: TouchEvent) => {
-      const target = e.target as HTMLElement;
-      // Allow scrolling inside the results container
-      if (target.closest('[data-command-scroll]')) return;
-      e.preventDefault();
-    };
-
-    document.addEventListener('touchmove', preventScroll, { passive: false });
-
-    return () => {
-      document.removeEventListener('touchmove', preventScroll);
-    };
-  }, [commandBarOpen]);
-
   // ⌘K shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setCommandBarOpen(!commandBarOpen);
-      }
-      if (e.key === 'Escape' && commandBarOpen) {
-        setCommandBarOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -139,7 +128,6 @@ export function CommandBar() {
       setInput('');
       setSelectedIndex(0);
       setResolvedLink(null);
-      setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [commandBarOpen]);
 
@@ -156,19 +144,29 @@ export function CommandBar() {
         .slice(0, 6)
     : [];
 
-  const handleSubmit = async () => {
+  const submitCommand = async () => {
     if (!input.trim() || !user) return;
 
     const parsed = parseCommand(input);
+    const effectiveTags = activeTag && !parsed.tags.includes(activeTag)
+      ? [...parsed.tags, activeTag]
+      : parsed.tags;
 
     // If only tags were typed (no actual title), don't create an item
     if (!parsed.title.trim() && parsed.tags.length > 0) {
       // Just auto-create the tags and close
-      parsed.tags.forEach(tag => {
-        if (!allTags.includes(tag)) {
-          addCustomTag(tag);
-        }
-      });
+      try {
+        parsed.tags.forEach(tag => {
+          if (!allTags.includes(tag)) {
+            addCustomTag(tag);
+          }
+        });
+      } catch {
+        toast.error(language === 'de'
+          ? 'Der Tag konnte nicht gespeichert werden. Gib Browserspeicher frei und versuche es erneut.'
+          : 'The tag could not be saved. Free browser storage and try again.');
+        return;
+      }
       setInput('');
       setCommandBarOpen(false);
       return;
@@ -182,9 +180,14 @@ export function CommandBar() {
     }
 
     // Auto-create custom tags that don't exist yet
-    parsed.tags.forEach(tag => {
+    let tagPersistenceFailed = false;
+    effectiveTags.forEach(tag => {
       if (!allTags.includes(tag)) {
-        addCustomTag(tag);
+        try {
+          addCustomTag(tag);
+        } catch {
+          tagPersistenceFailed = true;
+        }
       }
     });
 
@@ -223,10 +226,10 @@ export function CommandBar() {
 
     let noteSubtype: NoteSubtype | undefined;
     if (parsed.type === 'note') {
-      if (parsed.tags.includes('idea')) noteSubtype = 'idea';
-      else if (parsed.tags.includes('principle')) noteSubtype = 'principle';
-      else if (parsed.tags.includes('plan')) noteSubtype = 'plan';
-      else if (parsed.tags.includes('journal')) noteSubtype = 'journal';
+      if (effectiveTags.includes('idea')) noteSubtype = 'idea';
+      else if (effectiveTags.includes('principle')) noteSubtype = 'principle';
+      else if (effectiveTags.includes('plan')) noteSubtype = 'plan';
+      else if (effectiveTags.includes('journal')) noteSubtype = 'journal';
     }
 
     const parentItemId =
@@ -238,7 +241,7 @@ export function CommandBar() {
       type: parsed.type,
       status: 'active',
       title: parsed.title, // Early returns ensure this is never empty
-      tags: parsed.tags,
+      tags: effectiveTags,
       userId: user.uid,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -252,49 +255,75 @@ export function CommandBar() {
     
     // Auto-add defaults for events
     if (parsed.type === 'event') {
-      const startDate = parsed.startDate || new Date().toISOString().split('T')[0];
+      const startDate = parsed.startDate || format(new Date(), 'yyyy-MM-dd');
+      const endMinutes = Math.min(23 * 60 + 59, 9 * 60 + settings.calendar.defaultEventDuration);
+      const defaultEndTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
       Object.assign(newItem, {
         startDate,
         endDate: startDate, // Default: same day
         startTime: '09:00', // Default start time
-        endTime: '10:00',   // Default end time (1 hour duration)
+        endTime: defaultEndTime,
+        ...(googleCalendarSyncEnabled && { calendarSynced: false }),
       });
     }
 
+    let itemId: string;
     try {
-      const itemId = await createItem(newItem);
+      itemId = await createItem(newItem);
+    } catch {
+      toast.error(language === 'de' ? 'Eintrag konnte nicht erstellt werden' : 'Failed to create item');
+      return;
+    }
 
-      if (relationshipTarget && !parentItemId) {
+    if (tagPersistenceFailed) {
+      toast.warning(language === 'de'
+        ? 'Der Eintrag wurde erstellt, aber der neue Tag konnte nicht in deiner Tag-Liste gespeichert werden.'
+        : 'Item created, but the new tag could not be saved to your tag list.');
+    }
+
+    if (relationshipTarget && !parentItemId) {
+      try {
         await linkItems(itemId, relationshipTarget.id);
+      } catch {
+        toast.warning(language === 'de'
+          ? 'Der Eintrag wurde erstellt, aber seine Verknüpfung konnte nicht gespeichert werden. Öffne den Eintrag, um es erneut zu versuchen.'
+          : 'Item created, but its link could not be saved. Open the item to retry.');
       }
-      
-      // Auto-sync events to Google Calendar
-      if (parsed.type === 'event' && itemId) {
-        try {
-          if (!hasCalendarPermission()) {
-            await requestCalendarPermission();
-          }
-          // Build full item for sync
-          const fullItem: OrbitItem = { ...newItem, id: itemId } as OrbitItem;
-          const googleCalendarId = await syncEventToGoogle(fullItem);
-          // Update item with Google Calendar ID (silent update)
-          await import('@/lib/firestore').then(m => 
-            m.updateItem(itemId, { 
-              googleCalendarId, 
-              calendarSynced: true 
-            })
-          );
-          // Auto-synced to Google Calendar
-        } catch {
-          // Don't block item creation if sync fails
+    }
+
+    // Automatic Calendar sync never starts OAuth implicitly. Consent belongs
+    // to Settings; command creation remains a single, non-duplicating action.
+    if (parsed.type === 'event' && googleCalendarSyncEnabled) {
+      if (!hasCalendarPermission()) {
+        toast.warning(language === 'de'
+          ? 'Der Termin wurde lokal erstellt. Verbinde Google Kalender in den Einstellungen erneut und wähle dann „Erneut versuchen“.'
+          : 'Event created locally. Reconnect Google Calendar in Settings, then use Retry.');
+      } else {
+        const fullItem = useOrbitStore.getState().items.find((candidate) => candidate.id === itemId)
+          || ({ ...newItem, id: itemId } as OrbitItem);
+        const result = await flushPendingGoogleCalendarEvents(user.uid, [fullItem]);
+        if (!result.success) {
+          toast.warning(language === 'de'
+            ? 'Der Termin wurde lokal gespeichert, aber die Google-Kalender-Synchronisierung wurde nicht abgeschlossen.'
+            : 'Event saved locally, but Google Calendar sync did not finish.');
         }
       }
-      
-      setInput('');
-      setResolvedLink(null);
-      setCommandBarOpen(false);
-    } catch {
-      toast.error('Failed to create item');
+    }
+
+    setInput('');
+    setResolvedLink(null);
+    setCommandBarOpen(false);
+  };
+
+  const handleSubmit = async () => {
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
+    setSubmitting(true);
+    try {
+      await submitCommand();
+    } finally {
+      submitInFlightRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -328,50 +357,63 @@ export function CommandBar() {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  if (!commandBarOpen) return null;
-
   const TypeIcon = TYPE_ICONS[parsed.type] || CheckSquare;
   const isCreateMode = input.startsWith('/') || (input.trim() && filteredItems.length === 0);
   // Clean @ text from preview title
   const previewTitle = parsed.title.includes('@') ? parsed.title.replace(/@[^#!]*/g, '').trim() : parsed.title;
+  const previewTags = activeTag && !parsed.tags.includes(activeTag)
+    ? [...parsed.tags, activeTag]
+    : parsed.tags;
+  const activeOptionId = suggestedTags.length > 0
+    ? `command-tag-${Math.min(selectedIndex, suggestedTags.length - 1)}`
+    : suggestedPriorities.length > 0
+      ? `command-priority-${Math.min(selectedIndex, suggestedPriorities.length - 1)}`
+      : suggestedLinks.length > 0
+        ? `command-link-${Math.min(selectedIndex, suggestedLinks.length - 1)}`
+        : filteredItems.length > 0 && !input.startsWith('/')
+          ? `command-result-${Math.min(selectedIndex, filteredItems.length - 1)}`
+          : input.trim() && isCreateMode && (previewTitle || resolvedLink)
+            ? 'command-create-item'
+            : input.trim() && isCreateMode && parsed.tags.length > 0
+              ? 'command-create-tags'
+              : undefined;
+  const hasListboxOptions = Boolean(activeOptionId);
 
   return (
-    <div className="fixed inset-0 z-[100]">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-background/70 backdrop-blur-md"
-        onClick={() => setCommandBarOpen(false)}
-      />
-
-      {/* Dialog — top-aligned on mobile (stays above keyboard), centered on desktop */}
-      <div 
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Search or create"
-        className={cn(
-          'relative z-10 w-full',
-          // Mobile: top-aligned card with safe area
-          'pt-[max(env(safe-area-inset-top,0px),8px)] px-3',
-          // Desktop: centered
-          'lg:absolute lg:top-[18vh] lg:left-1/2 lg:-translate-x-1/2 lg:pt-0 lg:px-0',
-          'lg:max-w-[520px]',
-          'animate-slide-down-spring lg:animate-scale-in'
-        )}
-        style={{
-          paddingLeft: 'max(0.75rem, var(--safe-left))',
-          paddingRight: 'max(0.75rem, var(--safe-right))',
+    <Dialog
+      open={commandBarOpen}
+      onOpenChange={(open) => {
+        if (!open && submitting) return;
+        setCommandBarOpen(open);
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby={undefined}
+        aria-busy={submitting}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          inputRef.current?.focus();
         }}
+        className={cn(
+          'top-[max(env(safe-area-inset-top,0px),8px)] z-[100] max-w-[calc(100%-1.5rem)] translate-y-0 gap-0 border-0 bg-transparent p-0 shadow-none',
+          'lg:top-[18vh] lg:max-w-[520px]'
+        )}
       >
+        <DialogTitle className="sr-only">
+          {language === 'de' ? 'Suchen oder erstellen' : 'Search or create'}
+        </DialogTitle>
         <div className="surface-float overflow-hidden rounded-2xl">
           {/* Input */}
           <div className="flex items-center gap-3 px-4 py-3.5 lg:py-3">
             <Search className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
             <input
               ref={inputRef}
+              disabled={submitting}
               value={input}
               onChange={(e) => { setInput(e.target.value); setSelectedIndex(0); setResolvedLink(null); }}
               onKeyDown={(e) => {
+                if (submitting) return;
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   if (suggestedTags.length > 0) {
@@ -396,29 +438,43 @@ export function CommandBar() {
                     : suggestedLinks.length > 0
                     ? suggestedLinks.length - 1
                     : filteredItems.length - 1;
-                  setSelectedIndex((i) => Math.min(i + 1, maxIndex));
+                  if (maxIndex >= 0) setSelectedIndex((i) => Math.min(i + 1, maxIndex));
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
                   setSelectedIndex((i) => Math.max(i - 1, 0));
                 }
               }}
-              placeholder={t('commandBar.placeholder')}
-              aria-label="Search or create"
+              placeholder={activeTag
+                ? (language === 'de' ? `In #${activeTag} erstellen…` : `Create in #${activeTag}…`)
+                : t('commandBar.placeholder')}
+              role="combobox"
+              aria-label={language === 'de' ? 'Suchen oder erstellen' : 'Search or create'}
+              aria-autocomplete="list"
+              aria-expanded={hasListboxOptions}
+              aria-controls="command-options"
+              aria-activedescendant={activeOptionId}
               inputMode="text"
               className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
-              autoFocus
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
               enterKeyHint="done"
             />
+            {submitting && (
+              <span aria-live="polite" className="text-[11px] font-medium text-muted-foreground/70">
+                {language === 'de' ? 'Wird gespeichert …' : 'Saving…'}
+              </span>
+            )}
             <div className="flex items-center gap-1">
               <button
+                type="button"
                 onClick={() => setCommandBarOpen(false)}
+                disabled={submitting}
+                aria-label={language === 'de' ? 'Befehlspalette schließen' : 'Close command bar'}
                 className="mobile-touch-target rounded-lg px-2 py-1 text-[12px] font-medium text-muted-foreground/50 transition-colors hover:bg-foreground/[0.04] hover:text-muted-foreground lg:hidden"
               >
-                Cancel
+                {language === 'de' ? 'Abbrechen' : 'Cancel'}
               </button>
             </div>
           </div>
@@ -428,8 +484,14 @@ export function CommandBar() {
 
           {/* Results */}
           <div 
+            id="command-options"
+            role={hasListboxOptions ? 'listbox' : undefined}
+            aria-label={hasListboxOptions ? (language === 'de' ? 'Vorschläge' : 'Suggestions') : undefined}
             data-command-scroll
-            className="overflow-y-auto overscroll-contain py-2 lg:max-h-[300px]"
+            className={cn(
+              'overflow-y-auto overscroll-contain py-2 lg:max-h-[300px]',
+              submitting && 'pointer-events-none opacity-60',
+            )}
             style={{
               maxHeight: 'min(56dvh, calc(var(--app-height) - max(var(--safe-top), 8px) - 88px))',
             }}
@@ -443,6 +505,10 @@ export function CommandBar() {
                 {suggestedTags.map((tag, idx) => (
                   <button
                     key={tag}
+                    id={`command-tag-${idx}`}
+                    type="button"
+                    role="option"
+                    aria-selected={idx === selectedIndex}
                     onClick={() => handleSelectTag(tag)}
                     className={cn(
                       COMMAND_ROW,
@@ -465,6 +531,10 @@ export function CommandBar() {
                 {suggestedPriorities.map((priority, idx) => (
                   <button
                     key={priority}
+                    id={`command-priority-${idx}`}
+                    type="button"
+                    role="option"
+                    aria-selected={idx === selectedIndex}
                     onClick={() => handleSelectPriority(priority)}
                     className={cn(
                       COMMAND_ROW,
@@ -472,11 +542,11 @@ export function CommandBar() {
                     )}
                   >
                     <span className="text-muted-foreground/50">!</span>
-                    <span className="flex-1 capitalize">{priority}</span>
+                    <span className="flex-1">{t(`priority.${priority as 'high' | 'medium' | 'low'}`)}</span>
                     <span className={cn(
                       'h-2 w-2 rounded-full',
                       priority === 'high' ? 'bg-red-500' : priority === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
-                    )} />
+                    )} aria-hidden="true" />
                   </button>
                 ))}
               </div>
@@ -496,6 +566,10 @@ export function CommandBar() {
                   return (
                     <button
                       key={item.id}
+                      id={`command-link-${idx}`}
+                      type="button"
+                      role="option"
+                      aria-selected={idx === selectedIndex}
                       onClick={() => handleSelectLink(item)}
                       className={cn(
                         COMMAND_ROW,
@@ -513,7 +587,7 @@ export function CommandBar() {
                         'text-[10px] uppercase tracking-wider',
                         isProject ? 'text-blue-500/60' : 'text-muted-foreground/40'
                       )}>
-                        {item.type}
+                        {t(`type.${item.type}`)}
                       </span>
                     </button>
                   );
@@ -532,6 +606,10 @@ export function CommandBar() {
                   return (
                     <button
                       key={item.id}
+                      id={`command-result-${idx}`}
+                      type="button"
+                      role="option"
+                      aria-selected={idx === selectedIndex}
                       onClick={() => handleSelectItem(item.id)}
                       className={cn(
                         COMMAND_ROW,
@@ -541,7 +619,7 @@ export function CommandBar() {
                       <Icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
                       <span className="flex-1 truncate">{item.title}</span>
                       <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wider">
-                        {item.type}
+                        {t(`type.${item.type}`)}
                       </span>
                     </button>
                   );
@@ -553,21 +631,28 @@ export function CommandBar() {
             {input.trim() && isCreateMode && !suggestedTags.length && (previewTitle || resolvedLink) && (
               <div>
                 <div className={COMMAND_SECTION_LABEL}>
-                  Create new {TYPE_LABELS[parsed.type].toLowerCase()}
+                  {language === 'de'
+                    ? `${t(`type.${parsed.type}`)} erstellen`
+                    : `Create new ${t(`type.${parsed.type}`).toLowerCase()}`}
                 </div>
                 <button
+                  id="command-create-item"
+                  type="button"
+                  role="option"
+                  aria-selected="true"
                   onClick={() => handleSubmit()}
+                  disabled={submitting}
                   className={cn(COMMAND_ROW, 'py-3.5 lg:py-2.5', COMMAND_ROW_IDLE)}
                 >
                   <TypeIcon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
                     <div className="text-[14px] lg:text-[13px] font-medium truncate">{previewTitle || parsed.title}</div>
-                    {(parsed.tags.length > 0 || parsed.priority || parsed.dueDate || resolvedLink) && (
+                    {(previewTags.length > 0 || parsed.priority || parsed.dueDate || resolvedLink) && (
                       <div className="flex items-center gap-2 mt-0.5">
                         {resolvedLink && (
                           <span className="text-[10px] text-blue-500/60">@{resolvedLink.title}</span>
                         )}
-                        {parsed.tags.map((tag) => (
+                        {previewTags.map((tag) => (
                           <span key={tag} className="text-[10px] text-muted-foreground/50">#{tag}</span>
                         ))}
                         {parsed.priority && (
@@ -591,7 +676,12 @@ export function CommandBar() {
                   {parsed.tags.length === 1 ? t('commandBar.createTag') : t('commandBar.createTags')}
                 </div>
                 <button
+                  id="command-create-tags"
+                  type="button"
+                  role="option"
+                  aria-selected="true"
                   onClick={() => handleSubmit()}
+                  disabled={submitting}
                   className={cn(COMMAND_ROW, 'py-3.5 lg:py-2.5', COMMAND_ROW_IDLE)}
                 >
                   <Hash className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
@@ -616,6 +706,7 @@ export function CommandBar() {
                 <div className="grid grid-cols-3 lg:grid-cols-2 gap-1.5">
                   {Object.entries(TYPE_ICONS).map(([type, Icon]) => (
                     <button
+                      type="button"
                       key={type}
                       onMouseDown={(e) => {
                         e.preventDefault(); // Prevent input from losing focus
@@ -630,7 +721,7 @@ export function CommandBar() {
                       className="orbit-pressable flex flex-col items-center gap-1.5 rounded-xl border border-transparent bg-foreground/[0.025] px-2.5 py-3 text-[12px] text-muted-foreground outline-none hover:border-border/50 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:flex-row lg:gap-2 lg:py-1.5"
                     >
                       <Icon className="h-5 w-5 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
-                      <span className="capitalize text-[11px] lg:text-[12px]">{type}</span>
+                      <span className="text-[11px] lg:text-[12px]">{t(`type.${type as ItemType}`)}</span>
                     </button>
                   ))}
                 </div>
@@ -638,7 +729,7 @@ export function CommandBar() {
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -10,24 +10,41 @@ import {
   Target,
   CalendarDays,
   AlertTriangle,
-  FolderKanban,
 } from 'lucide-react';
 import type { OrbitItem } from '@/lib/types';
+import { format, isValid, parseISO } from 'date-fns';
+import { useTranslation } from '@/lib/i18n';
+import { useSettingsStore } from '@/lib/settings-store';
+import { getLocale, shortDatePattern } from '@/lib/utils';
 
 // ─── Status config ──────────────────────────────────────
 
 const STATUS_CONFIG = {
-  active: { icon: Circle, label: 'Active', color: 'text-blue-500', ring: 'ring-blue-500/20' },
-  waiting: { icon: Clock, label: 'Waiting', color: 'text-amber-500', ring: 'ring-amber-500/20' },
-  done: { icon: CheckCircle2, label: 'Done', color: 'text-emerald-500', ring: 'ring-emerald-500/20' },
-  archived: { icon: Circle, label: 'Archived', color: 'text-muted-foreground/40', ring: '' },
+  active: { icon: Circle, color: 'text-blue-500', ring: 'ring-blue-500/20' },
+  waiting: { icon: Clock, color: 'text-amber-500', ring: 'ring-amber-500/20' },
+  done: { icon: CheckCircle2, color: 'text-emerald-500', ring: 'ring-emerald-500/20' },
+  archived: { icon: Circle, color: 'text-muted-foreground/40', ring: '' },
 } as const;
 
 const PRIORITY_CONFIG = {
-  high: { color: 'bg-red-500', label: '!' },
-  medium: { color: 'bg-amber-500', label: '!' },
-  low: { color: 'bg-blue-400', label: '!' },
+  high: { color: 'bg-red-500' },
+  medium: { color: 'bg-amber-500' },
+  low: { color: 'bg-blue-400' },
 } as const;
+
+function useRoadmapDateFormatter(): { formatDueDate: (value: string) => string } {
+  const { t, lang } = useTranslation();
+  const dateFormat = useSettingsStore((state) => state.settings.dateFormat);
+  const locale = getLocale(lang);
+  return {
+    formatDueDate: (value: string) => {
+      const date = parseISO(value);
+      return isValid(date)
+        ? format(date, shortDatePattern(dateFormat), { locale })
+        : t('common.dateUnavailable');
+    },
+  };
+}
 
 // ─── Project root node ──────────────────────────────────
 
@@ -40,6 +57,7 @@ interface ProjectNodeData {
 }
 
 function ProjectNodeComponent({ data }: { data: ProjectNodeData }) {
+  const { t, tp } = useTranslation();
   const { item, progress, taskCount, doneCount } = data;
 
   return (
@@ -55,16 +73,26 @@ function ProjectNodeComponent({ data }: { data: ProjectNodeData }) {
           <span className="text-2xl">{item.emoji || '📁'}</span>
           <div className="flex-1 min-w-0">
             <p className="text-[14px] font-bold truncate leading-tight">
-              {item.title || 'Untitled Project'}
+              {item.title || t('projects.untitledProject')}
             </p>
             <p className="text-[11px] text-muted-foreground/60 mt-0.5">
-              {doneCount}/{taskCount} tasks complete
+              {tp('roadmap.tasksComplete.one', 'roadmap.tasksComplete.other', taskCount, {
+                done: doneCount,
+                total: taskCount,
+              })}
             </p>
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="h-1.5 rounded-full bg-foreground/[0.06] overflow-hidden">
+        <div
+          className="h-1.5 rounded-full bg-foreground/[0.06] overflow-hidden"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress}
+          aria-label={t('roadmap.projectProgress', { percent: progress })}
+        >
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{
@@ -96,9 +124,12 @@ interface MilestoneNodeData {
 }
 
 function MilestoneNodeComponent({ data }: { data: MilestoneNodeData }) {
+  const { t } = useTranslation();
+  const { formatDueDate } = useRoadmapDateFormatter();
   const { item, progress, taskCount, doneCount, projectColor } = data;
+  const title = item.title || t('common.untitled');
   const isDone = item.status === 'done';
-  const isOverdue = !isDone && item.dueDate && item.dueDate < new Date().toISOString().split('T')[0];
+  const isOverdue = !isDone && item.dueDate && item.dueDate < format(new Date(), 'yyyy-MM-dd');
 
   return (
     <div className="relative">
@@ -134,11 +165,14 @@ function MilestoneNodeComponent({ data }: { data: MilestoneNodeData }) {
               'text-[12px] font-semibold truncate leading-tight',
               isDone && 'line-through opacity-60',
             )}>
-              {item.title}
+              {title}
             </p>
           </div>
           {isDone && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />}
           {isOverdue && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
+          <span className="sr-only">
+            {isDone ? t('status.done') : isOverdue ? t('briefing.overdue') : t('status.active')}
+          </span>
         </div>
 
         {/* Date */}
@@ -149,14 +183,25 @@ function MilestoneNodeComponent({ data }: { data: MilestoneNodeData }) {
               'text-[10px] font-medium',
               isDone ? 'text-muted-foreground/40' : isOverdue ? 'text-red-500' : 'text-muted-foreground/60',
             )}>
-              {item.dueDate}
+              {formatDueDate(item.dueDate)}
             </span>
           </div>
         )}
 
         {/* Progress bar */}
         <div className="flex items-center gap-2">
-          <div className="flex-1 h-1 rounded-full bg-foreground/[0.06] overflow-hidden">
+          <div
+            className="flex-1 h-1 rounded-full bg-foreground/[0.06] overflow-hidden"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+            aria-label={t('roadmap.milestoneProgress', {
+              name: title,
+              done: doneCount,
+              total: taskCount,
+            })}
+          >
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{
@@ -189,12 +234,16 @@ interface TaskNodeData {
 }
 
 function TaskNodeComponent({ data }: { data: TaskNodeData }) {
+  const { t } = useTranslation();
+  const { formatDueDate } = useRoadmapDateFormatter();
   const { item, projectColor } = data;
+  const title = item.title || t('common.untitled');
   const isDone = item.status === 'done';
   const isWaiting = item.status === 'waiting';
-  const isOverdue = !isDone && item.dueDate && item.dueDate < new Date().toISOString().split('T')[0];
+  const isOverdue = !isDone && item.dueDate && item.dueDate < format(new Date(), 'yyyy-MM-dd');
   const status = STATUS_CONFIG[item.status] || STATUS_CONFIG.active;
   const StatusIcon = status.icon;
+  const checklistDone = item.checklist?.filter((entry) => entry.done).length || 0;
 
   return (
     <div className="relative">
@@ -220,21 +269,25 @@ function TaskNodeComponent({ data }: { data: TaskNodeData }) {
         <div className="flex items-center gap-2">
           {/* Priority dot */}
           {item.priority && (
-            <div className={cn(
-              'w-1.5 h-1.5 rounded-full shrink-0',
-              PRIORITY_CONFIG[item.priority]?.color || 'bg-muted-foreground/30',
-            )} />
+            <>
+              <div className={cn(
+                'w-1.5 h-1.5 rounded-full shrink-0',
+                PRIORITY_CONFIG[item.priority]?.color || 'bg-muted-foreground/30',
+              )} />
+              <span className="sr-only">{t(`priority.${item.priority}`)}</span>
+            </>
           )}
 
           {/* Status icon */}
           <StatusIcon className={cn('h-3.5 w-3.5 shrink-0', status.color)} />
+          <span className="sr-only">{t(`status.${item.status}`)}</span>
 
           {/* Title */}
           <p className={cn(
             'text-[11px] font-medium truncate flex-1 leading-tight',
             isDone && 'line-through opacity-60',
           )}>
-            {item.title}
+            {title}
           </p>
         </div>
 
@@ -246,7 +299,7 @@ function TaskNodeComponent({ data }: { data: TaskNodeData }) {
               'text-[9px] font-medium tabular-nums',
               isOverdue ? 'text-red-500' : 'text-muted-foreground/50',
             )}>
-              {item.dueDate}
+              {formatDueDate(item.dueDate)}
             </span>
           </div>
         )}
@@ -254,11 +307,22 @@ function TaskNodeComponent({ data }: { data: TaskNodeData }) {
         {/* Checklist progress if any */}
         {item.checklist && item.checklist.length > 0 && (
           <div className="mt-1.5 pl-5">
-            <div className="h-0.5 rounded-full bg-foreground/[0.06] overflow-hidden w-full">
+            <div
+              className="h-0.5 rounded-full bg-foreground/[0.06] overflow-hidden w-full"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={item.checklist.length}
+              aria-valuenow={checklistDone}
+              aria-label={t('roadmap.checklistProgress', {
+                name: title,
+                done: checklistDone,
+                total: item.checklist.length,
+              })}
+            >
               <div
                 className="h-full rounded-full"
                 style={{
-                  width: `${(item.checklist.filter(c => c.done).length / item.checklist.length) * 100}%`,
+                  width: `${(checklistDone / item.checklist.length) * 100}%`,
                   backgroundColor: projectColor,
                 }}
               />

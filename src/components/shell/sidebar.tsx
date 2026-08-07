@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { Dialog as DialogPrimitive } from 'radix-ui';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -18,14 +19,12 @@ import {
   Files,
   Pencil,
   Trash2,
-  Check,
   Wrench,
   Plane,
   Route,
   FileBarChart,
   GraduationCap,
   Gem,
-  Users,
   Settings,
 } from 'lucide-react';
 import { useToolboxStore, TOOLS, type ToolId } from '@/lib/toolbox-store';
@@ -73,6 +72,7 @@ const NAV_SECTIONS: { labelKey?: TranslationKey; items: { href: string; labelKey
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, signOut, isDemo } = useAuth();
   const {
     sidebarOpen, setSidebarOpen, activeTag, setActiveTag, setCommandBarOpen,
@@ -87,6 +87,10 @@ export function Sidebar() {
   const [isManaging, setIsManaging] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const addTagButtonRef = useRef<HTMLButtonElement>(null);
+  const editTagButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const openCommandAfterCloseRef = useRef(false);
+  const [isDesktop, setIsDesktop] = useState(false);
 
   const allTags = getAllTags();
   const showBadges = useSettingsStore((s) => s.settings.showSidebarBadges);
@@ -96,6 +100,10 @@ export function Sidebar() {
   const accentColor = useSettingsStore((s) => s.settings.accentColor);
   const { t } = useTranslation();
   const storeItems = useOrbitStore((s) => s.items);
+  const language = useSettingsStore((s) => s.settings.language);
+  const affectedTagItemCount = deletingTag
+    ? storeItems.filter((item) => item.tags?.includes(deletingTag)).length
+    : 0;
 
   // Compute badge counts per route
   const badgeCounts = useMemo(() => {
@@ -115,7 +123,6 @@ export function Sidebar() {
     briefing: FileBarChart,
     abitur: GraduationCap,
     wishlist: Gem,
-    circles: Users,
   };
   const enabledToolIds = useToolboxStore((s) => s.enabledTools);
   const enabledTools = useMemo(
@@ -124,12 +131,30 @@ export function Sidebar() {
   );
 
   useEffect(() => {
-    if (isAddingTag) addInputRef.current?.focus();
-  }, [isAddingTag]);
+    if (isAddingTag && (isDesktop || sidebarOpen)) addInputRef.current?.focus();
+  }, [isAddingTag, isDesktop, sidebarOpen]);
 
   useEffect(() => {
-    if (editingTag) editInputRef.current?.focus();
-  }, [editingTag]);
+    if (editingTag && (isDesktop || sidebarOpen)) editInputRef.current?.focus();
+  }, [editingTag, isDesktop, sidebarOpen]);
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)');
+    const syncViewport = () => {
+      setIsDesktop(media.matches);
+      if (media.matches) setSidebarOpen(false);
+    };
+    syncViewport();
+    media.addEventListener('change', syncViewport);
+    return () => media.removeEventListener('change', syncViewport);
+  }, [setSidebarOpen]);
+
+  useEffect(() => {
+    if (sidebarOpen || !openCommandAfterCloseRef.current) return;
+    openCommandAfterCloseRef.current = false;
+    const frame = requestAnimationFrame(() => setCommandBarOpen(true));
+    return () => cancelAnimationFrame(frame);
+  }, [setCommandBarOpen, sidebarOpen]);
 
   const handleAddTag = () => {
     const trimmed = newTagValue.trim().toLowerCase();
@@ -138,6 +163,7 @@ export function Sidebar() {
     }
     setNewTagValue('');
     setIsAddingTag(false);
+    requestAnimationFrame(() => addTagButtonRef.current?.focus());
   };
 
   const handleRenameTag = (oldTag: string) => {
@@ -147,34 +173,42 @@ export function Sidebar() {
     }
     setEditingTag(null);
     setEditValue('');
+    requestAnimationFrame(() => editTagButtonRefs.current[oldTag]?.focus());
   };
 
   const handleDeleteTag = (tag: string) => {
     removeTag(tag);
     if (activeTag === tag) setActiveTag(null);
+    if (pathname === `/areas/${encodeURIComponent(tag)}`) router.push('/');
     setDeletingTag(null);
   };
 
-  return (
-    <TooltipProvider delayDuration={400}>
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[6px] lg:hidden transition-opacity duration-300"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
+  const sidebarPanel = (
       <aside
+        aria-label={language === 'de' ? 'Hauptnavigation' : 'Primary navigation'}
         className={cn(
-          'fixed left-0 top-0 z-50 flex h-full w-[280px] flex-col border-r border-sidebar-border/60 bg-sidebar/95 shadow-[var(--shadow-panel)] backdrop-blur-xl transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:relative lg:w-[260px] lg:translate-x-0 lg:shadow-none',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          'flex h-full flex-col border-r border-sidebar-border/60 bg-sidebar/95 backdrop-blur-xl outline-none',
+          isDesktop
+            ? 'relative w-[260px] shadow-none'
+            : 'fixed left-0 top-0 z-50 h-dvh w-[min(280px,calc(100vw-2rem))] shadow-[var(--shadow-panel)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left data-[state=open]:duration-300 data-[state=closed]:duration-200 motion-reduce:animate-none'
         )}
         style={{
           paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)',
           paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)',
         }}
       >
+        {!isDesktop && (
+          <>
+            <DialogPrimitive.Title className="sr-only">
+              {language === 'de' ? 'Hauptnavigation' : 'Primary navigation'}
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">
+              {language === 'de'
+                ? 'Navigiere zu Bereichen und Werkzeugen oder erstelle einen neuen Eintrag.'
+                : 'Navigate to areas and tools, or create a new item.'}
+            </DialogPrimitive.Description>
+          </>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
@@ -190,9 +224,10 @@ export function Sidebar() {
             </span>
           </div>
           <Button
+            aria-label={language === 'de' ? 'Navigation schließen' : 'Close navigation'}
             variant="ghost"
             size="icon"
-            className="h-7 w-7 lg:hidden"
+            className="h-11 w-11 lg:hidden"
             onClick={() => setSidebarOpen(false)}
           >
             <X className="h-3.5 w-3.5" />
@@ -202,8 +237,15 @@ export function Sidebar() {
         {/* Quick Add */}
         <div className="px-3 pb-2">
           <button
-            onClick={() => setCommandBarOpen(true)}
-            className="surface-card orbit-pressable flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25"
+            onClick={() => {
+              if (isDesktop) {
+                setCommandBarOpen(true);
+                return;
+              }
+              openCommandAfterCloseRef.current = true;
+              setSidebarOpen(false);
+            }}
+            className="surface-card orbit-pressable flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-0"
           >
             <Plus className="h-3.5 w-3.5" />
             <span className="flex-1 text-left">{t('sidebar.quickAdd')}</span>
@@ -231,9 +273,10 @@ export function Sidebar() {
                       onClick={() => setSidebarOpen(false)}
                       data-slot="nav-item"
                       data-active={isActive ? 'true' : undefined}
+                      aria-current={isActive ? 'page' : undefined}
                       style={isActive && accentColor ? { color: accentColor, borderColor: accentColor } : undefined}
                       className={cn(
-                        'group orbit-pressable flex items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
+                        'group orbit-pressable flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-0',
                         isActive
                           ? 'bg-foreground/[0.065] text-foreground shadow-[var(--shadow-hairline)]'
                           : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
@@ -269,8 +312,9 @@ export function Sidebar() {
               <Link
                 href="/toolbox"
                 onClick={() => setSidebarOpen(false)}
+                aria-current={pathname === '/toolbox' ? 'page' : undefined}
                 className={cn(
-                  'group orbit-pressable flex items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
+                  'group orbit-pressable flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-0',
                   pathname === '/toolbox'
                     ? 'bg-foreground/[0.065] text-foreground shadow-[var(--shadow-hairline)]'
                     : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
@@ -293,8 +337,9 @@ export function Sidebar() {
                     key={tool.id}
                     href={tool.href}
                     onClick={() => setSidebarOpen(false)}
+                    aria-current={isActive ? 'page' : undefined}
                     className={cn(
-                      'group orbit-pressable flex items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
+                      'group orbit-pressable flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-0',
                       isActive
                         ? 'bg-foreground/[0.065] text-foreground shadow-[var(--shadow-hairline)]'
                         : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'
@@ -322,23 +367,29 @@ export function Sidebar() {
               </span>
               <div className="flex items-center gap-0.5">
                 <button
+                  ref={addTagButtonRef}
+                  type="button"
                   onClick={() => setIsManaging(!isManaging)}
                   className={cn(
-                    'rounded-md p-0.5 transition-colors focus-visible:ring-2 focus-visible:ring-ring/25',
+                    'flex h-11 w-11 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-6 lg:w-6',
                     isManaging
                       ? 'text-foreground bg-foreground/10'
                       : 'text-muted-foreground/40 hover:text-muted-foreground/70'
                   )}
                   title={isManaging ? t('sidebar.doneTags') : t('sidebar.manageTags')}
+                  aria-label={isManaging ? t('sidebar.doneTags') : t('sidebar.manageTags')}
+                  aria-pressed={isManaging}
                 >
-                  <Pencil className="h-3 w-3" />
+                  <Pencil className="h-3.5 w-3.5" />
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setIsAddingTag(true); setIsManaging(true); }}
-                  className="rounded-md p-0.5 text-muted-foreground/40 transition-colors hover:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-ring/25"
+                  className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-6 lg:w-6"
                   title={t('sidebar.addTag')}
+                  aria-label={t('sidebar.addTag')}
                 >
-                  <Plus className="h-3 w-3" />
+                  <Plus className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -346,7 +397,7 @@ export function Sidebar() {
             <div className="flex flex-wrap gap-1 px-1 py-1">
               {allTags.map((tag) => {
                 const isEditing = editingTag === tag;
-                const isDeleting = deletingTag === tag;
+                const areaHref = `/areas/${encodeURIComponent(tag)}`;
 
                 if (isEditing) {
                   return (
@@ -360,61 +411,58 @@ export function Sidebar() {
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onBlur={() => handleRenameTag(tag)}
-                        onKeyDown={(e) => { if (e.key === 'Escape') { setEditingTag(null); setEditValue(''); } }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setEditingTag(null);
+                            setEditValue('');
+                            requestAnimationFrame(() => editTagButtonRefs.current[tag]?.focus());
+                          }
+                        }}
+                        aria-label={`${t('common.rename')} ${tag}`}
                         className="w-16 rounded-lg border border-border/60 bg-background/70 px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-2 focus:ring-ring/25"
                       />
                     </form>
                   );
                 }
 
-                if (isDeleting) {
-                  return (
-                    <div key={tag} className="flex items-center gap-1 rounded-lg bg-destructive/10 px-1.5 py-0.5">
-                      <span className="text-[10px] text-destructive font-medium">Delete &quot;{tag}&quot;?</span>
-                      <button
-                        onClick={() => handleDeleteTag(tag)}
-                        className="rounded-md p-0.5 text-destructive hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/25"
-                      >
-                        <Check className="h-3 w-3" />
-                      </button>
-                      <button
-                        onClick={() => setDeletingTag(null)}
-                        className="rounded-md p-0.5 text-muted-foreground hover:bg-foreground/10 focus-visible:ring-2 focus-visible:ring-ring/25"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  );
-                }
-
                 return (
                   <div key={tag} className="group relative flex items-center">
-                    <button
-                      onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                    <Link
+                      href={areaHref}
+                      onClick={() => {
+                        setActiveTag(tag);
+                        setSidebarOpen(false);
+                      }}
+                      aria-current={pathname === areaHref ? 'page' : undefined}
                       className={cn(
-                        'rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
-                        activeTag === tag
+                        'flex min-h-11 items-center rounded-lg px-2 py-1 text-[11px] font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-0 lg:py-0.5',
+                        pathname === areaHref
                           ? 'bg-foreground text-background shadow-[var(--shadow-soft)]'
                           : 'text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-muted-foreground'
                       )}
                     >
                       {tag}
-                    </button>
+                    </Link>
                     {isManaging && (
                       <div className="flex items-center gap-0.5 ml-0.5">
                         <button
+                          ref={(element) => { editTagButtonRefs.current[tag] = element; }}
+                          type="button"
                           onClick={() => { setEditingTag(tag); setEditValue(tag); }}
-                          className="rounded-md p-0.5 text-muted-foreground/40 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25"
+                          className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-6 lg:w-6"
                           title={t('common.rename')}
+                          aria-label={`${t('common.rename')} ${tag}`}
                         >
-                          <Pencil className="h-2.5 w-2.5" />
+                          <Pencil className="h-3 w-3" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => setDeletingTag(tag)}
-                          className="rounded-md p-0.5 text-muted-foreground/40 transition-colors hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/25"
+                          className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-6 lg:w-6"
                           title={t('common.delete')}
+                          aria-label={`${t('common.delete')} ${tag}`}
                         >
-                          <Trash2 className="h-2.5 w-2.5" />
+                          <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
                     )}
@@ -433,7 +481,14 @@ export function Sidebar() {
                     value={newTagValue}
                     onChange={(e) => setNewTagValue(e.target.value)}
                     onBlur={handleAddTag}
-                    onKeyDown={(e) => { if (e.key === 'Escape') { setIsAddingTag(false); setNewTagValue(''); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setIsAddingTag(false);
+                        setNewTagValue('');
+                        requestAnimationFrame(() => addTagButtonRef.current?.focus());
+                      }
+                    }}
+                    aria-label={t('sidebar.addTag')}
                     placeholder={t('sidebar.newTagPlaceholder')}
                     className="w-20 rounded-lg border border-border/60 bg-background/70 px-1.5 py-0.5 text-[11px] font-medium outline-none focus:ring-2 focus:ring-ring/25 placeholder:text-muted-foreground/40"
                   />
@@ -450,10 +505,11 @@ export function Sidebar() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Link
+                  aria-label={t('nav.settings')}
                   href="/settings"
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
-                    'orbit-pressable flex h-8 w-8 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
+                    'orbit-pressable flex h-11 w-11 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-8 lg:w-8',
                     'hover:bg-foreground/[0.05]',
                     pathname === '/settings'
                       ? 'text-foreground'
@@ -489,9 +545,10 @@ export function Sidebar() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
+                      aria-label={t('sidebar.signOut')}
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      className="h-11 w-11 shrink-0 text-muted-foreground hover:text-destructive lg:h-7 lg:w-7"
                       onClick={signOut}
                     >
                       <LogOut className="h-3.5 w-3.5" />
@@ -504,6 +561,69 @@ export function Sidebar() {
           </div>
         </div>
       </aside>
+  );
+
+  return (
+    <TooltipProvider delayDuration={400}>
+      {isDesktop ? sidebarPanel : (
+        <DialogPrimitive.Root
+          open={sidebarOpen}
+          onOpenChange={setSidebarOpen}
+          modal
+        >
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[6px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 motion-reduce:animate-none" />
+            <DialogPrimitive.Content asChild>
+              {sidebarPanel}
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+      )}
+
+      <DialogPrimitive.Root
+        open={deletingTag !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingTag(null);
+        }}
+        modal
+      >
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[6px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 motion-reduce:animate-none" />
+          <DialogPrimitive.Content className="surface-float fixed left-1/2 top-1/2 z-[70] grid w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl p-6 outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 motion-reduce:animate-none">
+            <DialogPrimitive.Title className="text-lg font-semibold leading-none tracking-tight">
+              {language === 'de'
+                ? `Bereich „${deletingTag ?? ''}“ löschen?`
+                : `Delete “${deletingTag ?? ''}” area?`}
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Description className="text-sm leading-relaxed text-muted-foreground/75">
+              {language === 'de'
+                ? affectedTagItemCount === 0
+                  ? 'Der Bereich wird aus deiner Seitenleiste entfernt. Es sind keine Einträge betroffen.'
+                  : `Der Bereich wird aus der Seitenleiste entfernt und das Tag wird dauerhaft von ${affectedTagItemCount} ${affectedTagItemCount === 1 ? 'Eintrag' : 'Einträgen'} entfernt. Die Einträge selbst werden nicht gelöscht.`
+                : affectedTagItemCount === 0
+                  ? 'This area will be removed from your sidebar. No items are affected.'
+                  : `This area will be removed from your sidebar and its tag will be permanently removed from ${affectedTagItemCount} ${affectedTagItemCount === 1 ? 'item' : 'items'}. The items themselves will not be deleted.`}
+            </DialogPrimitive.Description>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <DialogPrimitive.Close asChild>
+                <Button type="button" variant="outline" className="min-h-11">
+                  {language === 'de' ? 'Abbrechen' : 'Cancel'}
+                </Button>
+              </DialogPrimitive.Close>
+              <Button
+                type="button"
+                variant="destructive"
+                className="min-h-11"
+                onClick={() => {
+                  if (deletingTag) handleDeleteTag(deletingTag);
+                }}
+              >
+                {language === 'de' ? 'Bereich löschen' : 'Delete area'}
+              </Button>
+            </div>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
     </TooltipProvider>
   );
 }

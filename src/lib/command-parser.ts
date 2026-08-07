@@ -1,4 +1,4 @@
-import { format, addDays, nextMonday, nextTuesday, nextWednesday, nextThursday, nextFriday, nextSaturday, nextSunday, parse, isValid } from 'date-fns';
+import { format, addDays, nextMonday, nextTuesday, nextWednesday, nextThursday, nextFriday, nextSaturday, nextSunday } from 'date-fns';
 import type { ItemType, ParsedCommand, Priority } from './types';
 
 const TYPE_PREFIXES: Record<string, ItemType> = {
@@ -35,12 +35,6 @@ const DATE_KEYWORDS: Record<string, () => string> = {
   'sunday': () => format(nextSunday(new Date()), 'yyyy-MM-dd'),
 };
 
-const PRIORITY_MAP: Record<string, Priority> = {
-  '!low': 'low',
-  '!medium': 'medium',
-  '!high': 'high',
-};
-
 export function parseCommand(input: string): ParsedCommand {
   let text = input.trim();
   let type: ItemType = 'task';
@@ -64,7 +58,7 @@ export function parseCommand(input: string): ParsedCommand {
   }
 
   // Extract tags (#tag)
-  const tagRegex = /#(\w+)/g;
+  const tagRegex = /#([\p{L}\p{M}\p{N}_-]+)/gu;
   let tagMatch;
   while ((tagMatch = tagRegex.exec(text)) !== null) {
     tags.push(tagMatch[1].toLowerCase());
@@ -104,19 +98,21 @@ export function parseCommand(input: string): ParsedCommand {
       }
     } else {
       // Try DD.MM or DD.MM.YY or DD.MM.YYYY format
-      const dateMatch = word.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?$/);
+      const dateMatch = word.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{2}|\d{4}))?$/);
       if (dateMatch) {
-        const day = dateMatch[1].padStart(2, '0');
-        const month = dateMatch[2].padStart(2, '0');
-        let year = dateMatch[3];
-        if (!year) {
-          year = new Date().getFullYear().toString();
-        } else if (year.length === 2) {
-          year = '20' + year;
-        }
-        const dateStr = `${year}-${month}-${day}`;
-        const parsed = new Date(dateStr);
-        if (isValid(parsed)) {
+        const dayNumber = Number(dateMatch[1]);
+        const monthNumber = Number(dateMatch[2]);
+        const rawYear = dateMatch[3];
+        const yearNumber = !rawYear
+          ? new Date().getFullYear()
+          : rawYear.length === 2
+            ? 2000 + Number(rawYear)
+            : Number(rawYear);
+        const daysInMonth = monthNumber >= 1 && monthNumber <= 12
+          ? new Date(Date.UTC(yearNumber, monthNumber, 0)).getUTCDate()
+          : 0;
+        if (yearNumber >= 1 && dayNumber >= 1 && dayNumber <= daysInMonth) {
+          const dateStr = `${String(yearNumber).padStart(4, '0')}-${String(monthNumber).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
           if (type === 'event') {
             startDate = dateStr;
           } else {
@@ -143,4 +139,3 @@ export function parseCommand(input: string): ParsedCommand {
     startDate,
   };
 }
-

@@ -16,7 +16,7 @@ import { linkItems, unlinkItems } from '@/lib/firestore';
 export interface UseLinksProps {
   item: OrbitItem;
   allItems: OrbitItem[];
-  onUpdate: (updates: Partial<OrbitItem>) => void | Promise<void>;
+  onUpdate: (updates: Partial<OrbitItem>) => void | Promise<unknown>;
 }
 
 export interface UseLinksReturn {

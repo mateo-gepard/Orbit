@@ -21,16 +21,6 @@ export function getWeekStartsOn(ws: WeekStart = 'monday'): 0 | 1 {
   return ws === 'sunday' ? 0 : 1;
 }
 
-/** Map DateFormat setting to a date-fns format string */
-function dateFmtToPattern(df: DateFormat): string {
-  switch (df) {
-    case 'DD.MM.YYYY': return 'dd.MM.yyyy';
-    case 'MM/DD/YYYY': return 'MM/dd/yyyy';
-    case 'YYYY-MM-DD': return 'yyyy-MM-dd';
-    default: return 'dd.MM.yyyy';
-  }
-}
-
 /** Map TimeFormat setting to date-fns time pattern */
 function timeFmtToPattern(tf: TimeFormat): string {
   return tf === '12h' ? 'h:mm a' : 'HH:mm';

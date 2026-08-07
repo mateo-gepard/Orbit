@@ -37,6 +37,8 @@ export interface OrbitItem {
   content?: string; // Rich text (HTML from Tiptap)
   createdAt: number; // timestamp
   updatedAt: number;
+  /** Monotonic cloud revision used to reject stale cross-device writes. */
+  revision?: number;
   completedAt?: number;
 
   // Task fields
@@ -99,8 +101,11 @@ export interface ProjectFile {
   name: string;
   size: number; // bytes
   type: string; // MIME type
-  url: string; // Firebase Storage download URL
+  /** Legacy long-lived download URL. New uploads resolve through the authenticated SDK. */
+  url?: string;
   storagePath: string; // Firebase Storage path for deletion
+  /** Retained until an idempotent legacy-path migration deletes the old object. */
+  legacyStoragePath?: string;
   uploadedAt: number; // timestamp
   uploadedBy: string; // userId
 }
@@ -122,44 +127,3 @@ export interface ParsedCommand {
 // ═══════════════════════════════════════════════════════════
 // Analytics Events
 // ═══════════════════════════════════════════════════════════
-
-export type AnalyticsAction =
-  | 'item_created'
-  | 'item_completed'
-  | 'item_uncompleted'
-  | 'item_archived'
-  | 'item_unarchived'
-  | 'item_updated'
-  | 'item_deleted'
-  | 'habit_checked'
-  | 'habit_unchecked'
-  | 'session_start'
-  | 'session_end';
-
-export interface AnalyticsEvent {
-  id: string;
-  userId: string;
-  action: AnalyticsAction;
-  timestamp: number;        // Date.now()
-  date: string;             // YYYY-MM-DD (for easy daily queries)
-  hour: number;             // 0–23 (for time-of-day patterns)
-
-  // Item context (what was acted on)
-  itemId?: string;
-  itemType?: ItemType;
-  itemTitle?: string;       // Snapshot — useful for timeline display
-
-  // Relationships
-  parentId?: string;        // Project or goal this belongs to
-  tags?: string[];
-
-  // Task-specific
-  priority?: Priority;
-  dueDate?: string;
-
-  // Duration context
-  durationMs?: number;      // Time from creation to completion (task cycle time)
-
-  // Session context
-  sessionId?: string;       // Groups events in one app open
-}

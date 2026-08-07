@@ -1,431 +1,387 @@
 /// <reference lib="webworker" />
 
-// Threadmap — Service Worker for PWA
-// Handles caching, push notifications, and scheduled briefings
+// Threadmap service worker: offline shell, push notifications, and briefing checks.
+// Push credentials stay in the app runtime; this worker handles standards-based
+// Web Push payloads and the Firebase Messaging payload shape without a CDN SDK.
 
-// ─── Firebase Cloud Messaging (background push) ───────────
-// Import Firebase compat SDK so FCM can deliver push messages
-// when the app is closed or in background.
-// Wrapped in try/catch so SW still works if Firebase CDN is unreachable.
-const DEBUG_SW = false;
-const swLog = (...args) => {
-  if (DEBUG_SW) console.log(...args);
-};
-
-let fcmMessaging = null;
-try {
-  importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
-  importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-messaging-compat.js');
-
-  firebase.initializeApp({
-    apiKey: 'AIzaSyBOqJE0MVXrfBwTope_4vgCTMeAM_omY-E',
-    authDomain: 'orbit-9e0b6.firebaseapp.com',
-    projectId: 'orbit-9e0b6',
-    storageBucket: 'orbit-9e0b6.firebasestorage.app',
-    messagingSenderId: '631355120389',
-    appId: '1:631355120389:web:42c163eae64bc3dfe5f56c',
-  });
-
-  fcmMessaging = firebase.messaging();
-
-  // Handle background FCM messages (when app is NOT in foreground)
-  fcmMessaging.onBackgroundMessage((payload) => {
-    swLog('[SW] FCM background message:', payload);
-
-    const title = payload.notification?.title || payload.data?.title || 'Threadmap';
-    const body = payload.notification?.body || payload.data?.body || '';
-    const tag = payload.data?.tag || 'threadmap-push';
-
-    if (!payload.notification) {
-      self.registration.showNotification(title, {
-        body,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag,
-        data: { url: payload.data?.url || '/' },
-        renotify: true,
-      });
-    }
-  });
-
-  swLog('[SW] Firebase Messaging initialized');
-} catch (e) {
-  console.warn('[SW] Firebase Messaging init failed (push will use generic handler):', e);
-}
-
-const CACHE_VERSION = 9; // Increment this to force cache refresh
-const CACHE_NAME = `orbit-v${CACHE_VERSION}`;
-const OFFLINE_URLS = ['/', '/tasks', '/habits', '/briefing'];
-
-// ─── Briefing notification state ───────────────────────────
-// Stored in IndexedDB so it persists across SW restarts
-const DB_NAME = 'orbit-sw';
+const CACHE_VERSION = 11;
+const CACHE_PREFIX = 'threadmap-';
+const STATIC_CACHE = `${CACHE_PREFIX}static-v${CACHE_VERSION}`;
+const NAVIGATION_CACHE = `${CACHE_PREFIX}navigation-v${CACHE_VERSION}`;
+const APP_SHELL_URL = '/';
+const OFFLINE_URL = '/offline.html';
+const PRECACHE_URLS = [
+  OFFLINE_URL,
+  '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+];
+const DB_NAME = 'threadmap-sw';
 const DB_VERSION = 1;
 const STORE_NAME = 'briefing-schedule';
+const MAX_STATIC_ENTRIES = 100;
+const MAX_NAVIGATION_ENTRIES = 24;
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 }
 
-async function getSchedule() {
+async function readState(key, fallback = null) {
   try {
     const db = await openDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get('config');
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
+    return await new Promise((resolve) => {
+      const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(key);
+      request.onsuccess = () => resolve(request.result ?? fallback);
+      request.onerror = () => resolve(fallback);
     });
   } catch {
-    return null;
+    return fallback;
   }
 }
 
-async function saveSchedule(config) {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.put(config, 'config');
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = reject;
-    });
-  } catch (e) {
-    swLog('[SW] Failed to save schedule:', e);
-  }
+async function writeState(key, value) {
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    transaction.objectStore(STORE_NAME).put(value, key);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
 }
 
-async function getLastFired() {
-  try {
-    const db = await openDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get('lastFired');
-      req.onsuccess = () => resolve(req.result || {});
-      req.onerror = () => resolve({});
-    });
-  } catch {
-    return {};
-  }
+async function deleteState(key) {
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    transaction.objectStore(STORE_NAME).delete(key);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
 }
 
-async function setLastFired(data) {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const existing = await new Promise((resolve) => {
-      const req = store.get('lastFired');
-      req.onsuccess = () => resolve(req.result || {});
-      req.onerror = () => resolve({});
-    });
-    store.put({ ...existing, ...data }, 'lastFired');
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = reject;
-    });
-  } catch (e) {
-    swLog('[SW] Failed to save lastFired:', e);
-  }
+async function clearBriefingSchedule(ownerId) {
+  const config = await readState('config');
+  if (config?.ownerId === ownerId) await deleteState('config');
+  if (typeof ownerId === 'string' && ownerId) await deleteState(`last-fired:${ownerId}`);
 }
 
-// ─── Scheduled check timer ─────────────────────────────────
-let checkTimer = null;
+function scheduleOwnerKey(config) {
+  return typeof config?.ownerId === 'string' && config.ownerId
+    ? `last-fired:${config.ownerId}`
+    : null;
+}
 
-function getTimeStr() {
+function todayKey() {
   const now = new Date();
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-function getDateStr() {
+function isBriefingDueToday(type, time) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time || '')) return false;
+  const [hour, minute] = time.split(':').map(Number);
   const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function msUntilTime(targetHHMM) {
-  const [h, m] = targetHHMM.split(':').map(Number);
-  const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
-  let diff = target.getTime() - now.getTime();
-  if (diff < 0) diff += 24 * 60 * 60 * 1000; // next day
-  return diff;
-}
-
-// Check if current time is within a window after the target time.
-// This handles iOS killing the SW — when it wakes up a few minutes late,
-// the briefing can still fire instead of being missed entirely.
-function isWithinWindow(targetHHMM, windowMinutes) {
-  const [h, m] = targetHHMM.split(':').map(Number);
-  const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
-  const diff = now.getTime() - target.getTime();
-  return diff >= 0 && diff <= windowMinutes * 60 * 1000;
-}
-
-async function checkAndFireBriefings() {
-  const config = await getSchedule();
-  if (!config) return;
-
-  const today = getDateStr();
-  const lastFired = await getLastFired();
-
-  // Morning briefing — use 5-minute window instead of exact match
-  if (
-    config.morningEnabled &&
-    isWithinWindow(config.morningTime, 5) &&
-    lastFired.morning !== today
-  ) {
-    await setLastFired({ morning: today });
-    // Check if any app windows are open — let them handle the rich notification
-    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
-    if (clients.length > 0) {
-      // App is open — delegate to in-app handler for rich content
-      notifyClients({ type: 'BRIEFING_FIRE', briefing: 'morning' });
-    } else {
-      // App is closed — show generic notification from SW
-      await showBriefingNotification('morning', config);
-    }
-  }
-
-  // Evening briefing — use 5-minute window instead of exact match
-  if (
-    config.eveningEnabled &&
-    isWithinWindow(config.eveningTime, 5) &&
-    lastFired.evening !== today
-  ) {
-    await setLastFired({ evening: today });
-    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
-    if (clients.length > 0) {
-      notifyClients({ type: 'BRIEFING_FIRE', briefing: 'evening' });
-    } else {
-      await showBriefingNotification('evening', config);
-    }
-  }
-}
-
-async function showBriefingNotification(type, config) {
-  const isMorning = type === 'morning';
-  const title = isMorning ? 'Good morning.' : 'Evening check-in.';
-  const body = isMorning
-    ? 'Your morning briefing is ready.'
-    : 'Time to review your day.';
-
-  try {
-    await self.registration.showNotification(title, {
-      body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      tag: isMorning ? 'threadmap-morning-briefing' : 'threadmap-evening-briefing',
-      data: { url: `/briefing?type=${type}`, type: 'briefing', briefingType: type },
-      renotify: false,
-      requireInteraction: false,
-    });
-    swLog(`[SW] ${type} briefing notification shown`);
-  } catch (e) {
-    console.error(`[SW] Failed to show ${type} notification:`, e);
-  }
-}
-
-function scheduleNextCheck() {
-  if (checkTimer) clearTimeout(checkTimer);
-  // Check every 30 seconds
-  checkTimer = setTimeout(async () => {
-    await checkAndFireBriefings();
-    scheduleNextCheck();
-  }, 30_000);
-}
-
-// Restart the briefing timer and do an immediate check.
-// Called on every SW event (fetch, push, message, notificationclick)
-// so that iOS waking the SW for ANY reason revives the briefing scheduler.
-function restartBriefingCheck() {
-  scheduleNextCheck();
-  // Do an immediate check in case we missed a window while SW was asleep
-  checkAndFireBriefings().catch(() => {});
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute);
+  const difference = now.getTime() - target.getTime();
+  // Periodic Background Sync wake-ups are intentionally browser-controlled.
+  // A useful once-per-day grace period prevents routine misses without firing
+  // yesterday's schedule after the local date rolls over.
+  const graceMinutes = type === 'morning' ? 4 * 60 : 6 * 60;
+  return difference >= 0 && difference <= graceMinutes * 60_000;
 }
 
 async function notifyClients(message) {
   const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
-  for (const client of clients) {
-    client.postMessage(message);
+  for (const client of clients) client.postMessage(message);
+  return clients.length;
+}
+
+function notificationLanguage(preferredLanguage) {
+  const language = typeof preferredLanguage === 'string' && preferredLanguage
+    ? preferredLanguage
+    : self.navigator?.language;
+  return language?.toLowerCase().startsWith('de') ? 'de' : 'en';
+}
+
+function notificationCopy(type, preferredLanguage) {
+  const german = notificationLanguage(preferredLanguage) === 'de';
+  const morning = type === 'morning';
+  return {
+    title: morning
+      ? (german ? 'Guten Morgen.' : 'Good morning.')
+      : (german ? 'Abendlicher Check-in.' : 'Evening check-in.'),
+    body: morning
+      ? (german ? 'Dein Morgenbriefing ist bereit.' : 'Your morning briefing is ready.')
+      : (german ? 'Zeit, deinen Tag zu reflektieren.' : 'Time to review your day.'),
+    fallbackBody: german ? 'Du hast eine neue Benachrichtigung.' : 'You have a notification.',
+  };
+}
+
+async function showBriefingNotification(type, preferredLanguage) {
+  const morning = type === 'morning';
+  const copy = notificationCopy(type, preferredLanguage);
+  await self.registration.showNotification(copy.title, {
+    body: copy.body,
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: morning ? 'threadmap-morning-briefing' : 'threadmap-evening-briefing',
+    data: { url: `/briefing?type=${type}` },
+    renotify: false,
+  });
+}
+
+async function checkAndFireBriefings() {
+  const config = await readState('config');
+  const ownerKey = scheduleOwnerKey(config);
+  if (!config || !ownerKey) return;
+
+  const lastFired = await readState(ownerKey, {});
+  const today = todayKey();
+  const checks = [
+    ['morning', config.morningEnabled, config.morningTime],
+    ['evening', config.eveningEnabled, config.eveningTime],
+  ];
+
+  for (const [type, enabled, time] of checks) {
+    if (!enabled || lastFired[type] === today || !isBriefingDueToday(type, time)) continue;
+    lastFired[type] = today;
+    await writeState(ownerKey, lastFired);
+    const openClients = await notifyClients({ type: 'BRIEFING_FIRE', briefing: type });
+    if (!openClients) await showBriefingNotification(type, config.language);
   }
 }
 
-// ─── Install ───────────────────────────────────────────────
+function internalPath(value) {
+  try {
+    const url = new URL(typeof value === 'string' ? value : '/', self.location.origin);
+    if (url.origin !== self.location.origin) return '/';
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return '/';
+  }
+}
+
+async function trimCache(cacheName, maximumEntries) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  await Promise.all(keys.slice(0, Math.max(0, keys.length - maximumEntries)).map((key) => cache.delete(key)));
+}
+
+async function cacheResponse(cacheName, request, response, maximumEntries) {
+  if (!response.ok || response.type !== 'basic') return;
+  const cache = await caches.open(cacheName);
+  await cache.put(request, response.clone());
+  await trimCache(cacheName, maximumEntries);
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  await cacheResponse(STATIC_CACHE, request, response, MAX_STATIC_ENTRIES);
+  return response;
+}
+
+function navigationCacheKey(value) {
+  const requestUrl = typeof value === 'string' ? value : value.url;
+  const url = new URL(requestUrl, self.location.origin);
+  return `${url.origin}${url.pathname}`;
+}
+
+function extractAppShellAssets(html) {
+  const assets = new Set();
+  const attributePattern = /(?:src|href)=["']([^"'#]+)["']/g;
+  let match;
+
+  while ((match = attributePattern.exec(html)) !== null) {
+    try {
+      const url = new URL(match[1], self.location.origin);
+      if (url.origin !== self.location.origin) continue;
+      if (!url.pathname.startsWith('/_next/static/') && !url.pathname.startsWith('/icons/')) continue;
+      assets.add(`${url.pathname}${url.search}`);
+    } catch {
+      // Ignore malformed and non-URL attributes in the shell document.
+    }
+  }
+
+  return [...assets];
+}
+
+async function precacheAppShell() {
+  const cache = await caches.open(STATIC_CACHE);
+  await cache.addAll(PRECACHE_URLS);
+
+  const shellRequest = new Request(new URL(APP_SHELL_URL, self.location.origin), { cache: 'reload' });
+  const shellResponse = await fetch(shellRequest);
+  if (!shellResponse.ok || shellResponse.type !== 'basic') {
+    throw new Error('The app shell could not be precached.');
+  }
+
+  await cache.put(navigationCacheKey(shellRequest), shellResponse.clone());
+  const assets = extractAppShellAssets(await shellResponse.text());
+  await Promise.allSettled(assets.map((asset) => cache.add(asset)));
+  await trimCache(STATIC_CACHE, MAX_STATIC_ENTRIES);
+}
+
+async function navigationWithOfflineFallback(request) {
+  const cacheKey = navigationCacheKey(request);
+  try {
+    const response = await fetch(request);
+    const url = new URL(request.url);
+    if (!url.search) {
+      await cacheResponse(NAVIGATION_CACHE, cacheKey, response, MAX_NAVIGATION_ENTRIES);
+    }
+    return response;
+  } catch {
+    return (await caches.match(cacheKey))
+      || (await caches.match(navigationCacheKey(APP_SHELL_URL)))
+      || (await caches.match(OFFLINE_URL));
+  }
+}
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(OFFLINE_URLS).catch(() => {
-        swLog('[SW] Some routes could not be cached');
-      });
-    })
-  );
+  event.waitUntil(precacheAppShell());
   self.skipWaiting();
 });
 
-// ─── Activate ──────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    Promise.all([
-      caches.keys().then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== CACHE_NAME)
-            .map((key) => {
-              swLog('[SW] Deleting old cache:', key);
-              return caches.delete(key);
-            })
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) =>
+          (key.startsWith(CACHE_PREFIX) && key !== STATIC_CACHE && key !== NAVIGATION_CACHE) || /^orbit-v\d+$/.test(key)
         )
-      ),
-      self.clients.claim()
-    ]).then(() => {
-      // Start the briefing check loop
-      scheduleNextCheck();
-      swLog('[SW] Activated + briefing scheduler started');
-    })
-  );
+        .map((key) => caches.delete(key))
+    );
+    await self.clients.claim();
+    await checkAndFireBriefings();
+  })());
 });
 
-// ─── Messages from main app ───────────────────────────────
 self.addEventListener('message', (event) => {
   if (!event.data) return;
 
-  // Any message from the app wakes up the briefing scheduler
-  restartBriefingCheck();
-
   if (event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
   }
 
   if (event.data.type === 'UPDATE_BRIEFING_SCHEDULE') {
-    // App sends us the schedule config
-    saveSchedule(event.data.config).then(() => {
-      swLog('[SW] Briefing schedule updated:', event.data.config);
-      // Restart check loop
-      scheduleNextCheck();
-    });
+    event.waitUntil(writeState('config', event.data.config).then(checkAndFireBriefings));
+    return;
+  }
+
+  if (event.data.type === 'CLEAR_BRIEFING_SCHEDULE') {
+    event.waitUntil(clearBriefingSchedule(event.data.ownerId));
+    return;
   }
 
   if (event.data.type === 'SHOW_BRIEFING_NOW') {
-    // App sends a pre-built notification to show via SW
-    const { title, body, tag } = event.data;
-    self.registration.showNotification(title, {
+    const { title = 'Threadmap', body = '', tag = 'threadmap-briefing' } = event.data;
+    event.waitUntil(self.registration.showNotification(title, {
       body,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       tag,
-      data: { url: '/' },
+      data: { url: internalPath(event.data.url) },
       renotify: false,
-    }).catch((e) => console.error('[SW] showNotification failed:', e));
+    }));
   }
 });
 
-// ─── Push events (FCM / web push) ──────────────────────────
 self.addEventListener('push', (event) => {
-  // Any push wakes up the briefing scheduler
-  restartBriefingCheck();
-
-  const data = event.data ? event.data.json() : {};
-  const title = data.title || 'Threadmap';
-  const tag = data.tag || 'threadmap-push';
-  const options = {
-    body: data.body || 'You have a notification.',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
-    tag,
-    data: { url: data.url || '/' },
-    renotify: false,
-  };
-
-  event.waitUntil(
-    (async () => {
-      // Mark lastFired so SW timer doesn't double-fire
-      const today = getDateStr();
-      if (tag === 'threadmap-morning-briefing') {
-        await setLastFired({ morning: today });
-      } else if (tag === 'threadmap-evening-briefing') {
-        await setLastFired({ evening: today });
+  event.waitUntil((async () => {
+    let payload = {};
+    if (event.data) {
+      try {
+        payload = event.data.json();
+      } catch {
+        payload = { body: event.data.text() };
       }
-      await self.registration.showNotification(title, options);
-    })()
-  );
+    }
+
+    const notification = payload.notification || {};
+    const data = payload.data || payload;
+    const config = await readState('config');
+    const copy = notificationCopy(
+      data.briefingType || (String(data.tag || notification.tag).includes('evening') ? 'evening' : 'morning'),
+      data.language || data.lang || notification.lang || config?.language,
+    );
+    const title = notification.title || data.title || 'Threadmap';
+    const tag = data.tag || notification.tag || 'threadmap-push';
+    const ownerKey = scheduleOwnerKey(config);
+
+    if (ownerKey && (tag === 'threadmap-morning-briefing' || tag === 'threadmap-evening-briefing')) {
+      const lastFired = await readState(ownerKey, {});
+      lastFired[tag.includes('morning') ? 'morning' : 'evening'] = todayKey();
+      await writeState(ownerKey, lastFired);
+    }
+
+    await self.registration.showNotification(title, {
+      body: notification.body || data.body || copy.fallbackBody,
+      icon: notification.icon || '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag,
+      data: { url: internalPath(data.url || payload.fcmOptions?.link) },
+      renotify: false,
+    });
+  })());
 });
 
-// ─── Notification click ────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  // Revive the briefing scheduler on interaction
-  restartBriefingCheck();
-  const url = event.notification.data?.url || '/';
+  const path = internalPath(event.notification.data?.url);
 
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      // Focus existing window if any
-      for (const client of clients) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          client.focus();
-          client.postMessage({ type: 'NAVIGATE', url });
-          return;
-        }
-      }
-      // Otherwise open a new window
-      return self.clients.openWindow(url);
-    })
-  );
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of clients) {
+      if (new URL(client.url).origin !== self.location.origin || !('focus' in client)) continue;
+      await client.focus();
+      client.postMessage({ type: 'NAVIGATE', url: path });
+      return;
+    }
+    await self.clients.openWindow(path);
+  })());
 });
 
-// ─── Periodic Background Sync (Chrome 80+) ────────────────
 self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'orbit-briefing-check') {
+  if (event.tag === 'threadmap-briefing-check' || event.tag === 'orbit-briefing-check') {
     event.waitUntil(checkAndFireBriefings());
   }
 });
 
-// ─── Fetch — network-first with cache fallback ────────────
 self.addEventListener('fetch', (event) => {
-  // Any fetch wakes up the briefing scheduler (helps on iOS)
-  restartBriefingCheck();
+  const request = event.request;
+  if (request.method !== 'GET' || request.headers.has('range')) return;
 
-  if (event.request.method !== 'GET') return;
-  if (!event.request.url.startsWith(self.location.origin)) return;
-  if (event.request.url.includes('/api/') || event.request.url.includes('firestore')) return;
-  
-  if (event.request.url.match(/\.(js|jsx|ts|tsx)$/) || event.request.url.includes('/_next/')) {
-    event.respondWith(fetch(event.request));
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+
+  if (request.mode === 'navigate') {
+    event.respondWith(navigationWithOfflineFallback(request));
     return;
   }
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
-        }
-        return response;
-      })
-      .catch(() => {
-        return caches.match(event.request).then((cached) => {
-          return cached || caches.match('/');
-        });
-      })
-  );
+  if (
+    url.pathname.startsWith('/_next/static/') ||
+    url.pathname.startsWith('/icons/') ||
+    /\.(?:css|js|woff2?|png|jpe?g|gif|svg|webp|avif|ico)$/.test(url.pathname)
+  ) {
+    event.respondWith(cacheFirst(request));
+  }
 });

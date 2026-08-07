@@ -1,13 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import type { FlightPhase, FlightClass } from '@/lib/flight';
 
 interface PlaneAnimationProps {
   phase: FlightPhase;
   phaseProgress: number;
-  progress: number; // 0-1 overall flight progress
   isPaused?: boolean;
   flightClass?: FlightClass;
 }
@@ -18,12 +17,12 @@ interface PlaneAnimationProps {
  *
  * The plane moves horizontally and vertically through each phase.
  */
-export function PlaneAnimation({ phase, phaseProgress, progress, isPaused, flightClass = 'commercial' }: PlaneAnimationProps) {
+export function PlaneAnimation({ phase, phaseProgress, isPaused, flightClass = 'commercial' }: PlaneAnimationProps) {
   // Smooth easing
   const ease = (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
   const p = ease(phaseProgress);
 
-  const planeStyle = useMemo(() => {
+  const planeStyle = (() => {
     let x = 0;
     let y = 0;
     let rotate = 0;
@@ -62,7 +61,7 @@ export function PlaneAnimation({ phase, phaseProgress, progress, isPaused, fligh
     }
 
     return { x, y, rotate };
-  }, [phase, phaseProgress, p]);
+  })();
 
   const isFlying = phase === 'cruise' || phase === 'takeoff' || phase === 'descent';
   const isOnGround = phase === 'boarding' || phase === 'taxi' || phase === 'landed';
@@ -204,7 +203,7 @@ export function PlaneAnimation({ phase, phaseProgress, progress, isPaused, fligh
           transform: `translate(-50%, -50%) rotate(${planeStyle.rotate}deg)`,
         }}
       >
-        <SideViewPlane isPaused={isPaused} isFlying={isFlying} phase={phase} flightClass={flightClass} />
+        <SideViewPlane isPaused={isPaused} isFlying={isFlying} flightClass={flightClass} />
       </div>
 
       {/* Ground shadow */}
@@ -257,24 +256,24 @@ export function PlaneAnimation({ phase, phaseProgress, progress, isPaused, fligh
 
 // ─── Side-View Plane SVG ───────────────────────────────────
 
-function SideViewPlane({ isPaused, isFlying, phase, flightClass = 'commercial' }: {
+function SideViewPlane({ isPaused, isFlying, flightClass = 'commercial' }: {
   isPaused?: boolean;
   isFlying?: boolean;
-  phase?: FlightPhase;
   flightClass?: FlightClass;
 }) {
   const isPrivate = flightClass === 'private';
   const imageSrc = isPrivate ? '/lg60sidee.png' : '/a380.png';
   
   return (
-    <div className="relative">
+    <div className={cn('relative', isPrivate ? 'h-14 w-14' : 'h-16 w-16')}>
       {/* Aircraft Image */}
-      <img
+      <Image
         src={imageSrc}
         alt={isPrivate ? 'Private Jet' : 'Aircraft'}
+        fill
+        sizes="64px"
         className={cn(
           'object-contain transition-all duration-500',
-          isPrivate ? 'w-14 h-14' : 'w-16 h-16',
           isPaused
             ? 'drop-shadow-[0_0_12px_oklch(0.8_0.15_85/0.4)] brightness-110 saturate-150'
             : isPrivate

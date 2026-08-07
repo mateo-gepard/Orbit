@@ -19,7 +19,9 @@ const HOCKEY_LOADING = [
 export function LoadingScreen() {
   const [mounted, setMounted] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
-  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
+  const settings = useSettingsStore((state) => state.settings);
+  const hockeyMode = settings.hockeyMode && settings.language === 'de';
+  const language = settings.language;
 
   const loadingText = HOCKEY_LOADING[loadingIndex];
 
@@ -34,6 +36,10 @@ export function LoadingScreen() {
   if (hockeyMode) {
     return (
       <div
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        aria-label="Arbeitsbereich wird geladen"
         className={cn(
           'fixed inset-0 z-[9999] flex items-center justify-center bg-background transition-opacity duration-300',
           mounted ? 'opacity-100' : 'opacity-0'
@@ -70,6 +76,10 @@ export function LoadingScreen() {
 
   return (
     <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={language === 'de' ? 'Arbeitsbereich wird geladen' : 'Loading workspace'}
       className={cn(
         'fixed inset-0 z-[9999] flex items-center justify-center bg-background transition-opacity duration-300',
         mounted ? 'opacity-100' : 'opacity-0'
@@ -100,7 +110,9 @@ export function LoadingScreen() {
         {/* App name */}
         <div className="flex flex-col items-center gap-1">
           <h1 className="text-lg font-semibold tracking-tight">THREADMAP</h1>
-          <p className="text-[11px] text-muted-foreground/60">Loading your workspace...</p>
+          <p className="text-[11px] text-muted-foreground/70">
+            {language === 'de' ? 'Dein Arbeitsbereich wird geladen…' : 'Loading your workspace…'}
+          </p>
         </div>
       </div>
     </div>

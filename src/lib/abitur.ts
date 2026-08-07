@@ -63,12 +63,22 @@ export function calculateSemesterPoints(
   grades: IndividualGrade[],
   subjectId: string,
   semester: Semester,
+  leistungsfach?: string,
 ): number | null {
   const subGrades = grades.filter((g) => g.subjectId === subjectId && g.semester === semester);
   if (subGrades.length === 0) return null;
 
   const gross = subGrades.filter((g) => g.type === 'gross');
   const klein = subGrades.filter((g) => g.type === 'klein');
+
+  // GSO § 29(2), version effective 1 Aug 2026: W-Seminar results and
+  // non-Leistungsfach results in 13/2 are based on small assessments only.
+  // https://www.gesetze-bayern.de/Content/Document/BayGSO-29
+  const onlySmallAssessments = subjectId === 'wsem' || (semester === '13/2' && subjectId !== leistungsfach);
+  if (onlySmallAssessments) {
+    if (klein.length === 0) return null;
+    return Math.round(klein.reduce((sum, grade) => sum + grade.points, 0) / klein.length);
+  }
 
   // If only one type has grades, use just that average
   if (gross.length === 0 && klein.length === 0) return null;
@@ -164,11 +174,31 @@ export function isMandatory(subjectId: string, profile: AbiturProfile): boolean 
   if (subjectId === 'deu' || subjectId === 'mat') return true;
   if (subjectId === profile.leistungsfach) return true;
   if (profile.examSubjects.includes(subjectId)) return true;
+
+  const subject = getSubject(subjectId);
+  if (subject?.category === 'language' && subjectId !== 'deu') {
+    const languages = profile.subjects.filter((id) => {
+      const candidate = getSubject(id);
+      return candidate?.category === 'language' && id !== 'deu';
+    });
+    if (languages.length === 1) return true;
+  }
+
+  if (subject?.category === 'stem' && !['mat', 'inf'].includes(subjectId)) {
+    const sciences = profile.subjects.filter((id) => {
+      const candidate = getSubject(id);
+      return candidate?.category === 'stem' && !['mat', 'inf'].includes(id);
+    });
+    if (sciences.length === 1) return true;
+  }
   return false;
 }
 
 /** Is a specific grade eingebracht? Either mandatory or user-selected. */
 export function isEingebracht(subjectId: string, semester: Semester, profile: AbiturProfile): boolean {
+  if (subjectId === 'psem') return false;
+  // Anlage 10 footnote 8: only W-Seminar 12/1 and 12/2 are contributed.
+  if (subjectId === 'wsem') return semester === '12/1' || semester === '12/2';
   if (isMandatory(subjectId, profile)) return true;
   return (profile.einbringungen ?? []).includes(eKey(subjectId, semester));
 }
@@ -176,7 +206,7 @@ export function isEingebracht(subjectId: string, semester: Semester, profile: Ab
 /** Can the user toggle this einbringung? Only Abiturfächer are locked. */
 export function canToggle(subjectId: string, profile: AbiturProfile): boolean {
   if (isMandatory(subjectId, profile)) return false;
-  if (subjectId === 'psem') return false;
+  if (subjectId === 'psem' || subjectId === 'wsem') return false;
   return true;
 }
 
@@ -198,6 +228,16 @@ export function canToggleSemester(
   if (subjectId === 'psem') {
     return { canToggle: false, reason: 'P-Seminar — nicht in Block I', isEingebracht: false, isMandatory: false };
   }
+  if (subjectId === 'wsem') {
+    return {
+      canToggle: false,
+      reason: semester === '12/1' || semester === '12/2'
+        ? 'W-Seminar — 12/1 und 12/2 sind Pflicht'
+        : 'W-Seminar — 13/1 und 13/2 zählen nicht',
+      isEingebracht: semester === '12/1' || semester === '12/2',
+      isMandatory: semester === '12/1' || semester === '12/2',
+    };
+  }
 
   return { canToggle: true, reason: eingebracht ? 'Klicken zum Streichen' : 'Klicken zum Einbringen', isEingebracht: eingebracht, isMandatory: false };
 }
@@ -211,7 +251,8 @@ export function countAllEinbringungen(profile: AbiturProfile): number {
       if (isEingebracht(subjectId, sem, profile)) count++;
     }
   }
-  return count;
+  // The Seminararbeit Gesamtleistung is worth exactly two HJL (Anlage 10 no. 14).
+  return count + (profile.subjects.includes('wsem') ? 2 : 0);
 }
 
 // ─── Grade Helpers ─────────────────────────────────────────
@@ -309,7 +350,6 @@ export function calcSemesterStats(semester: Semester, profile: AbiturProfile): S
     einbringungCount: eingebrachte.length,
   };
 }
-
 // ─── Block I ───────────────────────────────────────────────
 
 export interface BlockIResult {
@@ -322,48 +362,173 @@ export interface BlockIResult {
   zeroCount: number;
   passed: boolean;
   average: number;
+  seminarTotalPoints: number | null;
+  atLeastFiveCount: number;
+  missingGradeCount: number;
+  rulesValid: boolean;
+  ruleErrors: string[];
+}
+
+/**
+ * GSO § 29(6), effective 1 Aug 2026. The rounded result is worth two HJL.
+ * https://www.gesetze-bayern.de/Content/Document/BayGSO-29
+ */
+export function calculateSeminarTotal(profile: AbiturProfile): number | null {
+  const paper = profile.seminarPaperPoints;
+  const presentation = profile.seminarPresentationPoints;
+  if (paper === null || presentation === null) return null;
+  return Math.round((2 * paper + presentation) * (2 / 3));
+}
+
+export interface EinbringungValidation {
+  valid: boolean;
+  errors: string[];
+  selectedCourseCount: number;
+  totalEquivalentCount: number;
+}
+
+/**
+ * Validate the contribution selection against GSO Anlage 10 (version effective
+ * 1 Aug 2026). The model intentionally does not attempt the one-off Optionsregel;
+ * such exceptional combinations must be confirmed by the Oberstufenkoordination.
+ * https://www.gesetze-bayern.de/Content/Document/BayGSO-ANL_17
+ */
+export function validateEinbringungen(profile: AbiturProfile): EinbringungValidation {
+  const errors: string[] = [];
+  const selectedCount = (subjectId: string) =>
+    SEMESTERS.filter((semester) => isEingebracht(subjectId, semester, profile)).length;
+  const selectedCourseCount = profile.subjects
+    .filter((subjectId) => subjectId !== 'psem')
+    .reduce((sum, subjectId) => sum + selectedCount(subjectId), 0);
+  const seminarEquivalent = profile.subjects.includes('wsem') ? 2 : 0;
+  const totalEquivalentCount = selectedCourseCount + seminarEquivalent;
+
+  if (totalEquivalentCount !== 40) {
+    errors.push(`Genau 40 Einbringungen erforderlich (${totalEquivalentCount}/40)`);
+  }
+
+  const examSubjects = [...new Set(['deu', 'mat', profile.leistungsfach, ...profile.examSubjects].filter(Boolean))];
+  for (const subjectId of examSubjects) {
+    if (!profile.subjects.includes(subjectId)) {
+      errors.push(`${getSubject(subjectId)?.name ?? subjectId} fehlt in der Fächerwahl`);
+    } else if (selectedCount(subjectId) !== 4) {
+      errors.push(`${getSubject(subjectId)?.name ?? subjectId}: alle 4 Halbjahre sind Pflicht`);
+    }
+  }
+
+  if (profile.subjects.includes('wsem')) {
+    const correctWsem = isEingebracht('wsem', '12/1', profile)
+      && isEingebracht('wsem', '12/2', profile)
+      && !isEingebracht('wsem', '13/1', profile)
+      && !isEingebracht('wsem', '13/2', profile);
+    if (!correctWsem) errors.push('W-Seminar: nur 12/1 und 12/2 dürfen eingebracht werden');
+  } else {
+    errors.push('W-Seminar und Seminararbeit fehlen');
+  }
+
+  const languages = profile.subjects.filter((id) => {
+    const subject = getSubject(id);
+    return subject?.category === 'language' && id !== 'deu';
+  });
+  const languageCount = languages.reduce((sum, id) => sum + selectedCount(id), 0);
+  if (languageCount < 4) errors.push(`Fremdsprachen: mindestens 4 Halbjahre gesamt (${languageCount}/4)`);
+
+  const sciences = profile.subjects.filter((id) => {
+    const subject = getSubject(id);
+    return subject?.category === 'stem' && !['mat', 'inf'].includes(id);
+  });
+  const scienceCount = sciences.reduce((sum, id) => sum + selectedCount(id), 0);
+  if (scienceCount < 4) errors.push(`Naturwissenschaften: mindestens 4 Halbjahre gesamt (${scienceCount}/4)`);
+
+  const religion = profile.subjects.find((id) => ['eth', 'rev', 'rka'].includes(id));
+  if (!religion) errors.push('Religionslehre bzw. Ethik fehlt');
+  else if (selectedCount(religion) < 3) errors.push(`${getSubject(religion)?.name}: 3 Halbjahre erforderlich`);
+
+  if (!profile.subjects.includes('ges')) errors.push('Geschichte fehlt');
+  else if (selectedCount('ges') < 3) errors.push('Geschichte: 3 Halbjahre erforderlich');
+
+  const companionSubjects = ['geo', 'wir'].filter((id) => profile.subjects.includes(id));
+  if (!profile.subjects.includes('pug')) {
+    errors.push('Politik und Gesellschaft fehlt');
+  } else if (companionSubjects.length === 0) {
+    errors.push('Geographie oder Wirtschaft und Recht fehlt');
+  } else {
+    const pugCount = selectedCount('pug');
+    const companionCounts = companionSubjects.map((id) => selectedCount(id));
+    const hasValidGprSplit =
+      (pugCount >= 3 && companionCounts.some((count) => count >= 1))
+      || (pugCount >= 1 && companionCounts.some((count) => count >= 3));
+    if (!hasValidGprSplit) {
+      errors.push('GPR-Bereich: im fortgeführten Fach 3, im anderen Fach 1 Halbjahr erforderlich');
+    }
+  }
+
+  const arts = ['kun', 'mus'].filter((id) => profile.subjects.includes(id));
+  if (arts.length === 0) errors.push('Kunst oder Musik fehlt');
+  else if (!arts.some((id) => selectedCount(id) >= 3)) errors.push('Kunst/Musik: 3 Halbjahre erforderlich');
+
+  const sportCount = selectedCount('spo');
+  const sportIsExam = profile.leistungsfach === 'spo' || profile.examSubjects.includes('spo');
+  if (!sportIsExam && sportCount > 3) errors.push(`Sport: höchstens 3 Halbjahre (${sportCount}/3)`);
+
+  if (profile.substitutedWritten) {
+    errors.push('Joker-Regel ist in diesem Rechner nicht vollständig abbildbar; schulisch prüfen lassen');
+  }
+
+  return { valid: errors.length === 0, errors, selectedCourseCount, totalEquivalentCount };
 }
 
 export function calculateBlockI(profile: AbiturProfile): BlockIResult {
-  const allGrades = (profile.grades ?? []).filter((g) => g.points !== null && g.subjectId !== 'psem');
+  const allGrades = (profile.grades ?? []).filter((grade) => grade.subjectId !== 'psem');
   const contributed: SemesterGrade[] = [];
   const dropped: SemesterGrade[] = [];
+  let missingGradeCount = 0;
 
   for (const g of allGrades) {
     if (isEingebracht(g.subjectId, g.semester, profile)) {
-      contributed.push(g);
-    } else {
+      if (g.points === null) missingGradeCount++;
+      else contributed.push(g);
+    } else if (g.points !== null) {
       dropped.push(g);
     }
   }
 
-  // W-Seminar special: add Seminararbeit (×3 weighted → capped to 2 grade-equivalents)
-  // The W-Seminar Seminararbeit + Presentation count as up to 2 extra Einbringungen in Block I
-  let wsemBonus = 0;
-  let wsemEinbringungen = 0;
-  if (profile.seminarPaperPoints !== null && profile.seminarPaperPoints > 0) {
-    // Seminararbeit counts double (worth 2× in some interpretations, but we add as 2 grades)
-    wsemBonus += profile.seminarPaperPoints * 2; // Seminararbeit ×2
-    wsemEinbringungen += 2;
-  }
-  if (profile.seminarPresentationPoints !== null) {
-    wsemBonus += profile.seminarPresentationPoints;
-    wsemEinbringungen += 1;
-  }
+  const seminarTotalPoints = profile.subjects.includes('wsem') ? calculateSeminarTotal(profile) : null;
+  if (profile.subjects.includes('wsem') && seminarTotalPoints === null) missingGradeCount += 2;
 
-  const totalPoints = contributed.reduce((sum, g) => sum + (g.points ?? 0), 0) + wsemBonus;
-  const deficitCount = contributed.filter((g) => isDeficit(g.points!)).length;
+  const totalPoints = contributed.reduce((sum, g) => sum + (g.points ?? 0), 0) + (seminarTotalPoints ?? 0);
+  const courseAtLeastFive = contributed.filter((g) => (g.points ?? 0) >= 5).length;
+  const seminarAtLeastFive = seminarTotalPoints !== null && seminarTotalPoints >= 9 ? 2 : 0;
+  const atLeastFiveCount = courseAtLeastFive + seminarAtLeastFive;
+  const deficitCount = contributed.filter((g) => isDeficit(g.points!)).length
+    + (seminarTotalPoints !== null && seminarTotalPoints < 9 ? 2 : 0);
   const zeroCount = contributed.filter((g) => g.points === 0).length;
-  const einbringungCount = contributed.length + wsemEinbringungen;
+  const einbringungCount = contributed.length + (seminarTotalPoints !== null ? 2 : 0);
   const average = einbringungCount > 0 ? totalPoints / einbringungCount : 0;
+  const validation = validateEinbringungen(profile);
+  const seminarInputsValid = profile.seminarPaperPoints !== null
+    && profile.seminarPresentationPoints !== null
+    && profile.seminarPaperPoints > 0
+    && profile.seminarPresentationPoints > 0;
+  const complete = missingGradeCount === 0 && einbringungCount === 40;
 
   return {
     totalPoints, maxPoints: 600,
     contributedGrades: contributed, droppedGrades: dropped,
     einbringungCount,
     deficitCount, zeroCount,
-    passed: totalPoints >= 200 && deficitCount <= 8,
+    passed: complete
+      && validation.valid
+      && seminarInputsValid
+      && totalPoints >= 200
+      && atLeastFiveCount >= 32
+      && zeroCount === 0,
     average,
+    seminarTotalPoints,
+    atLeastFiveCount,
+    missingGradeCount,
+    rulesValid: validation.valid,
+    ruleErrors: validation.errors,
   };
 }
 
@@ -382,7 +547,7 @@ export function calculateBlockI(profile: AbiturProfile): BlockIResult {
 export function selectAllEinbringungen(profile: AbiturProfile): string[] {
   const result: string[] = [];
   for (const subjectId of profile.subjects) {
-    if (subjectId === 'psem') continue;
+    if (subjectId === 'psem' || subjectId === 'wsem') continue;
     if (isMandatory(subjectId, profile)) continue; // already implicit
     // Select all 4 semesters for all non-mandatory subjects
     // User will manually drop to get to exactly 40
@@ -404,106 +569,92 @@ export function selectAllEinbringungen(profile: AbiturProfile): string[] {
  * Returns an array of einbringung keys (subjectId:semester) that should be selected.
  */
 export function optimizeEinbringungen(profile: AbiturProfile): string[] {
-  const result: string[] = [];
-  const used = new Set<string>();
-
-  // Helper: get grade points for a subject+semester, returns -1 if not entered
-  const getPoints = (subjectId: string, sem: Semester): number => {
-    const g = (profile.grades ?? []).find((g) => g.subjectId === subjectId && g.semester === sem);
-    return g?.points ?? -1;
+  const selected = new Set<string>();
+  const gradePoints = new Map(
+    (profile.grades ?? []).map((grade) => [eKey(grade.subjectId, grade.semester), grade.points ?? -1]),
+  );
+  const pointsFor = (key: string) => gradePoints.get(key) ?? -1;
+  const keysFor = (subjectId: string) => SEMESTERS
+    .map((semester) => eKey(subjectId, semester))
+    .sort((a, b) => pointsFor(b) - pointsFor(a) || a.localeCompare(b));
+  const addBest = (subjectId: string, count: number) => {
+    for (const key of keysFor(subjectId)) {
+      if (selected.size >= 40) break;
+      if (!selected.has(key) && count > 0) {
+        selected.add(key);
+        count--;
+      }
+    }
   };
 
-  // Step 1: Collect mandatory einbringungen (all 4 HJ, can't be dropped)
+  // Seminararbeit is two HJL equivalents; the remaining course target is 38.
+  const targetCourseCount = profile.subjects.includes('wsem') ? 38 : 40;
+
   for (const subjectId of profile.subjects) {
     if (subjectId === 'psem') continue;
-    const rule = getEinbringungRule(subjectId, profile);
-    if (rule.category === 'pflicht') {
-      // All 4 semesters are mandatory
-      for (const sem of SEMESTERS) {
-        const key = eKey(subjectId, sem);
-        if (getPoints(subjectId, sem) >= 0) {
-          result.push(key);
-          used.add(key);
-        }
-      }
+    if (subjectId === 'wsem') {
+      selected.add(eKey('wsem', '12/1'));
+      selected.add(eKey('wsem', '12/2'));
+    } else if (isMandatory(subjectId, profile)) {
+      for (const semester of SEMESTERS) selected.add(eKey(subjectId, semester));
     }
   }
 
-  // Step 2: For Wahlpflicht subjects, pick the best N semesters (where N = minSemesters)
-  for (const subjectId of profile.subjects) {
-    if (subjectId === 'psem' || subjectId === 'wsem') continue;
-    const rule = getEinbringungRule(subjectId, profile);
-    if (rule.category !== 'wahlpflicht') continue;
+  const religion = profile.subjects.find((id) => ['eth', 'rev', 'rka'].includes(id));
+  if (religion) addBest(religion, Math.max(0, 3 - keysFor(religion).filter((key) => selected.has(key)).length));
+  if (profile.subjects.includes('ges')) addBest('ges', Math.max(0, 3 - keysFor('ges').filter((key) => selected.has(key)).length));
 
-    // Collect available grades for this subject, sorted by points descending
-    const available: { sem: Semester; points: number; key: string }[] = [];
-    for (const sem of SEMESTERS) {
-      const key = eKey(subjectId, sem);
-      if (used.has(key)) continue;
-      const pts = getPoints(subjectId, sem);
-      if (pts >= 0) available.push({ sem, points: pts, key });
-    }
-    available.sort((a, b) => b.points - a.points);
+  const art = ['kun', 'mus'].find((id) => profile.subjects.includes(id));
+  if (art) addBest(art, Math.max(0, 3 - keysFor(art).filter((key) => selected.has(key)).length));
 
-    // Pick best minSemesters grades
-    const needed = Math.min(rule.minSemesters, available.length);
-    for (let i = 0; i < needed; i++) {
-      result.push(available[i].key);
-      used.add(available[i].key);
-    }
+  const companions = ['geo', 'wir'].filter((id) => profile.subjects.includes(id));
+  if (profile.subjects.includes('pug') && companions.length > 0) {
+    const continuedCandidates = ['pug', ...companions];
+    const continued = continuedCandidates
+      .map((id) => ({ id, score: keysFor(id).slice(0, 3).reduce((sum, key) => sum + Math.max(0, pointsFor(key)), 0) }))
+      .sort((a, b) => b.score - a.score)[0].id;
+    addBest(continued, Math.max(0, 3 - keysFor(continued).filter((key) => selected.has(key)).length));
+    const counterpart = continued === 'pug'
+      ? companions.sort((a, b) => pointsFor(keysFor(b)[0]) - pointsFor(keysFor(a)[0]))[0]
+      : 'pug';
+    addBest(counterpart, Math.max(0, 1 - keysFor(counterpart).filter((key) => selected.has(key)).length));
   }
 
-  // Step 3: W-Seminar — pick best 2 semesters
-  if (profile.subjects.includes('wsem')) {
-    const wsemRule = getEinbringungRule('wsem', profile);
-    const available: { sem: Semester; points: number; key: string }[] = [];
-    for (const sem of SEMESTERS) {
-      const key = eKey('wsem', sem);
-      if (used.has(key)) continue;
-      const pts = getPoints('wsem', sem);
-      if (pts >= 0) available.push({ sem, points: pts, key });
+  const ensureGroupTotal = (subjectIds: string[], minimum: number) => {
+    let current = subjectIds.reduce(
+      (sum, id) => sum + keysFor(id).filter((key) => selected.has(key)).length,
+      0,
+    );
+    const pool = subjectIds
+      .flatMap((id) => keysFor(id))
+      .filter((key) => !selected.has(key))
+      .sort((a, b) => pointsFor(b) - pointsFor(a) || a.localeCompare(b));
+    for (const key of pool) {
+      if (current >= minimum) break;
+      selected.add(key);
+      current++;
     }
-    available.sort((a, b) => b.points - a.points);
-    const needed = Math.min(wsemRule.minSemesters, available.length);
-    for (let i = 0; i < needed; i++) {
-      result.push(available[i].key);
-      used.add(available[i].key);
-    }
+  };
+
+  const languages = profile.subjects.filter((id) => getSubject(id)?.category === 'language' && id !== 'deu');
+  const sciences = profile.subjects.filter((id) => getSubject(id)?.category === 'stem' && !['mat', 'inf'].includes(id));
+  ensureGroupTotal(languages, 4);
+  ensureGroupTotal(sciences, 4);
+
+  const sportIsExam = profile.leistungsfach === 'spo' || profile.examSubjects.includes('spo');
+  const pool = profile.subjects
+    .filter((id) => id !== 'psem' && id !== 'wsem')
+    .flatMap((id) => keysFor(id))
+    .filter((key) => !selected.has(key))
+    .sort((a, b) => pointsFor(b) - pointsFor(a) || a.localeCompare(b));
+
+  for (const key of pool) {
+    if (selected.size >= targetCourseCount) break;
+    if (!sportIsExam && key.startsWith('spo:') && [...selected].filter((item) => item.startsWith('spo:')).length >= 3) continue;
+    selected.add(key);
   }
 
-  // Step 4: Fill remaining slots (up to 40) with highest unused grades
-  const TARGET = 40;
-  if (result.length < TARGET) {
-    const pool: { key: string; points: number }[] = [];
-    for (const subjectId of profile.subjects) {
-      if (subjectId === 'psem') continue;
-      for (const sem of SEMESTERS) {
-        const key = eKey(subjectId, sem);
-        if (used.has(key)) continue;
-        const pts = getPoints(subjectId, sem);
-        if (pts >= 0) pool.push({ key, points: pts });
-      }
-    }
-    // Sort by points descending — pick highest grades first
-    pool.sort((a, b) => b.points - a.points);
-
-    // Sport: max 3 semesters can be counted
-    const sportCount = result.filter((k) => k.startsWith('spo:')).length;
-    let sportAdded = sportCount;
-
-    for (const item of pool) {
-      if (result.length >= TARGET) break;
-      // Enforce Sport max 3
-      if (item.key.startsWith('spo:')) {
-        if (sportAdded >= 3) continue;
-        sportAdded++;
-      }
-      result.push(item.key);
-      used.add(item.key);
-    }
-  }
-
-  return result;
+  return [...selected];
 }
 
 // ─── Block II ──────────────────────────────────────────────
@@ -511,22 +662,69 @@ export function optimizeEinbringungen(profile: AbiturProfile): string[] {
 export interface BlockIIResult {
   totalPoints: number; maxPoints: number; rawSum: number;
   exams: ExamResult[];
-  passingExamCount: number; hasZeroExam: boolean; coreExamPassed: boolean; passed: boolean;
+  passingExamCount: number;
+  hasZeroExam: boolean;
+  coreExamPassed: boolean;
+  complete: boolean;
+  trioPassed: boolean;
+  fieldMinimumsPassed: boolean;
+  passed: boolean;
 }
 
 export function calculateBlockII(profile: AbiturProfile): BlockIIResult {
-  const exams = profile.exams.filter((e) => e.points !== null);
-  const rawSum = exams.reduce((s, e) => s + (e.points ?? 0), 0);
+  const slots = profile.exams.slice(0, 5);
+  const exams = slots.filter((exam) => exam.points !== null && exam.subjectId);
+  const uniqueSubjects = new Set(slots.map((exam) => exam.subjectId).filter(Boolean));
+  const complete = slots.length === 5
+    && slots.every((exam) => exam.subjectId && exam.points !== null)
+    && uniqueSubjects.size === 5;
+  const rawSum = exams.reduce((sum, exam) => sum + (exam.points ?? 0), 0);
   const totalPoints = rawSum * 4;
-  const passing = exams.filter((e) => (e.points ?? 0) >= 5);
+  const passing = exams.filter((exam) => (exam.points ?? 0) >= 5);
   const core = ['deu', 'mat', profile.leistungsfach];
-  const coreOk = passing.some((e) => core.includes(e.subjectId));
+  const coreOk = passing.some((exam) => core.includes(exam.subjectId));
+  const examBySubject = new Map(exams.map((exam) => [exam.subjectId, exam.points ?? 0]));
+
+  const languageOrScience = exams
+    .map((exam) => exam.subjectId)
+    .filter((subjectId) => {
+      const subject = getSubject(subjectId);
+      return (subject?.category === 'language' && subjectId !== 'deu')
+        || (subject?.category === 'stem' && !['mat', 'inf'].includes(subjectId));
+    });
+  let fixedTrio: string[];
+  if (profile.substitutedWritten === 'deu') fixedTrio = ['mat', profile.leistungsfach];
+  else if (profile.substitutedWritten === 'mat') fixedTrio = ['deu', profile.leistungsfach];
+  else fixedTrio = ['deu', 'mat'];
+
+  const trioPassed = languageOrScience.some((thirdSubject) => {
+    if (fixedTrio.includes(thirdSubject)) return false;
+    const trio = [...fixedTrio, thirdSubject];
+    if (trio.some((subjectId) => !examBySubject.has(subjectId))) return false;
+    const weighted = trio.map((subjectId) => (examBySubject.get(subjectId) ?? 0) * 4);
+    return weighted.reduce((sum, points) => sum + points, 0) >= 40
+      && weighted.filter((points) => points < 16).length <= 1;
+  });
+
+  const fieldMinimumsPassed = ([1, 2, 3] as const).every((field) =>
+    exams.filter((exam) => getSubject(exam.subjectId)?.field === field && (exam.points ?? 0) * 4 < 16).length <= 1,
+  );
+  const hasZeroExam = exams.some((exam) => exam.points === 0);
   return {
     totalPoints, maxPoints: 300, rawSum, exams,
     passingExamCount: passing.length,
-    hasZeroExam: exams.some((e) => e.points === 0),
+    hasZeroExam,
     coreExamPassed: coreOk,
-    passed: totalPoints >= 100 && passing.length >= 3 && coreOk && !exams.some((e) => e.points === 0),
+    complete,
+    trioPassed,
+    fieldMinimumsPassed,
+    passed: complete
+      && totalPoints >= 100
+      && passing.length >= 3
+      && coreOk
+      && !hasZeroExam
+      && trioPassed
+      && fieldMinimumsPassed,
   };
 }
 
@@ -545,8 +743,10 @@ export interface HurdleCheck {
 
 export function totalPointsToGrade(points: number): number {
   if (points < 300) return 6.0;
-  const grade = 17 / 3 - points / 180;
-  return Math.max(1.0, Math.min(6.0, Math.round(grade * 10) / 10));
+  // GSO Anlage 13 maps 18-point bands to one decimal place without rounding.
+  // https://www.gesetze-bayern.de/Content/Document/BayGSO-ANL_23
+  const grade = Math.floor((17 / 3 - Math.min(900, points) / 180) * 10 + 1e-9) / 10;
+  return Math.max(1.0, Math.min(4.0, grade));
 }
 
 export function calculateAbitur(profile: AbiturProfile): AbiturResult {
@@ -556,21 +756,53 @@ export function calculateAbitur(profile: AbiturProfile): AbiturResult {
   const finalGrade = totalPointsToGrade(totalPoints);
   const semesterStats = SEMESTERS.map((s) => calcSemesterStats(s, profile));
 
+  const qPhasePoints = (subjectIds: string[]) => {
+    const uniqueIds = [...new Set(subjectIds.filter(Boolean))];
+    const grades = uniqueIds.flatMap((subjectId) =>
+      SEMESTERS.map((semester) =>
+        (profile.grades ?? []).find((grade) => grade.subjectId === subjectId && grade.semester === semester),
+      ),
+    );
+    return {
+      total: grades.reduce((sum, grade) => sum + (grade?.points ?? 0), 0),
+      complete: grades.length === uniqueIds.length * 4 && grades.every((grade) => grade?.points !== null && grade?.points !== undefined),
+    };
+  };
+
+  const coreQualification = qPhasePoints(['deu', 'mat', profile.leistungsfach]);
+  const examQualification = qPhasePoints(profile.examSubjects);
+  const examSubjectsComplete = profile.examSubjects.length === 5
+    && profile.examSubjects.every(Boolean)
+    && new Set(profile.examSubjects).size === 5;
+  const fieldCoverage = checkFieldCoverage(profile.examSubjects);
+  const seminarInputsValid = profile.seminarPaperPoints !== null
+    && profile.seminarPresentationPoints !== null
+    && profile.seminarPaperPoints > 0
+    && profile.seminarPresentationPoints > 0;
+
   const hurdles: HurdleCheck[] = [
+    { id: 'selection', label: 'Einbringungsregeln erfüllt', description: blockI.rulesValid ? '✓' : (blockI.ruleErrors[0] ?? 'prüfen'), passed: blockI.rulesValid, severity: 'critical' },
+    { id: 'b1-complete', label: 'Alle 40 Leistungen eingetragen', description: blockI.missingGradeCount === 0 ? '✓' : `${blockI.missingGradeCount} offen`, passed: blockI.missingGradeCount === 0 && blockI.einbringungCount === 40, severity: 'critical' },
     { id: 'b1-min', label: 'Block I ≥ 200 Punkte', description: `${blockI.totalPoints}/200`, passed: blockI.totalPoints >= 200, severity: 'critical' },
-    { id: 'b1-40', label: '40 Einbringungen', description: `${blockI.einbringungCount}/40`, passed: blockI.einbringungCount >= 40, severity: 'critical' },
-    { id: 'b1-def', label: 'Max. 8 Unterpunktungen', description: `${blockI.deficitCount}/8`, passed: blockI.deficitCount <= 8, severity: 'critical' },
+    { id: 'b1-40', label: 'Genau 40 Einbringungen', description: `${blockI.einbringungCount}/40`, passed: blockI.einbringungCount === 40, severity: 'critical' },
+    { id: 'b1-def', label: 'Mind. 32 Leistungen ≥ 5P', description: `${blockI.atLeastFiveCount}/32`, passed: blockI.atLeastFiveCount >= 32, severity: 'critical' },
     { id: 'b1-zero', label: 'Keine 0 Punkte (Pflicht)', description: blockI.zeroCount > 0 ? `${blockI.zeroCount}× 0P` : '✓', passed: blockI.zeroCount === 0, severity: 'critical' },
+    { id: 'q-core', label: 'D + M + LF ≥ 48 Punkte', description: coreQualification.complete ? `${coreQualification.total}/48` : 'offen', passed: coreQualification.complete && coreQualification.total >= 48, severity: 'critical' },
+    { id: 'q-exams', label: '5 Prüfungsfächer ≥ 100 Punkte', description: examQualification.complete ? `${examQualification.total}/100` : 'offen', passed: examSubjectsComplete && examQualification.complete && examQualification.total >= 100, severity: 'critical' },
+    { id: 'exam-fields', label: 'Alle 3 Aufgabenfelder', description: fieldCoverage.allCovered ? '✓' : 'unvollständig', passed: examSubjectsComplete && fieldCoverage.allCovered, severity: 'critical' },
+    { id: 'b2-complete', label: 'Alle 5 Prüfungen eingetragen', description: blockII.complete ? '✓' : `${blockII.exams.length}/5`, passed: blockII.complete, severity: 'critical' },
     { id: 'b2-min', label: 'Block II ≥ 100 Punkte', description: `${blockII.totalPoints}/100`, passed: blockII.totalPoints >= 100, severity: 'critical' },
     { id: 'b2-3', label: '≥ 3 Prüfungen ≥ 5P', description: `${blockII.passingExamCount}/3`, passed: blockII.passingExamCount >= 3, severity: 'critical' },
     { id: 'b2-core', label: 'Kernfach bestanden', description: blockII.coreExamPassed ? '✓' : '✗', passed: blockII.coreExamPassed, severity: 'critical' },
     { id: 'b2-zero', label: 'Keine 0P in Prüfungen', description: blockII.hasZeroExam ? '✗' : '✓', passed: !blockII.hasZeroExam, severity: 'critical' },
-    { id: 'sem', label: 'Seminararbeit > 0P', description: profile.seminarPaperPoints === null ? 'offen' : profile.seminarPaperPoints === 0 ? '0P!' : `${profile.seminarPaperPoints}P`, passed: profile.seminarPaperPoints === null || profile.seminarPaperPoints > 0, severity: 'critical' },
+    { id: 'b2-trio', label: 'Prüfungsfach-Trio ≥ 40 Punkte', description: blockII.trioPassed ? '✓' : 'nicht erfüllt', passed: blockII.trioPassed, severity: 'critical' },
+    { id: 'b2-fields', label: 'Je Aufgabenfeld max. 1× < 4P', description: blockII.fieldMinimumsPassed ? '✓' : 'nicht erfüllt', passed: blockII.fieldMinimumsPassed, severity: 'critical' },
+    { id: 'sem', label: 'Seminararbeit & Gespräch > 0P', description: seminarInputsValid ? `${blockI.seminarTotalPoints ?? 0}P gesamt` : 'offen/0P', passed: seminarInputsValid, severity: 'critical' },
   ];
 
   return {
     blockI, blockII, totalPoints, maxPoints: 900, finalGrade,
-    passed: hurdles.every((h) => h.passed) && totalPoints >= 300,
+    passed: blockI.passed && blockII.passed && hurdles.every((h) => h.passed) && totalPoints >= 300,
     hurdles, semesterStats,
   };
 }
@@ -608,19 +840,130 @@ export const EXCLUSIVE_GROUPS: string[][] = [
   ['kun', 'mus'],           // Kunst / Musik — musisches Pflichtfach, pick one
 ];
 
+export interface ExclusiveSelectionResult {
+  subjects: string[];
+  blockedBy: string | null;
+}
+
+/**
+ * Apply an exclusive subject choice without ever evicting a protected subject.
+ * Callers can use `blockedBy` to explain why the requested choice was rejected.
+ */
+export function selectSubjectWithExclusivity(
+  subjects: string[],
+  adding: string,
+  protectedSubjects: Iterable<string> = [],
+): ExclusiveSelectionResult {
+  const uniqueSubjects = [...new Set(subjects.filter(Boolean))];
+  const group = EXCLUSIVE_GROUPS.find((candidate) => candidate.includes(adding));
+  if (!group) return { subjects: uniqueSubjects, blockedBy: null };
+
+  const protectedIds = new Set(protectedSubjects);
+  const blockedBy = group.find((id) => (
+    id !== adding && uniqueSubjects.includes(id) && protectedIds.has(id)
+  ));
+  if (blockedBy) {
+    return {
+      subjects: uniqueSubjects.filter((id) => id !== adding),
+      blockedBy,
+    };
+  }
+
+  return {
+    subjects: uniqueSubjects.filter((id) => !group.includes(id) || id === adding),
+    blockedBy: null,
+  };
+}
+
 /** When selecting a subject in an exclusive group, remove the conflicting ones */
 export function applyExclusivity(subjects: string[], adding: string): string[] {
-  for (const group of EXCLUSIVE_GROUPS) {
-    if (group.includes(adding)) {
-      subjects = subjects.filter((id) => !group.includes(id) || id === adding);
-    }
-  }
-  return subjects;
+  return selectSubjectWithExclusivity(subjects, adding).subjects;
 }
 
 /** Get the exclusive group a subject belongs to, or null */
 export function getExclusiveGroup(subjectId: string): string[] | null {
   return EXCLUSIVE_GROUPS.find((g) => g.includes(subjectId)) ?? null;
+}
+
+export function subjectsConflict(firstId: string, secondId: string): boolean {
+  if (!firstId || !secondId || firstId === secondId) return false;
+  return EXCLUSIVE_GROUPS.some((group) => group.includes(firstId) && group.includes(secondId));
+}
+
+/** The subject identities whose removal would invalidate the current profile. */
+export function getProtectedSubjectIds(profile: AbiturProfile): Set<string> {
+  return new Set([
+    'deu',
+    'mat',
+    'wsem',
+    'psem',
+    profile.leistungsfach,
+    ...(profile.examSubjects ?? []),
+  ].filter(Boolean));
+}
+
+/**
+ * Reconcile a requested subject list while retaining every required/exam subject.
+ * When an exclusive group contains a protected subject, any opposing unprotected
+ * request is discarded. Otherwise the last requested member wins.
+ */
+export function reconcileSubjectSelection(
+  profile: AbiturProfile,
+  requestedSubjects: string[],
+): string[] {
+  const validIds = new Set(ALL_SUBJECTS.map((subject) => subject.id));
+  const protectedIds = getProtectedSubjectIds(profile);
+  let result = [...new Set(requestedSubjects.filter((id) => validIds.has(id)))];
+
+  for (const protectedId of protectedIds) {
+    if (validIds.has(protectedId) && !result.includes(protectedId)) result.push(protectedId);
+  }
+
+  for (const group of EXCLUSIVE_GROUPS) {
+    const selected = result.filter((id) => group.includes(id));
+    if (selected.length <= 1) continue;
+
+    const protectedSelected = selected.filter((id) => protectedIds.has(id));
+    if (protectedSelected.length > 0) {
+      result = result.filter((id) => !group.includes(id) || protectedIds.has(id));
+      continue;
+    }
+
+    const winner = selected[selected.length - 1];
+    result = result.filter((id) => !group.includes(id) || id === winner);
+  }
+
+  return result;
+}
+
+/**
+ * Keep the five exam slots canonical. A slot retains points only while its
+ * subject identity is unchanged; changing a subject always starts with no
+ * result so points can never silently move between subjects.
+ */
+export function reconcileExamSlots(profile: AbiturProfile): AbiturProfile {
+  const sourceSubjects = Array.isArray(profile.examSubjects) ? profile.examSubjects : [];
+  const examSubjects = [
+    'deu',
+    'mat',
+    profile.leistungsfach || '',
+    sourceSubjects[3] || '',
+    sourceSubjects[4] || '',
+  ];
+  const sourceExams = Array.isArray(profile.exams) ? profile.exams : [];
+  const exams: ExamResult[] = examSubjects.map((subjectId, index) => {
+    const previous = sourceExams[index];
+    const unchanged = previous?.subjectId === subjectId;
+    return {
+      subjectId,
+      examType: index < 3 ? 'written' : 'colloquium',
+      points: unchanged && typeof previous.points === 'number' && Number.isFinite(previous.points)
+        ? Math.round(Math.max(0, Math.min(15, previous.points)))
+        : null,
+    };
+  });
+
+  return { ...profile, examSubjects, exams };
 }
 
 // ─── Exam Validation ───────────────────────────────────────
@@ -689,31 +1032,18 @@ export function validateExamCombination(
 ): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const filteredAll = ['deu', 'mat', leistungsfach, exam4, exam5].filter(Boolean);
 
-  // Build the 5 exam subjects depending on substitution
-  const writtenExams: string[] = [];
-  const allExams: string[] = [];
+  if (!leistungsfach) errors.push('Leistungsfach fehlt');
+  if (!exam4) errors.push('4. Prüfungsfach fehlt');
+  if (!exam5) errors.push('5. Prüfungsfach fehlt');
+  if (new Set(filteredAll).size !== filteredAll.length) errors.push('Jedes Prüfungsfach darf nur einmal vorkommen');
 
-  if (substitution === 'deu') {
-    // Deutsch is NOT a mandatory written exam — student replaces it
-    // Written: Mat + LF + one of the Kolloquien becomes written
-    writtenExams.push('mat', leistungsfach);
-    allExams.push('mat', leistungsfach, exam4, exam5);
-    // Deutsch moves to a Kolloquium slot or is dropped from exams entirely
-    // The student still needs 5 exam subjects total
-    warnings.push('Joker: Deutsch als Pflicht-Schriftliche ersetzt — 2 fortgeführte FS nötig');
-  } else if (substitution === 'mat') {
-    // Mathe is NOT a mandatory written exam
-    writtenExams.push('deu', leistungsfach);
-    allExams.push('deu', leistungsfach, exam4, exam5);
-    warnings.push('Joker: Mathematik als Pflicht-Schriftliche ersetzt — 2 NW nötig');
-  } else {
-    // Standard: Deutsch + Mathe + LF are written
-    writtenExams.push('deu', 'mat', leistungsfach);
-    allExams.push('deu', 'mat', leistungsfach, exam4, exam5);
+  // Substitution needs a separately modelled replacement written exam. The
+  // current five-slot profile cannot represent that safely, so never certify it.
+  if (substitution) {
+    errors.push('Joker-Regel wird nicht verbindlich berechnet — bitte Oberstufenkoordination einbeziehen');
   }
-
-  const filteredAll = allExams.filter(Boolean);
 
   // Check for duplicate subjects
   if (exam4 && exam5 && exam4 === exam5) {
@@ -726,33 +1056,20 @@ export function validateExamCombination(
     errors.push(`${getSubject(exam5)?.name} ist bereits als schriftliche Prüfung belegt`);
   }
 
-  // Validate substitution prerequisites
-  if (substitution === 'deu') {
-    // Need ≥ 2 foreign languages (fortgeführte Fremdsprachen) among ALL exam subjects
-    const foreignLangs = filteredAll.filter((id) => {
-      const s = getSubject(id);
-      return s && s.category === 'language' && id !== 'deu' && !s.lateStart;
-    });
-    if (foreignLangs.length < 2) {
-      errors.push('Joker Deutsch: Mindestens 2 fortgeführte Fremdsprachen als Prüfungsfächer nötig');
-    }
-  }
-  if (substitution === 'mat') {
-    // Need ≥ 2 natural sciences (Phy, Che, Bio — NOT Informatik) among ALL exam subjects
-    const sciences = filteredAll.filter((id) => {
-      const s = getSubject(id);
-      return s && s.category === 'stem' && id !== 'mat' && id !== 'inf';
-    });
-    if (sciences.length < 2) {
-      errors.push('Joker Mathematik: Mindestens 2 Naturwissenschaften (Phy/Che/Bio) als Prüfungsfächer nötig');
-    }
-  }
-
   // Check field coverage (Abdeckungsgebot)
   const coverage = checkFieldCoverage(filteredAll);
   if (!coverage.field1) errors.push('Kein Prüfungsfach aus Aufgabenfeld I (sprachl.-lit.-künstlerisch)');
   if (!coverage.field2) errors.push('Kein Prüfungsfach aus Aufgabenfeld II (gesellschaftswiss.)');
   if (!coverage.field3) errors.push('Kein Prüfungsfach aus Aufgabenfeld III (math.-naturwiss.)');
+  const hasLanguageOrScience = filteredAll.some((id) => {
+    const subject = getSubject(id);
+    return (subject?.category === 'language' && id !== 'deu')
+      || (subject?.category === 'stem' && !['mat', 'inf'].includes(id));
+  });
+  if (!hasLanguageOrScience) errors.push('Eine fortgeführte Fremdsprache oder Naturwissenschaft muss Prüfungsfach sein');
+  if (!filteredAll.some((id) => ['ges', 'pug', 'geo', 'wir'].includes(id))) {
+    errors.push('Mindestens ein GPR-Fach muss Prüfungsfach sein');
+  }
 
   // Check for seminar subjects
   if ([leistungsfach, exam4, exam5].filter((id) => id === 'wsem' || id === 'psem').length > 0) {
@@ -776,11 +1093,12 @@ export function validateExamCombination(
     if (vLF.valid && vLF.reason) warnings.push(`Leistungsfach: ${vLF.reason}`);
   }
 
-  // Check exclusive subjects used as both oral exams
-  if (exam4 && exam5) {
-    for (const group of EXCLUSIVE_GROUPS) {
-      if (group.includes(exam4) && group.includes(exam5)) {
-        errors.push(`${getSubject(exam4)?.name} und ${getSubject(exam5)?.name} schließen sich gegenseitig aus`);
+  // Exclusive schedule choices cannot coexist in any of the configurable slots.
+  const configurableExams = [leistungsfach, exam4, exam5].filter(Boolean);
+  for (let first = 0; first < configurableExams.length; first++) {
+    for (let second = first + 1; second < configurableExams.length; second++) {
+      if (subjectsConflict(configurableExams[first], configurableExams[second])) {
+        errors.push(`${getSubject(configurableExams[first])?.name} und ${getSubject(configurableExams[second])?.name} schließen sich gegenseitig aus`);
       }
     }
   }
@@ -820,15 +1138,15 @@ export interface EinbringungRule {
  * - Foreign languages (if multiple): at least 4 semesters TOTAL across all languages
  * - Natural sciences (if multiple): at least 4 semesters TOTAL across all sciences
  * - Religion/Ethik: 3 of 4 semesters
- * - Geschichte: at least 2 semesters
- * - PuG: at least 1 semester
+ * - Geschichte: 3 of 4 semesters
+ * - PuG plus Geo/WR: 3 in the continued subject and 1 in the other
  * - Kunst/Musik: 3 of 4 semesters
- * - W-Seminar: 2 of 4 semesters + Seminararbeit
+ * - W-Seminar: specifically 12/1 and 12/2 + Seminararbeit
  *
- * OPTIONAL (max 3 semesters per subject):
+ * OPTIONAL:
  * - Sport (unless LF): max 3 semesters
- * - Informatik: max 3 semesters (NOT a natural science)
- * - Additional subjects (Geo, WR if not exam): max 3 semesters per subject
+ * - Zusatzangebot: max 3 semesters per subject (the current subject model does
+ *   not distinguish regular Informatik from Zusatzangebot courses)
  */
 export function getEinbringungRule(
   subjectId: string,
@@ -886,14 +1204,15 @@ export function getEinbringungRule(
     return { subjectId, minSemesters: 3, maxDroppable: 1, reason: 'Rel./Ethik — 3 von 4 HJ Pflicht', category: 'wahlpflicht' };
   }
 
-  // Geschichte: at least 2 semesters
+  // Geschichte: 3 of 4 semesters
   if (subjectId === 'ges') {
-    return { subjectId, minSemesters: 2, maxDroppable: 2, reason: 'Geschichte — mind. 2 HJ', category: 'wahlpflicht' };
+    return { subjectId, minSemesters: 3, maxDroppable: 1, reason: 'Geschichte — 3 von 4 HJ Pflicht', category: 'wahlpflicht' };
   }
 
-  // PuG (Politik und Gesellschaft): at least 1 semester
-  if (subjectId === 'pug') {
-    return { subjectId, minSemesters: 1, maxDroppable: 3, reason: 'PuG — mind. 1 HJ', category: 'wahlpflicht' };
+  // PuG + Geo/WR: the continued subject contributes 3, the counterpart 1.
+  // Exact split is validated globally because it depends on the pair.
+  if (['pug', 'geo', 'wir'].includes(subjectId)) {
+    return { subjectId, minSemesters: 1, maxDroppable: 3, reason: 'GPR-Verbund — 3 HJ fortgeführt + 1 HJ Gegenfach', category: 'wahlpflicht' };
   }
 
   // Kunst/Musik: 3 of 4 semesters
@@ -906,9 +1225,9 @@ export function getEinbringungRule(
     return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Sport — optional, max. 3 HJ zählbar', category: 'optional' };
   }
 
-  // W-Seminar: 2 of 4 semesters + Seminararbeit
+  // W-Seminar: specifically 12/1 and 12/2 + Seminararbeit
   if (subjectId === 'wsem') {
-    return { subjectId, minSemesters: 2, maxDroppable: 2, reason: 'W-Seminar — 2 von 4 HJ + Seminararbeit', category: 'wahlpflicht' };
+    return { subjectId, minSemesters: 2, maxDroppable: 2, reason: 'W-Seminar — 12/1 + 12/2 + Seminararbeit', category: 'wahlpflicht' };
   }
 
   // P-Seminar: not counted in Block I
@@ -916,13 +1235,13 @@ export function getEinbringungRule(
     return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'P-Seminar — nicht in Block I', category: 'optional' };
   }
 
-  // Informatik: optional, max 3 semesters (NOT a natural science)
+  // Informatik is not a natural science; whether it is the required additional
+  // Wahlpflichtfach depends on the individual course plan.
   if (subjectId === 'inf') {
-    return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Informatik — optional, max. 3 HJ', category: 'optional' };
+    return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Informatik — Kursplan individuell prüfen', category: 'optional' };
   }
 
-  // Everything else (Geo, WR if not exam): optional, max 3 semesters per subject
-  return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Zusatzfach — optional, max. 3 HJ', category: 'optional' };
+  return { subjectId, minSemesters: 0, maxDroppable: 4, reason: 'Weitere Einbringung — Kursplan individuell prüfen', category: 'optional' };
 }
 
 /**
@@ -976,7 +1295,15 @@ export function getKolloquiumOptions(
     .map((id) => {
       const subject = getSubject(id);
       if (!subject) return null;
-      const validation = canSubjectBeOralExam(id);
+      const oralValidation = canSubjectBeOralExam(id);
+      const conflictingExam = [profile.leistungsfach, otherExam]
+        .find((examId) => subjectsConflict(id, examId));
+      const validation = conflictingExam
+        ? {
+            valid: false,
+            reason: `${subject.name} und ${getSubject(conflictingExam)?.name} schließen sich gegenseitig aus`,
+          }
+        : oralValidation;
 
       // Check what field coverage would look like with this choice
       const hypothetical = ['deu', 'mat', profile.leistungsfach, otherExam, id].filter(Boolean);
@@ -990,7 +1317,9 @@ export function getKolloquiumOptions(
 // ─── Create Default Profile ────────────────────────────────
 
 export function createDefaultProfile(): AbiturProfile {
-  const subs = ['deu', 'mat', 'eng', 'ges', 'pug', 'phy', 'rev', 'spo', 'kun', 'wsem', 'psem'];
+  const subs = ['deu', 'mat', 'eng', 'ges', 'pug', 'geo', 'phy', 'rev', 'spo', 'kun', 'wsem', 'psem'];
+  const now = new Date();
+  const schoolYearStart = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
   const grades: SemesterGrade[] = [];
   for (const subjectId of subs) {
     for (const semester of SEMESTERS) {
@@ -1010,7 +1339,7 @@ export function createDefaultProfile(): AbiturProfile {
       { subjectId: '', examType: 'colloquium', points: null },
     ],
     seminarPaperPoints: null, seminarPresentationPoints: null, seminarTopicTitle: '',
-    studentName: '', schoolYear: '2025/2027', currentSemester: '12/1',
+    studentName: '', schoolYear: `${schoolYearStart}/${schoolYearStart + 2}`, currentSemester: '12/1',
     substitutedWritten: null,
   };
 }

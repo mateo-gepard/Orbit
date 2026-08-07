@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -8,6 +8,7 @@ import {
   BackgroundVariant,
   useNodesState,
   useEdgesState,
+  type AriaLabelConfig,
   type NodeMouseHandler,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -16,12 +17,31 @@ import { X, Network, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import type { OrbitItem } from '@/lib/types';
+import type { OrbitItem, ProjectFile } from '@/lib/types';
 import { OrbitNode } from './link-graph-node';
 import { FileNode } from './link-graph-file-node';
 import { buildGraphData } from './link-graph-utils';
+import { downloadProjectFile } from '@/lib/storage';
+import { toast } from 'sonner';
+import { useTranslation, type Translate } from '@/lib/i18n';
 
 const nodeTypes = { orbitNode: OrbitNode, fileNode: FileNode };
+
+function graphAriaLabels(translate: Translate): Partial<AriaLabelConfig> {
+  return {
+    'node.a11yDescription.default': translate('graph.nodeSelectDescription'),
+    'node.a11yDescription.keyboardDisabled': translate('graph.nodeMoveDescription'),
+    'node.a11yDescription.ariaLiveMessage': ({ x, y }) => translate('graph.nodeMoved', { x, y }),
+    'edge.a11yDescription.default': translate('graph.edgeSelectDescription'),
+    'controls.ariaLabel': translate('graph.controls'),
+    'controls.zoomIn.ariaLabel': translate('graph.zoomIn'),
+    'controls.zoomOut.ariaLabel': translate('graph.zoomOut'),
+    'controls.fitView.ariaLabel': translate('graph.fitView'),
+    'controls.interactive.ariaLabel': translate('graph.toggleInteractivity'),
+    'minimap.ariaLabel': translate('graph.miniMap'),
+    'handle.ariaLabel': translate('graph.handle'),
+  };
+}
 
 interface LinkGraphProps {
   open: boolean;
@@ -32,25 +52,31 @@ interface LinkGraphProps {
 }
 
 export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: LinkGraphProps) {
+  const { t } = useTranslation();
   const { isDragging, swipeStyles, handlers: swipeHandlers } = useSwipeToClose({ onClose });
+  const ariaLabelConfig = useMemo(() => graphAriaLabels(t), [t]);
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () => buildGraphData(currentItem, allItems),
     [currentItem, allItems]
   );
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  useEffect(() => {
+    if (!open) return;
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialEdges, initialNodes, open, setEdges, setNodes]);
 
   const hasRelationships = initialNodes.length > 1;
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
       if (node.type === 'fileNode') {
-        const data = node.data as { file: { url: string } };
-        if (data.file?.url) {
-          window.open(data.file.url, '_blank');
-        }
+        const data = node.data as { file: ProjectFile };
+        void downloadProjectFile(data.file).catch(() => toast.error(t('files.downloadError', { name: data.file.name })));
         return;
       }
       const data = node.data as { item: OrbitItem; isCurrent: boolean };
@@ -59,7 +85,7 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
         onClose();
       }
     },
-    [onNavigate, onClose]
+    [onNavigate, onClose, t]
   );
 
   return (
@@ -68,11 +94,10 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
         side="bottom"
         className="mobile-graph-sheet-height rounded-t-2xl p-0 border-0"
         showCloseButton={false}
-        onOpenAutoFocus={(e) => e.preventDefault()}
         style={swipeStyles}
       >
         <SheetHeader className="sr-only">
-          <SheetTitle>Link Graph</SheetTitle>
+          <SheetTitle>{t('graph.linkTitle')}</SheetTitle>
         </SheetHeader>
 
         <div className="h-full flex flex-col">
@@ -94,14 +119,14 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Network className="h-5 w-5 text-muted-foreground/70" />
-                <h2 className="text-base font-semibold">Link Graph</h2>
+                <h2 className="text-base font-semibold">{t('graph.linkTitle')}</h2>
               </div>
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={onClose}
                 className="h-8 w-8 shrink-0"
-                aria-label="Close link graph"
+                aria-label={t('graph.closeLink')}
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -116,10 +141,10 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                 <GitBranch className="h-10 w-10 text-muted-foreground/30" />
               </div>
               <h3 className="text-base font-semibold text-foreground mb-2">
-                No connections yet
+                {t('graph.noConnections')}
               </h3>
               <p className="text-sm text-muted-foreground/70 max-w-[280px] leading-relaxed">
-                Link this item to other projects, tasks, or notes to visualize relationships
+                {t('graph.noConnectionsDescription')}
               </p>
             </div>
           ) : (
@@ -131,6 +156,7 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                 onEdgesChange={onEdgesChange}
                 onNodeClick={onNodeClick}
                 nodeTypes={nodeTypes}
+                ariaLabelConfig={ariaLabelConfig}
                 fitView
                 fitViewOptions={{ padding: 0.3, maxZoom: 1.5 }}
                 minZoom={0.2}
@@ -139,6 +165,7 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
                 nodesDraggable={true}
                 nodesConnectable={false}
                 elementsSelectable={true}
+                deleteKeyCode={null}
                 className="link-graph-canvas"
               >
                 <Background
@@ -157,28 +184,28 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
               {/* Legend */}
               <div className="absolute bottom-4 left-4 z-10 bg-card/95 backdrop-blur-sm border border-border/60 rounded-xl px-3 py-2.5 shadow-lg">
                 <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1.5">
-                  Legend
+                  {t('graph.legend')}
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-0.5 bg-muted-foreground rounded" />
-                    <span className="text-[10px] text-muted-foreground">Parent / Child</span>
+                    <span className="text-[10px] text-muted-foreground">{t('graph.parentChild')}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 8px)' }} />
-                    <span className="text-[10px] text-muted-foreground">Peer Link</span>
+                    <span className="text-[10px] text-muted-foreground">{t('graph.peerLink')}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #a855f7 0, #a855f7 2px, transparent 2px, transparent 5px)' }} />
-                    <span className="text-[10px] text-muted-foreground">Refers To</span>
+                    <span className="text-[10px] text-muted-foreground">{t('graph.refersTo')}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #f59e0b 0, #f59e0b 2px, transparent 2px, transparent 6px)' }} />
-                    <span className="text-[10px] text-muted-foreground">Deep Link (2nd+)</span>
+                    <span className="text-[10px] text-muted-foreground">{t('graph.deepLink')}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #64748b 0, #64748b 3px, transparent 3px, transparent 6px)' }} />
-                    <span className="text-[10px] text-muted-foreground">File Attachment</span>
+                    <span className="text-[10px] text-muted-foreground">{t('graph.fileAttachment')}</span>
                   </div>
                 </div>
               </div>
