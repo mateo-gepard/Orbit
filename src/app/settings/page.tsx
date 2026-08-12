@@ -1220,9 +1220,9 @@ export default function SettingsPage() {
     : 'Ctrl';
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden" data-slot="settings-page">
+    <div className="flex min-h-full" data-slot="settings-page">
       {/* ─── Left sidebar nav ─── */}
-      <nav className="hidden lg:flex flex-col w-[220px] border-r border-border/30 py-6 px-3 shrink-0">
+      <nav className="sticky top-0 hidden h-[var(--app-height)] w-[220px] shrink-0 self-start flex-col border-r border-border/30 px-3 py-6 lg:flex lg:h-full">
         <h1 className="text-[13px] font-semibold tracking-tight px-3 mb-5 text-muted-foreground/70 uppercase">{t('settings.title')}</h1>
         <div className="space-y-0.5">
           {SECTIONS.map((s) => {
@@ -1260,9 +1260,9 @@ export default function SettingsPage() {
       </nav>
 
       {/* ─── Right column: pills + content ─── */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* ─── Mobile section pills ─── */}
-        <div className="lg:hidden shrink-0 bg-background/95 backdrop-blur-sm border-b border-border/30">
+        <div className="sticky top-0 z-30 shrink-0 border-b border-border/30 bg-background/95 backdrop-blur-sm lg:hidden">
           <div className="flex overflow-x-auto gap-1 px-3 py-2">
             {SECTIONS.map((s) => (
               <button
@@ -1285,7 +1285,7 @@ export default function SettingsPage() {
         </div>
 
         {/* ─── Content area ─── */}
-        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+        <div className="flex-1">
           <div className={cn('mx-auto px-3 py-4 pb-24 sm:px-4 sm:py-6 lg:px-8 lg:py-8 lg:pb-8', activeSection === 'mcp' ? 'max-w-4xl' : 'max-w-2xl')}>
             {/* Verified local/cloud save indicator */}
             <div

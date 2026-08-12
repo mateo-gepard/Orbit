@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Check, Clipboard, Cloud, KeyRound, LockKeyhole, PlugZap, ShieldCheck, UserRound, Wrench } from 'lucide-react';
+import { Check, Clipboard, KeyRound, LockKeyhole, PlugZap, ShieldCheck, UserRound, Wrench } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { ThreadmapMark } from '@/components/ui/threadmap-mark';
 
 const MCP_ENDPOINT = 'https://threadmap.app/mcp';
 
@@ -50,28 +49,6 @@ export function McpSettings() {
 
   return (
     <div className="space-y-5 pb-4">
-      <div className="relative overflow-hidden rounded-[26px] border border-border/70 bg-card">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 size-64 rounded-full border border-border/50" />
-        <div aria-hidden="true" className="pointer-events-none absolute -right-6 -top-10 size-40 rounded-full border border-border/40" />
-        <div className="relative grid gap-8 p-6 sm:grid-cols-[1fr_auto] sm:p-8">
-          <div>
-            <div className="mb-5 flex size-12 items-center justify-center rounded-2xl border border-border/60 bg-background shadow-[var(--shadow-hairline)]">
-              <ThreadmapMark className="size-9 text-foreground" />
-            </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Threadmap MCP</p>
-            <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">Let your AI work with your map, securely.</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Connect an MCP-compatible client to the Threadmap account currently signed in during authorization. Every connection remains isolated to that user&apos;s data.
-            </p>
-          </div>
-          <div className="flex items-start">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-[var(--shadow-hairline)]">
-              <Cloud className="size-3.5" aria-hidden="true" /> Hosted endpoint
-            </span>
-          </div>
-        </div>
-      </div>
-
       <InfoCard icon={PlugZap} title="Connection endpoint">
         <p className="mb-3 text-sm leading-6 text-muted-foreground">Use this same URL in every supported client. Do not add a user ID, API key, or query parameter.</p>
         <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-border/70 bg-muted/35 p-2 pl-4">
