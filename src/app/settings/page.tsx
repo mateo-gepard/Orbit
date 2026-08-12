@@ -1220,7 +1220,7 @@ export default function SettingsPage() {
     : 'Ctrl';
 
   return (
-    <div className="flex h-full" data-slot="settings-page">
+    <div className="flex h-full min-h-0 overflow-hidden" data-slot="settings-page">
       {/* ─── Left sidebar nav ─── */}
       <nav className="hidden lg:flex flex-col w-[220px] border-r border-border/30 py-6 px-3 shrink-0">
         <h1 className="text-[13px] font-semibold tracking-tight px-3 mb-5 text-muted-foreground/70 uppercase">{t('settings.title')}</h1>
@@ -1260,7 +1260,7 @@ export default function SettingsPage() {
       </nav>
 
       {/* ─── Right column: pills + content ─── */}
-      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* ─── Mobile section pills ─── */}
         <div className="lg:hidden shrink-0 bg-background/95 backdrop-blur-sm border-b border-border/30">
           <div className="flex overflow-x-auto gap-1 px-3 py-2">
@@ -1285,8 +1285,8 @@ export default function SettingsPage() {
         </div>
 
         {/* ─── Content area ─── */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-2xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8 pb-24 lg:pb-8">
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+          <div className={cn('mx-auto px-3 py-4 pb-24 sm:px-4 sm:py-6 lg:px-8 lg:py-8 lg:pb-8', activeSection === 'mcp' ? 'max-w-4xl' : 'max-w-2xl')}>
             {/* Verified local/cloud save indicator */}
             <div
               role="status"
