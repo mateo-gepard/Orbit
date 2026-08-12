@@ -1,0 +1,294 @@
+'use client';
+
+import { useState } from 'react';
+import {
+  multiFactor,
+  sendEmailVerification,
+  TotpMultiFactorGenerator,
+  type MultiFactorInfo,
+  type TotpSecret,
+} from 'firebase/auth';
+import { Check, Copy, KeyRound, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import { toast } from 'sonner';
+
+import { useAuth } from '@/components/providers/auth-provider';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { mfaErrorMessage, normalizeTotpCode, TOTP_CODE_LENGTH } from '@/lib/mfa';
+import { useSettingsStore } from '@/lib/settings-store';
+
+export function MfaSettings() {
+  const { user, isDemo, signOut } = useAuth();
+  const language = useSettingsStore((state) => state.settings.language);
+  const de = language === 'de';
+  const [factors, setFactors] = useState<MultiFactorInfo[]>(
+    () => user && !isDemo ? [...multiFactor(user).enrolledFactors] : [],
+  );
+  const [secret, setSecret] = useState<TotpSecret | null>(null);
+  const [code, setCode] = useState('');
+  const [label, setLabel] = useState('Authenticator');
+  const [busy, setBusy] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [factorToRemove, setFactorToRemove] = useState<MultiFactorInfo | null>(null);
+
+  if (!user || isDemo) {
+    return (
+      <div className="mb-4 rounded-2xl border border-border/50 bg-card p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05]">
+            <ShieldCheck aria-hidden="true" className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-[13px] font-semibold">{de ? 'Zwei-Faktor-Authentifizierung' : 'Two-factor authentication'}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/60">
+              {de ? 'Melde dich mit einem Cloud-Konto an, um einen Authenticator einzurichten.' : 'Sign in with a cloud account to set up an authenticator.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const refreshFactors = () => setFactors([...multiFactor(user).enrolledFactors]);
+
+  const startEnrollment = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await user.reload();
+      if (!user.emailVerified) {
+        setError(de ? 'Bestatige zuerst deine E-Mail-Adresse.' : 'Verify your email address before adding a second factor.');
+        return;
+      }
+      const session = await multiFactor(user).getSession();
+      setSecret(await TotpMultiFactorGenerator.generateSecret(session));
+      setCode('');
+    } catch (enrollmentError) {
+      setError(mfaErrorMessage(enrollmentError, language));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const finishEnrollment = async () => {
+    if (!secret || code.length !== TOTP_CODE_LENGTH) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const assertion = TotpMultiFactorGenerator.assertionForEnrollment(secret, code);
+      await multiFactor(user).enroll(assertion, label.trim() || 'Authenticator');
+      refreshFactors();
+      setSecret(null);
+      setCode('');
+      toast.success(de ? 'Authenticator hinzugefugt.' : 'Authenticator added.');
+    } catch (enrollmentError) {
+      setError(mfaErrorMessage(enrollmentError, language));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendVerification = async () => {
+    setSendingVerification(true);
+    setError(null);
+    try {
+      await sendEmailVerification(user, {
+        url: `${window.location.origin}/settings?section=data`,
+      });
+      toast.success(de ? 'Bestatigungs-E-Mail gesendet.' : 'Verification email sent.');
+    } catch (verificationError) {
+      setError(mfaErrorMessage(verificationError, language));
+    } finally {
+      setSendingVerification(false);
+    }
+  };
+
+  const copySecret = async () => {
+    if (!secret) return;
+    try {
+      await navigator.clipboard.writeText(secret.secretKey);
+      toast.success(de ? 'Schlussel kopiert.' : 'Setup key copied.');
+    } catch {
+      setError(de ? 'Der Schlussel konnte nicht kopiert werden.' : 'The setup key could not be copied.');
+    }
+  };
+
+  const removeFactor = async () => {
+    if (!factorToRemove) return;
+    const factor = factorToRemove;
+    setBusy(true);
+    setError(null);
+    try {
+      await multiFactor(user).unenroll(factor.uid);
+      refreshFactors();
+      setFactorToRemove(null);
+      toast.success(de ? 'Authenticator entfernt.' : 'Authenticator removed.');
+    } catch (removeError) {
+      const codeValue = (removeError as { code?: string })?.code;
+      if (codeValue === 'auth/user-token-expired') {
+        setFactors((current) => current.filter((entry) => entry.uid !== factor.uid));
+        setFactorToRemove(null);
+        toast.success(de ? 'Authenticator entfernt. Melde dich erneut an.' : 'Authenticator removed. Sign in again.');
+        await signOut().catch(() => undefined);
+      } else {
+        setError(mfaErrorMessage(removeError, language));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <section className="mb-4 overflow-hidden rounded-2xl border border-border/50 bg-card">
+        <div className="flex items-start justify-between gap-4 border-b border-border/30 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05]">
+              <ShieldCheck aria-hidden="true" className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold">{de ? 'Zwei-Faktor-Authentifizierung' : 'Two-factor authentication'}</p>
+              <p className="mt-1 max-w-xl text-[11px] leading-relaxed text-muted-foreground/60">
+                {de
+                  ? 'Schutze dein Konto mit einem zeitbasierten Code aus deiner Authenticator-App.'
+                  : 'Protect your account with a time-based code from your authenticator app.'}
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/50 px-2 py-1 text-[10px] font-medium text-muted-foreground">
+            {factors.length > 0 && <Check aria-hidden="true" className="h-3 w-3" />}
+            {factors.length > 0 ? (de ? 'Aktiv' : 'Active') : (de ? 'Optional' : 'Optional')}
+          </span>
+        </div>
+
+        <div className="space-y-4 p-4">
+          {!user.emailVerified && (
+            <div className="flex flex-col gap-3 rounded-xl border border-border/40 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {de ? 'Bestatige deine E-Mail-Adresse, bevor du einen zweiten Faktor hinzufugst.' : 'Verify your email address before adding a second factor.'}
+              </p>
+              <Button type="button" size="sm" variant="outline" disabled={sendingVerification} onClick={() => void sendVerification()}>
+                {sendingVerification && <Loader2 aria-hidden="true" className="animate-spin" />}
+                {de ? 'E-Mail senden' : 'Send email'}
+              </Button>
+            </div>
+          )}
+
+          {factors.map((factor) => (
+            <div key={factor.uid} className="flex items-center justify-between gap-3 rounded-xl border border-border/40 p-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <KeyRound aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0">
+                  <p className="truncate text-[12px] font-medium">{factor.displayName || 'Authenticator'}</p>
+                  <p className="text-[10px] text-muted-foreground/55">{de ? 'Zeitbasierter Einmalcode' : 'Time-based one-time code'}</p>
+                </div>
+              </div>
+              <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setFactorToRemove(factor)}>
+                <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                {de ? 'Entfernen' : 'Remove'}
+              </Button>
+            </div>
+          ))}
+
+          {secret ? (
+            <div className="grid gap-5 rounded-xl border border-border/50 bg-background p-4 md:grid-cols-[auto_1fr]">
+              <div className="w-fit rounded-xl border border-border/50 bg-white p-3">
+                <QRCodeSVG
+                  value={secret.generateQrCodeUrl(user.email || user.uid, 'Threadmap')}
+                  size={168}
+                  level="M"
+                  title={de ? 'Threadmap Authenticator QR-Code' : 'Threadmap authenticator QR code'}
+                />
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[12px] font-semibold">{de ? '1. QR-Code scannen' : '1. Scan the QR code'}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/60">
+                    {de ? 'Nutze eine Authenticator-App. Alternativ kannst du den Schlussel manuell eingeben.' : 'Use any authenticator app, or enter the setup key manually.'}
+                  </p>
+                </div>
+                <div className="flex min-w-0 items-center gap-2 rounded-lg bg-muted/30 p-2">
+                  <code className="min-w-0 flex-1 break-all text-[10px]">{secret.secretKey}</code>
+                  <Button type="button" size="icon" variant="ghost" aria-label={de ? 'Schlussel kopieren' : 'Copy setup key'} onClick={() => void copySecret()}>
+                    <Copy aria-hidden="true" className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <label className="grid gap-1.5 text-[11px] font-medium" htmlFor="mfa-device-label">
+                  {de ? 'Name dieses Authenticators' : 'Name this authenticator'}
+                  <Input id="mfa-device-label" value={label} onChange={(event) => setLabel(event.target.value)} maxLength={50} disabled={busy} />
+                </label>
+                <label className="grid gap-1.5 text-[11px] font-medium" htmlFor="mfa-enrollment-code">
+                  {de ? '2. Aktuellen Code eingeben' : '2. Enter the current code'}
+                  <Input
+                    id="mfa-enrollment-code"
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="000000"
+                    value={code}
+                    onChange={(event) => setCode(normalizeTotpCode(event.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" disabled={busy || code.length !== TOTP_CODE_LENGTH} onClick={() => void finishEnrollment()}>
+                    {busy && <Loader2 aria-hidden="true" className="animate-spin" />}
+                    {de ? 'Aktivieren' : 'Activate'}
+                  </Button>
+                  <Button type="button" variant="outline" disabled={busy} onClick={() => { setSecret(null); setCode(''); setError(null); }}>
+                    {de ? 'Abbrechen' : 'Cancel'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Button type="button" variant="outline" disabled={busy || !user.emailVerified} onClick={() => void startEnrollment()}>
+              {busy && <Loader2 aria-hidden="true" className="animate-spin" />}
+              <KeyRound aria-hidden="true" className="h-3.5 w-3.5" />
+              {de ? 'Authenticator hinzufugen' : 'Add authenticator'}
+            </Button>
+          )}
+
+          <p className="text-[10px] leading-relaxed text-muted-foreground/50">
+            {de
+              ? 'Bewahre den Zugriff auf deine Authenticator-App sicher auf. Threadmap bietet derzeit keine Wiederherstellungscodes.'
+              : 'Keep access to your authenticator app safe. Threadmap does not currently provide recovery codes.'}
+          </p>
+          {error && <p role="alert" className="text-[11px] text-destructive">{error}</p>}
+        </div>
+      </section>
+
+      <Dialog open={Boolean(factorToRemove)} onOpenChange={(open) => { if (!open && !busy) setFactorToRemove(null); }}>
+        <DialogContent className="sm:max-w-md" showCloseButton={!busy}>
+          <DialogHeader>
+            <DialogTitle>{de ? 'Authenticator entfernen?' : 'Remove authenticator?'}</DialogTitle>
+            <DialogDescription>
+              {de
+                ? 'Dieses Konto verliert den Schutz dieses zweiten Faktors. Moglicherweise musst du dich erneut anmelden.'
+                : 'This account will lose the protection of this second factor. You may need to sign in again.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => setFactorToRemove(null)}>
+              {de ? 'Abbrechen' : 'Cancel'}
+            </Button>
+            <Button type="button" variant="destructive" disabled={busy} onClick={() => void removeFactor()}>
+              {busy && <Loader2 aria-hidden="true" className="animate-spin" />}
+              {de ? 'Entfernen' : 'Remove'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

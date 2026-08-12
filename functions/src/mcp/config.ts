@@ -12,6 +12,27 @@ import type { ThreadmapOAuthConfiguration } from './oauth';
  * `functions/src/mcp/http.ts` routes them internally.
  */
 export const MCP_DEFAULT_ORIGIN = 'https://threadmap.app';
+const MCP_STAGING_PROJECT_ID = 'threadmap-staging-9e0b6';
+const MCP_VERCEL_PREVIEW_HOST = /^orbit-[a-z0-9-]+-mateos-projects-c394726f\.vercel\.app$/;
+
+export interface McpRequestOriginInput {
+  projectId?: string;
+  forwardedHost?: string;
+  forwardedProto?: string;
+}
+
+/**
+ * Preview OAuth metadata must stay on the preview host so every follow-up
+ * request returns through the staging rewrite. Only the staging project may
+ * honor this header, and only hosts belonging to this Vercel project pass.
+ */
+export function resolveMcpRequestOrigin(input: McpRequestOriginInput): string | undefined {
+  if (input.projectId !== MCP_STAGING_PROJECT_ID) return undefined;
+  const protocol = input.forwardedProto?.split(',')[0]?.trim().toLowerCase();
+  const host = input.forwardedHost?.split(',')[0]?.trim().toLowerCase();
+  if (protocol !== 'https' || !host || !MCP_VERCEL_PREVIEW_HOST.test(host)) return undefined;
+  return `https://${host}`;
+}
 
 export const MCP_PUBLIC_PATHS = Object.freeze({
   /** The MCP endpoint, which is also the RFC 8707 resource identifier. */

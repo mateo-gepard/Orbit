@@ -1,6 +1,7 @@
 'use client';
 
 import { McpSettings } from '@/components/settings/mcp-settings';
+import { MfaSettings } from '@/components/settings/mfa-settings';
 
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
@@ -1919,6 +1920,8 @@ export default function SettingsPage() {
           {activeSection === 'data' && (
             <div>
               <SectionHeader icon={Database} label={t('settings.dataStorage')} />
+
+              <MfaSettings />
 
               <ConflictRecoveryPanel userId={user?.uid ?? null} onDownload={downloadJson} />
 
