@@ -15,12 +15,15 @@ import {
   McpConfigurationError,
   resolveMcpEndpoints,
   resolveMcpOAuthConfiguration,
+  resolveMcpRequestOrigin,
 } from './mcp/config';
 import { createMcpRouter, runMcpRouterOnNode, type McpRouter } from './mcp/http';
 import { createThreadmapOAuthService } from './mcp/oauth';
 import { ThreadmapDal } from './mcp/dal';
 
 initializeApp();
+
+const FUNCTION_REGION = 'europe-west1';
 
 // A compromised account or abusive client must not be able to scale every
 // function without bound. Individual functions can override this when measured
@@ -645,13 +648,13 @@ async function processDueType(type: BriefingType, webPushReady: boolean): Promis
   return delivered;
 }
 
-export const sendBriefingNotifications = onSchedule(
+const sendBriefingNotificationsHandler = onSchedule(
   {
     schedule: 'every 1 minutes',
     timeZone: 'UTC',
     retryCount: 3,
     memory: '256MiB',
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     secrets: [vapidPublicKey, vapidPrivateKey],
   },
   async () => {
@@ -663,6 +666,18 @@ export const sendBriefingNotifications = onSchedule(
     const evening = await processDueType('evening', webPushReady);
     console.info(`[THREADMAP] Briefing run delivered ${morning + evening} notification(s).`);
   }
+);
+
+export const sendBriefingNotificationsEu = onSchedule(
+  {
+    schedule: 'every 1 minutes',
+    timeZone: 'UTC',
+    retryCount: 3,
+    memory: '256MiB',
+    region: 'europe-west1',
+    secrets: [vapidPublicKey, vapidPrivateKey],
+  },
+  sendBriefingNotificationsHandler.run,
 );
 
 function requireUid(request: { auth?: { uid: string } | null }): string {
@@ -732,7 +747,7 @@ function trimPushDevicesToQuota(
 
 export const upsertThreadmapPushDevice = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 60,
     memory: '256MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -833,7 +848,7 @@ export const upsertThreadmapPushDevice = onCall(
 
 export const updateThreadmapPushSchedule = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 60,
     memory: '256MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -876,7 +891,7 @@ export const updateThreadmapPushSchedule = onCall(
 
 export const deleteThreadmapPushDevice = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 60,
     memory: '256MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -932,7 +947,7 @@ function sharedSecretMatches(provided: string, expected: string): boolean {
 
 export const consumeThreadmapScrapeQuota = onRequest(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 30,
     memory: '256MiB',
     secrets: [scrapeRateLimitSharedSecret],
@@ -1066,10 +1081,10 @@ async function queryAll(query: FirebaseFirestore.Query): Promise<FirebaseFiresto
  * Security rules validate every new child assignment; this trigger repairs
  * existing children if a project/goal is later converted or archived.
  */
-export const repairThreadmapHierarchy = onDocumentUpdated(
+const repairThreadmapHierarchyHandler = onDocumentUpdated(
   {
     document: 'items/{itemId}',
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     retry: true,
     timeoutSeconds: 120,
     memory: '256MiB',
@@ -1107,6 +1122,17 @@ export const repairThreadmapHierarchy = onDocumentUpdated(
       }));
     }
   }
+);
+
+export const repairThreadmapHierarchyEu = onDocumentUpdated(
+  {
+    document: 'items/{itemId}',
+    region: 'europe-west1',
+    retry: true,
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  repairThreadmapHierarchyHandler.run,
 );
 
 async function ownedDocuments(uid: string) {
@@ -1269,7 +1295,7 @@ function uploadRegistryId(uid: string, itemId: string): string {
 
 export const deleteThreadmapItem = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 120,
     memory: '256MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -1394,7 +1420,7 @@ export const deleteThreadmapItem = onCall(
 
 export const deleteThreadmapAttachment = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 120,
     memory: '256MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -1475,7 +1501,7 @@ export const deleteThreadmapAttachment = onCall(
 /** Reserve an immutable object path and durable orphan-cleanup intent before upload. */
 export const beginThreadmapUpload = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 30,
     memory: '256MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -1592,7 +1618,7 @@ export const beginThreadmapUpload = onCall(
 /** Attach a completed upload and retire its orphan intent in one transaction. */
 export const attachThreadmapUpload = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 60,
     memory: '256MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -1679,7 +1705,7 @@ export const attachThreadmapUpload = onCall(
 /** Compensate a completed upload that could not be attached to item metadata. */
 export const cleanupThreadmapUpload = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 120,
     memory: '256MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -1728,13 +1754,13 @@ export const cleanupThreadmapUpload = onCall(
   }
 );
 
-export const cleanupDeletedItemFiles = onSchedule(
+const cleanupDeletedItemFilesHandler = onSchedule(
   {
     schedule: 'every 1 hours',
     timeZone: 'UTC',
     retryCount: 3,
     memory: '256MiB',
-    region: 'us-central1',
+    region: FUNCTION_REGION,
   },
   async () => {
     let processed = 0;
@@ -1757,9 +1783,20 @@ export const cleanupDeletedItemFiles = onSchedule(
   }
 );
 
+export const cleanupDeletedItemFilesEu = onSchedule(
+  {
+    schedule: 'every 1 hours',
+    timeZone: 'UTC',
+    retryCount: 3,
+    memory: '256MiB',
+    region: 'europe-west1',
+  },
+  cleanupDeletedItemFilesHandler.run,
+);
+
 export const exportThreadmapAccount = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 120,
     memory: '512MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -1904,7 +1941,7 @@ async function processAccountDeletion(
 
 export const deleteThreadmapAccount = onCall(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     timeoutSeconds: 300,
     memory: '512MiB',
     enforceAppCheck: ENFORCE_APP_CHECK,
@@ -1954,14 +1991,27 @@ export const deleteThreadmapAccount = onCall(
  * settings degrade this one endpoint to `503` instead of breaking every
  * function in the deployment at cold start.
  */
-let mcpRouterResult: { router: McpRouter; origin: string } | { error: Error } | undefined;
+type McpRouterResult = { router: McpRouter; origin: string } | { error: Error };
+const mcpRouterResults = new Map<string, McpRouterResult>();
+const MAX_MCP_ORIGIN_CACHE_SIZE = 16;
 
-function getMcpRouter(): { router: McpRouter; origin: string } | { error: Error } {
-  if (mcpRouterResult) return mcpRouterResult;
+function cacheMcpRouter(key: string, result: McpRouterResult): McpRouterResult {
+  if (mcpRouterResults.size >= MAX_MCP_ORIGIN_CACHE_SIZE) {
+    const oldest = mcpRouterResults.keys().next().value;
+    if (oldest) mcpRouterResults.delete(oldest);
+  }
+  mcpRouterResults.set(key, result);
+  return result;
+}
+
+function getMcpRouter(rawOrigin?: string): McpRouterResult {
+  const cacheKey = rawOrigin ?? 'configured-origin';
+  const cached = mcpRouterResults.get(cacheKey);
+  if (cached) return cached;
   try {
-    const endpoints = resolveMcpEndpoints();
+    const endpoints = resolveMcpEndpoints(rawOrigin);
     const oauth = createThreadmapOAuthService(db, resolveMcpOAuthConfiguration(endpoints));
-    mcpRouterResult = {
+    return cacheMcpRouter(cacheKey, {
       origin: endpoints.origin,
       router: createMcpRouter({
         oauth,
@@ -1974,7 +2024,7 @@ function getMcpRouter(): { router: McpRouter; origin: string } | { error: Error 
           console.log(JSON.stringify({ component: 'mcp', ...entry }));
         },
       }),
-    };
+    });
   } catch (error) {
     const wrapped = error instanceof Error ? error : new Error('MCP configuration failed.');
     if (wrapped instanceof McpConfigurationError) {
@@ -1982,14 +2032,13 @@ function getMcpRouter(): { router: McpRouter; origin: string } | { error: Error 
     } else {
       console.error('[THREADMAP MCP] The MCP endpoint could not be configured:', wrapped);
     }
-    mcpRouterResult = { error: wrapped };
+    return cacheMcpRouter(cacheKey, { error: wrapped });
   }
-  return mcpRouterResult;
 }
 
 export const threadmapMcp = onRequest(
   {
-    region: 'us-central1',
+    region: FUNCTION_REGION,
     // Claude.ai allows up to 300s per tool call; staying under it means a slow
     // call surfaces as a Threadmap timeout rather than a host-side disconnect.
     timeoutSeconds: 120,
@@ -2000,7 +2049,12 @@ export const threadmapMcp = onRequest(
     cors: false,
   },
   async (request, response) => {
-    const resolved = getMcpRouter();
+    const requestOrigin = resolveMcpRequestOrigin({
+      projectId: process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT,
+      forwardedHost: request.get('x-forwarded-host'),
+      forwardedProto: request.get('x-forwarded-proto'),
+    });
+    const resolved = getMcpRouter(requestOrigin);
     if ('error' in resolved) {
       response.setHeader('Cache-Control', 'no-store');
       response.status(503).json({
@@ -2013,14 +2067,14 @@ export const threadmapMcp = onRequest(
   }
 );
 
-export const retryThreadmapAccountDeletions = onSchedule(
+const retryThreadmapAccountDeletionsHandler = onSchedule(
   {
     schedule: 'every 1 hours',
     timeZone: 'UTC',
     retryCount: 3,
     timeoutSeconds: 540,
     memory: '512MiB',
-    region: 'us-central1',
+    region: FUNCTION_REGION,
   },
   async () => {
     const jobs = await db.collection('accountDeletionJobs')
@@ -2038,4 +2092,16 @@ export const retryThreadmapAccountDeletions = onSchedule(
       }
     }
   }
+);
+
+export const retryThreadmapAccountDeletionsEu = onSchedule(
+  {
+    schedule: 'every 1 hours',
+    timeZone: 'UTC',
+    retryCount: 3,
+    timeoutSeconds: 540,
+    memory: '512MiB',
+    region: 'europe-west1',
+  },
+  retryThreadmapAccountDeletionsHandler.run,
 );

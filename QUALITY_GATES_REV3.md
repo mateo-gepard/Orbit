@@ -26,7 +26,7 @@ Assessment date: 12 August 2026.
 | Negative cross-user isolation test | Pass | `src/test/firebase-rules.test.ts`, 19/19 emulator tests |
 | Data classes/processors/flows listed | Pass | `DATA_GOVERNANCE.md` |
 | Retention, export, deletion, and recovery path | Pass | Settings export/deletion, public privacy notice, `RECOVERY_RUNBOOK.md`, 7-day daily/28-day weekly backups, 30-day logs |
-| No real data in preview/test | Pass | Isolated staging Firebase project and Vercel preview environment; protected preview smoke test proved no production contact |
+| No real data in preview/test | Pass | Isolated staging Firebase project, preview-aware EU MCP routing, and Vercel preview environment; production routing is selected only for `VERCEL_ENV=production` |
 | Public brand/domain | Pass | `threadmap.app`, unified Threadmap identity and legal/security routes |
 | Rate limiting/basic abuse protection | Partial | App Check and Vercel DDoS protection are active; WAF observes 120 `/api/` requests/min/IP but safe 429 enforcement awaits traffic review |
 | Incident owner and escalation path | Partial | `INCIDENT_RESPONSE.md` and named technical owner exist; working security mailbox and second owner remain open |
@@ -34,7 +34,7 @@ Assessment date: 12 August 2026.
 | Platform-native and boundary testing | Pass/partial | Firebase rule suite, App Check smoke tests, callable tests, and this boundary review pass; independent human sign-off remains open |
 | In-region data services | Pass/Legal | Firestore, Storage, Functions, staging, and backups are EU-based; Legal must verify processor contract/transfer language including Auth/Vercel |
 | DPAs, SCCs, lawful basis, privacy approval | Blocked | Requires controller identity, Legal execution, and a maintained subprocessor register; must not be invented in code |
-| External-user MFA available | Pass after rollout | Optional TOTP enrollment/challenge added and Identity Platform TOTP enabled in production/staging |
+| External-user MFA available | Pass | Optional TOTP enrollment/challenge added and Identity Platform TOTP enabled in production/staging |
 | AI/MCP flow documented | Pass | `DATA_GOVERNANCE.md` documents destinations, scopes, data returned, and provider boundary |
 | Agent least privilege and human approval | Pass/partial | Separate scopes, omitted unauthorized tools, revisions/idempotency, destructive hints, quotas, and two-step deletion; client remains responsible for presenting approval for non-delete writes |
 | No direct regulated-product data access | Pass | Threadmap has no Keystone/QMS or equivalent product-database connection |

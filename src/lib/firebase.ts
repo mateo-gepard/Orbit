@@ -60,7 +60,7 @@ if (typeof window !== 'undefined' && isFirebaseConfigured) {
       // Firestore may already be initialized during hot reload. Reuse it.
       db = getFirestore(app);
     }
-    cloudFunctions = getFunctions(app, 'us-central1');
+    cloudFunctions = getFunctions(app, 'europe-west1');
     googleProvider = new GoogleAuthProvider();
   } catch (error) {
     console.warn('Firebase initialization failed:', error);

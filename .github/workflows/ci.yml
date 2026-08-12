@@ -36,6 +36,9 @@ jobs:
       - name: License policy
         run: npm run audit:licenses
 
+      - name: Deployment region policy
+        run: npm run audit:regions
+
       - name: Lint
         run: npm run lint
 

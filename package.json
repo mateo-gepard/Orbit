@@ -12,6 +12,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "audit:licenses": "node scripts/check-licenses.mjs .",
+    "audit:regions": "node scripts/check-deployment-regions.mjs",
     "test": "vitest run && node scripts/report-rules-coverage.mjs",
     "test:watch": "vitest",
     "test:rules": "firebase emulators:exec --project demo-threadmap-rules-test --only firestore,storage \"vitest run src/test/firebase-rules.test.ts\"",

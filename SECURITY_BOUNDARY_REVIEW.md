@@ -19,9 +19,10 @@ Threadmap uses per-user workspaces rather than shared organization tenants. The 
 | MCP least privilege | Read/write/delete scopes are separate; ungranted tools are omitted; quotas and tool annotations are enforced | Pass |
 | MCP deletion | Preview plus short-lived owner/client/revision-bound single-use token and explicit destructive metadata | Pass |
 | Secrets | Server secrets remain in managed environments; browser Firebase identifiers are origin-restricted; GitHub push protection is active | Pass |
-| Preview data | Vercel preview/development environments use isolated staging Firebase resources and preview SSO | Pass |
-| MFA | TOTP enrollment and sign-in challenge are available to verified cloud accounts | Pass after deployment/configuration |
-| Sensitive writes | Targeted Google Cloud Data Access audit logging records write/security metadata with 30-day retention | Pass after configuration |
+| Preview data | Vercel preview/development environments use isolated staging Firebase resources, preview SSO, and preview-host-bound EU MCP metadata | Pass |
+| Function residency | Callable, HTTP, schedule, and event functions run in `europe-west1`; CI rejects US-region regressions | Pass |
+| MFA | TOTP enrollment and sign-in challenge are available to verified cloud accounts | Pass |
+| Sensitive writes | Targeted Google Cloud Data Access audit logging records write/security metadata with 30-day retention | Pass |
 
 ## Automated assurance
 

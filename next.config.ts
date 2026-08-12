@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const isDevelopment = process.env.NODE_ENV === "development";
+const mcpProjectId = process.env.VERCEL_ENV === "production"
+  ? "orbit-9e0b6"
+  : "threadmap-staging-9e0b6";
+const mcpFunctionOrigin = `https://europe-west1-${mcpProjectId}.cloudfunctions.net/threadmapMcp`;
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -42,6 +46,27 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   turbopack: {
     root,
+  },
+  async rewrites() {
+    return [
+      { source: "/mcp", destination: `${mcpFunctionOrigin}/mcp` },
+      {
+        source: "/.well-known/oauth-authorization-server",
+        destination: `${mcpFunctionOrigin}/.well-known/oauth-authorization-server`,
+      },
+      {
+        source: "/.well-known/oauth-protected-resource",
+        destination: `${mcpFunctionOrigin}/.well-known/oauth-protected-resource`,
+      },
+      {
+        source: "/.well-known/oauth-protected-resource/mcp",
+        destination: `${mcpFunctionOrigin}/.well-known/oauth-protected-resource/mcp`,
+      },
+      {
+        source: "/api/mcp/oauth/:path*",
+        destination: `${mcpFunctionOrigin}/api/mcp/oauth/:path*`,
+      },
+    ];
   },
   async headers() {
     return [
