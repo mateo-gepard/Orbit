@@ -37,6 +37,7 @@ import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { ThreadmapMark } from '@/components/ui/threadmap-mark';
 import {
   Tooltip,
   TooltipContent,
@@ -210,13 +211,11 @@ export function Sidebar() {
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
-            <div
-              aria-hidden="true"
-              style={{ backgroundImage: "url('/favicon.svg')", color: 'transparent' }}
-              className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg bg-cover bg-center bg-no-repeat shadow-[var(--shadow-hairline)]"
-            >
-              {hockeyMode ? '🏒' : 'T'}
-            </div>
+            {hockeyMode ? (
+              <div aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-600 text-sm text-white">🏒</div>
+            ) : (
+              <ThreadmapMark className="h-8 w-8 shrink-0 text-foreground" />
+            )}
             <span className="text-[15px] font-semibold tracking-tight">
               {hockeyMode ? 'THREADMAP 🩺' : 'THREADMAP'}
             </span>

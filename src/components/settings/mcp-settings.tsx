@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Check, Clipboard, Cloud, KeyRound, LockKeyhole, PlugZap, ShieldCheck, UserRound, Waypoints, Wrench } from 'lucide-react';
+import { Check, Clipboard, KeyRound, LockKeyhole, PlugZap, ShieldCheck, UserRound, Wrench } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 
@@ -48,27 +48,7 @@ export function McpSettings() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="overflow-hidden rounded-[26px] border border-border/70 bg-foreground text-background">
-        <div className="grid gap-8 p-6 sm:grid-cols-[1fr_auto] sm:p-8">
-          <div>
-            <div className="mb-5 flex size-11 items-center justify-center rounded-2xl bg-background/10">
-              <Waypoints className="size-5" aria-hidden="true" />
-            </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-background/55">Threadmap MCP</p>
-            <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">Let your AI work with your map, securely.</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-background/65">
-              Connect an MCP-compatible client to the Threadmap account currently signed in during authorization. Every connection remains isolated to that user&apos;s data.
-            </p>
-          </div>
-          <div className="flex items-start">
-            <span className="inline-flex items-center gap-2 rounded-full border border-background/15 bg-background/10 px-3 py-1.5 text-xs font-medium text-background/80">
-              <Cloud className="size-3.5" aria-hidden="true" /> Hosted endpoint
-            </span>
-          </div>
-        </div>
-      </div>
-
+    <div className="space-y-5 pb-4">
       <InfoCard icon={PlugZap} title="Connection endpoint">
         <p className="mb-3 text-sm leading-6 text-muted-foreground">Use this same URL in every supported client. Do not add a user ID, API key, or query parameter.</p>
         <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-border/70 bg-muted/35 p-2 pl-4">

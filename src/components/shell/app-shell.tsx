@@ -19,6 +19,7 @@ import { CommandBar } from './command-bar';
 import { MobileNav } from './mobile-nav';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import { CompletionAnimation } from '@/components/ui/completion-animation';
+import { ThreadmapMark } from '@/components/ui/threadmap-mark';
 
 const DetailPanel = dynamic(
   () => import('./detail-panel').then((module) => module.DetailPanel),
@@ -136,8 +137,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-4 w-4" />
             </Button>
-            <div className={`flex h-6 w-6 items-center justify-center rounded-md font-semibold text-[10px] ${hockeyMode ? 'bg-cyan-600 text-white' : 'bg-foreground text-background'}`}>
-              {hockeyMode ? '\u{1F3D2}' : 'T'}
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center">
+              {hockeyMode ? (
+                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-600 text-[11px] text-white">{'\u{1F3D2}'}</span>
+              ) : (
+                <ThreadmapMark className="h-7 w-7 text-foreground" />
+              )}
             </div>
             <span className="min-w-0 truncate text-sm font-semibold tracking-tight">
               {hockeyMode ? 'THREADMAP \u{1FA7A}' : 'THREADMAP'}

@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
+import { ThreadmapMark } from '@/components/ui/threadmap-mark';
 
 const HOCKEY_LOADING = [
   'Kabine wird vorbereitet... 🏒',
@@ -86,31 +86,14 @@ export function LoadingScreen() {
       )}
     >
       <div className="flex flex-col items-center gap-4">
-        {/* Threadmap logo animation */}
-        <div className="relative h-16 w-16">
-          {/* Outer ring */}
-          <div className="absolute inset-0 rounded-full border-2 border-foreground/10" />
-          {/* Spinning thread ring */}
-          <div className="absolute inset-0 animate-spin-slow">
-            <div className="h-full w-full rounded-full border-2 border-transparent border-t-foreground/40" />
-          </div>
-          {/* Center mark */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Image
-              src="/favicon.svg"
-              alt=""
-              width={44}
-              height={44}
-              className="h-11 w-11 rounded-xl shadow-[var(--shadow-hairline)] animate-pulse"
-              priority
-            />
-          </div>
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-[24px] border border-border/60 bg-card shadow-[0_18px_45px_-28px_rgba(0,0,0,0.45)]">
+          <ThreadmapMark className="h-14 w-14 text-foreground motion-safe:animate-pulse" />
         </div>
         
         {/* App name */}
         <div className="flex flex-col items-center gap-1">
           <h1 className="text-lg font-semibold tracking-tight">THREADMAP</h1>
-          <p className="text-[11px] text-muted-foreground/70">
+          <p className="text-[11px] text-muted-foreground/70 motion-safe:animate-pulse">
             {language === 'de' ? 'Dein Arbeitsbereich wird geladen…' : 'Loading your workspace…'}
           </p>
         </div>

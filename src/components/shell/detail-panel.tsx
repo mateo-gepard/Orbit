@@ -1057,10 +1057,10 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
   };
 
   const renderContent = ({ optionsOpen, setOptionsOpen }: OptionsMenuState) => (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-background">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3.5 backdrop-blur-xl">
-        <div className="flex items-center gap-2">
+      <div className="relative z-20 flex min-h-14 shrink-0 items-center justify-between border-b border-border/60 bg-background/95 px-4 py-2.5 shadow-[0_10px_30px_-28px_rgba(0,0,0,0.7)] backdrop-blur-xl sm:px-5">
+        <div className="flex min-w-0 items-center gap-2.5">
           {(item.type === 'task' || item.type === 'habit') && (
             <button
               type="button"
@@ -1087,7 +1087,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               {isCurrentComplete && <Check className="h-3 w-3 text-white" />}
             </button>
           )}
-          <span className="text-[11px] text-muted-foreground/50 capitalize">{t(ITEM_TYPE_KEYS[item.type])}</span>
+          <span className="truncate rounded-full border border-border/50 bg-foreground/[0.035] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t(ITEM_TYPE_KEYS[item.type])}</span>
           {isCurrentComplete && (
             <>
               <span className="text-[11px] text-muted-foreground/30">·</span>
@@ -1104,7 +1104,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               setShowLinkGraph(true);
             }}
             aria-label={t('detail.viewLinkGraph')}
-            className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground/50 outline-none hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-8 lg:w-8"
+            className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/55 outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 md:h-9 md:w-9"
             title={t('detail.viewLinkGraph')}
             type="button"
           >
@@ -1116,7 +1116,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground/50 outline-none hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-8 lg:w-8"
+                className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/55 outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 md:h-9 md:w-9"
                 aria-label={t('common.moreOptions')}
               >
                 <MoreVertical className="h-4 w-4" />
@@ -1125,7 +1125,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             <PopoverContent
               align="end"
               aria-label={t('common.moreOptions')}
-              className="max-h-[min(75vh,640px)] w-72 overflow-y-auto p-1"
+              className="max-h-[min(75vh,640px)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border-border/70 p-2 shadow-[0_24px_70px_-28px_rgba(0,0,0,0.45)]"
             >
               {/* Change Type */}
               <div className="px-2 py-2">
@@ -1419,7 +1419,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
       )}
 
       {/* ── Body ── */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4" data-slot="detail-body">
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain bg-foreground/[0.012] px-4 py-5 sm:px-5 md:px-6" data-slot="detail-body">
         {/* Title - Large and prominent */}
         <input
           aria-label={t('detail.itemTitle')}
@@ -1434,7 +1434,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             event.preventDefault();
             void flushEditableFields();
           }}
-          className="w-full rounded-lg bg-transparent px-1 py-1 text-lg font-semibold leading-snug outline-none placeholder:text-muted-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/25"
+          className="w-full rounded-xl border border-transparent bg-transparent px-2 py-2 text-xl font-semibold leading-snug tracking-[-0.025em] outline-none transition-colors placeholder:text-muted-foreground/30 hover:bg-background/70 focus:border-border/60 focus:bg-background focus-visible:ring-2 focus-visible:ring-ring/20"
           placeholder={t('detail.titlePlaceholder')}
         />
 
@@ -1724,10 +1724,10 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
 
   return (
     <>
-      {/* Desktop */}
+      {/* Desktop and tablet: a contained inspector, never the giant modal sheet. */}
       <div className={cn(
-        'hidden lg:block border-l border-border/50 bg-background shadow-[var(--shadow-panel)] transition-[width] duration-200 ease-[var(--ease-standard)]',
-        detailPanelOpen ? 'w-96' : 'w-0 overflow-hidden'
+        'hidden min-h-0 shrink-0 border-l border-border/60 bg-background shadow-[-24px_0_55px_-42px_rgba(0,0,0,0.55)] transition-[width,opacity] duration-200 ease-[var(--ease-standard)] md:block',
+        detailPanelOpen ? 'w-[min(32rem,48vw)] opacity-100' : 'w-0 overflow-hidden opacity-0'
       )}
         ref={desktopPanelRef}
         role="region"
@@ -1740,8 +1740,8 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
         })}
       </div>
 
-      {/* Mobile — full-screen sheet */}
-      <div className="lg:hidden">
+      {/* Mobile: a contained, independently scrolling bottom sheet. */}
+      <div className="md:hidden">
         <Sheet
           open={detailPanelOpen}
           onOpenChange={(open) => {
@@ -1750,8 +1750,9 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
         >
           <SheetContent
             side="bottom"
-            className="mobile-sheet-height rounded-t-2xl p-0 border-0"
+            className="h-[min(92dvh,var(--app-height))] max-h-[calc(var(--app-height)-0.75rem)] overflow-hidden rounded-t-[28px] border-x border-t border-border/60 p-0 shadow-[0_-22px_70px_-32px_rgba(0,0,0,0.55)]"
             showCloseButton={false}
+            overlayClassName="bg-stone-950/25 backdrop-blur-[2px]"
             style={swipeStyles}
           >
           <SheetHeader className="sr-only">
@@ -1759,7 +1760,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           </SheetHeader>
           {/* Swipe Handle */}
           <div
-            className="absolute top-0 left-0 right-0 flex justify-center pt-4 pb-8 cursor-grab active:cursor-grabbing z-10"
+            className="absolute left-0 right-0 top-0 z-30 flex cursor-grab justify-center pb-5 pt-3 active:cursor-grabbing"
             {...swipeHandlers}
           >
             <div className={cn(
@@ -1767,7 +1768,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               isDragging && "bg-muted-foreground/40 w-12"
             )} />
           </div>
-          <div className="h-full overflow-hidden pt-14">
+          <div className="h-full overflow-hidden pt-8">
             {renderContent({
               optionsOpen: optionsOpenMobile,
               setOptionsOpen: setOptionsOpenMobile,

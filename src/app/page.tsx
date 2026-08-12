@@ -629,22 +629,14 @@ function OverviewTile({
   label,
   value,
   icon: Icon,
-  tone,
 }: {
   label: string;
   value: string | number;
   icon: typeof CheckSquare;
-  tone: 'slate' | 'amber' | 'emerald' | 'sky';
 }) {
-  const toneClasses = {
-    slate: 'border-border/60 bg-card/80 text-foreground',
-    amber: 'border-amber-500/20 bg-amber-500/[0.05] text-amber-700 dark:text-amber-300',
-    emerald: 'border-emerald-500/20 bg-emerald-500/[0.05] text-emerald-700 dark:text-emerald-300',
-    sky: 'border-sky-500/20 bg-sky-500/[0.05] text-sky-700 dark:text-sky-300',
-  };
-
   return (
-    <div className={cn('rounded-2xl border p-3.5 shadow-sm shadow-black/[0.02]', toneClasses[tone])}>
+    <div className="group relative overflow-hidden rounded-[20px] border border-border/60 bg-card/90 p-4 text-foreground shadow-[0_14px_35px_-30px_rgba(0,0,0,0.55)] transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-[0_20px_42px_-30px_rgba(0,0,0,0.5)]">
+      <div aria-hidden="true" className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-foreground/25 to-transparent" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-[11px] font-medium text-muted-foreground">{label}</p>
@@ -652,7 +644,7 @@ function OverviewTile({
             {value}
           </p>
         </div>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background/70 text-current">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/50 bg-foreground/[0.035] text-foreground/60 transition-colors group-hover:bg-foreground/[0.06] group-hover:text-foreground">
           <Icon className="h-4 w-4" strokeWidth={1.8} />
         </span>
       </div>
@@ -1140,10 +1132,10 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <OverviewTile label={t('dashboard.tasks')} value={focusTaskCount} icon={CheckSquare} tone="slate" />
-          <OverviewTile label={t('today.notDoneFromBefore')} value={notDoneFromBefore.length} icon={Clock3} tone="amber" />
-          <OverviewTile label={t('nav.habits')} value={habitProgressLabel} icon={Repeat} tone="emerald" />
-          <OverviewTile label={t('nav.projects')} value={activeProjects.length} icon={FolderKanban} tone="sky" />
+          <OverviewTile label={t('dashboard.tasks')} value={focusTaskCount} icon={CheckSquare} />
+          <OverviewTile label={t('today.notDoneFromBefore')} value={notDoneFromBefore.length} icon={Clock3} />
+          <OverviewTile label={t('nav.habits')} value={habitProgressLabel} icon={Repeat} />
+          <OverviewTile label={t('nav.projects')} value={activeProjects.length} icon={FolderKanban} />
         </div>
       )}
 
