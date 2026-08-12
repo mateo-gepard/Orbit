@@ -50,6 +50,9 @@ export default function PrivacyPage() {
         <p>
           Threadmap currently relies on Google Firebase and Google Cloud for authentication, database, storage, functions, and notifications, and on Vercel for web hosting and delivery. Optional integrations send data to the provider you choose, such as Google Calendar or your MCP client. These companies process data under their own terms and applicable data-processing agreements. Depending on your location, processing can involve an international transfer protected by contractual or other lawful safeguards.
         </p>
+        <p>
+          When you authorize an MCP client, it receives only the scopes you approve. The client can request owner-scoped Threadmap records through those tools, so data selected by a tool call can also be processed by the client and any model provider you chose there. Threadmap does not send workspace content to a first-party model provider on its own. Permanent deletion through MCP requires a separate preview and short-lived confirmation step.
+        </p>
         <p>We do not sell personal data and do not use your workspace content for advertising.</p>
       </section>
 
@@ -63,14 +66,14 @@ export default function PrivacyPage() {
       <section>
         <h2>6. Retention and deletion</h2>
         <p>
-          Workspace data is retained while your account is active. You can export your account data and request account deletion from Settings. Deletion removes the authentication account, owned database records, uploaded files, notification registrations, and active integration authorization records through a server-controlled deletion process. Limited security, legal, or backup records may remain where required and are removed according to provider and legal retention schedules.
+          Workspace data is retained while your account is active. You can export your account data and request account deletion from Settings. Deletion removes the authentication account, owned database records, uploaded files, notification registrations, and active integration authorization records through a server-controlled deletion process. Operational and security logs are normally retained for 30 days. Encrypted recovery backups use a seven-day daily and 28-day weekly retention window, so deleted records can remain in protected backups until those copies rotate out. A longer hold applies only where law requires it.
         </p>
       </section>
 
       <section>
         <h2>7. Security</h2>
         <p>
-          We use encrypted transport, managed authentication, per-account database and storage rules, restricted server credentials, bounded uploads, and abuse controls. No online service can guarantee absolute security. Please use a unique password and report suspected vulnerabilities through our <a href="/security">security page</a>.
+          We use encrypted transport, managed authentication, optional authenticator-app two-factor authentication, per-account database and storage rules, restricted server credentials, bounded uploads, and abuse controls. No online service can guarantee absolute security. Please use a unique password and report suspected vulnerabilities through our <a href="/security">security page</a>.
         </p>
       </section>
 

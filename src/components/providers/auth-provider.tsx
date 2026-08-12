@@ -23,14 +23,19 @@ import {
   isSignInWithEmailLink,
   signInWithEmailLink,
   sendPasswordResetEmail,
+  getMultiFactorResolver,
+  TotpMultiFactorGenerator,
   type User,
   type IdTokenResult,
+  type MultiFactorResolver,
 } from 'firebase/auth';
+import { MfaChallengeDialog } from '@/components/auth/mfa-challenge-dialog';
 import { auth, googleProvider } from '@/lib/firebase';
 import { stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { clearGoogleAccessToken } from '@/lib/google-calendar';
 import { deleteAccountData } from '@/lib/account-data';
 import { unregisterFCMToken } from '@/lib/fcm';
+import { findTotpFactor, normalizeTotpCode } from '@/lib/mfa';
 
 /**
  * How long to wait for Firebase to report an auth state before falling back to
@@ -128,7 +133,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [emailLinkState, setEmailLinkState] = useState<EmailLinkState>('idle');
   const [emailLinkError, setEmailLinkError] = useState<string | null>(null);
   const [pendingEmailLinkUrl, setPendingEmailLinkUrl] = useState<string | null>(null);
+  const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
   const emailLinkCheckedRef = useRef(false);
+
+  const beginMfaChallenge = useCallback((error: unknown): boolean => {
+    if (!auth || (error as { code?: string })?.code !== 'auth/multi-factor-auth-required') {
+      return false;
+    }
+    try {
+      const resolver = getMultiFactorResolver(
+        auth,
+        error as Parameters<typeof getMultiFactorResolver>[1],
+      );
+      setMfaResolver(resolver);
+      return true;
+    } catch (resolverError) {
+      console.error('[THREADMAP Auth] Could not start the MFA challenge:', resolverError);
+      return false;
+    }
+  }, []);
 
   const unregisterCurrentDevice = useCallback(async () => {
     const currentUser = auth?.currentUser;
@@ -176,7 +199,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Complete a redirect started because the popup was blocked.
     void getRedirectResult(auth).catch((error) => {
-      console.error('[THREADMAP Auth] Redirect sign-in result failed:', error);
+      if (!beginMfaChallenge(error)) {
+        console.error('[THREADMAP Auth] Redirect sign-in result failed:', error);
+      }
     });
 
     /**
@@ -242,7 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubscribe();
       stopGoogleCalendarSync(); // Stop sync on unmount
     };
-  }, [continueAsDemo]);
+  }, [beginMfaChallenge, continueAsDemo]);
 
   const signInWithGoogle = useCallback(async () => {
     if (!auth || !googleProvider) {
@@ -252,6 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await unregisterCurrentDevice();
       await signInWithPopup(auth, googleProvider);
     } catch (error: unknown) {
+      if (beginMfaChallenge(error)) return;
       const code = (error as { code?: string })?.code || '';
       if (code === 'auth/popup-closed-by-user') {
         throw new Error('Google sign-in was cancelled.');
@@ -278,15 +304,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       throw new Error('Google sign-in failed.');
     }
-  }, [unregisterCurrentDevice]);
+  }, [beginMfaChallenge, unregisterCurrentDevice]);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     if (!auth) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     await unregisterCurrentDevice();
-    await signInWithEmailAndPassword(auth, email, password);
-  }, [unregisterCurrentDevice]);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      if (beginMfaChallenge(error)) return;
+      throw error;
+    }
+  }, [beginMfaChallenge, unregisterCurrentDevice]);
 
   const signUpWithEmail = useCallback(async (email: string, password: string, displayName?: string) => {
     if (!auth) {
@@ -328,12 +359,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPendingEmailLinkUrl(null);
       setEmailLinkState('idle');
     } catch (error) {
+      if (beginMfaChallenge(error)) {
+        setEmailLinkState('idle');
+        setEmailLinkError(null);
+        return;
+      }
       const message = error instanceof Error ? error.message : 'Email-link sign-in failed.';
       setEmailLinkError(message);
       setEmailLinkState('error');
       throw error;
     }
-  }, [unregisterCurrentDevice]);
+  }, [beginMfaChallenge, unregisterCurrentDevice]);
 
   const completeEmailLink = useCallback(async (email: string) => {
     const href = pendingEmailLinkUrl || (typeof window !== 'undefined' ? window.location.href : '');
@@ -378,6 +414,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [finishEmailLinkSignIn]);
+
+  const resolveMfaChallenge = useCallback(async (code: string) => {
+    const resolver = mfaResolver;
+    if (!resolver) throw new Error('No multi-factor sign-in is pending.');
+    const factor = findTotpFactor(resolver.hints);
+    if (!factor) throw new Error('No supported authenticator factor is available.');
+
+    const assertion = TotpMultiFactorGenerator.assertionForSignIn(
+      factor.uid,
+      normalizeTotpCode(code),
+    );
+    await resolver.resolveSignIn(assertion);
+    setMfaResolver(null);
+    setLocalModeEnabled(false);
+    window.localStorage.removeItem(EMAIL_LINK_KEY);
+    if (auth && isSignInWithEmailLink(auth, window.location.href)) {
+      window.history.replaceState(null, '', window.location.pathname || '/');
+    }
+    setPendingEmailLinkUrl(null);
+    setEmailLinkError(null);
+    setEmailLinkState('idle');
+  }, [mfaResolver]);
+
+  const cancelMfaChallenge = useCallback(() => {
+    setMfaResolver(null);
+  }, []);
 
   const deleteAccount = useCallback(async () => {
     if (isDemo) {
@@ -480,6 +542,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
+      <MfaChallengeDialog
+        resolver={mfaResolver}
+        onCancel={cancelMfaChallenge}
+        onResolve={resolveMfaChallenge}
+      />
     </AuthContext.Provider>
   );
 }

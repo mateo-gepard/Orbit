@@ -33,6 +33,9 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=high
 
+      - name: License policy
+        run: npm run audit:licenses
+
       - name: Lint
         run: npm run lint
 
@@ -93,6 +96,10 @@ jobs:
       - name: Dependency audit
         working-directory: functions
         run: npm audit --audit-level=high
+
+      - name: License policy
+        working-directory: functions
+        run: node ../scripts/check-licenses.mjs .
 
       - name: Build functions
         working-directory: functions
