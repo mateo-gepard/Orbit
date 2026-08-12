@@ -136,7 +136,6 @@ export function createAuthorizationErrorRedirect(
 
 export interface ThreadmapOAuthConfiguration
   extends OAuthEndpointConfiguration, RedirectUriPolicy {
-  ownerUid: string;
   dynamicClientScopes?: readonly string[];
   accessTokenTtlSeconds?: number;
   refreshTokenTtlSeconds?: number;
@@ -146,7 +145,6 @@ export interface ThreadmapOAuthConfiguration
 
 export interface ResolvedThreadmapOAuthConfiguration
   extends OAuthEndpointConfiguration, RedirectUriPolicy {
-  ownerUid: string;
   dynamicClientScopes: string[];
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
@@ -385,11 +383,11 @@ function expectStringArray(
   return [...value];
 }
 
-function validateOwnerUid(uid: string): string {
-  if (uid.length < 1 || uid.length > 128 || /[\/\u0000-\u001F\u007F]/.test(uid)) {
-    throw new Error('ownerUid is invalid.');
-  }
-  return uid;
+function isValidUserId(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length >= 1
+    && value.length <= 128
+    && !/[\/\u0000-\u001F\u007F]/.test(value);
 }
 
 function validateClientName(value: unknown, platform: RedirectUriPlatform): string {
@@ -498,7 +496,8 @@ function authorizationRequestDocument(value: unknown): AuthorizationRequestDocum
       || typeof value.codeChallenge !== 'string'
       || value.codeChallengeMethod !== 'S256'
       || typeof value.createdAt !== 'number'
-      || typeof value.expiresAt !== 'number') {
+      || typeof value.expiresAt !== 'number'
+      || (value.userId !== undefined && !isValidUserId(value.userId))) {
     return null;
   }
   return value as unknown as AuthorizationRequestDocument;
@@ -508,7 +507,7 @@ function authorizationCodeDocument(value: unknown): AuthorizationCodeDocument | 
   if (!isRecord(value)
       || (value.status !== 'active' && value.status !== 'consumed')
       || typeof value.clientId !== 'string'
-      || typeof value.userId !== 'string'
+      || !isValidUserId(value.userId)
       || typeof value.redirectUri !== 'string'
       || typeof value.resource !== 'string'
       || !Array.isArray(value.scopes)
@@ -526,7 +525,7 @@ function tokenFamilyDocument(value: unknown): TokenFamilyDocument | null {
   if (!isRecord(value)
       || (value.status !== 'active' && value.status !== 'revoked')
       || typeof value.clientId !== 'string'
-      || typeof value.userId !== 'string'
+      || !isValidUserId(value.userId)
       || typeof value.resource !== 'string'
       || typeof value.createdAt !== 'number'
       || typeof value.expiresAt !== 'number'
@@ -540,7 +539,7 @@ function accessTokenDocument(value: unknown): AccessTokenDocument | null {
   if (!isRecord(value)
       || (value.status !== 'active' && value.status !== 'revoked')
       || typeof value.clientId !== 'string'
-      || typeof value.userId !== 'string'
+      || !isValidUserId(value.userId)
       || typeof value.resource !== 'string'
       || !Array.isArray(value.scopes)
       || !value.scopes.every((scope) => typeof scope === 'string')
@@ -556,7 +555,7 @@ function refreshTokenDocument(value: unknown): RefreshTokenDocument | null {
   if (!isRecord(value)
       || (value.status !== 'active' && value.status !== 'consumed' && value.status !== 'revoked')
       || typeof value.clientId !== 'string'
-      || typeof value.userId !== 'string'
+      || !isValidUserId(value.userId)
       || typeof value.resource !== 'string'
       || !Array.isArray(value.scopes)
       || !value.scopes.every((scope) => typeof scope === 'string')
@@ -580,7 +579,6 @@ export function resolveThreadmapOAuthConfiguration(
   configuration: ThreadmapOAuthConfiguration
 ): ResolvedThreadmapOAuthConfiguration {
   validateOAuthEndpointConfiguration(configuration);
-  validateOwnerUid(configuration.ownerUid);
   validateHttpsUrl(THREADMAP_AUTHORIZATION_CONSENT_URL, 'authorization consent URL', {
     allowPath: true,
     allowQuery: false,
@@ -605,7 +603,6 @@ export function resolveThreadmapOAuthConfiguration(
 
   return {
     ...configuration,
-    ownerUid: configuration.ownerUid,
     scopesSupported: supportedScopes,
     dynamicClientScopes,
     configuredRedirectUris,
@@ -906,7 +903,7 @@ export class ThreadmapOAuthService {
     requestToken: unknown,
     authenticatedUid: string
   ): Promise<AuthorizationRequestView> {
-    this.assertOwner(authenticatedUid);
+    this.assertAuthenticatedUser(authenticatedUid);
     const normalizedToken = this.expectOpaqueToken(
       requestToken,
       'tmar_',
@@ -953,7 +950,7 @@ export class ThreadmapOAuthService {
     authenticatedUid: string,
     approvedScopes?: unknown
   ): Promise<AuthorizationDecisionResult> {
-    this.assertOwner(authenticatedUid);
+    this.assertAuthenticatedUser(authenticatedUid);
     const normalizedToken = this.expectOpaqueToken(
       requestToken,
       'tmar_',
@@ -1040,7 +1037,7 @@ export class ThreadmapOAuthService {
     requestToken: unknown,
     authenticatedUid: string
   ): Promise<AuthorizationDecisionResult> {
-    this.assertOwner(authenticatedUid);
+    this.assertAuthenticatedUser(authenticatedUid);
     const normalizedToken = this.expectOpaqueToken(
       requestToken,
       'tmar_',
@@ -1141,8 +1138,7 @@ export class ThreadmapOAuthService {
     const now = this.now();
     if (!tokenDocument || tokenDocument.status !== 'active'
         || tokenDocument.expiresAt <= now
-        || tokenDocument.resource !== this.configuration.resource
-        || tokenDocument.userId !== this.configuration.ownerUid) {
+        || tokenDocument.resource !== this.configuration.resource) {
       throw new OAuthProtocolError('invalid_token', 'The access token is invalid or expired.', {
         status: 401,
       });
@@ -1247,28 +1243,40 @@ export class ThreadmapOAuthService {
     authenticatedUid: string,
     reason: 'owner_disconnect' | 'security_event' | 'administrative' = 'owner_disconnect'
   ): Promise<boolean> {
-    this.assertOwner(authenticatedUid);
+    this.assertAuthenticatedUser(authenticatedUid);
     let clientId: string;
     try {
       clientId = validateClientId(clientIdValue);
     } catch {
       throw new OAuthProtocolError('invalid_request', 'client_id is invalid.');
     }
+    const clientSnapshot = await this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId).get();
+    if (!clientDocument(clientSnapshot.data())) return false;
+
+    // Dynamic OAuth clients are shared registrations. Disconnecting one user
+    // must revoke only that user's token families, never the client for everyone.
+    const familySnapshots = await this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
+      .where('userId', '==', authenticatedUid)
+      .get();
+    const activeFamilies = familySnapshots.docs.filter((snapshot) => {
+      const family = tokenFamilyDocument(snapshot.data());
+      return family?.clientId === clientId && family.status === 'active';
+    });
+    if (activeFamilies.length === 0) return false;
+
     const now = this.now();
-    return this.db.runTransaction(async (transaction) => {
-      const clientRef = this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId);
-      const snapshot = await transaction.get(clientRef);
-      const client = clientDocument(snapshot.data());
-      if (!client) return false;
-      if (client.revokedAt === undefined) {
-        transaction.update(clientRef, {
+    for (let offset = 0; offset < activeFamilies.length; offset += 400) {
+      const batch = this.db.batch();
+      for (const snapshot of activeFamilies.slice(offset, offset + 400)) {
+        batch.update(snapshot.ref, {
+          status: 'revoked',
           revokedAt: now,
-          updatedAt: now,
           revocationReason: reason,
         });
       }
-      return true;
-    });
+      await batch.commit();
+    }
+    return true;
   }
 
   async revokeTokenFamily(
@@ -1276,7 +1284,7 @@ export class ThreadmapOAuthService {
     authenticatedUid: string,
     reason: 'owner_disconnect' | 'security_event' | 'administrative' = 'owner_disconnect'
   ): Promise<boolean> {
-    this.assertOwner(authenticatedUid);
+    this.assertAuthenticatedUser(authenticatedUid);
     if (typeof tokenFamilyId !== 'string' || !/^tmf_[A-Za-z0-9_-]{20,100}$/.test(tokenFamilyId)) {
       throw new OAuthProtocolError('invalid_request', 'token family is invalid.');
     }
@@ -1297,9 +1305,9 @@ export class ThreadmapOAuthService {
     });
   }
 
-  private assertOwner(authenticatedUid: string): void {
-    if (!constantTimeStringEqual(authenticatedUid, this.configuration.ownerUid)) {
-      throw new OAuthProtocolError('access_denied', 'Only the Threadmap owner may authorize access.', {
+  private assertAuthenticatedUser(authenticatedUid: string): void {
+    if (!isValidUserId(authenticatedUid)) {
+      throw new OAuthProtocolError('access_denied', 'A valid Threadmap user is required.', {
         status: 403,
       });
     }
@@ -1443,16 +1451,17 @@ export class ThreadmapOAuthService {
       const currentClientSnapshot = await transaction.get(clientRef);
       const codeDocument = authorizationCodeDocument(codeSnapshot.data());
       const currentClient = ensureActiveClient(clientDocument(currentClientSnapshot.data()));
-      const deletionJobSnapshot = await transaction.get(
-        this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(this.configuration.ownerUid)
-      );
+      const deletionJobSnapshot = codeDocument
+        ? await transaction.get(
+          this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(codeDocument.userId)
+        )
+        : null;
       if (!codeDocument || codeDocument.status !== 'active' || codeDocument.expiresAt <= now
           || codeDocument.clientId !== currentClient.clientId
-          || codeDocument.userId !== this.configuration.ownerUid
           || codeDocument.redirectUri !== redirectUri
           || codeDocument.resource !== resource
           || !verifyPkceS256(verifier, codeDocument.codeChallenge)
-          || deletionJobSnapshot.exists) {
+          || deletionJobSnapshot?.exists) {
         throw new OAuthProtocolError(
           'invalid_grant',
           'The authorization code is invalid, expired, or already used.'
@@ -1557,14 +1566,15 @@ export class ThreadmapOAuthService {
       const currentClientSnapshot = await transaction.get(clientRef);
       const currentClient = ensureActiveClient(clientDocument(currentClientSnapshot.data()));
       const oldRefresh = refreshTokenDocument(refreshSnapshot.data());
-      const deletionJobSnapshot = await transaction.get(
-        this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(this.configuration.ownerUid)
-      );
+      const deletionJobSnapshot = oldRefresh
+        ? await transaction.get(
+          this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(oldRefresh.userId)
+        )
+        : null;
       if (!oldRefresh || oldRefresh.clientId !== currentClient.clientId
           || oldRefresh.resource !== resource
-          || oldRefresh.userId !== this.configuration.ownerUid
           || oldRefresh.expiresAt <= now
-          || deletionJobSnapshot.exists) {
+          || deletionJobSnapshot?.exists) {
         throw new OAuthProtocolError('invalid_grant', 'The refresh token is invalid or expired.');
       }
       const familyRef = this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)

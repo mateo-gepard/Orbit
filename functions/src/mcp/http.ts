@@ -54,7 +54,7 @@ export interface McpHttpDependencies {
   endpoints: ResolvedMcpEndpoints;
   createDataAccess: (principal: OAuthPrincipal) => ThreadmapDataAccess;
   /** Verifies a Threadmap Firebase ID token and resolves its uid. */
-  verifyOwnerIdToken: (idToken: string) => Promise<string>;
+  verifyUserIdToken: (idToken: string) => Promise<string>;
   /** Structured, redacted request logging. */
   log?: (entry: Record<string, unknown>) => void;
 }
@@ -156,7 +156,7 @@ function consentOriginAllowed(request: Request, endpoints: ResolvedMcpEndpoints)
   return endpoints.consentOrigins.includes(origin);
 }
 
-async function requireOwner(
+async function requireUser(
   request: Request,
   dependencies: McpHttpDependencies,
 ): Promise<string> {
@@ -165,7 +165,7 @@ async function requireOwner(
     throw new OAuthProtocolError('invalid_client', 'A Threadmap sign-in is required.', { status: 401 });
   }
   try {
-    return await dependencies.verifyOwnerIdToken(idToken);
+    return await dependencies.verifyUserIdToken(idToken);
   } catch {
     throw new OAuthProtocolError('invalid_client', 'The Threadmap sign-in could not be verified.', {
       status: 401,
@@ -271,14 +271,14 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
   }
 
   async function handleConsentView(request: Request): Promise<Response> {
-    const uid = await requireOwner(request, dependencies);
+    const uid = await requireUser(request, dependencies);
     const requestToken = new URL(request.url).searchParams.get('request');
     const view = await oauth.getAuthorizationRequest(requestToken, uid);
     return jsonResponse(200, view);
   }
 
   async function handleConsentDecision(request: Request, decision: 'approve' | 'deny'): Promise<Response> {
-    const uid = await requireOwner(request, dependencies);
+    const uid = await requireUser(request, dependencies);
     const body = await readRequestParameters(request);
     const result = decision === 'approve'
       ? await oauth.approveAuthorizationRequest(body.request, uid, body.scopes)

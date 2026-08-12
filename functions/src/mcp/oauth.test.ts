@@ -29,7 +29,6 @@ import {
 import { MemoryFirestore } from './memory-firestore';
 
 const configuration: ThreadmapOAuthConfiguration = {
-  ownerUid: 'threadmap-owner',
   issuer: 'https://mcp.threadmap.app',
   resource: 'https://mcp.threadmap.app/mcp',
   authorizationEndpoint: 'https://mcp.threadmap.app/authorize',
@@ -42,6 +41,7 @@ const configuration: ThreadmapOAuthConfiguration = {
   dynamicClientScopes: ['threadmap.read', 'offline_access'],
   resourceName: 'Threadmap',
 };
+const TEST_USER_UID = 'threadmap-user';
 
 test('PKCE S256 matches the RFC 7636 example and rejects an incorrect verifier', () => {
   const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
@@ -189,13 +189,13 @@ test('full DCR, consent, code, access, refresh rotation, and replay revocation f
     'raw authorization-request handles must never be persisted'
   );
 
-  const requestView = await service.getAuthorizationRequest(requestToken, configuration.ownerUid);
+  const requestView = await service.getAuthorizationRequest(requestToken, TEST_USER_UID);
   assert.equal(requestView.clientName, 'Claude');
   assert.deepEqual(requestView.scopes, ['threadmap.read', 'offline_access']);
 
   const decision = await service.approveAuthorizationRequest(
     requestToken,
-    configuration.ownerUid
+    TEST_USER_UID
   );
   const callback = new URL(decision.location);
   const code = callback.searchParams.get('code');
@@ -219,7 +219,7 @@ test('full DCR, consent, code, access, refresh rotation, and replay revocation f
   assert.equal(persistedAfterExchange.includes(hashOpaqueToken(tokens.access_token)), true);
 
   const principal = await service.authenticateAccessToken(tokens.access_token, ['threadmap.read']);
-  assert.equal(principal.userId, configuration.ownerUid);
+  assert.equal(principal.userId, TEST_USER_UID);
   assert.equal(principal.clientId, registration.client_id);
 
   await assert.rejects(
@@ -257,6 +257,56 @@ test('full DCR, consent, code, access, refresh rotation, and replay revocation f
     service.authenticateAccessToken(rotated.access_token, ['threadmap.read']),
     (error) => error instanceof OAuthProtocolError && error.code === 'invalid_token'
   );
+});
+
+test('authorization tokens stay bound to each consenting Threadmap user', async () => {
+  const firestore = new MemoryFirestore();
+  const service = new ThreadmapOAuthService(
+    firestore as unknown as Firestore,
+    configuration,
+  );
+  const registration = await service.registerClient({
+    redirect_uris: [CLAUDE_REDIRECT_URI],
+    token_endpoint_auth_method: 'none',
+    grant_types: ['authorization_code'],
+    response_types: ['code'],
+    scope: 'threadmap.read',
+  });
+
+  const authorizeUser = async (userId: string, verifier: string) => {
+    const authorization = await service.startAuthorization({
+      response_type: 'code',
+      client_id: registration.client_id,
+      redirect_uri: CLAUDE_REDIRECT_URI,
+      resource: configuration.resource,
+      scope: 'threadmap.read',
+      code_challenge: createPkceS256Challenge(verifier),
+      code_challenge_method: 'S256',
+    });
+    const requestToken = new URL(authorization.location).searchParams.get('request');
+    if (!requestToken) throw new Error('Missing authorization request handle.');
+    await service.getAuthorizationRequest(requestToken, userId);
+    const decision = await service.approveAuthorizationRequest(requestToken, userId);
+    const code = new URL(decision.location).searchParams.get('code');
+    if (!code) throw new Error('Missing authorization code.');
+    return service.exchangeToken({
+      grant_type: 'authorization_code',
+      client_id: registration.client_id,
+      code,
+      redirect_uri: CLAUDE_REDIRECT_URI,
+      code_verifier: verifier,
+      resource: configuration.resource,
+    });
+  };
+
+  const firstTokens = await authorizeUser('user-one', 'a'.repeat(43));
+  const secondTokens = await authorizeUser('user-two', 'b'.repeat(43));
+  const firstPrincipal = await service.authenticateAccessToken(firstTokens.access_token);
+  const secondPrincipal = await service.authenticateAccessToken(secondTokens.access_token);
+
+  assert.equal(firstPrincipal.userId, 'user-one');
+  assert.equal(secondPrincipal.userId, 'user-two');
+  assert.notEqual(firstTokens.access_token, secondTokens.access_token);
 });
 
 test('registration narrows an over-broad scope request instead of refusing it', () => {
@@ -310,7 +360,7 @@ test('registration narrows an over-broad scope request instead of refusing it', 
     });
     const handle = new URL(authorization.location).searchParams.get('request');
     if (!handle) throw new Error('Missing authorization request handle.');
-    const view = await service.getAuthorizationRequest(handle, configuration.ownerUid);
+    const view = await service.getAuthorizationRequest(handle, TEST_USER_UID);
     // The user is asked to approve only what is actually grantable.
     assert.deepEqual(view.scopes.sort(), ['offline_access', 'threadmap.read']);
 

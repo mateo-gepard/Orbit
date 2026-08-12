@@ -1944,9 +1944,9 @@ export const deleteThreadmapAccount = onCall(
 
 /**
  * Built once per instance and reused across invocations. Configuration errors
- * are captured rather than thrown at module scope, so a missing `MCP_OWNER_UID`
- * degrades this one endpoint to `503` instead of breaking every function in the
- * deployment at cold start.
+ * are captured rather than thrown at module scope, so invalid MCP environment
+ * settings degrade this one endpoint to `503` instead of breaking every
+ * function in the deployment at cold start.
  */
 let mcpRouterResult: { router: McpRouter; origin: string } | { error: Error } | undefined;
 
@@ -1961,7 +1961,7 @@ function getMcpRouter(): { router: McpRouter; origin: string } | { error: Error 
         oauth,
         endpoints,
         createDataAccess: (principal) => new ThreadmapDal(db, principal),
-        verifyOwnerIdToken: async (idToken) => (await auth.verifyIdToken(idToken)).uid,
+        verifyUserIdToken: async (idToken) => (await auth.verifyIdToken(idToken)).uid,
         log: (entry) => {
           // Cloud Logging picks structured JSON off stdout. Only identifiers and
           // outcomes are logged: never tokens, arguments, or item content.

@@ -114,24 +114,10 @@ export function resolveMcpEndpoints(
   };
 }
 
-/**
- * Builds the OAuth configuration from the environment.
- *
- * `MCP_OWNER_UID` is required: this authorization server issues tokens for
- * exactly one Threadmap account, and every token, authorization request, and
- * tool call is checked against it. Without it there is no safe default, so
- * resolution fails loudly rather than serving an open endpoint.
- */
+/** Builds the OAuth configuration from the environment. */
 export function resolveMcpOAuthConfiguration(
   endpoints: ResolvedMcpEndpoints = resolveMcpEndpoints(),
 ): ThreadmapOAuthConfiguration {
-  const ownerUid = trimmedEnv('MCP_OWNER_UID');
-  if (!ownerUid) {
-    throw new McpConfigurationError(
-      'MCP_OWNER_UID is not configured, so the MCP endpoint cannot identify its owner.',
-    );
-  }
-
   const rawDynamicScopes = trimmedEnv('MCP_DYNAMIC_CLIENT_SCOPES');
   let dynamicClientScopes: string[];
   try {
@@ -147,7 +133,6 @@ export function resolveMcpOAuthConfiguration(
     .filter((value) => value.length > 0);
 
   return {
-    ownerUid,
     issuer: endpoints.origin,
     resource: endpoints.resource,
     authorizationEndpoint: endpoints.authorize,

@@ -19,7 +19,6 @@ const CLAUDE_REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
 const CODE_VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
 
 process.env.MCP_ORIGIN = ORIGIN;
-process.env.MCP_OWNER_UID = OWNER_UID;
 
 interface Harness {
   router: McpRouter;
@@ -53,7 +52,7 @@ function buildHarness(): Harness {
       linkItems: unimplemented('linkItems'),
       unlinkItems: unimplemented('unlinkItems'),
     } as unknown as ThreadmapDataAccess),
-    verifyOwnerIdToken: async (idToken) => {
+    verifyUserIdToken: async (idToken) => {
       if (idToken !== OWNER_ID_TOKEN) throw new Error('bad id token');
       return OWNER_UID;
     },
