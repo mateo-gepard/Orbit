@@ -58,7 +58,7 @@ export function McpSettings() {
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-background/55">Threadmap MCP</p>
             <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">Let your AI work with your map, securely.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-background/65">
-              Connect an MCP-compatible client to the Threadmap account currently signed in during authorization. Every connection remains isolated to that user's data.
+              Connect an MCP-compatible client to the Threadmap account currently signed in during authorization. Every connection remains isolated to that user&apos;s data.
             </p>
           </div>
           <div className="flex items-start">

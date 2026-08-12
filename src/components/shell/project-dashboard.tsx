@@ -100,6 +100,17 @@ export function ProjectDashboard() {
     return () => cancelAnimationFrame(frame);
   }, [item, isEditingDescription]);
 
+  useEffect(() => {
+    setOptionsOpenDesktop(false);
+    setOptionsOpenMobile(false);
+  }, [item?.id]);
+
+  useEffect(() => {
+    if (detailPanelOpen) return;
+    setOptionsOpenDesktop(false);
+    setOptionsOpenMobile(false);
+  }, [detailPanelOpen]);
+
   if (!item || item.type !== 'project') return null;
 
   const projectNotes = items.filter((i) => i.parentId === item.id && i.type === 'note' && i.status !== 'archived');
@@ -147,6 +158,9 @@ export function ProjectDashboard() {
 
   const handleNewTask = async (projectId: string, status: ItemStatus = 'active') => {
     if (!user) return;
+    // This callback is only invoked by user interactions, never during render.
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
     const id = await createItem({
       type: 'task',
       status,
@@ -154,8 +168,8 @@ export function ProjectDashboard() {
       parentId: projectId,
       tags: [],
       userId: user.uid,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     });
     setSelectedItemId(id);
   };
@@ -222,17 +236,6 @@ export function ProjectDashboard() {
     fullTimestampPattern(dateFormat, timeFormat),
     { locale }
   );
-
-  useEffect(() => {
-    setOptionsOpenDesktop(false);
-    setOptionsOpenMobile(false);
-  }, [item?.id]);
-
-  useEffect(() => {
-    if (detailPanelOpen) return;
-    setOptionsOpenDesktop(false);
-    setOptionsOpenMobile(false);
-  }, [detailPanelOpen]);
 
   const renderContent = ({ optionsOpen, setOptionsOpen }: OptionsMenuState) => (
     <div className="flex h-full flex-col">
