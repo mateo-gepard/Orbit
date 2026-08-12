@@ -75,7 +75,9 @@ export function CommandBar() {
   const googleCalendarSyncEnabled = settings.calendar.googleCalendarSync;
   const language = settings.language;
   const [input, setInput] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // No hidden default selection: Enter follows the visible create action until
+  // arrow-key navigation explicitly selects a suggestion or search result.
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const [resolvedLink, setResolvedLink] = useState<OrbitItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -92,7 +94,8 @@ export function CommandBar() {
   // Autocomplete state
   // Tags (#)
   const lastHashIndex = input.lastIndexOf('#');
-  const isTypingTag = lastHashIndex !== -1 && 
+  const isTypingTag = lastHashIndex !== -1 &&
+    (lastHashIndex === 0 || /\s/.test(input[lastHashIndex - 1])) &&
     (lastHashIndex === input.length - 1 || /^[\p{L}\p{M}\p{N}_-]*$/u.test(input.slice(lastHashIndex + 1)));
   const tagQuery = isTypingTag ? input.slice(lastHashIndex + 1).toLowerCase() : '';
   const suggestedTags = isTypingTag && (tagQuery || lastHashIndex === input.length - 1)
@@ -101,7 +104,8 @@ export function CommandBar() {
 
   // Priorities (!)
   const lastExclamationIndex = input.lastIndexOf('!');
-  const isTypingPriority = lastExclamationIndex !== -1 && 
+  const isTypingPriority = lastExclamationIndex !== -1 &&
+    (lastExclamationIndex === 0 || /\s/.test(input[lastExclamationIndex - 1])) &&
     (lastExclamationIndex === input.length - 1 || /^[a-zA-Z]*$/.test(input.slice(lastExclamationIndex + 1)));
   const priorityQuery = isTypingPriority ? input.slice(lastExclamationIndex + 1).toLowerCase() : '';
   const priorities = ['high', 'medium', 'low'];
@@ -112,7 +116,8 @@ export function CommandBar() {
   // Linking (@) — check that everything after last @ is a valid query (no special command chars like # or !)
   const lastAtIndex = input.lastIndexOf('@');
   const afterAt = lastAtIndex !== -1 ? input.slice(lastAtIndex + 1) : '';
-  const isTypingLink = lastAtIndex !== -1 && 
+  const isTypingLink = lastAtIndex !== -1 &&
+    (lastAtIndex === 0 || /\s/.test(input[lastAtIndex - 1])) &&
     (lastAtIndex === input.length - 1 || !/[#!]/.test(afterAt));
   const linkQuery = isTypingLink ? afterAt.toLowerCase().trim() : '';
   
@@ -151,7 +156,7 @@ export function CommandBar() {
   useEffect(() => {
     if (commandBarOpen) {
       setInput('');
-      setSelectedIndex(0);
+      setSelectedIndex(-1);
       setResolvedLink(null);
     }
   }, [commandBarOpen]);
@@ -172,15 +177,16 @@ export function CommandBar() {
     if (!input.trim() || !user) return;
 
     const parsed = parseCommand(input, { knownTitles });
-    const effectiveTags = activeTag && !parsed.tags.includes(activeTag)
-      ? [...parsed.tags, activeTag]
+    const normalizedActiveTag = activeTag?.toLowerCase();
+    const effectiveTags = normalizedActiveTag && !parsed.tags.includes(normalizedActiveTag)
+      ? [...parsed.tags, normalizedActiveTag]
       : parsed.tags;
 
     // If only tags were typed (no actual title), don't create an item
-    if (!parsed.title.trim() && parsed.tags.length > 0) {
+    if (!parsed.title.trim() && effectiveTags.length > 0) {
       // Just auto-create the tags and close
       try {
-        parsed.tags.forEach(tag => {
+        effectiveTags.forEach(tag => {
           if (!allTags.includes(tag)) {
             addCustomTag(tag);
           }
@@ -350,14 +356,14 @@ export function CommandBar() {
   const handleSelectTag = (tag: string) => {
     const beforeHash = input.slice(0, lastHashIndex);
     setInput(`${beforeHash}#${tag} `);
-    setSelectedIndex(0);
+    setSelectedIndex(-1);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const handleSelectPriority = (priority: string) => {
     const beforeExclamation = input.slice(0, lastExclamationIndex);
     setInput(`${beforeExclamation}!${priority} `);
-    setSelectedIndex(0);
+    setSelectedIndex(-1);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
@@ -368,32 +374,37 @@ export function CommandBar() {
     const newInput = `${beforeAt}@${item.title} `;
     setInput(newInput);
     setResolvedLink(item);
-    setSelectedIndex(0);
+    setSelectedIndex(-1);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const TypeIcon = TYPE_ICONS[parsed.type] || CheckSquare;
-  const isCreateMode = input.startsWith('/') || (input.trim() && filteredItems.length === 0);
+  const isCreateMode = Boolean(
+    input.startsWith('/')
+      || parsed.tags.length > 0
+      || parsed.priority
+      || parsed.linkedItemTitles?.length
+      || (input.trim() && filteredItems.length === 0),
+  );
   // The parser owns mention handling now, so the title it returns is the title
   // that gets stored — no second cleanup pass that could disagree with it.
   const previewTitle = parsed.title;
-  const previewTags = activeTag && !parsed.tags.includes(activeTag)
-    ? [...parsed.tags, activeTag]
+  const normalizedPreviewTag = activeTag?.toLowerCase();
+  const previewTags = normalizedPreviewTag && !parsed.tags.includes(normalizedPreviewTag)
+    ? [...parsed.tags, normalizedPreviewTag]
     : parsed.tags;
-  const activeOptionId = suggestedTags.length > 0
-    ? `command-tag-${Math.min(selectedIndex, suggestedTags.length - 1)}`
-    : suggestedPriorities.length > 0
-      ? `command-priority-${Math.min(selectedIndex, suggestedPriorities.length - 1)}`
-      : suggestedLinks.length > 0
-        ? `command-link-${Math.min(selectedIndex, suggestedLinks.length - 1)}`
-        : filteredItems.length > 0 && !input.startsWith('/')
-          ? `command-result-${Math.min(selectedIndex, filteredItems.length - 1)}`
-          : input.trim() && isCreateMode && (previewTitle || resolvedLink)
-            ? 'command-create-item'
-            : input.trim() && isCreateMode && parsed.tags.length > 0
-              ? 'command-create-tags'
-              : undefined;
-  const hasListboxOptions = Boolean(activeOptionId);
+  const activeOptionId = selectedIndex >= 0
+    ? suggestedTags.length > 0
+      ? `command-tag-${Math.min(selectedIndex, suggestedTags.length - 1)}`
+      : suggestedPriorities.length > 0
+        ? `command-priority-${Math.min(selectedIndex, suggestedPriorities.length - 1)}`
+        : suggestedLinks.length > 0
+          ? `command-link-${Math.min(selectedIndex, suggestedLinks.length - 1)}`
+          : filteredItems.length > 0 && !input.startsWith('/')
+            ? `command-result-${Math.min(selectedIndex, filteredItems.length - 1)}`
+            : undefined
+    : undefined;
+  const hasListboxOptions = showingAutocomplete || (filteredItems.length > 0 && !input.startsWith('/'));
 
   return (
     <Dialog
@@ -427,12 +438,16 @@ export function CommandBar() {
               ref={inputRef}
               disabled={submitting}
               value={input}
-              onChange={(e) => { setInput(e.target.value); setSelectedIndex(0); setResolvedLink(null); }}
+              onChange={(e) => { setInput(e.target.value); setSelectedIndex(-1); setResolvedLink(null); }}
               onKeyDown={(e) => {
                 if (submitting) return;
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  if (suggestedTags.length > 0) {
+                  if (selectedIndex < 0 && isCreateMode) {
+                    void handleSubmit();
+                  } else if (selectedIndex < 0 && filteredItems.length > 0) {
+                    setSelectedIndex(0);
+                  } else if (suggestedTags.length > 0) {
                     handleSelectTag(suggestedTags[Math.min(selectedIndex, suggestedTags.length - 1)]);
                   } else if (suggestedPriorities.length > 0) {
                     handleSelectPriority(suggestedPriorities[Math.min(selectedIndex, suggestedPriorities.length - 1)]);
@@ -458,7 +473,14 @@ export function CommandBar() {
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
-                  setSelectedIndex((i) => Math.max(i - 1, 0));
+                  const maxIndex = suggestedTags.length > 0
+                    ? suggestedTags.length - 1
+                    : suggestedPriorities.length > 0
+                    ? suggestedPriorities.length - 1
+                    : suggestedLinks.length > 0
+                    ? suggestedLinks.length - 1
+                    : filteredItems.length - 1;
+                  if (maxIndex >= 0) setSelectedIndex((i) => i < 0 ? maxIndex : Math.max(i - 1, 0));
                 }
               }}
               placeholder={activeTag
@@ -471,7 +493,7 @@ export function CommandBar() {
               aria-controls="command-options"
               aria-activedescendant={activeOptionId}
               inputMode="text"
-              className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
+              className="min-w-0 flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
@@ -672,9 +694,9 @@ export function CommandBar() {
                 >
                   <TypeIcon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[14px] lg:text-[13px] font-medium truncate">{previewTitle || parsed.title}</div>
+                    <div className="line-clamp-2 break-words text-[14px] font-medium leading-5 lg:text-[13px]">{previewTitle || parsed.title}</div>
                     {(previewTags.length > 0 || parsed.priority || parsed.dueDate || resolvedLink) && (
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                         {resolvedLink && (
                           <span className="text-[10px] text-blue-500/60">@{resolvedLink.title}</span>
                         )}
@@ -715,7 +737,7 @@ export function CommandBar() {
                 >
                   <Hash className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       {parsed.tags.map((tag) => (
                         <span key={tag} className="text-[13px] font-medium">#{tag}</span>
                       ))}

@@ -10,7 +10,7 @@ import { BadgesSection } from '@/components/ui/badge-stack';
 import type { GoalTimeframe } from '@/lib/types';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { getGoalStats as computeGoalStats } from '@/lib/progress';
-import { QuickCreateDialog } from '@/components/items/quick-create-dialog';
+import { GoalCreateDialog } from '@/components/items/goal-create-dialog';
 
 const TIMEFRAME_KEYS: Record<GoalTimeframe, TranslationKey> = {
   quarterly: 'goals.thisQuarter',
@@ -39,7 +39,11 @@ export default function GoalsPage() {
   // Name-first creation. "New" used to write a real "New goal" item straight
   // away, so backing out of the panel left debris in the list, the sidebar
   // badge and the cloud.
-  const handleCreateGoal = async (title: string): Promise<boolean> => {
+  const handleCreateGoal = async (
+    title: string,
+    timeframe: GoalTimeframe,
+    metric?: string,
+  ): Promise<boolean> => {
     if (createInFlightRef.current) return false;
     if (!user) {
       setCreateError(lang === 'de'
@@ -56,7 +60,8 @@ export default function GoalsPage() {
         type: 'goal',
         status: 'active',
         title,
-        timeframe: 'quarterly',
+        timeframe,
+        metric,
         tags: [],
         userId: user.uid,
         createdAt: Date.now(),
@@ -116,13 +121,9 @@ export default function GoalsPage() {
         </button>
       </div>
 
-      <QuickCreateDialog
+      <GoalCreateDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
-        title={t('goals.createTitle')}
-        description={t('goals.createDescription')}
-        placeholder={t('goals.createPlaceholder')}
-        submitting={creatingGoal}
         error={createError}
         onCreate={handleCreateGoal}
       />

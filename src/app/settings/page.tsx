@@ -1,5 +1,7 @@
 'use client';
 
+import { McpSettings } from '@/components/settings/mcp-settings';
+
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   User,
@@ -113,6 +115,7 @@ interface SettingSection {
   id: string;
   label: TranslationKey;
   icon: LucideIcon;
+  displayLabel?: string;
 }
 
 const SECTIONS: SettingSection[] = [
@@ -122,6 +125,7 @@ const SECTIONS: SettingSection[] = [
   { id: 'behavior', label: 'settings.general', icon: Monitor },
   { id: 'notifications', label: 'settings.notifications', icon: Bell },
   { id: 'calendar', label: 'settings.calendar', icon: Calendar },
+  { id: 'mcp', label: 'settings.dataStorage', displayLabel: 'MCP', icon: Database },
   { id: 'shortcuts', label: 'settings.shortcuts', icon: Keyboard },
   { id: 'privacy', label: 'settings.privacy', icon: Shield },
   { id: 'accessibility', label: 'settings.accessibility', icon: Accessibility },
@@ -815,6 +819,10 @@ export default function SettingsPage() {
     : null;
 
   useEffect(() => {
+    const requestedSection = new URLSearchParams(window.location.search).get('section');
+    if (requestedSection && SECTIONS.some((section) => section.id === requestedSection)) {
+      setActiveSection(requestedSection);
+    }
     const frame = requestAnimationFrame(() => setMounted(true));
     return () => {
       cancelAnimationFrame(frame);
@@ -986,13 +994,11 @@ export default function SettingsPage() {
         : `Complete backup with ${result.attachmentCount} attachment(s) created. Download started.`);
     } catch (error) {
       if ((error as { name?: unknown })?.name === 'AbortError') {
-        toast.info(lang === 'de' ? 'Kontoexport abgebrochen.' : 'Account export cancelled.');
+        toast.info(t('settings.accountExportCancelled'));
       } else {
         setAccountExportError(error instanceof Error
           ? error.message
-          : (lang === 'de'
-            ? 'Das vollständige Backup konnte nicht erstellt werden.'
-            : 'The complete backup could not be created.'));
+          : (t('settings.theCompleteBackupCouldNot')));
         toast.error(t('settings.accountExportError'));
       }
     } finally {
@@ -1058,42 +1064,28 @@ export default function SettingsPage() {
   const deletionReauthErrorMessage = (error: unknown): string => {
     const code = String((error as { code?: unknown })?.code || '').toLowerCase();
     if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-      return lang === 'de'
-        ? 'Die Bestätigung wurde abgebrochen. Dein Konto wurde nicht gelöscht.'
-        : 'Verification was cancelled. Your account was not deleted.';
+      return t('settings.verificationWasCancelledYourAccount');
     }
     if (code === 'auth/popup-blocked') {
-      return lang === 'de'
-        ? 'Das Google-Fenster wurde blockiert. Erlaube Pop-ups für diese Seite und versuche es erneut.'
-        : 'The Google window was blocked. Allow pop-ups for this site and try again.';
+      return t('settings.theGoogleWindowWasBlocked');
     }
     if (code === 'auth/user-mismatch' || code === 'auth/credential-mismatch') {
-      return lang === 'de'
-        ? 'Das ist ein anderes Konto. Bestätige dich mit demselben Konto, das du löschen möchtest.'
-        : 'That is a different account. Verify with the same account you are deleting.';
+      return t('settings.thatIsADifferentAccount');
     }
     if (
       code === 'auth/invalid-credential'
       || code === 'auth/wrong-password'
       || code === 'auth/invalid-login-credentials'
     ) {
-      return lang === 'de'
-        ? 'Das Passwort wurde nicht akzeptiert. Wenn du dich per E-Mail-Link anmeldest, nutze stattdessen den Hinweis unten.'
-        : 'That password was not accepted. If you use email-link sign-in, follow the option below instead.';
+      return t('settings.thatPasswordWasNotAccepted');
     }
     if (code === 'auth/too-many-requests') {
-      return lang === 'de'
-        ? 'Zu viele Versuche. Warte kurz und versuche es dann erneut.'
-        : 'Too many attempts. Wait a little, then try again.';
+      return t('settings.tooManyAttemptsWaitA');
     }
     if (isRecentLoginRequiredError(error)) {
-      return lang === 'de'
-        ? 'Die neue Anmeldung konnte nicht bestätigt werden. Melde dich ab, wieder an und lösche das Konto innerhalb von 10 Minuten.'
-        : 'The fresh sign-in could not be confirmed. Sign out, sign back in, and delete the account within 10 minutes.';
+      return t('settings.theFreshSignInCould');
     }
-    return lang === 'de'
-      ? 'Die Identität konnte nicht bestätigt werden. Dein Konto wurde nicht gelöscht. Prüfe die Verbindung und versuche es erneut.'
-      : 'We could not verify your identity. Your account was not deleted. Check your connection and try again.';
+    return t('settings.weCouldNotVerifyYour');
   };
 
   const reauthenticateAndDeleteAccount = async (): Promise<void> => {
@@ -1101,13 +1093,11 @@ export default function SettingsPage() {
     if (!prompt || deletionInFlightRef.current) return;
     const currentUser = auth?.currentUser;
     if (!currentUser || currentUser.uid !== prompt.expectedUid || user?.uid !== prompt.expectedUid) {
-      setDeletionReauthError(lang === 'de'
-        ? 'Das angemeldete Konto hat sich geändert. Es wurde nichts gelöscht. Starte den Vorgang erneut.'
-        : 'The signed-in account changed. Nothing was deleted. Start the deletion again.');
+      setDeletionReauthError(t('settings.theSignedInAccountChanged'));
       return;
     }
     if (prompt.method === 'password' && !deletionPassword) {
-      setDeletionReauthError(lang === 'de' ? 'Gib dein aktuelles Passwort ein.' : 'Enter your current password.');
+      setDeletionReauthError(t('settings.enterYourCurrentPassword'));
       return;
     }
 
@@ -1149,9 +1139,7 @@ export default function SettingsPage() {
           // not leave the deleted account's private caches on the device.
           clearScopedBrowserData(prompt.expectedUid);
         }
-        setDeletionReauthError(lang === 'de'
-          ? 'Die Löschung wird möglicherweise bereits verarbeitet. Dein Bestätigungsfenster bleibt offen; ein erneuter Versuch ist sicher.'
-          : 'Deletion may already be processing. This verification window remains open, and retrying is safe.');
+        setDeletionReauthError(t('settings.deletionMayAlreadyBeProcessing'));
       } else {
         setDeletionReauthError(deletionReauthErrorMessage(error));
       }
@@ -1182,9 +1170,7 @@ export default function SettingsPage() {
         if (calendarAuthorizationState !== 'ready') {
           await prepareGoogleCalendarPermission();
           setCalendarAuthorizationState('ready');
-          toast.info(lang === 'de'
-            ? 'Google ist bereit. Aktiviere die Verbindung jetzt noch einmal.'
-            : 'Google is ready. Turn the connection on once more.');
+          toast.info(t('settings.googleIsReadyTurnThe'));
           return;
         }
         await requestCalendarPermission();
@@ -1209,9 +1195,7 @@ export default function SettingsPage() {
   const handleInstallApp = async () => {
     if (installing || installStatus === 'installed') return;
     if (detectIOS()) {
-      toast.info(lang === 'de'
-        ? 'Tippe in Safari auf „Teilen“ und dann auf „Zum Home-Bildschirm“.'
-        : 'In Safari, tap Share and then Add to Home Screen.');
+      toast.info(t('settings.inSafariTapShareAnd'));
       return;
     }
     setInstalling(true);
@@ -1219,11 +1203,9 @@ export default function SettingsPage() {
       const accepted = await triggerInstall();
       if (accepted) {
         setInstallStatus('installed');
-        toast.success(lang === 'de' ? 'Threadmap wurde installiert.' : 'Threadmap was installed.');
+        toast.success(t('settings.threadmapWasInstalled'));
       } else {
-        toast.info(lang === 'de'
-          ? 'Die Installation wurde nicht abgeschlossen. Du kannst sie jederzeit erneut starten.'
-          : 'Installation was not completed. You can try again at any time.');
+        toast.info(t('settings.installationWasNotCompletedYou'));
       }
     } finally {
       setInstalling(false);
@@ -1258,7 +1240,7 @@ export default function SettingsPage() {
                 )}
               >
                 <s.icon className="h-[15px] w-[15px] shrink-0" strokeWidth={1.5} />
-                <span>{t(s.label)}</span>
+                <span>{s.displayLabel ?? t(s.label)}</span>
               </button>
             );
           })}
@@ -1295,7 +1277,7 @@ export default function SettingsPage() {
                 )}
               >
                 <s.icon className="h-3 w-3" strokeWidth={1.5} />
-                {t(s.label)}
+                {s.displayLabel ?? t(s.label)}
               </button>
             ))}
           </div>
@@ -1319,11 +1301,11 @@ export default function SettingsPage() {
                   ? <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                   : <Check className="h-3 w-3" aria-hidden="true" />}
               {cloudSaveState === 'pending'
-                ? (lang === 'de' ? 'Änderungen ausstehend' : 'Changes pending')
+                ? (t('settings.changesPending'))
                 : cloudSaveState === 'saving'
-                  ? (lang === 'de' ? 'Wird synchronisiert …' : 'Syncing…')
+                  ? (t('settings.syncing'))
                   : cloudSaveState === 'error'
-                    ? (lang === 'de' ? 'Lokal gespeichert · Cloud wird erneut versucht' : 'Saved locally · cloud retrying')
+                    ? (t('settings.savedLocallyCloudRetrying'))
                     : t('settings.updated')}
             </div>
 
@@ -1414,7 +1396,7 @@ export default function SettingsPage() {
                       type="submit"
                       className="min-h-9 rounded-lg bg-foreground px-3 text-[12px] font-medium text-background transition-opacity hover:opacity-85"
                     >
-                      {lang === 'de' ? 'Speichern' : 'Save'}
+                      {t('settings.save')}
                     </button>
                   </div>
                   <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
@@ -1432,25 +1414,21 @@ export default function SettingsPage() {
                       )}
                     >
                       {timezoneFeedback === 'invalid'
-                        ? (lang === 'de'
-                            ? 'Gib eine gültige IANA-Zeitzone ein, zum Beispiel Europe/Berlin.'
-                            : 'Enter a valid IANA timezone, for example Europe/Berlin.')
+                        ? (t('settings.enterAValidIanaTimezone'))
                         : timezoneFeedback === 'saved'
-                          ? (lang === 'de' ? 'Zeitzone gespeichert.' : 'Timezone saved.')
+                          ? (t('settings.timezoneSaved'))
                           : timezoneFeedback === 'detected'
                             ? (lang === 'de'
                                 ? `Gerätezeitzone erkannt und gespeichert: ${timezoneDraft}`
                                 : `Device timezone detected and saved: ${timezoneDraft}`)
-                            : (lang === 'de'
-                                ? 'Verwende einen IANA-Namen wie Europe/Berlin.'
-                                : 'Use an IANA name such as Europe/Berlin.')}
+                            : (t('settings.useAnIanaNameSuch'))}
                     </p>
                     <button
                       type="button"
                       onClick={handleTimezoneDetection}
                       className="min-h-9 shrink-0 rounded-lg border border-border/50 px-3 text-[11px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.04]"
                     >
-                      {lang === 'de' ? 'Vom Gerät erkennen' : 'Detect from device'}
+                      {t('settings.detectFromDevice')}
                     </button>
                   </div>
                 </form>
@@ -1621,18 +1599,18 @@ export default function SettingsPage() {
               </SettingRow>
 
               <SettingRow
-                label={lang === 'de' ? 'App installieren' : 'Install app'}
+                label={t('settings.installApp')}
                 description={installStatus === 'installed'
-                  ? (lang === 'de' ? 'Threadmap läuft bereits als installierte App.' : 'Threadmap is already running as an installed app.')
+                  ? (t('settings.threadmapIsAlreadyRunningAs'))
                   : installStatus === 'available'
-                    ? (lang === 'de' ? 'Installiere Threadmap für schnelleren Zugriff und ein App-ähnliches Erlebnis.' : 'Install Threadmap for faster access and an app-like experience.')
-                    : (lang === 'de' ? 'Nutze das Browsermenü, um Threadmap auf diesem Gerät zu installieren.' : 'Use your browser menu to install Threadmap on this device.')}
+                    ? (t('settings.installThreadmapForFasterAccess'))
+                    : (t('settings.useYourBrowserMenuTo'))}
                 border={false}
               >
                 {installStatus === 'installed' ? (
                   <span className="flex min-h-11 items-center gap-1.5 text-[12px] font-medium text-emerald-600 dark:text-emerald-400">
                     <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                    {lang === 'de' ? 'Installiert' : 'Installed'}
+                    {t('settings.installed')}
                   </span>
                 ) : (
                   <button
@@ -1643,8 +1621,8 @@ export default function SettingsPage() {
                   >
                     {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Smartphone className="h-3.5 w-3.5" aria-hidden="true" />}
                     {installing
-                      ? (lang === 'de' ? 'Wird installiert …' : 'Installing…')
-                      : (lang === 'de' ? 'Installieren' : 'Install')}
+                      ? (t('settings.installing'))
+                      : (t('settings.install'))}
                   </button>
                 )}
               </SettingRow>
@@ -1672,7 +1650,7 @@ export default function SettingsPage() {
                   {!calendarConnecting && calendarAuthorizationState === 'loading' && !hasCalendarPermission() && (
                     <span role="status" className="flex items-center gap-1 text-[11px] text-muted-foreground">
                       <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
-                      {lang === 'de' ? 'Google wird vorbereitet…' : 'Preparing Google…'}
+                      {t('detail.preparingGoogle')}
                     </span>
                   )}
                   {!calendarConnecting && settings.calendar.googleCalendarSync && (
@@ -1686,8 +1664,8 @@ export default function SettingsPage() {
                       )}
                     >
                       {calendarConnected
-                        ? (lang === 'de' ? 'Verbunden' : 'Connected')
-                        : (lang === 'de' ? 'Erneut verbinden' : 'Reconnect required')}
+                        ? (t('settings.connected'))
+                        : (t('settings.reconnectRequired'))}
                     </span>
                   )}
                   <Toggle
@@ -1695,7 +1673,7 @@ export default function SettingsPage() {
                     disabled={calendarConnecting || calendarAuthorizationState === 'loading'}
                     onChange={handleCalendarSyncChange}
                     ariaLabel={settings.calendar.googleCalendarSync && !calendarConnected
-                      ? (lang === 'de' ? 'Google Kalender erneut verbinden' : 'Reconnect Google Calendar')
+                      ? (t('settings.reconnectGoogleCalendar'))
                       : t('settings.calendarSync')}
                   />
                 </div>
@@ -1934,6 +1912,9 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* ═════ MCP ═════ */}
+          {activeSection === 'mcp' && <McpSettings />}
+
           {/* ═════ DATA & STORAGE ═════ */}
           {activeSection === 'data' && (
             <div>
@@ -1965,9 +1946,7 @@ export default function SettingsPage() {
                 </div>
               </SettingRow>
               <p className="mb-3 text-[10px] leading-relaxed text-muted-foreground/55">
-                {lang === 'de'
-                  ? 'Das vollständige Backup enthält auch ausstehende Offline-Änderungen und Wiederherstellungsdaten für noch nicht gelöste Cloud-Konflikte auf diesem Gerät.'
-                  : 'The full backup also includes pending offline edits and recovery data for unresolved cloud conflicts on this device.'}
+                {t('settings.theFullBackupAlsoIncludes')}
               </p>
 
               {accountExportProgress && (
@@ -1978,18 +1957,18 @@ export default function SettingsPage() {
                 >
                   <p className="text-[11px] font-medium text-foreground/80">
                     {accountExportProgress.phase === 'fetching'
-                      ? (lang === 'de' ? 'Kontodaten werden abgerufen…' : 'Fetching account records…')
+                      ? (t('settings.fetchingAccountRecords'))
                       : accountExportProgress.phase === 'attachments'
                         ? (lang === 'de'
                           ? `Anhang ${accountExportProgress.completed} von ${accountExportProgress.total} wird gesichert${accountExportProgress.currentFile ? `: ${accountExportProgress.currentFile}` : '…'}`
                           : `Backing up attachment ${accountExportProgress.completed} of ${accountExportProgress.total}${accountExportProgress.currentFile ? `: ${accountExportProgress.currentFile}` : '…'}`)
                         : accountExportProgress.phase === 'packaging'
-                          ? (lang === 'de' ? 'Backup wird geprüft und verpackt…' : 'Verifying and packaging the backup…')
-                          : (lang === 'de' ? 'Backup ist fertig.' : 'Backup is ready.')}
+                          ? (t('settings.verifyingAndPackagingTheBackup'))
+                          : (t('settings.backupIsReady'))}
                   </p>
                   <div
                     role="progressbar"
-                    aria-label={lang === 'de' ? 'Fortschritt des Kontoexports' : 'Account export progress'}
+                    aria-label={t('settings.accountExportProgress')}
                     aria-valuemin={0}
                     aria-valuemax={accountExportProgress.total || undefined}
                     aria-valuenow={accountExportProgress.total ? accountExportProgress.completed : undefined}
@@ -2011,7 +1990,7 @@ export default function SettingsPage() {
               {accountExportError && (
                 <div role="alert" className="mb-3 rounded-xl border border-destructive/25 bg-destructive/5 p-3 text-[11px] leading-relaxed text-destructive">
                   <p className="font-medium">
-                    {lang === 'de' ? 'Es wurde kein unvollständiges Backup heruntergeladen.' : 'No incomplete backup was downloaded.'}
+                    {t('settings.noIncompleteBackupWasDownloaded')}
                   </p>
                   <p className="mt-1">{accountExportError}</p>
                 </div>
@@ -2120,12 +2099,10 @@ export default function SettingsPage() {
         >
           <DialogHeader>
             <DialogTitle>
-              {lang === 'de' ? 'Bestätige zuerst deine Identität' : 'Verify your identity first'}
+              {t('settings.verifyYourIdentityFirst')}
             </DialogTitle>
             <DialogDescription>
-              {lang === 'de'
-                ? 'Diese sensible Aktion erfordert eine neue Anmeldung. Erst nach erfolgreicher Bestätigung wird die Kontolöschung einmal erneut versucht.'
-                : 'This sensitive action needs a fresh sign-in. Account deletion will be retried once, only after verification succeeds.'}
+              {t('settings.thisSensitiveActionNeedsA')}
             </DialogDescription>
           </DialogHeader>
 
@@ -2139,7 +2116,7 @@ export default function SettingsPage() {
               }}
             >
               <label className="grid gap-1.5 text-sm font-medium" htmlFor="account-deletion-password">
-                {lang === 'de' ? 'Aktuelles Passwort' : 'Current password'}
+                {t('settings.currentPassword')}
                 <Input
                   id="account-deletion-password"
                   type="password"
@@ -2153,12 +2130,10 @@ export default function SettingsPage() {
               </label>
               <div className="rounded-xl border border-border/50 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
                 <p className="font-medium text-foreground/80">
-                  {lang === 'de' ? 'Anmeldung per E-Mail-Link?' : 'Use an email sign-in link?'}
+                  {t('settings.useAnEmailSignIn')}
                 </p>
                 <p className="mt-1">
-                  {lang === 'de'
-                    ? 'Melde dich ab, melde dich mit einem neuen E-Mail-Link wieder an und starte die Löschung innerhalb von 10 Minuten erneut.'
-                    : 'Sign out, sign back in with a fresh email link, then start deletion again within 10 minutes.'}
+                  {t('settings.signOutSignBackIn')}
                 </p>
                 <Button
                   type="button"
@@ -2169,11 +2144,11 @@ export default function SettingsPage() {
                   onClick={() => {
                     closeDeletionReauth();
                     void signOut().catch(() => {
-                      toast.error(lang === 'de' ? 'Abmelden fehlgeschlagen.' : 'Could not sign out.');
+                      toast.error(t('settings.couldNotSignOut'));
                     });
                   }}
                 >
-                  {lang === 'de' ? 'Jetzt abmelden' : 'Sign out now'}
+                  {t('settings.signOutNow')}
                 </Button>
               </div>
             </form>
@@ -2181,16 +2156,14 @@ export default function SettingsPage() {
 
           {deletionReauth?.method === 'google' && (
             <div className="rounded-xl border border-border/50 bg-muted/20 p-3 text-sm leading-relaxed text-muted-foreground">
-              {lang === 'de'
-                ? 'Öffne Google erst mit der Schaltfläche unten und wähle dasselbe Konto, das du gerade löschst.'
-                : 'Open Google with the button below and choose the same account you are currently deleting.'}
+              {t('settings.openGoogleWithTheButton')}
             </div>
           )}
 
           {deletionReauth?.method === 'unsupported' && (
             <div role="alert" className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-sm leading-relaxed">
               <p className="font-medium">
-                {lang === 'de' ? 'Diese Anmeldemethode kann hier nicht bestätigt werden.' : 'This sign-in method cannot be verified here.'}
+                {t('settings.thisSignInMethodCannot')}
               </p>
               <p className="mt-1 text-muted-foreground">
                 {lang === 'de'
@@ -2223,7 +2196,7 @@ export default function SettingsPage() {
                 onClick={() => void reauthenticateAndDeleteAccount()}
               >
                 {reauthenticatingDeletion && <Loader2 aria-hidden="true" className="animate-spin" />}
-                {lang === 'de' ? 'Mit Google bestätigen & löschen' : 'Verify with Google & delete'}
+                {t('settings.verifyWithGoogleDelete')}
               </Button>
             )}
             {deletionReauth?.method === 'password' && (
@@ -2234,7 +2207,7 @@ export default function SettingsPage() {
                 disabled={reauthenticatingDeletion || !deletionPassword}
               >
                 {reauthenticatingDeletion && <Loader2 aria-hidden="true" className="animate-spin" />}
-                {lang === 'de' ? 'Bestätigen & löschen' : 'Verify & delete'}
+                {t('settings.verifyDelete')}
               </Button>
             )}
             {deletionReauth?.method === 'unsupported' && (
@@ -2244,11 +2217,11 @@ export default function SettingsPage() {
                 onClick={() => {
                   closeDeletionReauth();
                   void signOut().catch(() => {
-                    toast.error(lang === 'de' ? 'Abmelden fehlgeschlagen.' : 'Could not sign out.');
+                    toast.error(t('settings.couldNotSignOut'));
                   });
                 }}
               >
-                {lang === 'de' ? 'Jetzt abmelden' : 'Sign out now'}
+                {t('settings.signOutNow')}
               </Button>
             )}
           </DialogFooter>

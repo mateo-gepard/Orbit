@@ -14,6 +14,7 @@
     "test": "vitest run && node scripts/report-rules-coverage.mjs",
     "test:watch": "vitest",
     "test:rules": "firebase emulators:exec --project demo-threadmap-rules-test --only firestore,storage \"vitest run src/test/firebase-rules.test.ts\"",
+    "release:check": "node scripts/check-production-readiness.mjs",
     "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage",
     "deploy:functions": "firebase deploy --only functions"
   },

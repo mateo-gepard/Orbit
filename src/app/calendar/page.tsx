@@ -20,7 +20,7 @@ import { useAuth } from '@/components/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation, type Translate } from '@/lib/i18n';
 import {
   format,
   startOfMonth,
@@ -219,11 +219,10 @@ function getEventColor(item: OrbitItem): { bg: string; text: string; border: str
   return { bg: 'bg-blue-500/10 dark:bg-blue-400/10', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-400/25', accent: 'bg-blue-500', dot: 'bg-blue-400' };
 }
 
-function getRelativeDayLabel(date: Date, locale?: Locale): string | null {
-  const german = locale?.code?.startsWith('de');
-  if (isToday(date)) return german ? 'Heute' : 'Today';
-  if (isYesterday(date)) return german ? 'Gestern' : 'Yesterday';
-  if (isTomorrow(date)) return german ? 'Morgen' : 'Tomorrow';
+function getRelativeDayLabel(date: Date, locale: Locale | undefined, t: Translate): string | null {
+  if (isToday(date)) return t('calendar.today');
+  if (isYesterday(date)) return t('calendar.yesterday');
+  if (isTomorrow(date)) return t('calendar.tomorrow');
   return null;
 }
 
@@ -260,7 +259,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
     const trimmed = title.trim();
     if (!trimmed) return;
     if (type === 'event' && timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-      setError(german ? 'Die Endzeit muss nach der Startzeit liegen.' : 'End time must be after start time.');
+      setError(t('calendar.endTimeMustBeAfter'));
       return;
     }
     setSaving(true);
@@ -292,9 +291,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
             { ...newEvent, id: itemId } as OrbitItem,
           ]).then((result) => {
             if (!result.success) {
-              toast.warning(german
-                ? 'Termin lokal gespeichert. Die Google-Synchronisierung wird erneut versucht.'
-                : 'Event saved locally. Google Calendar sync will retry.');
+              toast.warning(t('calendar.eventSavedLocallyGoogleCalendar'));
             }
           });
         }
@@ -311,7 +308,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
     }
   };
 
-  const relLabel = getRelativeDayLabel(date, loc);
+  const relLabel = getRelativeDayLabel(date, loc, t);
 
   return (
     <Dialog open onOpenChange={(open) => {
@@ -333,7 +330,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
         className="bottom-0 top-auto max-w-none translate-y-0 gap-0 rounded-b-none rounded-t-3xl p-0 sm:bottom-auto sm:top-1/2 sm:max-w-[420px] sm:-translate-y-1/2 sm:rounded-2xl"
       >
         <DialogTitle id="calendar-quick-add-title" className="sr-only">
-          {german ? 'Kalendereintrag erstellen' : 'Create calendar item'}
+          {t('calendar.createCalendarItem')}
         </DialogTitle>
         <form onSubmit={handleSubmit} className="p-6">
         <div className="flex items-center justify-between mb-5">
@@ -343,19 +340,19 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
             </p>
             <p className="text-[16px] font-semibold mt-0.5">{format(date, 'PPP', { locale: loc })}</p>
           </div>
-          <button type="button" onClick={onClose} disabled={saving} aria-label={german ? 'Dialog schließen' : 'Close create dialog'} className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-muted/60 disabled:opacity-40 sm:h-8 sm:w-8">
+          <button type="button" onClick={onClose} disabled={saving} aria-label={t('calendar.closeCreateDialog')} className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-muted/60 disabled:opacity-40 sm:h-8 sm:w-8">
             <X className="h-4 w-4 text-muted-foreground/50" />
           </button>
         </div>
 
         <input
           aria-label={type === 'event'
-            ? (german ? 'Termintitel' : 'Event title')
-            : (german ? 'Aufgabentitel' : 'Task title')}
+            ? (t('calendar.eventTitle'))
+            : (t('calendar.taskTitle'))}
           ref={inputRef}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder={type === 'event' ? t('calendar.untitledEvent') : (german ? 'Aufgabentitel…' : 'Task title…')}
+          placeholder={type === 'event' ? t('calendar.untitledEvent') : (t('calendar.taskTitle2'))}
           className="w-full bg-muted/30 rounded-xl px-4 py-3 text-[15px] font-medium placeholder:text-muted-foreground/30 outline-none border border-border/30 focus:border-foreground/15 transition-colors mb-4"
         />
 
@@ -379,9 +376,9 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
         {type === 'event' && (
           <div className="flex items-center gap-3 mb-5 bg-muted/20 rounded-xl px-4 py-3 border border-border/20">
             <Clock className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-            <input aria-label={german ? 'Startzeit' : 'Start time'} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
+            <input aria-label={t('calendar.startTime')} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
             <ArrowRight className="h-3 w-3 text-muted-foreground/25 shrink-0" />
-            <input aria-label={german ? 'Endzeit' : 'End time'} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
+            <input aria-label={t('calendar.endTime')} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
           </div>
         )}
 
@@ -397,7 +394,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
               : 'bg-muted/60 text-muted-foreground/25 cursor-not-allowed'
           )}
         >
-          {saving ? (german ? 'Wird erstellt…' : 'Creating…') : t('common.create')}
+          {saving ? (t('calendar.creating')) : t('common.create')}
         </button>
         </form>
       </DialogContent>
@@ -414,11 +411,13 @@ function AllDayOverflow({
   date,
   locale: loc,
   onEventClick,
+  t,
 }: {
   events: CalendarEvent[];
   date: Date;
   locale: Locale;
   onEventClick: (id: string) => void;
+  t: Translate;
 }) {
   const [open, setOpen] = useState(false);
   const german = loc.code.startsWith('de');
@@ -437,7 +436,7 @@ function AllDayOverflow({
           aria-label={overflowLabel}
           className="flex min-h-8 w-full items-center rounded-lg px-2 text-left text-[10px] font-semibold text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25"
         >
-          +{events.length} {german ? 'weitere' : 'more'}
+          +{events.length} {t('calendar.more')}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -488,9 +487,9 @@ interface ActiveDrag {
 }
 
 function TimeGrid({
-  days, items, is24h, locale: loc, onEventClick, onSlotClick, onEventReschedule, showWeekNumbers,
+  days, items, is24h, locale: loc, onEventClick, onSlotClick, onEventReschedule, showWeekNumbers, t,
 }: {
-  days: Date[]; items: OrbitItem[]; is24h: boolean; locale: Locale; onEventClick: (id: string) => void; onSlotClick: (date: Date, time?: string) => void; onEventReschedule: (id: string, date: Date, startTime: string, endTime: string) => void; showWeekNumbers: boolean;
+  days: Date[]; items: OrbitItem[]; is24h: boolean; locale: Locale; onEventClick: (id: string) => void; onSlotClick: (date: Date, time?: string) => void; onEventReschedule: (id: string, date: Date, startTime: string, endTime: string) => void; showWeekNumbers: boolean; t: Translate;
 }) {
   const german = loc.code.startsWith('de');
   const gridRef = useRef<HTMLDivElement>(null);
@@ -653,14 +652,14 @@ function TimeGrid({
           <div className="shrink-0" style={{ width: TIME_GUTTER_WIDTH }}>
             {showWeekNumbers && days.length >= 7 && (
               <div className="flex items-center justify-center h-full text-[9px] text-muted-foreground/25 font-semibold tabular-nums">
-                {german ? 'KW' : 'W'}{getISOWeek(days[0])}
+                {t('calendar.w')}{getISOWeek(days[0])}
               </div>
             )}
           </div>
           <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
             {days.map((day, i) => {
               const today = isToday(day);
-              const relLabel = getRelativeDayLabel(day, loc);
+              const relLabel = getRelativeDayLabel(day, loc, t);
               return (
                 <button
                   key={i}
@@ -713,7 +712,7 @@ function TimeGrid({
           </div>
           <div>
             <div className="text-[14px] font-semibold leading-tight">
-              {getRelativeDayLabel(days[0], loc) || format(days[0], 'EEEE', { locale: loc })}
+              {getRelativeDayLabel(days[0], loc, t) || format(days[0], 'EEEE', { locale: loc })}
             </div>
             <div className="text-[12px] text-muted-foreground/40 mt-0.5">{format(days[0], 'MMMM yyyy', { locale: loc })}</div>
           </div>
@@ -725,7 +724,7 @@ function TimeGrid({
         <div className="border-b border-border/25 flex-shrink-0">
           <div className="flex">
             <div className="shrink-0 flex items-center justify-center text-[9px] text-muted-foreground/30 uppercase font-bold tracking-wider" style={{ width: TIME_GUTTER_WIDTH }}>
-              {german ? 'Ganztägig' : 'All day'}
+              {t('calendar.allDay')}
             </div>
             <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
               {days.map((day, dayIdx) => {
@@ -760,6 +759,7 @@ function TimeGrid({
                         date={day}
                         locale={loc}
                         onEventClick={onEventClick}
+                        t={t}
                       />
                     )}
                   </div>
@@ -1052,24 +1052,18 @@ export default function CalendarPage() {
   const handleImportFromGoogle = async () => {
     if (!user) return;
     if (!googleCalendarSync) {
-      toast.warning(language === 'de'
-        ? 'Aktiviere Google Calendar zuerst in den Einstellungen.'
-        : 'Enable Google Calendar in Settings first.');
+      toast.warning(t('calendar.enableGoogleCalendarInSettings'));
       return;
     }
     if (!hasCalendarPermission()) {
-      toast.warning(language === 'de'
-        ? 'Verbinde Google Calendar erneut in den Einstellungen.'
-        : 'Reconnect Google Calendar in Settings first.');
+      toast.warning(t('calendar.reconnectGoogleCalendarInSettings'));
       return;
     }
     setImporting(true);
     try {
       const result = await syncGoogleCalendar(user.uid);
       if (!result.success) {
-        toast.error(language === 'de'
-          ? 'Google Calendar konnte nicht vollständig synchronisiert werden. Lokale Änderungen bleiben vorgemerkt.'
-          : 'Google Calendar could not finish syncing. Local changes remain queued.');
+        toast.error(t('calendar.googleCalendarCouldNotFinish'));
         return;
       }
       setLastSync(getLastSyncTime(user.uid));
@@ -1082,9 +1076,7 @@ export default function CalendarPage() {
           : 'Calendar is already up to date');
     } catch (err) {
       console.error('[THREADMAP] Import failed:', err);
-      toast.error(language === 'de'
-        ? 'Google-Calendar-Termine konnten nicht importiert werden'
-        : 'Could not import Google Calendar events');
+      toast.error(t('calendar.couldNotImportGoogleCalendar'));
     } finally { setImporting(false); }
   };
 
@@ -1123,11 +1115,9 @@ export default function CalendarPage() {
         endTime,
       });
     } catch {
-      toast.error(language === 'de'
-        ? 'Der Termin konnte nicht verschoben werden.'
-        : 'The event could not be rescheduled.');
+      toast.error(t('calendar.theEventCouldNotBe'));
     }
-  }, [items, language]);
+  }, [items, t]);
   const handleSlotClick = useCallback((date: Date, time?: string) => setQuickAdd({ date, time }), []);
   const handleMonthDayClick = useCallback((day: Date) => {
     if (mobile) {
@@ -1170,7 +1160,7 @@ export default function CalendarPage() {
             <button type="button" onClick={goPrev} aria-label={previousViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 sm:h-8 sm:w-8">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button type="button" onClick={goToday} aria-label={german ? 'Zu heute wechseln' : 'Go to today'} className="hidden min-w-0 sm:block">
+            <button type="button" onClick={goToday} aria-label={t('calendar.goToToday')} className="hidden min-w-0 sm:block">
               <h1 className="truncate text-[17px] font-bold tracking-tight transition-colors hover:text-foreground/80 lg:text-[19px]">
                 {headerLabel}
               </h1>
@@ -1189,7 +1179,7 @@ export default function CalendarPage() {
                 : `Last calendar sync: ${format(new Date(lastSync), 'Pp', { locale })}`}
             >
               <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              <span>{german ? 'Synchronisiert' : 'Synced'}</span>
+              <span>{t('calendar.synced')}</span>
             </div>
           )}
         </div>
@@ -1197,7 +1187,7 @@ export default function CalendarPage() {
         <div className="flex w-full items-center justify-between gap-1.5 sm:w-auto sm:justify-end lg:gap-2">
           {/* View switcher */}
           <SegmentedControl
-            label={german ? 'Kalenderansicht' : 'Calendar view'}
+            label={t('calendar.calendarView')}
             value={viewMode}
             onChange={changeViewMode}
             options={[
@@ -1222,7 +1212,7 @@ export default function CalendarPage() {
           <button
             type="button"
             onClick={() => setQuickAdd({ date: currentDate })}
-            aria-label={language === 'de' ? 'Kalendereintrag erstellen' : 'Create calendar item'}
+            aria-label={t('calendar.createCalendarItem')}
             className="h-8 w-8 lg:h-8 lg:w-auto lg:px-3.5 rounded-xl bg-foreground text-background flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-95 transition-all shadow-sm"
           >
             <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" />
@@ -1245,12 +1235,12 @@ export default function CalendarPage() {
 
       {/* Week View */}
       {viewMode === 'week' && (
-        <TimeGrid days={effectiveWeekDays} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onEventReschedule={handleEventReschedule} showWeekNumbers={!mobile && showWeekNumbers} />
+        <TimeGrid days={effectiveWeekDays} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onEventReschedule={handleEventReschedule} showWeekNumbers={!mobile && showWeekNumbers} t={t} />
       )}
 
       {/* Day View */}
       {viewMode === 'day' && (
-        <TimeGrid days={[startOfDay(currentDate)]} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onEventReschedule={handleEventReschedule} showWeekNumbers={false} />
+        <TimeGrid days={[startOfDay(currentDate)]} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onEventReschedule={handleEventReschedule} showWeekNumbers={false} t={t} />
       )}
 
       {/* Month View */}
@@ -1406,7 +1396,7 @@ export default function CalendarPage() {
                     </div>
                     <div>
                       <p className="text-[13px] font-bold leading-tight">
-                        {getRelativeDayLabel(selectedMobileDay, locale) || format(selectedMobileDay, 'EEEE', { locale })}
+                        {getRelativeDayLabel(selectedMobileDay, locale, t) || format(selectedMobileDay, 'EEEE', { locale })}
                       </p>
                       <p className="text-[11px] text-muted-foreground/40">{format(selectedMobileDay, 'MMMM yyyy', { locale })}</p>
                     </div>
@@ -1415,7 +1405,7 @@ export default function CalendarPage() {
                     <button type="button" onClick={() => setQuickAdd({ date: selectedMobileDay })} aria-label={german ? `Eintrag am ${format(selectedMobileDay, 'PPPP', { locale })} erstellen` : `Create an item on ${format(selectedMobileDay, 'PPPP', { locale })}`} className="flex h-11 w-11 items-center justify-center rounded-xl bg-foreground text-background transition-all active:scale-95">
                       <Plus className="h-4 w-4" />
                     </button>
-                    <button type="button" onClick={() => setSelectedMobileDay(null)} aria-label={german ? 'Ausgewählten Tag schließen' : 'Close selected day'} className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/40 transition-all hover:bg-muted/40">
+                    <button type="button" onClick={() => setSelectedMobileDay(null)} aria-label={t('calendar.closeSelectedDay')} className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/40 transition-all hover:bg-muted/40">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
@@ -1427,7 +1417,7 @@ export default function CalendarPage() {
                     <div className="px-4 py-8 text-center">
                       <p className="text-[13px] text-muted-foreground/25 font-medium">{t('calendar.noEventsOrTasks')}</p>
                       <button type="button" onClick={() => setQuickAdd({ date: selectedMobileDay })} className="mt-3 text-[12px] font-semibold text-foreground/60 hover:text-foreground transition-colors">
-                        {german ? '+ Eintrag hinzufügen' : '+ Add an item'}
+                        {t('calendar.addAnItem')}
                       </button>
                     </div>
                   ) : (

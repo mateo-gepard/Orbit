@@ -1,6 +1,6 @@
-<svg width="192" height="192" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <title>Threadmap T Icon</title>
-  <rect width="512" height="512" fill="#000000"/>
-  <rect x="70" y="100" width="372" height="96" rx="48" fill="#ffffff"/>
-  <path d="M204 171H308V380C308 408.719 284.719 432 256 432C227.281 432 204 408.719 204 380V171Z" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="threadmap-app-icon-title">
+  <title id="threadmap-app-icon-title">Threadmap</title>
+  <rect width="64" height="64" fill="#f6f3ec"/>
+  <path d="M12 17H52M32 17V52" fill="none" stroke="#202427" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="17" r="5" fill="#d9683b"/>
 </svg>

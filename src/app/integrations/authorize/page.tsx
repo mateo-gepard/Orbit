@@ -69,8 +69,8 @@ function scopeCopy(scope: string, german: boolean): ScopeCopy {
 }
 
 const TONE_STYLES: Record<ScopeCopy['tone'], string> = {
-  read: 'text-sky-700 dark:text-sky-300 bg-sky-500/[0.08] border-sky-500/20',
-  write: 'text-amber-700 dark:text-amber-300 bg-amber-500/[0.08] border-amber-500/20',
+  read: 'text-foreground/60 dark:text-foreground/60 bg-foreground/[0.055] border-foreground/10',
+  write: 'text-foreground/60 dark:text-foreground/60 bg-foreground/[0.055] border-foreground/10',
   delete: 'text-red-700 dark:text-red-300 bg-red-500/[0.08] border-red-500/20',
   session: 'text-muted-foreground bg-foreground/[0.04] border-border/60',
 };

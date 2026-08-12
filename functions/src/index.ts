@@ -5,6 +5,7 @@ import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
 import { defineSecret } from 'firebase-functions/params';
+import { setGlobalOptions } from 'firebase-functions/v2';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
@@ -20,6 +21,11 @@ import { createThreadmapOAuthService } from './mcp/oauth';
 import { ThreadmapDal } from './mcp/dal';
 
 initializeApp();
+
+// A compromised account or abusive client must not be able to scale every
+// function without bound. Individual functions can override this when measured
+// production traffic demonstrates a legitimate need.
+setGlobalOptions({ maxInstances: 20 });
 
 const db = getFirestore();
 const messaging = getMessaging();

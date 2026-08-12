@@ -516,15 +516,25 @@ export const useWishlistStore = create<WishlistState>()(
         try {
           const firstSnapshot = !_cloudSnapshotReceived;
           _cloudSnapshotReceived = true;
-          if (get().cloudDirty) {
-            if (firstSnapshot) scheduleSave(get().items, get().duels);
+          const rawItems = Array.isArray(data.items) ? data.items : [];
+          const items = cleanItems(rawItems).slice(0, MAX_WISHLIST_ITEMS);
+          const duels = sanitizeDuels(data.duels, new Set(items.map((item) => item.id)));
+          const local = get();
+          if (local.cloudDirty && _localRevision === 0) {
+            if (JSON.stringify(items) === JSON.stringify(cleanItems(local.items))
+                && JSON.stringify(duels) === JSON.stringify(local.duels)) {
+              set({ items, duels, cloudDirty: false });
+            } else if (firstSnapshot) {
+              scheduleSave(local.items, local.duels);
+            }
+            return;
+          }
+          if (local.cloudDirty) {
+            if (firstSnapshot) scheduleSave(local.items, local.duels);
             return;
           }
           // Ignore cloud echoes while a newer local revision remains unsynced.
           if (_syncedRevision < _localRevision) return;
-          const rawItems = Array.isArray(data.items) ? data.items : [];
-          const items = cleanItems(rawItems).slice(0, MAX_WISHLIST_ITEMS);
-          const duels = sanitizeDuels(data.duels, new Set(items.map((item) => item.id)));
           set({ items, duels, cloudDirty: false });
           // If entity-cleaning changed any names, write back
           if (JSON.stringify(items) !== JSON.stringify(rawItems.slice(0, MAX_WISHLIST_ITEMS))) {

@@ -171,6 +171,14 @@ function LoginScreen({
 
   return (
     <div className="flex min-h-[100dvh] items-center justify-center px-6">
+      <nav
+        aria-label="Legal and security"
+        className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-10 flex justify-center gap-4 px-4 text-[11px] text-muted-foreground/60"
+      >
+        <Link className="transition-colors hover:text-foreground" href="/privacy">Privacy</Link>
+        <Link className="transition-colors hover:text-foreground" href="/terms">Terms</Link>
+        <Link className="transition-colors hover:text-foreground" href="/security">Security</Link>
+      </nav>
       <div className="w-full max-w-sm space-y-8">
         <div className="space-y-2 text-center">
           <div

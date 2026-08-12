@@ -1,5 +1,7 @@
 # Threadmap — Codebase Audit
 
+> Production-launch controls and remaining console/owner actions are tracked separately in `PRODUCTION_READINESS.md`.
+
 **Audited:** 2026-08-06 → 2026-08-07  
 **Scope:** the full repository at `main` — app, Cloud Functions, rules, tests, docs.  
 **Method:** code reading throughout, plus live probing of the signed-in production app at `threadmap.app` and of the deployed Cloud Functions. Findings marked **Proven** were reproduced (a probe, a measurement, or a live request); findings marked **Read** are from code inspection alone.

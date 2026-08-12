@@ -478,10 +478,10 @@ function BriefingContent() {
       'min-h-[100dvh] flex flex-col transition-all duration-700',
       mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4',
       phase === 'morning'
-        ? 'bg-gradient-to-b from-amber-50/50 via-background to-background dark:from-amber-950/20 dark:via-background dark:to-background'
+        ? 'bg-gradient-to-b from-foreground/[0.045] via-background to-background dark:from-foreground/[0.045] dark:via-background dark:to-background'
         : phase === 'evening'
-          ? 'bg-gradient-to-b from-indigo-50/50 via-background to-background dark:from-indigo-950/20 dark:via-background dark:to-background'
-          : 'bg-gradient-to-b from-sky-50/50 via-background to-background dark:from-sky-950/20 dark:via-background dark:to-background',
+          ? 'bg-gradient-to-b from-foreground/[0.045] via-background to-background dark:from-foreground/[0.045] dark:via-background dark:to-background'
+          : 'bg-gradient-to-b from-foreground/[0.045] via-background to-background dark:from-foreground/[0.045] dark:via-background dark:to-background',
     )}>
       <div className="flex-1 p-5 lg:p-10 max-w-xl mx-auto w-full space-y-6 lg:space-y-8 pb-10">
 
@@ -492,11 +492,11 @@ function BriefingContent() {
         )}>
           <div className="flex items-center gap-2 text-muted-foreground/40">
             {phase === 'morning' ? (
-              <Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} />
+              <Sun className="h-4 w-4 text-foreground/60" strokeWidth={1.5} />
             ) : phase === 'evening' ? (
-              <Moon className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
+              <Moon className="h-4 w-4 text-foreground/60" strokeWidth={1.5} />
             ) : (
-              <CalendarRange className="h-4 w-4 text-sky-500" strokeWidth={1.5} />
+              <CalendarRange className="h-4 w-4 text-foreground/60" strokeWidth={1.5} />
             )}
             <span className="text-[11px] uppercase tracking-[0.2em] font-medium">
               {phase === 'morning'
@@ -557,7 +557,7 @@ function BriefingContent() {
             </div>
 
             <BriefingCard
-              icon={<Target className="h-3.5 w-3.5 text-amber-500" />}
+              icon={<Target className="h-3.5 w-3.5 text-foreground/60" />}
               title={t('briefing.todayFocus', { count: journal.daily.priorityIds.length })}
             >
               {briefingCandidates.length === 0 ? (
@@ -576,13 +576,13 @@ function BriefingContent() {
                         aria-pressed={selected}
                         className={cn(
                           'w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors',
-                          selected ? 'bg-amber-500/10 text-foreground' : 'text-muted-foreground/55 hover:bg-foreground/[0.03]',
+                          selected ? 'bg-foreground/[0.055] text-foreground' : 'text-muted-foreground/55 hover:bg-foreground/[0.03]',
                           disabled && 'opacity-35 cursor-not-allowed',
                         )}
                       >
                         <span className={cn(
                           'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-semibold',
-                          selected ? 'border-amber-500 bg-amber-500 text-white' : 'border-border/70',
+                          selected ? 'border-foreground/10 bg-foreground/[0.055] text-white' : 'border-border/70',
                         )}>
                           {selected ? journal.daily.priorityIds.indexOf(task.id) + 1 : ''}
                         </span>
@@ -602,7 +602,7 @@ function BriefingContent() {
                 rows={2}
                 placeholder={t('briefing.intentionPlaceholder')}
                 aria-label={t('briefing.intentionLabel')}
-                className="mt-2 w-full resize-none rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[12px] placeholder:text-muted-foreground/30 focus:outline-none focus:border-amber-500/40"
+                className="mt-2 w-full resize-none rounded-lg border border-border/40 bg-transparent px-3 py-2 text-[12px] placeholder:text-muted-foreground/30 focus:outline-none focus:border-foreground/10"
               />
             </BriefingCard>
 
@@ -614,13 +614,13 @@ function BriefingContent() {
                 className={cn(
                   'w-full rounded-2xl border p-4 text-left transition-all hover:shadow-sm',
                   phase === 'morning'
-                    ? 'border-amber-200/50 bg-amber-50/30 dark:border-amber-900/30 dark:bg-amber-950/10'
+                    ? 'border-foreground/10 bg-foreground/[0.055] dark:border-foreground/10 dark:bg-foreground/[0.055]'
                     : 'border-border/40 bg-card/50',
                 )}
               >
                 <div className="flex items-center gap-2 mb-1.5">
-                  <Zap className="h-3.5 w-3.5 text-amber-500" />
-                  <span className="text-[10px] uppercase tracking-[0.15em] font-medium text-amber-600 dark:text-amber-400">
+                  <Zap className="h-3.5 w-3.5 text-foreground/60" />
+                  <span className="text-[10px] uppercase tracking-[0.15em] font-medium text-foreground/60 dark:text-foreground/60">
                     {t('briefing.topPriority')}
                   </span>
                 </div>
@@ -636,7 +636,7 @@ function BriefingContent() {
             {/* Schedule Timeline */}
             {eventsToday.length > 0 && (
               <BriefingCard
-                icon={<CalendarDays className="h-3.5 w-3.5 text-blue-400" />}
+                icon={<CalendarDays className="h-3.5 w-3.5 text-foreground/60" />}
                 title={t('briefing.todaySchedule')}
               >
                 <div className="space-y-0">
@@ -650,7 +650,7 @@ function BriefingContent() {
                       <span className="text-[12px] text-muted-foreground/50 font-mono w-12 shrink-0 tabular-nums">
                         {event.startTime || '—'}
                       </span>
-                      <div className="h-6 w-px bg-blue-400/20 shrink-0" />
+                      <div className="h-6 w-px bg-foreground/[0.055] shrink-0" />
                       <span className="text-[13px] truncate">{event.title}</span>
                     </button>
                   ))}
@@ -661,7 +661,7 @@ function BriefingContent() {
             {/* Deadlines */}
             {(tasksDueToday.length > 0 || overdue.length > 0) && (
               <BriefingCard
-                icon={<Clock className="h-3.5 w-3.5 text-amber-500" />}
+                icon={<Clock className="h-3.5 w-3.5 text-foreground/60" />}
                 title={t('briefing.deadlines')}
               >
                 <div className="space-y-0">
@@ -678,7 +678,7 @@ function BriefingContent() {
             {/* My Day Tasks */}
             {myDayTasks.length > 0 && (
               <BriefingCard
-                icon={<Sun className="h-3.5 w-3.5 text-amber-500" />}
+                icon={<Sun className="h-3.5 w-3.5 text-foreground/60" />}
                 title={t('briefing.myDay')}
               >
                 <div className="space-y-0">
@@ -692,7 +692,7 @@ function BriefingContent() {
             {/* Habits */}
             {habitsToday.length > 0 && (
               <BriefingCard
-                icon={<Flame className="h-3.5 w-3.5 text-orange-400" />}
+                icon={<Flame className="h-3.5 w-3.5 text-foreground/60" />}
                 title={`${t('briefing.habits')} · ${habitsCompleted.length}/${habitsToday.length}`}
               >
                 <div className="space-y-0">
@@ -722,7 +722,7 @@ function BriefingContent() {
                         </span>
                         {streak > 0 && (
                           <span className="text-[11px] text-muted-foreground/40 tabular-nums flex items-center gap-0.5">
-                            <Flame className="h-3 w-3 text-orange-400/60" />
+                            <Flame className="h-3 w-3 text-foreground/60" />
                             {streak}
                           </span>
                         )}
@@ -736,7 +736,7 @@ function BriefingContent() {
             {/* Goals */}
             {activeGoals.length > 0 && (
               <BriefingCard
-                icon={<Target className="h-3.5 w-3.5 text-purple-400" />}
+                icon={<Target className="h-3.5 w-3.5 text-foreground/60" />}
                 title={t('briefing.activeGoals')}
               >
                 <div className="space-y-0">
@@ -747,7 +747,7 @@ function BriefingContent() {
                       onClick={() => setSelectedItemId(goal.id)}
                       className="flex w-full items-center gap-3 rounded-lg px-1 py-2 text-left transition-colors hover:bg-foreground/[0.02]"
                     >
-                      <div className="h-1.5 w-1.5 rounded-full bg-purple-400/50 shrink-0" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-foreground/[0.055] shrink-0" />
                       <span className="text-[13px] truncate flex-1">{goal.title}</span>
                       {goal.timeframe && (
                         <span className="text-[10px] text-muted-foreground/30">{t(`timeframe.${goal.timeframe}`)}</span>
@@ -787,22 +787,22 @@ function BriefingContent() {
                 value={completedToday.length}
                 subtitle={totalScheduled > 0 ? t('briefing.ofCount', { count: totalScheduled }) : undefined}
                 score={completionScore}
-                icon={<Trophy className="h-4 w-4 text-amber-500" />}
+                icon={<Trophy className="h-4 w-4 text-foreground/60" />}
               />
               <ScoreCard
                 label={t('briefing.habits')}
                 value={habitsCompleted.length}
                 subtitle={habitsToday.length > 0 ? t('briefing.ofCount', { count: habitsToday.length }) : undefined}
                 score={habitScore}
-                icon={<Flame className="h-4 w-4 text-orange-400" />}
+                icon={<Flame className="h-4 w-4 text-foreground/60" />}
               />
             </div>
 
             {/* Streak Highlight */}
             {bestStreak >= 3 && (
-              <div className="flex items-center gap-3 rounded-2xl border border-orange-200/40 bg-orange-50/20 dark:border-orange-900/20 dark:bg-orange-950/10 p-4">
-                <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-orange-500/10">
-                  <Flame className="h-5 w-5 text-orange-500" />
+              <div className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-foreground/[0.055] dark:border-foreground/10 dark:bg-foreground/[0.055] p-4">
+                <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-foreground/[0.055]">
+                  <Flame className="h-5 w-5 text-foreground/60" />
                 </div>
                 <div>
                   <p className="text-[14px] font-semibold">
@@ -833,7 +833,7 @@ function BriefingContent() {
             {/* Unfinished */}
             {(tasksDueToday.length > 0 || myDayTasks.length > 0) && (
               <BriefingCard
-                icon={<AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
+                icon={<AlertTriangle className="h-3.5 w-3.5 text-foreground/60" />}
                 title={t('briefing.carriedOverTitle', { count: tasksDueToday.length + myDayTasks.length })}
               >
                 <div className="space-y-0">
@@ -847,7 +847,7 @@ function BriefingContent() {
             {/* Habits Recap */}
             {habitsToday.length > 0 && (
               <BriefingCard
-                icon={<Flame className="h-3.5 w-3.5 text-orange-400" />}
+                icon={<Flame className="h-3.5 w-3.5 text-foreground/60" />}
                 title={`${t('briefing.habits')} · ${habitsCompleted.length}/${habitsToday.length}`}
               >
                 <div className="space-y-0">
@@ -872,13 +872,13 @@ function BriefingContent() {
             {/* Tomorrow Preview */}
             {(dueTomorrow.length > 0 || eventsTomorrow.length > 0) && (
               <BriefingCard
-                icon={<TrendingUp className="h-3.5 w-3.5 text-blue-400" />}
+                icon={<TrendingUp className="h-3.5 w-3.5 text-foreground/60" />}
                 title={t('briefing.tomorrow')}
               >
                 <div className="space-y-0">
                   {eventsTomorrow.slice(0, 3).map(event => (
                     <div key={event.id} className="flex items-center gap-3 py-1.5 px-1">
-                      <CalendarDays className="h-3 w-3 text-blue-400/50 shrink-0" />
+                      <CalendarDays className="h-3 w-3 text-foreground/60 shrink-0" />
                       <span className="text-[13px] truncate">{event.title}</span>
                       {event.startTime && (
                         <span className="text-[11px] text-muted-foreground/30 ml-auto shrink-0">{event.startTime}</span>
@@ -906,7 +906,7 @@ function BriefingContent() {
                 maxLength={4000}
                 rows={3}
                 placeholder={t('briefing.reflectionPlaceholder')}
-                className="mt-1.5 w-full resize-none rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-indigo-500/40"
+                className="mt-1.5 w-full resize-none rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-foreground/10"
               />
               {journal.daily.eveningCompletedAt && (
                 <p className="mt-1 text-[10px] text-emerald-600/70">{t('briefing.savedToday')}</p>
@@ -920,7 +920,7 @@ function BriefingContent() {
             )}>
               {completionScore !== null && completionScore >= 80 ? (
                 <>
-                  <Trophy className="h-8 w-8 mx-auto text-amber-500/40 mb-3" />
+                  <Trophy className="h-8 w-8 mx-auto text-foreground/60 mb-3" />
                   <p className="text-[15px] font-semibold text-foreground/80">
                     {t('briefing.outstandingTitle')}
                   </p>
@@ -930,7 +930,7 @@ function BriefingContent() {
                 </>
               ) : completionScore !== null && completionScore >= 50 ? (
                 <>
-                  <TrendingUp className="h-8 w-8 mx-auto text-blue-400/40 mb-3" />
+                  <TrendingUp className="h-8 w-8 mx-auto text-foreground/60 mb-3" />
                   <p className="text-[15px] font-semibold text-foreground/80">
                     {t('briefing.solidTitle')}
                   </p>
@@ -940,7 +940,7 @@ function BriefingContent() {
                 </>
               ) : (
                 <>
-                  <Moon className="h-8 w-8 mx-auto text-indigo-400/30 mb-3" />
+                  <Moon className="h-8 w-8 mx-auto text-foreground/60 mb-3" />
                   <p className="text-[15px] font-semibold text-foreground/80">
                     {t('briefing.restTitle')}
                   </p>
@@ -967,18 +967,18 @@ function BriefingContent() {
                 label={t('briefing.dueThisWeek')}
                 value={tasksDueThisWeek.length}
                 score={null}
-                icon={<Clock className="h-4 w-4 text-amber-500" />}
+                icon={<Clock className="h-4 w-4 text-foreground/60" />}
               />
               <ScoreCard
                 label={t('briefing.activeGoals')}
                 value={activeGoals.length}
                 score={null}
-                icon={<Target className="h-4 w-4 text-purple-500" />}
+                icon={<Target className="h-4 w-4 text-foreground/60" />}
               />
             </div>
 
             <BriefingCard
-              icon={<CalendarRange className="h-3.5 w-3.5 text-sky-500" />}
+              icon={<CalendarRange className="h-3.5 w-3.5 text-foreground/60" />}
               title={`${format(weekStart, 'd MMM', { locale })} – ${format(weekEnd, 'd MMM', { locale })}`}
             >
               {tasksDueThisWeek.length === 0 ? (
@@ -989,7 +989,7 @@ function BriefingContent() {
             </BriefingCard>
 
             {activeGoals.length > 0 && (
-              <BriefingCard icon={<Target className="h-3.5 w-3.5 text-purple-500" />} title={t('briefing.goalsInView')}>
+              <BriefingCard icon={<Target className="h-3.5 w-3.5 text-foreground/60" />} title={t('briefing.goalsInView')}>
                 {activeGoals.slice(0, 6).map((goal) => (
                   <button
                     key={goal.id}
@@ -997,7 +997,7 @@ function BriefingContent() {
                     onClick={() => setSelectedItemId(goal.id)}
                     className="flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-[13px] hover:bg-foreground/[0.02]"
                   >
-                    <span className="h-1.5 w-1.5 rounded-full bg-purple-400/60" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-foreground/[0.055]" />
                     <span className="truncate">{goal.title}</span>
                   </button>
                 ))}
@@ -1018,7 +1018,7 @@ function BriefingContent() {
                 maxLength={4000}
                 rows={3}
                 placeholder={t('briefing.weeklyAnchorPlaceholder')}
-                className="mt-1.5 w-full resize-none rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-sky-500/40"
+                className="mt-1.5 w-full resize-none rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/25 focus:outline-none focus:border-foreground/10"
               />
               {journal.weekly.completedAt && (
                 <p className="mt-1 text-[10px] text-emerald-600/70">{t('briefing.savedWeek')}</p>
@@ -1085,9 +1085,9 @@ function TaskItem({ task, onClick, variant, locale }: {
       <div className={cn(
         'h-1.5 w-1.5 rounded-full shrink-0',
         variant === 'overdue' ? 'bg-red-500' :
-        variant === 'due' ? 'bg-amber-500' :
+        variant === 'due' ? 'bg-foreground/[0.055]' :
         task.priority === 'high' ? 'bg-red-400' :
-        task.priority === 'medium' ? 'bg-amber-400' : 'bg-foreground/15'
+        task.priority === 'medium' ? 'bg-foreground/[0.055]' : 'bg-foreground/15'
       )} />
       <span className={cn(
         'text-[13px] truncate flex-1',
@@ -1126,7 +1126,7 @@ function ScoreCard({ label, value, subtitle, score, icon }: {
             <div
               className={cn(
                 'h-full rounded-full transition-all duration-1000',
-                score >= 80 ? 'bg-emerald-500' : score >= 50 ? 'bg-amber-500' : 'bg-red-400'
+                score >= 80 ? 'bg-emerald-500' : score >= 50 ? 'bg-foreground/[0.055]' : 'bg-red-400'
               )}
               style={{ width: `${score}%` }}
             />

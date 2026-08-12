@@ -30,7 +30,7 @@ import type { OrbitItem, ItemStatus, ProjectTier } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/responsive-action-menu';
 import { FileUpload } from '@/components/files/file-upload';
 import { cn, fullTimestampPattern, getLocale, shortDatePattern } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n';

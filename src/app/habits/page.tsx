@@ -9,10 +9,12 @@ import { createItem, updateItem } from '@/lib/firestore';
 import { cn } from '@/lib/utils';
 import { format, startOfWeek, addDays, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, addWeeks, isSameMonth, getDay } from 'date-fns';
 import { calculateStreak, isHabitScheduledForDate, isHabitCompletedForDate, getWeekCompletionRate } from '@/lib/habits';
-import { QuickCreateDialog } from '@/components/items/quick-create-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { formatHabitTime } from '@/lib/habit-reminders';
-import type { OrbitItem } from '@/lib/types';
+import type { HabitFrequency, OrbitItem } from '@/lib/types';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
@@ -28,6 +30,7 @@ type ViewMode = 'week' | 'month';
 type HabitFilter = 'active' | 'paused' | 'all';
 
 const PAUSED_STATUS = 'waiting' as const;
+const HABIT_CREATE_FREQUENCY_OPTIONS: HabitFrequency[] = ['daily', 'weekly', 'custom'];
 
 interface HabitToggleRetry {
   habitId: string;
@@ -57,6 +60,10 @@ export default function HabitsPage() {
   const pauseInFlightRef = useRef(new Set<string>());
   const [creatingHabit, setCreatingHabit] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createStep, setCreateStep] = useState<1 | 2>(1);
+  const [createHabitTitle, setCreateHabitTitle] = useState('');
+  const [createHabitFrequency, setCreateHabitFrequency] = useState<HabitFrequency>('daily');
+  const [createHabitCustomDays, setCreateHabitCustomDays] = useState<number[]>([]);
   const [pendingToggleKeys, setPendingToggleKeys] = useState<Set<string>>(new Set());
   const [createError, setCreateError] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<HabitToggleRetry | null>(null);
@@ -70,6 +77,15 @@ export default function HabitsPage() {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const createStepWeekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, index) => format(
+      addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), index),
+      'EEE',
+      { locale }
+    )),
+    [locale]
+  );
+  const createHabitDefaultWeeklyDay = weekStartSetting === 'sunday' ? 6 : 0;
   
   // Calculate padding days to align first day with correct weekday (Monday = 0)
   const firstDayOfMonth = getDay(monthStart);
@@ -146,10 +162,51 @@ export default function HabitsPage() {
     }
   };
 
+  const resetCreateHabitDialog = () => {
+    setCreateStep(1);
+    setCreateHabitTitle('');
+    setCreateHabitFrequency('daily');
+    setCreateHabitCustomDays([]);
+  };
+
+  const updateCreateHabitFrequency = (frequency: HabitFrequency) => {
+    setCreateHabitFrequency(frequency);
+    if (frequency === 'weekly') {
+      setCreateHabitCustomDays([createHabitDefaultWeeklyDay]);
+      return;
+    }
+    if (frequency === 'custom') {
+      setCreateHabitCustomDays((currentDays) => (
+        currentDays.length ? currentDays : [createHabitDefaultWeeklyDay]
+      ));
+      return;
+    }
+    setCreateHabitCustomDays([]);
+  };
+
+  const toggleCreateHabitDay = (day: number) => {
+    setCreateHabitCustomDays((currentDays) => {
+      if (createHabitFrequency === 'weekly') {
+        return [day];
+      }
+      const next = new Set(currentDays);
+      if (next.has(day)) {
+        if (next.size === 1) return currentDays;
+        next.delete(day);
+      } else {
+        next.add(day);
+      }
+      return Array.from(next).sort((a, b) => a - b);
+    });
+  };
+
   // Creation is name-first now: nothing is written until the user commits, so
   // backing out no longer leaves a "New habit" record in the list, the sidebar
   // badge and the cloud.
-  const handleCreateHabit = async (title: string): Promise<boolean> => {
+  const handleCreateHabit = async (
+    title: string,
+    frequency: HabitFrequency,
+  ): Promise<boolean> => {
     if (createInFlightRef.current) return false;
     if (!user) {
       setCreateError(lang === 'de'
@@ -166,9 +223,19 @@ export default function HabitsPage() {
         type: 'habit',
         status: 'active',
         title,
-        frequency: 'daily',
         completions: {},
         tags: [],
+        frequency,
+        ...(frequency === 'daily'
+          ? {}
+          : {
+              customDays: Array.from(
+                new Set(frequency === 'weekly'
+                  ? (createHabitCustomDays.length ? createHabitCustomDays : [createHabitDefaultWeeklyDay])
+                  : createHabitCustomDays
+                )
+              ).sort((a, b) => a - b),
+            }),
         userId: user.uid,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -345,7 +412,11 @@ export default function HabitsPage() {
           />
           <button
             type="button"
-            onClick={() => { setCreateError(null); setCreateDialogOpen(true); }}
+            onClick={() => {
+              setCreateError(null);
+              resetCreateHabitDialog();
+              setCreateDialogOpen(true);
+            }}
             disabled={creatingHabit}
             aria-busy={creatingHabit}
             className="mobile-touch-target flex items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-transform transition-opacity hover:opacity-90 active:scale-95 disabled:cursor-wait disabled:opacity-70 lg:min-h-0 lg:rounded-lg lg:py-1.5 lg:text-[12px]"
@@ -358,16 +429,158 @@ export default function HabitsPage() {
         </div>
       </div>
 
-      <QuickCreateDialog
+      <Dialog
         open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        title={t('habits.createTitle')}
-        description={t('habits.createDescription')}
-        placeholder={t('habits.createPlaceholder')}
-        submitting={creatingHabit}
-        error={createError}
-        onCreate={handleCreateHabit}
-      />
+        onOpenChange={(next) => {
+          if (!next && creatingHabit) return;
+          if (!next) {
+            resetCreateHabitDialog();
+          }
+          setCreateDialogOpen(next);
+        }}
+      >
+        <DialogContent className="max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">{t('habits.createTitle')}</DialogTitle>
+            <DialogDescription className="text-[12px]">
+              {createStep === 1
+                ? t('habits.createDescription')
+                : (lang === 'de' ? 'Gib die Frequenz für diese Gewohnheit an.' : 'Pick the habit frequency.')}
+            </DialogDescription>
+          </DialogHeader>
+
+          {createStep === 1 ? (
+            <div className="space-y-3">
+              <Input
+                value={createHabitTitle}
+                onChange={(event) => setCreateHabitTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (!createHabitTitle.trim()) return;
+                    updateCreateHabitFrequency(createHabitFrequency);
+                    setCreateStep(2);
+                  }
+                }}
+                placeholder={t('habits.createPlaceholder')}
+                disabled={creatingHabit}
+                aria-label={t('habits.createTitle')}
+              />
+
+              {createError && (
+                <p role="alert" className="text-[12px] text-destructive">
+                  {createError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setCreateDialogOpen(false)}
+                  disabled={creatingHabit}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!createHabitTitle.trim()) return;
+                    updateCreateHabitFrequency(createHabitFrequency);
+                    setCreateStep(2);
+                  }}
+                  disabled={creatingHabit || !createHabitTitle.trim()}
+                  aria-busy={creatingHabit}
+                >
+                  {lang === 'de' ? 'Weiter' : 'Next'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                {HABIT_CREATE_FREQUENCY_OPTIONS.map((frequency) => (
+                  <button
+                    key={frequency}
+                    type="button"
+                    onClick={() => updateCreateHabitFrequency(frequency)}
+                    disabled={creatingHabit}
+                    className={cn(
+                      'w-full rounded-lg border border-border/60 px-3 py-2.5 text-left text-sm transition-colors',
+                      createHabitFrequency === frequency
+                        ? 'border-foreground bg-foreground/5 text-foreground'
+                        : 'text-muted-foreground hover:bg-foreground/[0.03]'
+                    )}
+                  >
+                    {t(`frequency.${frequency}`)}
+                  </button>
+                ))}
+              </div>
+
+              {(createHabitFrequency === 'weekly' || createHabitFrequency === 'custom') && (
+                <div>
+                  <p className="mb-1.5 text-[10px] text-muted-foreground/60">
+                    {createHabitFrequency === 'weekly' ? t('detail.scheduledDay') : t('detail.scheduledDays')}
+                  </p>
+                  <div className="grid grid-cols-4 gap-1">
+                    {createStepWeekDays.map((label, idx) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => toggleCreateHabitDay(idx)}
+                        disabled={creatingHabit}
+                        aria-pressed={createHabitCustomDays.includes(idx)}
+                        className={cn(
+                          'flex min-h-10 w-full items-center justify-center rounded text-[10px] font-medium',
+                          createHabitCustomDays.includes(idx)
+                            ? 'bg-foreground text-background'
+                            : 'bg-foreground/[0.05] text-muted-foreground'
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {createError && (
+                <p role="alert" className="text-[12px] text-destructive">
+                  {createError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setCreateStep(1)}
+                  disabled={creatingHabit}
+                >
+                  {lang === 'de' ? 'Zurück' : 'Back'}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void (async () => {
+                    if (!createHabitTitle.trim()) return;
+                    const created = await handleCreateHabit(
+                      createHabitTitle.trim(),
+                      createHabitFrequency
+                    );
+                    if (!created) return;
+                    resetCreateHabitDialog();
+                    setCreateDialogOpen(false);
+                  })()}
+                  disabled={creatingHabit}
+                  aria-busy={creatingHabit}
+                >
+                  {t('common.create')}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {(createError || toggleError) && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.05] px-3 py-2.5 text-[12px] text-destructive">

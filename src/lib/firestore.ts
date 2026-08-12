@@ -2178,10 +2178,14 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
         const revision = Number(snapshot.data().revision || 0);
         const hasPendingLocalChanges = options.hasPendingLocalChanges?.() === true;
         acceptedToolData.set(revisionKey, snapshot.data());
-        // A dirty local snapshot must retain the revision it was based on.
-        // Advancing here would let a stale whole-document save erase a newer
-        // edit from another device.
-        if (!hasPendingLocalChanges) rememberToolBaseRevision(userId, toolId, revision);
+        // A dirty local snapshot should usually retain the revision it was based
+        // on; otherwise concurrent edits can get clobbered.
+        // But when no durable base revision exists yet (first session resume),
+        // capture it from the authoritative cloud revision so first write can
+        // be validated instead of always throwing a false conflict.
+        if (!hasPendingLocalChanges || (!snapshot.metadata.fromCache && !toolRevisions.has(revisionKey))) {
+          rememberToolBaseRevision(userId, toolId, revision);
+        }
         console.log(`[THREADMAP] Tool data received from cloud (${toolId})`);
         callback(snapshot.data() as T);
       } else {

@@ -49,7 +49,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/responsive-action-menu';
 import { calculateStreak, isHabitScheduledForDate } from '@/lib/habits';
 import { cn, fullTimestampPattern, getLocale } from '@/lib/utils';
 import { format, isPast, isToday, isValid, parseISO } from 'date-fns';

@@ -193,13 +193,15 @@ export function parseCommand(input: string, options: ParseCommandOptions = {}): 
   }
 
   // Extract tags (#tag)
-  const tagRegex = /#([\p{L}\p{M}\p{N}_-]+)/gu;
+  // Hashtags are command tokens only at the start of the input or after
+  // whitespace. Ordinary text such as "C#" and "foo#bar" stays untouched.
+  const tagRegex = /(^|\s)#([\p{L}\p{M}\p{N}_-]+)/gu;
   let tagMatch;
   while ((tagMatch = tagRegex.exec(text)) !== null) {
-    const tag = tagMatch[1].toLowerCase();
+    const tag = tagMatch[2].toLowerCase();
     if (!tags.includes(tag)) tags.push(tag);
   }
-  text = text.replace(tagRegex, '').trim();
+  text = text.replace(tagRegex, '$1').trim();
 
   // Extract links (@item title)
   const mentions = extractMentions(text, options.knownTitles ?? []);
