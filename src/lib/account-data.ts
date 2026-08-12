@@ -5,6 +5,7 @@ import { cloudFunctions } from './firebase';
 import { clearScopedBrowserData } from './account-storage';
 import { boundFlightHistory } from './flight-retention';
 import type { ProjectFile } from './types';
+import type { MfaRecoveryCodeStatus } from './mfa';
 
 export interface AccountExportAttachment extends Partial<ProjectFile> {
   id: string;
@@ -31,6 +32,10 @@ export interface AccountExport {
   connections: unknown[];
   nudges: unknown[];
   pushDevices?: unknown[];
+  security?: {
+    mfaEnrolled: boolean;
+    recoveryCodes: MfaRecoveryCodeStatus | null;
+  };
   localData?: Record<string, unknown>;
 }
 

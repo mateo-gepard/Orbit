@@ -237,6 +237,24 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // MFA recovery material is Cloud Functions-only. Browsers receive plaintext
+    // codes once and can never read their keyed digests or security audit data.
+    match /mfaRecoveryCodes/{codeDigest} {
+      allow read, write: if false;
+    }
+
+    match /mfaRecoverySets/{userId} {
+      allow read, write: if false;
+    }
+
+    match /mfaRecoveryRateLimits/{quotaId} {
+      allow read, write: if false;
+    }
+
+    match /mfaRecoveryAudits/{eventId} {
+      allow read, write: if false;
+    }
+
     match /attachmentUploadIntents/{intentId} {
       allow read, write: if false;
     }

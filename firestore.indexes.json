@@ -35,6 +35,18 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "mfaRecoveryCodes",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "mfaRecoveryRateLimits",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "mcpOAuthAuthorizationRequests",
       "fieldPath": "expireAt",
       "ttl": true,

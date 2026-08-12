@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   multiFactor,
   sendEmailVerification,
@@ -8,7 +8,7 @@ import {
   type MultiFactorInfo,
   type TotpSecret,
 } from 'firebase/auth';
-import { Check, Copy, KeyRound, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
+import { Check, Copy, Download, KeyRound, Loader2, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 
@@ -23,7 +23,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { mfaErrorMessage, normalizeTotpCode, TOTP_CODE_LENGTH } from '@/lib/mfa';
+import {
+  generateMfaRecoveryCodes,
+  getMfaRecoveryCodeStatus,
+  mfaErrorMessage,
+  mfaRecoveryErrorMessage,
+  normalizeTotpCode,
+  TOTP_CODE_LENGTH,
+  type GeneratedMfaRecoveryCodes,
+  type MfaRecoveryCodeStatus,
+} from '@/lib/mfa';
 import { useSettingsStore } from '@/lib/settings-store';
 
 export function MfaSettings() {
@@ -40,6 +49,24 @@ export function MfaSettings() {
   const [sendingVerification, setSendingVerification] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [factorToRemove, setFactorToRemove] = useState<MultiFactorInfo | null>(null);
+  const [recoveryStatus, setRecoveryStatus] = useState<MfaRecoveryCodeStatus | null>(null);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [replaceRecoveryCodes, setReplaceRecoveryCodes] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (!user || isDemo || factors.length === 0) {
+      setRecoveryStatus(null);
+      return () => { active = false; };
+    }
+    void getMfaRecoveryCodeStatus().then((status) => {
+      if (active) setRecoveryStatus(status);
+    }).catch(() => {
+      if (active) setRecoveryStatus(null);
+    });
+    return () => { active = false; };
+  }, [factors.length, isDemo, user]);
 
   if (!user || isDemo) {
     return (
@@ -60,6 +87,28 @@ export function MfaSettings() {
   }
 
   const refreshFactors = () => setFactors([...multiFactor(user).enrolledFactors]);
+
+  const showGeneratedCodes = (generated: GeneratedMfaRecoveryCodes) => {
+    setRecoveryCodes(generated.codes);
+    setRecoveryStatus({
+      generatedAt: generated.generatedAt,
+      expiresAt: generated.expiresAt,
+      remaining: generated.codes.length,
+    });
+  };
+
+  const createRecoveryCodes = async () => {
+    setRecoveryBusy(true);
+    setError(null);
+    try {
+      showGeneratedCodes(await generateMfaRecoveryCodes());
+      setReplaceRecoveryCodes(false);
+    } catch (recoveryError) {
+      setError(mfaRecoveryErrorMessage(recoveryError, language));
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
 
   const startEnrollment = async () => {
     setBusy(true);
@@ -91,6 +140,11 @@ export function MfaSettings() {
       setSecret(null);
       setCode('');
       toast.success(de ? 'Authenticator hinzugefugt.' : 'Authenticator added.');
+      try {
+        showGeneratedCodes(await generateMfaRecoveryCodes());
+      } catch (recoveryError) {
+        setError(mfaRecoveryErrorMessage(recoveryError, language));
+      }
     } catch (enrollmentError) {
       setError(mfaErrorMessage(enrollmentError, language));
     } finally {
@@ -121,6 +175,31 @@ export function MfaSettings() {
     } catch {
       setError(de ? 'Der Schlussel konnte nicht kopiert werden.' : 'The setup key could not be copied.');
     }
+  };
+
+  const copyRecoveryCodes = async () => {
+    try {
+      await navigator.clipboard.writeText(recoveryCodes.join('\n'));
+      toast.success(de ? 'Wiederherstellungscodes kopiert.' : 'Recovery codes copied.');
+    } catch {
+      setError(de ? 'Die Codes konnten nicht kopiert werden.' : 'The codes could not be copied.');
+    }
+  };
+
+  const downloadRecoveryCodes = () => {
+    const body = [
+      'Threadmap MFA recovery codes',
+      'Each code works once. Store these somewhere private.',
+      '',
+      ...recoveryCodes,
+      '',
+    ].join('\n');
+    const url = URL.createObjectURL(new Blob([body], { type: 'text/plain;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'threadmap-recovery-codes.txt';
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   const removeFactor = async () => {
@@ -200,6 +279,34 @@ export function MfaSettings() {
             </div>
           ))}
 
+          {factors.length > 0 && (
+            <div className="rounded-xl border border-border/40 bg-muted/15 p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <KeyRound aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <p className="text-[12px] font-medium">{de ? 'Wiederherstellungscodes' : 'Recovery codes'}</p>
+                    <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground/60">
+                      {recoveryStatus?.remaining
+                        ? (de ? `${recoveryStatus.remaining} Einmalcodes sind aktiv.` : `${recoveryStatus.remaining} one-time codes are active.`)
+                        : (de ? 'Erstelle Codes, bevor du den Zugriff auf deinen Authenticator verlierst.' : 'Create codes before you lose access to your authenticator.')}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={recoveryBusy}
+                  onClick={() => recoveryStatus?.remaining ? setReplaceRecoveryCodes(true) : void createRecoveryCodes()}
+                >
+                  {recoveryBusy ? <Loader2 aria-hidden="true" className="animate-spin" /> : <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />}
+                  {recoveryStatus?.remaining ? (de ? 'Codes ersetzen' : 'Replace codes') : (de ? 'Codes erstellen' : 'Create codes')}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {secret ? (
             <div className="grid gap-5 rounded-xl border border-border/50 bg-background p-4 md:grid-cols-[auto_1fr]">
               <div className="w-fit rounded-xl border border-border/50 bg-white p-3">
@@ -261,8 +368,8 @@ export function MfaSettings() {
 
           <p className="text-[10px] leading-relaxed text-muted-foreground/50">
             {de
-              ? 'Bewahre den Zugriff auf deine Authenticator-App sicher auf. Threadmap bietet derzeit keine Wiederherstellungscodes.'
-              : 'Keep access to your authenticator app safe. Threadmap does not currently provide recovery codes.'}
+              ? 'Bewahre Authenticator und Wiederherstellungscodes getrennt und sicher auf.'
+              : 'Keep your authenticator and recovery codes stored separately and securely.'}
           </p>
           {error && <p role="alert" className="text-[11px] text-destructive">{error}</p>}
         </div>
@@ -285,6 +392,63 @@ export function MfaSettings() {
             <Button type="button" variant="destructive" disabled={busy} onClick={() => void removeFactor()}>
               {busy && <Loader2 aria-hidden="true" className="animate-spin" />}
               {de ? 'Entfernen' : 'Remove'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={recoveryCodes.length > 0} onOpenChange={(open) => { if (!open) setRecoveryCodes([]); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{de ? 'Wiederherstellungscodes speichern' : 'Save your recovery codes'}</DialogTitle>
+            <DialogDescription>
+              {de
+                ? 'Diese Codes werden nur einmal angezeigt. Jeder Code kann genau einmal verwendet werden und ersetzt im Notfall deinen zweiten Faktor.'
+                : 'These codes are shown only once. Each code works exactly once and can replace your second factor in an emergency.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-2 rounded-xl border border-border/50 bg-muted/20 p-3 sm:grid-cols-2">
+            {recoveryCodes.map((recoveryCode) => (
+              <code key={recoveryCode} className="rounded-lg bg-background px-3 py-2 text-center text-xs font-semibold tracking-wider">
+                {recoveryCode}
+              </code>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => void copyRecoveryCodes()}>
+              <Copy aria-hidden="true" className="h-3.5 w-3.5" />
+              {de ? 'Alle kopieren' : 'Copy all'}
+            </Button>
+            <Button type="button" variant="outline" onClick={downloadRecoveryCodes}>
+              <Download aria-hidden="true" className="h-3.5 w-3.5" />
+              {de ? 'Herunterladen' : 'Download'}
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button type="button" onClick={() => setRecoveryCodes([])}>
+              {de ? 'Ich habe sie gespeichert' : 'I saved them'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={replaceRecoveryCodes} onOpenChange={(open) => { if (!recoveryBusy) setReplaceRecoveryCodes(open); }}>
+        <DialogContent className="sm:max-w-md" showCloseButton={!recoveryBusy}>
+          <DialogHeader>
+            <DialogTitle>{de ? 'Codes ersetzen?' : 'Replace recovery codes?'}</DialogTitle>
+            <DialogDescription>
+              {de
+                ? 'Alle bisherigen Codes werden sofort ungultig. Speichere die neuen Codes, bevor du dieses Fenster schliesst.'
+                : 'Every previous code will stop working immediately. Save the new codes before closing their window.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={recoveryBusy} onClick={() => setReplaceRecoveryCodes(false)}>
+              {de ? 'Abbrechen' : 'Cancel'}
+            </Button>
+            <Button type="button" disabled={recoveryBusy} onClick={() => void createRecoveryCodes()}>
+              {recoveryBusy && <Loader2 aria-hidden="true" className="animate-spin" />}
+              {de ? 'Neue Codes erstellen' : 'Create new codes'}
             </Button>
           </DialogFooter>
         </DialogContent>

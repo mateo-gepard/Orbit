@@ -35,7 +35,7 @@ import { stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { clearGoogleAccessToken } from '@/lib/google-calendar';
 import { deleteAccountData } from '@/lib/account-data';
 import { unregisterFCMToken } from '@/lib/fcm';
-import { findTotpFactor, normalizeTotpCode } from '@/lib/mfa';
+import { findTotpFactor, normalizeTotpCode, recoverMfaWithCode } from '@/lib/mfa';
 
 /**
  * How long to wait for Firebase to report an auth state before falling back to
@@ -441,6 +441,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMfaResolver(null);
   }, []);
 
+  const recoverMfaChallenge = useCallback(async (code: string) => {
+    await recoverMfaWithCode(code);
+    setMfaResolver(null);
+  }, []);
+
   const deleteAccount = useCallback(async () => {
     if (isDemo) {
       await deleteAccountData('demo-user', true);
@@ -545,6 +550,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       <MfaChallengeDialog
         resolver={mfaResolver}
         onCancel={cancelMfaChallenge}
+        onRecover={recoverMfaChallenge}
         onResolve={resolveMfaChallenge}
       />
     </AuthContext.Provider>
