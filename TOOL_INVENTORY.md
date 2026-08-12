@@ -11,7 +11,7 @@ Last reviewed: 12 August 2026
 | Audience | External/public signup, with private authenticated workspaces |
 | Quality tier | T4: external plus personal/customer data |
 | Production URL | `https://threadmap.app` |
-| Source | GitHub repository `mateomamaladze/orbit` |
+| Source | GitHub repository `mateo-gepard/Orbit` |
 | Web platform | Next.js on Vercel |
 | Identity and data | Firebase Authentication with Identity Platform, Firestore, Cloud Storage, Cloud Functions |
 | Production project | `orbit-9e0b6` |
