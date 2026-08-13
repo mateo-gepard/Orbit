@@ -73,9 +73,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   // These routes own their page landmarks in both auth states. Keeping them
-  // outside the workspace prevents nested main landmarks after sign-in.
+  // outside the workspace prevents nested main landmarks after sign-in. The
+  // document itself is intentionally non-scrolling, so standalone pages must
+  // also own the viewport scroll container in every auth state.
   if (STANDALONE_PUBLIC_PATHS.has(pathname)) {
-    return <>{children}</>;
+    return (
+      <div
+        className="h-[var(--app-height)] min-h-0 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-y-contain bg-background text-foreground"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
+        {children}
+      </div>
+    );
   }
 
   if (loading) {

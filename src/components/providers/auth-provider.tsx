@@ -46,6 +46,7 @@ import { findTotpFactor, normalizeTotpCode, recoverMfaWithCode } from '@/lib/mfa
 const AUTH_STATE_TIMEOUT_MS = 8_000;
 
 const EMAIL_LINK_KEY = 'orbitEmailForSignIn';
+const GOOGLE_REDIRECT_PENDING_KEY = 'threadmapGoogleRedirectPending';
 const LOCAL_MODE_KEY = 'orbitLocalMode';
 const FIREBASE_NOT_CONFIGURED_MESSAGE =
   'Firebase is not configured. Local mode is available on this device.';
@@ -198,11 +199,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let settled = false;
 
     // Complete a redirect started because the popup was blocked.
-    void getRedirectResult(auth).catch((error) => {
-      if (!beginMfaChallenge(error)) {
-        console.error('[THREADMAP Auth] Redirect sign-in result failed:', error);
-      }
-    });
+    void getRedirectResult(auth)
+      .then(() => {
+        window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+      })
+      .catch((error) => {
+        window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+        if (!beginMfaChallenge(error)) {
+          console.error('[THREADMAP Auth] Redirect sign-in result failed:', error);
+        }
+      });
 
     /**
      * `onAuthStateChanged` has an error callback but no timeout. If it never
@@ -274,7 +280,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     try {
-      await unregisterCurrentDevice();
+      // Opening a popup must remain in the original tap task. Even awaiting a
+      // resolved cleanup promise first can make Safari and installed PWAs treat
+      // the popup as unsolicited and block it.
+      if (auth.currentUser) await unregisterCurrentDevice();
       await signInWithPopup(auth, googleProvider);
     } catch (error: unknown) {
       if (beginMfaChallenge(error)) return;
@@ -289,9 +298,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           || code === 'auth/operation-not-supported-in-this-environment'
           || code === 'auth/web-storage-unsupported') {
         try {
+          window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, '1');
           await signInWithRedirect(auth, googleProvider);
           return;
         } catch (redirectError) {
+          window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
           console.error('[THREADMAP Auth] Redirect sign-in failed:', redirectError);
           throw new Error('Google sign-in popup was blocked and the redirect fallback failed. Enable popups or use local mode.');
         }
