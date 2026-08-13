@@ -1,9 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import {
-  initializeAppCheck,
-  ReCaptchaEnterpriseProvider,
-  type AppCheck,
-} from 'firebase/app-check';
+import type { AppCheck } from 'firebase/app-check';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
   getFirestore,
@@ -31,9 +27,9 @@ let appCheck: AppCheck | null = null;
 let appCheckPromise: Promise<AppCheck | null> | null = null;
 
 /**
- * Initialize App Check before any protected Firebase service is accessed.
- * Authentication enforcement applies before a user exists, so deferring this
- * until cloud data connects would make every sign-in method fail.
+ * Initialize App Check only when cloud authentication or data is about to be
+ * used. Keeping the implementation behind a dynamic import prevents local-only
+ * sessions from downloading the App Check SDK and reCAPTCHA runtime.
  */
 export function ensureAppCheck(): Promise<AppCheck | null> {
   if (appCheck) return Promise.resolve(appCheck);
@@ -41,19 +37,23 @@ export function ensureAppCheck(): Promise<AppCheck | null> {
 
   const siteKey = process.env.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY?.trim();
   if (!app || !siteKey) return Promise.resolve(null);
+  const firebaseApp = app;
 
-  try {
-    appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaEnterpriseProvider(siteKey),
-      isTokenAutoRefreshEnabled: true,
-    });
-    appCheckPromise = Promise.resolve(appCheck);
-  } catch (error) {
-    // Hot reload may attempt a second initialization. Firebase continues to
-    // use the first instance; other failures remain visible before launch.
-    console.warn('[THREADMAP] Firebase App Check initialization failed:', error);
-    appCheckPromise = Promise.resolve(null);
-  }
+  appCheckPromise = (async () => {
+    try {
+      const { initializeAppCheck, ReCaptchaEnterpriseProvider } = await import('firebase/app-check');
+      appCheck = initializeAppCheck(firebaseApp, {
+        provider: new ReCaptchaEnterpriseProvider(siteKey),
+        isTokenAutoRefreshEnabled: true,
+      });
+      return appCheck;
+    } catch (error) {
+      // Hot reload may attempt a second initialization. Firebase continues to
+      // use the first instance; other failures remain visible before launch.
+      console.warn('[THREADMAP] Firebase App Check initialization failed:', error);
+      return null;
+    }
+  })();
 
   return appCheckPromise;
 }
@@ -66,10 +66,6 @@ if (typeof window !== 'undefined' && isFirebaseConfigured) {
       console.error(
         '[THREADMAP] NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY is missing. Do not enable App Check enforcement until the production client is configured.',
       );
-    } else if (appCheckSiteKey) {
-      // App Check must be registered before Auth, Firestore, or Functions so
-      // their first request can include a valid attestation token.
-      void ensureAppCheck();
     }
     auth = getAuth(app);
     try {

@@ -173,7 +173,7 @@ function LoginScreen({
     <main className="flex min-h-[100dvh] items-center justify-center px-6">
       <nav
         aria-label="Legal and security"
-        className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-10 flex justify-center gap-4 px-4 text-[11px] text-muted-foreground/60"
+        className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-10 flex justify-center gap-4 px-4 text-[11px] text-muted-foreground"
       >
         <Link className="transition-colors hover:text-foreground" href="/privacy">Privacy</Link>
         <Link className="transition-colors hover:text-foreground" href="/terms">Terms</Link>
@@ -793,13 +793,18 @@ export default function DashboardPage() {
   // Show onboarding if empty
   if (totalActive === 0) {
     return (
-        <div className="mobile-page-gutter mx-auto max-w-3xl py-4 lg:p-8">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight">
-            {format(selectedDate, 'EEEE, d MMMM', { locale })}
-          </h1>
+      <div
+        className="mobile-page-gutter py-4 lg:p-8"
+        style={{ width: '100%' }}
+      >
+        <div style={{ width: '100%', maxWidth: '768px', marginInline: 'auto' }}>
+          <div className="mb-6">
+            <h1 className="text-xl font-semibold tracking-tight">
+              {format(selectedDate, 'EEEE, d MMMM', { locale })}
+            </h1>
+          </div>
+          <OnboardingState onOpen={() => setCommandBarOpen(true)} />
         </div>
-        <OnboardingState onOpen={() => setCommandBarOpen(true)} />
       </div>
     );
   }

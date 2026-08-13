@@ -31,7 +31,7 @@ function InfoCard({ children, icon: Icon, title }: { children: ReactNode; icon: 
         <span className="flex size-9 items-center justify-center rounded-xl bg-foreground text-background">
           <Icon className="size-4" aria-hidden="true" />
         </span>
-        <h3 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h3>
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
       </div>
       {children}
     </section>
@@ -53,7 +53,14 @@ export function McpSettings() {
         <p className="mb-3 text-sm leading-6 text-muted-foreground">Use this same URL in every supported client. Do not add a user ID, API key, or query parameter.</p>
         <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-border/70 bg-muted/35 p-2 pl-4">
           <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-sm">{MCP_ENDPOINT}</code>
-          <Button type="button" size="sm" variant="outline" onClick={() => void copy(MCP_ENDPOINT, 'endpoint')} aria-label="Copy MCP endpoint">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void copy(MCP_ENDPOINT, 'endpoint')}
+            aria-label={copied === 'endpoint' ? 'MCP endpoint copied' : 'Copy MCP endpoint'}
+            className="h-11 w-11 px-0 sm:h-8 sm:w-auto sm:px-3"
+          >
             {copied === 'endpoint' ? <Check className="size-4" /> : <Clipboard className="size-4" />}
             <span className="ml-2 hidden sm:inline">{copied === 'endpoint' ? 'Copied' : 'Copy'}</span>
           </Button>
@@ -86,7 +93,12 @@ export function McpSettings() {
                   {client.command ? (
                     <div className="mt-3 flex min-w-0 items-center gap-2 rounded-xl bg-foreground p-2 pl-3 text-background">
                       <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs">{client.command}</code>
-                      <button type="button" onClick={() => void copy(client.command!, 'command')} className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/10 text-background/70 hover:bg-background/15 hover:text-background" aria-label="Copy Claude Code command">
+                      <button
+                        type="button"
+                        onClick={() => void copy(client.command!, 'command')}
+                        className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-background/10 text-background hover:bg-background/15 sm:size-8 sm:rounded-lg"
+                        aria-label={copied === 'command' ? 'Claude Code command copied' : 'Copy Claude Code command'}
+                      >
                         {copied === 'command' ? <Check className="size-3.5" /> : <Clipboard className="size-3.5" />}
                       </button>
                     </div>

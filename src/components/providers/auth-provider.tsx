@@ -29,13 +29,18 @@ import {
   type IdTokenResult,
   type MultiFactorResolver,
 } from 'firebase/auth';
-import { MfaChallengeDialog } from '@/components/auth/mfa-challenge-dialog';
-import { auth, googleProvider } from '@/lib/firebase';
+import dynamic from 'next/dynamic';
+import { auth, ensureAppCheck, googleProvider } from '@/lib/firebase';
 import { stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { clearGoogleAccessToken } from '@/lib/google-calendar';
 import { deleteAccountData } from '@/lib/account-data';
 import { unregisterFCMToken } from '@/lib/fcm';
 import { findTotpFactor, normalizeTotpCode, recoverMfaWithCode } from '@/lib/mfa';
+
+const MfaChallengeDialog = dynamic(
+  () => import('@/components/auth/mfa-challenge-dialog').then((module) => module.MfaChallengeDialog),
+  { ssr: false },
+);
 
 /**
  * How long to wait for Firebase to report an auth state before falling back to
@@ -194,12 +199,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const timer = window.setTimeout(() => void continueAsDemo(), 0);
       return () => window.clearTimeout(timer);
     }
+    const firebaseAuth = auth;
+
+    // Local-only sessions never need the App Check or reCAPTCHA runtimes.
+    // Cloud sessions warm them in parallel so the first deliberate auth or
+    // data request is attested without blocking the initial interface.
+    const redirectPending = window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === '1';
+    const appCheckReady = !isLocalModeEnabled() && (redirectPending || Boolean(auth.currentUser))
+      ? ensureAppCheck()
+      : Promise.resolve(null);
 
     let cancelled = false;
     let settled = false;
 
     // Complete a redirect started because the popup was blocked.
-    void getRedirectResult(auth)
+    void appCheckReady.then(() => getRedirectResult(firebaseAuth))
       .then(() => {
         window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
       })
@@ -233,7 +247,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, AUTH_STATE_TIMEOUT_MS);
 
     const unsubscribe = onAuthStateChanged(
-      auth,
+      firebaseAuth,
       (firebaseUser) => {
         if (cancelled) return;
         settled = true;
@@ -280,6 +294,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     try {
+      // Do not await here: the popup must open within the original pointer
+      // gesture on Safari and installed PWAs. Google account selection gives
+      // App Check time to finish before Firebase exchanges the credential.
+      void ensureAppCheck();
       // Opening a popup must remain in the original tap task. Even awaiting a
       // resolved cleanup promise first can make Safari and installed PWAs treat
       // the popup as unsolicited and block it.
@@ -321,6 +339,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
+    await ensureAppCheck();
     await unregisterCurrentDevice();
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -334,6 +353,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
+    await ensureAppCheck();
     await unregisterCurrentDevice();
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     if (displayName && cred.user) {
@@ -343,6 +363,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sendEmailLinkFn = useCallback(async (email: string) => {
     if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
+    await ensureAppCheck();
     const actionCodeSettings = {
       url: window.location.origin,
       handleCodeInApp: true,
@@ -353,6 +374,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = useCallback(async (email: string) => {
     if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
+    await ensureAppCheck();
     await sendPasswordResetEmail(auth, email);
   }, []);
 
@@ -363,6 +385,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmailLinkState('signing-in');
     setEmailLinkError(null);
     try {
+      await ensureAppCheck();
       await unregisterCurrentDevice();
       await signInWithEmailLink(auth, email.trim(), href);
       window.localStorage.removeItem(EMAIL_LINK_KEY);
@@ -558,12 +581,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
-      <MfaChallengeDialog
-        resolver={mfaResolver}
-        onCancel={cancelMfaChallenge}
-        onRecover={recoverMfaChallenge}
-        onResolve={resolveMfaChallenge}
-      />
+      {mfaResolver && (
+        <MfaChallengeDialog
+          resolver={mfaResolver}
+          onCancel={cancelMfaChallenge}
+          onRecover={recoverMfaChallenge}
+          onResolve={resolveMfaChallenge}
+        />
+      )}
     </AuthContext.Provider>
   );
 }

@@ -1266,8 +1266,8 @@ export default function CalendarPage() {
             </div>
 
             {/* Calendar grid */}
-            <div className="relative min-h-[264px] flex-1 lg:min-h-0">
-              <div className={cn('grid h-full min-h-[264px] lg:min-h-0', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')} style={{ gridTemplateRows: `repeat(${totalRows}, 1fr)` }}>
+            <div className="relative min-h-[270px] flex-1 lg:min-h-0">
+              <div className={cn('grid h-full min-h-[270px] lg:min-h-0', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')} style={{ gridTemplateRows: `repeat(${totalRows}, 1fr)` }}>
                 {calendarDays.map((day, idx) => {
                   const row = Math.floor(idx / 7);
                   const col = idx % 7;
@@ -1292,7 +1292,7 @@ export default function CalendarPage() {
                         className={cn(
                           'relative border-b border-r border-border/[0.08] p-1 lg:p-1.5 transition-all text-left group overflow-hidden',
                           'hover:bg-foreground/[0.02] active:bg-foreground/[0.04]',
-                          !isCurrentMonth && 'opacity-30',
+                          !isCurrentMonth && 'bg-muted/15',
                           isTodayDate && 'bg-blue-500/[0.04]',
                           isMobileSelected && 'bg-foreground/[0.06] ring-1 ring-foreground/10 ring-inset'
                         )}
@@ -1309,7 +1309,9 @@ export default function CalendarPage() {
                         {/* Date number */}
                         <div className={cn(
                           'inline-flex h-6 w-6 lg:h-7 lg:w-7 items-center justify-center rounded-full text-[11px] lg:text-[12px] font-semibold tabular-nums transition-all',
-                          isTodayDate ? 'bg-foreground text-background' : 'text-muted-foreground/40 group-hover:text-foreground/70',
+                          isTodayDate
+                            ? 'bg-foreground text-background'
+                            : cn('text-muted-foreground group-hover:text-foreground', !isCurrentMonth && 'font-normal'),
                         )}>
                           {format(day, 'd')}
                         </div>

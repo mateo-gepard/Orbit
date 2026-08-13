@@ -777,7 +777,6 @@ export default function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showSaveStatus, setShowSaveStatus] = useState(false);
   const [calendarConnecting, setCalendarConnecting] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarAuthorizationState, setCalendarAuthorizationState] = useState<
@@ -806,7 +805,6 @@ export default function SettingsPage() {
     draft: settings.timezone,
     feedback: null,
   }));
-  const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accountExportAbortRef = useRef<AbortController | null>(null);
   const deletionInFlightRef = useRef(false);
 
@@ -881,21 +879,6 @@ export default function SettingsPage() {
       window.removeEventListener('threadmap:app-installed', syncInstallStatus);
     };
   }, []);
-
-  useEffect(() => {
-    if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
-    if (cloudSaveState === 'idle') {
-      setShowSaveStatus(false);
-      return;
-    }
-    setShowSaveStatus(true);
-    if (cloudSaveState === 'saved') {
-      saveStatusTimerRef.current = setTimeout(() => setShowSaveStatus(false), 1500);
-    }
-    return () => {
-      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
-    };
-  }, [cloudSaveState]);
 
   // SettingsEffects applies this account-scoped preference to next-themes.
   const handleThemeChange = (mode: ThemeMode) => {
@@ -1287,27 +1270,15 @@ export default function SettingsPage() {
         <div className="flex-1">
           <div className={cn('mx-auto px-3 py-4 pb-24 sm:px-4 sm:py-6 lg:px-8 lg:py-8 lg:pb-8', activeSection === 'mcp' ? 'max-w-4xl' : 'max-w-2xl')}>
             {/* Verified local/cloud save indicator */}
-            <div
-              role="status"
-              aria-live="polite"
-              className={cn(
-                'fixed top-4 right-4 z-50 flex items-center gap-1.5 rounded-full bg-foreground text-background px-3 py-1.5 text-[11px] font-medium shadow-lg transition-all duration-300',
-                showSaveStatus ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
-              )}
-            >
-              {cloudSaveState === 'saving' || cloudSaveState === 'pending'
-                ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                : cloudSaveState === 'error'
-                  ? <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                  : <Check className="h-3 w-3" aria-hidden="true" />}
-              {cloudSaveState === 'pending'
-                ? (t('settings.changesPending'))
-                : cloudSaveState === 'saving'
-                  ? (t('settings.syncing'))
-                  : cloudSaveState === 'error'
-                    ? (t('settings.savedLocallyCloudRetrying'))
-                    : t('settings.updated')}
-            </div>
+            {cloudSaveState === 'error' && (
+              <div
+                role="alert"
+                className="fixed right-4 top-[calc(env(safe-area-inset-top,0px)+3.75rem)] z-50 flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-[11px] font-medium text-background shadow-lg animate-in fade-in slide-in-from-top-2 duration-200 motion-reduce:animate-none lg:top-4"
+              >
+                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                {t('settings.savedLocallyCloudRetrying')}
+              </div>
+            )}
 
             {/* ═════ PROFILE ═════ */}
             {activeSection === 'profile' && (

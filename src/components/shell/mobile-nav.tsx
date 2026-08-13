@@ -41,15 +41,17 @@ export function MobileNav() {
         aria-label={t('common.create')}
         className={cn(
           'lg:hidden disabled:pointer-events-none disabled:invisible',
+          pathname.startsWith('/settings') && 'hidden',
           'flex h-14 w-14 items-center justify-center',
           'rounded-full bg-foreground text-background',
           'shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]',
           'active:scale-95 transition-transform duration-150 motion-reduce:active:scale-100 motion-reduce:transition-none',
         )}
         style={{
+          display: pathname.startsWith('/settings') ? 'none' : undefined,
           position: 'fixed',
           right: '16px',
-          bottom: 'calc(44px + env(safe-area-inset-bottom, 0px) + 12px)',
+          bottom: 'calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 12px)',
           zIndex: 30,
         }}
       >

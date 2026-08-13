@@ -15,10 +15,7 @@ import {
   readPendingConsentPath,
 } from '@/lib/mcp-consent-return';
 import { Sidebar } from './sidebar';
-import { CommandBar } from './command-bar';
 import { MobileNav } from './mobile-nav';
-import { LoadingScreen } from '@/components/ui/loading-screen';
-import { CompletionAnimation } from '@/components/ui/completion-animation';
 import { ThreadmapMark } from '@/components/ui/threadmap-mark';
 
 const DetailPanel = dynamic(
@@ -26,12 +23,80 @@ const DetailPanel = dynamic(
   { ssr: false }
 );
 
+const CommandBar = dynamic(
+  () => import('./command-bar').then((module) => module.CommandBar),
+  { ssr: false }
+);
+
+const CompletionAnimation = dynamic(
+  () => import('@/components/ui/completion-animation').then((module) => module.CompletionAnimation),
+  { ssr: false }
+);
+
 const PUBLIC_PATHS = new Set(['/', '/about', '/privacy', '/security', '/terms']);
 const STANDALONE_PUBLIC_PATHS = new Set(['/about', '/privacy', '/security', '/terms']);
+
+function ShellLoadingFrame({ german }: { german: boolean }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="h-[var(--app-height)] w-full overflow-hidden bg-background text-foreground lg:h-screen"
+    >
+      <span className="sr-only">{german ? 'Arbeitsbereich wird geladen' : 'Loading workspace'}</span>
+      <div aria-hidden="true" className="flex h-full w-full animate-pulse motion-reduce:animate-none">
+        <aside className="hidden h-full w-[260px] shrink-0 flex-col border-r border-sidebar-border/60 bg-sidebar/95 lg:flex">
+          <div className="flex h-20 items-center gap-3 border-b border-sidebar-border/40 px-5">
+            <ThreadmapMark className="h-8 w-8 text-foreground" />
+            <div className="h-3 w-24 rounded-full bg-foreground/10" />
+          </div>
+          <div className="space-y-6 px-4 py-5">
+            <div className="h-11 rounded-xl bg-foreground/[0.055]" />
+            {[4, 3, 4].map((rowCount, sectionIndex) => (
+              <div key={sectionIndex} className="space-y-2.5">
+                <div className="ml-2 h-2 w-14 rounded-full bg-foreground/[0.055]" />
+                {Array.from({ length: rowCount }, (_, rowIndex) => (
+                  <div key={rowIndex} className="flex h-8 items-center gap-3 rounded-xl px-2.5">
+                    <div className="h-4 w-4 rounded bg-foreground/[0.07]" />
+                    <div className="h-2.5 rounded-full bg-foreground/[0.07]" style={{ width: `${58 + rowIndex * 9}px` }} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <header
+            className="flex shrink-0 items-center gap-3 border-b border-border/40 px-4 lg:hidden"
+            style={{ minHeight: '48px', paddingTop: 'env(safe-area-inset-top, 0px)' }}
+          >
+            <div className="h-8 w-8 rounded-xl bg-foreground/[0.06]" />
+            <ThreadmapMark className="h-7 w-7 text-foreground" />
+            <div className="h-2.5 w-20 rounded-full bg-foreground/[0.08]" />
+            <div className="flex-1" />
+            <div className="h-8 w-8 rounded-xl bg-foreground/[0.06]" />
+          </header>
+          <header className="hidden h-12 shrink-0 items-center justify-center border-b border-border lg:flex">
+            <div className="h-8 w-72 rounded-xl bg-foreground/[0.055]" />
+          </header>
+
+          <main className="min-h-0 flex-1 overflow-hidden" />
+        </div>
+
+        <div
+          className="fixed inset-x-0 bottom-0 h-[var(--bottom-nav-height)] border-t border-border/40 bg-background lg:hidden"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const setSidebarOpen = useThreadmapStore((state) => state.setSidebarOpen);
   const sidebarOpen = useThreadmapStore((state) => state.sidebarOpen);
+  const commandBarOpen = useThreadmapStore((state) => state.commandBarOpen);
   const setCommandBarOpen = useThreadmapStore((state) => state.setCommandBarOpen);
   const detailPanelOpen = useThreadmapStore((state) => state.detailPanelOpen);
   const completionAnimation = useThreadmapStore((state) => state.completionAnimation);
@@ -88,13 +153,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (loading) {
-    // An empty <main> is indistinguishable from a broken app. Auth also has a
-    // timeout now, so this state is bounded rather than permanent.
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
-        <LoadingScreen />
-      </main>
-    );
+    // Reserve the same sidebar, header, content and mobile-navigation geometry
+    // that replaces this bounded auth state. That prevents the workspace from
+    // visibly jumping when Firebase resolves a persisted session.
+    return <ShellLoadingFrame german={german} />;
   }
 
   if (!user) {
@@ -199,7 +261,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <MobileNav />
-      <CommandBar />
+      {commandBarOpen && <CommandBar />}
 
       {completionAnimation && (
         <CompletionAnimation

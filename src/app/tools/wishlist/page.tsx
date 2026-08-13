@@ -1108,7 +1108,7 @@ export default function WishlistPage() {
                       {heroItem.imageUrl ? (
                         <div className="w-full sm:w-1/2 aspect-square sm:aspect-auto sm:h-64 lg:h-80 flex items-center justify-center p-6 lg:p-12 vault-spotlight">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={heroItem.imageUrl} alt={heroItem.name} decoding="async"
+                          <img src={heroItem.imageUrl} alt={heroItem.name} loading="eager" fetchPriority="high" decoding="async"
                             className="max-w-full max-h-full object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-transform duration-700 group-hover:scale-[1.03]" />
                         </div>
                       ) : (

@@ -15,9 +15,14 @@ colors:
   user-accent-default: "#6366f1"
   destructive: "oklch(0.55 0.22 25)"
 typography:
+  micro-fine:
+    fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.5625rem"
+    fontWeight: 500
+    lineHeight: 1.2
   micro:
     fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.5rem"
+    fontSize: "0.625rem"
     fontWeight: 500
     lineHeight: 1.2
   caption:
@@ -30,6 +35,17 @@ typography:
     fontSize: "0.8125rem"
     fontWeight: 500
     lineHeight: 1.35
+  ui:
+    fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.9375rem"
+    fontWeight: 500
+    lineHeight: 1.4
+  editorial-display:
+    fontFamily: "Georgia, Times New Roman, serif"
+    fontSize: "4rem"
+    fontWeight: 400
+    lineHeight: 0.95
+    letterSpacing: "-0.03em"
   display:
     fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.5rem"
@@ -60,6 +76,7 @@ typography:
 rounded:
   hairline: "2px"
   control: "10px"
+  editorial-control: "11px"
   compact: "8px"
   surface: "12px"
   panel: "16px"
@@ -158,7 +175,9 @@ The palette is a warm paper-and-ink system with a mirrored charcoal-and-chalk da
 ### Hierarchy
 
 - **Display:** Bold and tightly tracked; reserved for authentication and rare focal headings.
+- **Editorial Display:** Georgia is reserved for the standalone About narrative, where its fluid scale creates a deliberately different reading voice without entering the operational workspace.
 - **Title:** Semibold and compact; one descriptive page heading per route.
+- **Micro:** Nine- and ten-pixel steps are limited to terse calendar, rank, measurement, and dense metadata where a larger label would distort the operational hierarchy; essential actions and explanatory copy never use them.
 - **Body:** Regular with relaxed line height; explanatory copy stays within roughly 65–75 characters per line.
 - **Label:** Medium or semibold; navigation, field labels, compact controls, and metadata.
 - **Data:** Mono or tabular numerals only when alignment or measurement is meaningful.
@@ -227,6 +246,18 @@ Sidebar and bottom navigation share route names and active-state logic. Active l
 
 The command bar is the signature capture surface: a bottom sheet on phones and a floating search panel on desktop. It takes protected focus, exposes clear grouped suggestions, and returns focus to the invoking control when dismissed.
 
+### Page Structure
+
+Each route exposes one descriptive `h1`. The authenticated shell owns the single `main` landmark for workspace routes; standalone authentication, About, Privacy, Security, Terms, and consent surfaces own their own `main` and render outside that shell. Named regions require an appropriate semantic role, and icon-only controls always retain an accessible name when their visible label is hidden.
+
+### Loading & Performance
+
+Authentication resolution preserves the final shell geometry instead of replacing a centered splash with the workspace. The loading frame reserves the desktop sidebar, mobile header and navigation, and primary content area; it communicates status in text and stops decorative pulsing under reduced motion.
+
+Firebase App Check is demand-loaded. Local-only sessions must not download its SDK or the reCAPTCHA runtime. Cloud authentication warms attestation in parallel without delaying a popup-opening pointer gesture, while email authentication and cloud-data subscriptions await readiness before their first protected request. MFA interface code loads only when a challenge exists.
+
+Remote Wishlist images reserve space through their owning media container and decode asynchronously. Below-fold collection images load lazily; only the visible featured image receives eager loading and high fetch priority.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -236,6 +267,8 @@ The command bar is the signature capture surface: a bottom sheet on phones and a
 - **Do** keep phone controls at least 44 by 44 pixels and preserve safe-area spacing.
 - **Do** use mono or tabular numerals only for code, dates, time, price, rank, and measurement.
 - **Do** preserve short opacity and color feedback in reduced-motion mode.
+- **Do** reserve final shell geometry while authentication or route data resolves.
+- **Do** lazy-load security and media dependencies that a local-only session does not need.
 
 ### Don't:
 
@@ -244,3 +277,4 @@ The command bar is the signature capture surface: a bottom sheet on phones and a
 - **Don't** add decorative grain, gradient text, generic glass cards, or bounce easing.
 - **Don't** make essential actions hover-only or icon-only without an accessible name.
 - **Don't** introduce a new card, radius, or motion language for one route when a shared primitive already owns it.
+- **Don't** preload every remote image or initialize reCAPTCHA before cloud functionality is requested.
