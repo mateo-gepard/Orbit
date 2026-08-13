@@ -30,7 +30,6 @@ import {
   Eye,
   EyeOff,
   Send,
-  Sparkles,
   Smartphone,
   MonitorSmartphone,
   AlertTriangle,
@@ -49,7 +48,7 @@ import {
   useSettingsStore,
 } from '@/lib/settings-store';
 import type { UserSettings } from '@/lib/settings-store';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import {
   requestNotificationPermission,
   sendMorningBriefingNow,
@@ -130,7 +129,6 @@ const SECTIONS: SettingSection[] = [
   { id: 'shortcuts', label: 'settings.shortcuts', icon: Keyboard },
   { id: 'privacy', label: 'settings.privacy', icon: Shield },
   { id: 'accessibility', label: 'settings.accessibility', icon: Accessibility },
-  { id: 'eastereggs', label: 'settings.easterEggs', icon: Sparkles },
   { id: 'data', label: 'settings.dataStorage', icon: Database },
 ];
 
@@ -318,7 +316,7 @@ function NotificationsSection({
   setNested: (section: string, updates: Record<string, unknown>) => void;
 }) {
   const { t, lang } = useTranslation();
-  const items = useOrbitStore((s) => s.items);
+  const items = useThreadmapStore((s) => s.items);
   const { user } = useAuth();
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [testSent, setTestSent] = useState<'morning' | 'evening' | null>(null);
@@ -1221,9 +1219,10 @@ export default function SettingsPage() {
 
   return (
     <div className="flex min-h-full" data-slot="settings-page">
+      <h1 className="sr-only">{t('settings.title')}</h1>
       {/* ─── Left sidebar nav ─── */}
-      <nav className="sticky top-0 hidden h-[var(--app-height)] w-[220px] shrink-0 self-start flex-col border-r border-border/30 px-3 py-6 lg:flex lg:h-full">
-        <h1 className="text-[13px] font-semibold tracking-tight px-3 mb-5 text-muted-foreground/70 uppercase">{t('settings.title')}</h1>
+      <nav aria-label={t('settings.title')} className="sticky top-0 hidden h-[var(--app-height)] w-[220px] shrink-0 self-start flex-col border-r border-border/30 px-3 py-6 lg:flex lg:h-full">
+        <p className="text-[13px] font-semibold tracking-tight px-3 mb-5 text-muted-foreground/70 uppercase">{t('settings.title')}</p>
         <div className="space-y-0.5">
           {SECTIONS.map((s) => {
             const isActive = activeSection === s.id;
@@ -1271,7 +1270,7 @@ export default function SettingsPage() {
                 onClick={() => setActiveSection(s.id)}
                 aria-pressed={activeSection === s.id}
                 className={cn(
-                  'shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors',
+                  'shrink-0 flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors',
                   activeSection === s.id
                     ? 'bg-foreground text-background'
                     : 'bg-foreground/[0.05] text-muted-foreground/70'
@@ -1437,7 +1436,7 @@ export default function SettingsPage() {
 
               <SettingRow label={t('settings.helpFeedback')} description={t('settings.helpFeedbackDesc')} border={false}>
                 <a
-                  href="https://github.com/mateo-gepard/Orbit/issues/new"
+                  href="https://github.com/mateo-gepard/Threadmap/issues/new"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 rounded-lg border border-border/50 px-3 py-1.5 text-[12px] font-medium text-foreground/80 hover:bg-foreground/[0.04]"
@@ -1814,102 +1813,6 @@ export default function SettingsPage() {
                   onChange={(v) => setNested('accessibility', { fontSize: v })}
                 />
               </SettingRow>
-            </div>
-          )}
-
-          {/* ═════ EASTER EGGS ═════ */}
-          {activeSection === 'eastereggs' && (
-            <div>
-              <SectionHeader icon={Sparkles} label={t('settings.easterEggs')} />
-
-              {/* Hockey mode card */}
-              <div className="rounded-2xl border border-border/40 bg-card overflow-hidden">
-                {/* Card header with fun visual */}
-                <div className="relative px-4 sm:px-5 pt-5 pb-4 overflow-hidden">
-                  {/* Background decoration */}
-                  <div className="absolute top-0 right-0 text-[80px] opacity-[0.04] leading-none select-none pointer-events-none">
-                    🏒
-                  </div>
-                  <div className="absolute bottom-0 left-1/2 text-[60px] opacity-[0.03] leading-none select-none pointer-events-none">
-                    ⚕️
-                  </div>
-
-                  <div className="flex items-start gap-3 sm:gap-4">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/10 to-red-500/10 border border-cyan-500/20 text-lg">
-                      🏒
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-[14px] font-semibold">{t('settings.hockeyMode')}</h3>
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full">
-                          {t('settings.easterEggLabel')}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground/60 mt-1 leading-relaxed">
-                        {t('settings.hockeyModeDesc')}
-                      </p>
-                    </div>
-                    <div className="shrink-0 mt-0.5">
-                      <Toggle
-                        checked={settings.hockeyMode}
-                        onChange={(v) => set('hockeyMode', v)}
-                        ariaLabel={t('settings.hockeyMode')}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Preview of what changes when hockey mode is on */}
-                {settings.hockeyMode && (
-                  <div className="border-t border-border/20 px-4 sm:px-5 py-3 bg-muted/20">
-                    <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 mb-2">
-                      {t('settings.hockeyPreview')}
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {[
-                        { emoji: '🎯', from: t('settings.previewTask'), to: 'Spielzug' },
-                        { emoji: '📋', from: t('settings.previewProject'), to: 'Saison' },
-                        { emoji: '🔄', from: t('settings.previewHabit'), to: 'Training' },
-                        { emoji: '📅', from: t('settings.previewEvent'), to: 'Anpfiff' },
-                        { emoji: '🏆', from: t('settings.previewGoal'), to: 'Meisterschaft' },
-                        { emoji: '📝', from: t('settings.previewNote'), to: 'Rezept' },
-                      ].map((item) => (
-                        <div key={item.from} className="flex items-center gap-1.5 text-[10px]">
-                          <span>{item.emoji}</span>
-                          <span className="text-muted-foreground/40 line-through">{item.from}</span>
-                          <span className="text-foreground/70 font-medium">→ {item.to}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {settings.language !== 'de' && (
-                      <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2">
-                        <span className="text-xs">🇩🇪</span>
-                        <p className="text-[10px] text-amber-700 dark:text-amber-400">
-                          {t('settings.hockeyGermanHint')}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Fun features list */}
-                <div className="border-t border-border/20 px-4 sm:px-5 py-3">
-                  <div className="space-y-2">
-                    {[
-                      { icon: '🥅', text: t('settings.hockeyFeature1') },
-                      { icon: '🩺', text: t('settings.hockeyFeature2') },
-                      { icon: '🚨', text: t('settings.hockeyFeature3') },
-                      { icon: '📋', text: t('settings.hockeyFeature4') },
-                    ].map((feature, i) => (
-                      <div key={i} className="flex items-center gap-2.5">
-                        <span className="text-sm shrink-0">{feature.icon}</span>
-                        <span className="text-[11px] text-muted-foreground/70">{feature.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 

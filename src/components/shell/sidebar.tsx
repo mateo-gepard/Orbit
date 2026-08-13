@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useToolboxStore, TOOLS, type ToolId } from '@/lib/toolbox-store';
 import { cn } from '@/lib/utils';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
@@ -78,7 +78,7 @@ export function Sidebar() {
   const {
     sidebarOpen, setSidebarOpen, activeTag, setActiveTag, setCommandBarOpen,
     addCustomTag, removeTag, renameTag, getAllTags,
-  } = useOrbitStore();
+  } = useThreadmapStore();
 
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagValue, setNewTagValue] = useState('');
@@ -95,13 +95,12 @@ export function Sidebar() {
 
   const allTags = getAllTags();
   const showBadges = useSettingsStore((s) => s.settings.showSidebarBadges);
-  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const settingsDisplayName = useSettingsStore((s) => s.settings.displayName);
   const settingsBio = useSettingsStore((s) => s.settings.bio);
   const showProfilePhoto = useSettingsStore((s) => s.settings.privacy.showProfilePhoto);
   const accentColor = useSettingsStore((s) => s.settings.accentColor);
   const { t, tp } = useTranslation();
-  const storeItems = useOrbitStore((s) => s.items);
+  const storeItems = useThreadmapStore((s) => s.items);
   const affectedTagItemCount = deletingTag
     ? storeItems.filter((item) => item.tags?.includes(deletingTag)).length
     : 0;
@@ -211,13 +210,11 @@ export function Sidebar() {
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
-            {hockeyMode ? (
-              <div aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-600 text-sm text-white">🏒</div>
-            ) : (
+            {(
               <ThreadmapMark className="h-8 w-8 shrink-0 text-foreground" />
             )}
             <span className="text-[15px] font-semibold tracking-tight">
-              {hockeyMode ? 'THREADMAP 🩺' : 'THREADMAP'}
+              {'THREADMAP'}
             </span>
           </div>
           <Button
@@ -271,7 +268,7 @@ export function Sidebar() {
                       data-slot="nav-item"
                       data-active={isActive ? 'true' : undefined}
                       aria-current={isActive ? 'page' : undefined}
-                      style={isActive && accentColor ? { color: accentColor, borderColor: accentColor } : undefined}
+                      style={isActive && accentColor ? { borderColor: accentColor } : undefined}
                       className={cn(
                         'group orbit-pressable flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 py-[7px] text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-0',
                         isActive

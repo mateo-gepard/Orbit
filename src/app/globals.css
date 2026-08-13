@@ -62,14 +62,14 @@
   --secondary: oklch(0.965 0.004 80);
   --secondary-foreground: oklch(0.20 0.01 60);
   --muted: oklch(0.96 0.004 75);
-  --muted-foreground: oklch(0.50 0.01 60);
+  --muted-foreground: oklch(0.44 0.01 60);
   /* Opaque copy tones keep small supporting text readable while preserving
      a clear hierarchy. They replace stacked low-alpha text, not decorative
      icons or intentionally disabled surfaces. */
   --copy-secondary: oklch(0.38 0.01 60);
   --copy-tertiary: oklch(0.44 0.01 60);
-  --copy-subtle: oklch(0.49 0.01 60);
-  --copy-faint-readable: oklch(0.53 0.01 60);
+  --copy-subtle: oklch(0.43 0.01 60);
+  --copy-faint-readable: oklch(0.44 0.01 60);
   --accent: oklch(0.955 0.006 75);
   --accent-foreground: oklch(0.20 0.01 60);
   --destructive: oklch(0.55 0.22 25);
@@ -122,11 +122,11 @@
   --secondary: oklch(0.24 0.008 60);
   --secondary-foreground: oklch(0.93 0.005 80);
   --muted: oklch(0.22 0.008 60);
-  --muted-foreground: oklch(0.62 0.01 60);
+  --muted-foreground: oklch(0.68 0.01 60);
   --copy-secondary: oklch(0.78 0.01 60);
   --copy-tertiary: oklch(0.68 0.01 60);
-  --copy-subtle: oklch(0.62 0.01 60);
-  --copy-faint-readable: oklch(0.58 0.01 60);
+  --copy-subtle: oklch(0.70 0.01 60);
+  --copy-faint-readable: oklch(0.68 0.01 60);
   --accent: oklch(0.24 0.01 60);
   --accent-foreground: oklch(0.93 0.005 80);
   --destructive: oklch(0.65 0.20 22);
@@ -199,8 +199,8 @@
     --safe-left: env(safe-area-inset-left, 0px);
     --safe-right: env(safe-area-inset-right, 0px);
     --app-height: 100dvh;
-    --bottom-nav-height: 44px;
-    --mobile-content-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 20px);
+    --bottom-nav-height: 66px;
+    --mobile-content-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 24px);
     --mobile-sheet-max-height: calc(var(--app-height) - max(var(--safe-top), 8px));
   }
 }
@@ -289,25 +289,27 @@
     min-height: 44px;
   }
 
-  /* Low-opacity muted colors can make 9–12px copy illegible. Preserve the
-     original four-level hierarchy, but map semantic text nodes to opaque,
-     contrast-safe tones. Decorative SVGs retain their quieter opacity. */
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/70"],
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/75"],
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/80"] {
+  /* Low-opacity muted colors make compact interface copy illegible. Preserve
+     the four-level hierarchy with opaque, contrast-safe tones on every text
+     carrier; SVGs and empty decorative elements retain their quiet opacity. */
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/70"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/75"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/80"] {
     color: var(--copy-secondary);
   }
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/50"],
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/55"],
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/60"] {
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/50"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/55"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/60"] {
     color: var(--copy-tertiary);
   }
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/40"],
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/45"] {
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/40"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/45"] {
     color: var(--copy-subtle);
   }
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/30"],
-  :where(p, span, label, small, figcaption, time, dt, dd)[class*="text-muted-foreground/35"] {
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/20"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/25"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/30"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/35"] {
     color: var(--copy-faint-readable);
   }
 
@@ -326,6 +328,10 @@
     min-height: 44px;
     opacity: 1;
   }
+
+  .mobile-touch-target {
+    min-width: 44px;
+  }
 }
 
 /* ─── Swipe item animations ─── */
@@ -340,6 +346,38 @@
 
 /* iOS PWA ergonomics */
 @media (max-width: 1023px) {
+  .mobile-touch-target {
+    min-width: 44px;
+  }
+
+  [data-slot="page-content"] {
+    padding-bottom: var(--mobile-content-bottom);
+  }
+
+  [data-slot="item-row"] {
+    min-height: 58px;
+  }
+
+  [data-slot="detail-body"] {
+    padding: 0.875rem 1rem calc(var(--safe-bottom) + 1.5rem);
+    scroll-padding-top: 4.5rem;
+    scroll-padding-bottom: calc(var(--safe-bottom) + 4rem);
+  }
+
+  [data-slot="settings-page"] {
+    height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: var(--mobile-content-bottom);
+  }
+
+  [data-slot="settings-page"] :where(button, a, select, input:not([type="checkbox"]):not([type="radio"]), [role="button"]) {
+    min-height: 44px;
+  }
+
   button,
   a,
   [role="button"],
@@ -366,36 +404,7 @@
   }
 }
 
-/* ─── Spring animations (GPU-accelerated) ─── */
-@keyframes slide-up-spring {
-  0% { 
-    transform: translate3d(0, 100%, 0); 
-    opacity: 0; 
-  }
-  60% { 
-    transform: translate3d(0, -4%, 0); 
-    opacity: 1; 
-  }
-  80% { 
-    transform: translate3d(0, 1%, 0); 
-  }
-  100% { 
-    transform: translate3d(0, 0, 0); 
-  }
-}
-@keyframes slide-down-spring {
-  0% { 
-    transform: translate3d(0, -20px, 0); 
-    opacity: 0; 
-  }
-  60% { 
-    transform: translate3d(0, 2px, 0); 
-    opacity: 1; 
-  }
-  100% { 
-    transform: translate3d(0, 0, 0); 
-  }
-}
+/* ─── Bounded entrances (GPU-accelerated) ─── */
 @keyframes scale-in {
   0% { 
     transform: scale3d(0.9, 0.9, 1); 
@@ -406,11 +415,6 @@
     opacity: 1; 
   }
 }
-@keyframes fab-pulse {
-  0%, 100% { box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
-  50% { box-shadow: 0 6px 28px rgba(0,0,0,0.25); }
-}
-
 /* ─── Loading & Completion Animations ─── */
 @keyframes spin-slow {
   from { transform: rotate(0deg); }
@@ -440,16 +444,8 @@
 }
 
 @layer utilities {
-  .animate-slide-up-spring {
-    animation: slide-up-spring 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-    will-change: transform, opacity;
-  }
-  .animate-slide-down-spring {
-    animation: slide-down-spring 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-    will-change: transform, opacity;
-  }
   .animate-scale-in {
-    animation: scale-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    animation: scale-in 0.18s var(--ease-emphasized) both;
     will-change: transform, opacity;
   }
   .animate-spin-slow {
@@ -465,18 +461,14 @@
 
 /* ─── Vault Gallery 3D Room ─── */
 @layer utilities {
-  /* Wall texture — subtle noise grain */
+  /* Gallery wall lighting, expressed as a bounded surface rather than grain. */
   .vault-wall {
-    background-image:
-      radial-gradient(ellipse at 50% 0%, oklch(0.97 0.003 75 / 0.6) 0%, transparent 70%),
-      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.015'/%3E%3C/svg%3E");
-    background-size: 100% 600px, 200px 200px;
-    background-repeat: no-repeat, repeat;
+    background-image: radial-gradient(ellipse at 50% 0%, oklch(0.97 0.003 75 / 0.6) 0%, transparent 70%);
+    background-size: 100% 600px;
+    background-repeat: no-repeat;
   }
   .dark .vault-wall {
-    background-image:
-      radial-gradient(ellipse at 50% 0%, oklch(0.18 0.005 60 / 0.5) 0%, transparent 70%),
-      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    background-image: radial-gradient(ellipse at 50% 0%, oklch(0.18 0.005 60 / 0.5) 0%, transparent 70%);
   }
   /* Picture rail line */
   .vault-rail {
@@ -698,41 +690,32 @@
    Settings-driven global styles
    ═══════════════════════════════════════════════════════════ */
 
-/* Reduce motion — disable ALL transitions and animations */
+/* Reduced motion preserves short color and opacity feedback while removing
+   spatial travel, scaling, and nonessential loops. */
 .reduce-motion,
 .reduce-motion * {
-  animation-duration: 0.001ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+  transition-duration: 100ms !important;
+  transition-delay: 0ms !important;
 }
-.reduce-motion .orbit-pressable,
-.reduce-motion .orbit-pressable:active {
+
+.reduce-motion :where(.orbit-pressable, [class*="active:scale"]):active,
+.reduce-motion :where([class*="animate-slide"], [class*="animate-scale-in"], [class*="animate-turbulence"], [class*="animate-contrail"], [class*="animate-ping"], [class*="animate-pulse-glow"], .ptr-spinner) {
+  animation: none !important;
   transform: none !important;
 }
 
-/* Respect the OS preference even when the in-app accessibility setting is
-   off or has not hydrated yet. */
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-
-  *,
-  *::before,
-  *::after {
+  html,
+  html * {
     scroll-behavior: auto !important;
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+    transition-duration: 100ms !important;
     transition-delay: 0ms !important;
   }
 
-  .orbit-pressable,
-  .orbit-pressable:active {
-    transform: none !important;
-  }
-
-  [class*="active:scale"]:active {
+  :where(.orbit-pressable, [class*="active:scale"]):active,
+  :where([class*="animate-slide"], [class*="animate-scale-in"], [class*="animate-turbulence"], [class*="animate-contrail"], [class*="animate-ping"], [class*="animate-pulse-glow"], .ptr-spinner) {
+    animation: none !important;
     transform: none !important;
   }
 }
@@ -777,7 +760,6 @@
 
 :root[style*="--accent-color"] [data-slot="nav-item"].active,
 :root[style*="--accent-color"] [data-slot="nav-item"][data-active="true"] {
-  color: var(--accent-color);
   border-color: var(--accent-color);
 }
 
@@ -900,5 +882,5 @@
 }
 
 [data-slot="settings-page"] :where([class*="text-muted-foreground/20"], [class*="text-muted-foreground/25"], [class*="text-muted-foreground/30"], [class*="text-muted-foreground/35"]) {
-  color: color-mix(in oklch, var(--muted-foreground) 72%, transparent) !important;
+  color: var(--copy-faint-readable) !important;
 }

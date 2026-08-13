@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import { Menu, Search } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { Button } from '@/components/ui/button';
@@ -26,37 +26,22 @@ const DetailPanel = dynamic(
   { ssr: false }
 );
 
+const PUBLIC_PATHS = new Set(['/', '/about', '/privacy', '/security', '/terms']);
+const STANDALONE_PUBLIC_PATHS = new Set(['/about', '/privacy', '/security', '/terms']);
+
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const setSidebarOpen = useOrbitStore((state) => state.setSidebarOpen);
-  const sidebarOpen = useOrbitStore((state) => state.sidebarOpen);
-  const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
-  const detailPanelOpen = useOrbitStore((state) => state.detailPanelOpen);
-  const completionAnimation = useOrbitStore((state) => state.completionAnimation);
-  const setCompletionAnimation = useOrbitStore((state) => state.setCompletionAnimation);
+  const setSidebarOpen = useThreadmapStore((state) => state.setSidebarOpen);
+  const sidebarOpen = useThreadmapStore((state) => state.sidebarOpen);
+  const setCommandBarOpen = useThreadmapStore((state) => state.setCommandBarOpen);
+  const detailPanelOpen = useThreadmapStore((state) => state.detailPanelOpen);
+  const completionAnimation = useThreadmapStore((state) => state.completionAnimation);
+  const setCompletionAnimation = useThreadmapStore((state) => state.setCompletionAnimation);
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const language = useSettingsStore((s) => s.settings.language);
-  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const german = language === 'de';
-
-  useEffect(() => {
-    const setAppHeight = () => {
-      const viewportHeight = window.visualViewport?.height || window.innerHeight;
-      document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
-    };
-
-    setAppHeight();
-    window.addEventListener('resize', setAppHeight);
-    window.addEventListener('orientationchange', setAppHeight);
-    window.visualViewport?.addEventListener('resize', setAppHeight);
-
-    return () => {
-      window.removeEventListener('resize', setAppHeight);
-      window.removeEventListener('orientationchange', setAppHeight);
-      window.visualViewport?.removeEventListener('resize', setAppHeight);
-    };
-  }, []);
+  const publicSignedOutRoute = PUBLIC_PATHS.has(pathname);
 
   useEffect(() => {
     if (loading) return;
@@ -65,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // The MCP consent screen owns its own signed-out state: bouncing it to '/'
       // would discard the one-time `?request=` token and dead-end the client's
       // authorization flow.
-      if (pathname === MCP_CONSENT_PATH || pathname === '/') return;
+      if (pathname === MCP_CONSENT_PATH || publicSignedOutRoute) return;
       router.replace('/');
       return;
     }
@@ -76,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       clearPendingConsentPath();
       if (pathname !== pending) router.replace(pending);
     }
-  }, [loading, pathname, router, user]);
+  }, [loading, pathname, publicSignedOutRoute, router, user]);
 
   // The MCP consent screen is a standalone decision surface. It renders without
   // the sidebar, bottom nav, or detail panel so that the grant being approved is
@@ -84,6 +69,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // it here would nest two landmarks. It also renders while auth is still
   // resolving, since it shows its own progress and sign-in states.
   if (pathname === MCP_CONSENT_PATH) {
+    return <>{children}</>;
+  }
+
+  // These routes own their page landmarks in both auth states. Keeping them
+  // outside the workspace prevents nested main landmarks after sign-in.
+  if (STANDALONE_PUBLIC_PATHS.has(pathname)) {
     return <>{children}</>;
   }
 
@@ -98,11 +89,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    return (
-      <main className="min-h-screen bg-background text-foreground">
-        {pathname === '/' ? children : null}
-      </main>
-    );
+    if (publicSignedOutRoute) {
+      return (
+        <div
+          className="h-[var(--app-height)] touch-pan-y overflow-x-hidden overflow-y-auto overscroll-y-contain bg-background text-foreground"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
+          {children}
+        </div>
+      );
+    }
+    return <main className="min-h-screen bg-background text-foreground" />;
   }
 
   return (
@@ -138,14 +135,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Menu className="h-4 w-4" />
             </Button>
             <div className="flex h-7 w-7 shrink-0 items-center justify-center">
-              {hockeyMode ? (
-                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-600 text-[11px] text-white">{'\u{1F3D2}'}</span>
-              ) : (
+              {(
                 <ThreadmapMark className="h-7 w-7 text-foreground" />
               )}
             </div>
             <span className="min-w-0 truncate text-sm font-semibold tracking-tight">
-              {hockeyMode ? 'THREADMAP \u{1FA7A}' : 'THREADMAP'}
+              {'THREADMAP'}
             </span>
             <div className="flex-1" />
             <Button

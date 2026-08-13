@@ -19,7 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import {
   addDays,
   endOfWeek,
@@ -44,7 +44,7 @@ import {
   subscribeToBriefingJournal,
   type BriefingJournal,
 } from '@/lib/briefing';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import { toast } from 'sonner';
 import { eventOccursOnDate } from '@/lib/dashboard';
 
@@ -56,7 +56,7 @@ interface PendingBriefingSave {
   journal: BriefingJournal;
 }
 
-function isOpenScheduledTask(item: OrbitItem) {
+function isOpenScheduledTask(item: ThreadmapItem) {
   return item.type === 'task' && item.status !== 'done' && item.status !== 'archived';
 }
 
@@ -119,7 +119,7 @@ function BriefingFallback() {
 function BriefingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { items, setSelectedItemId } = useOrbitStore();
+  const { items, setSelectedItemId } = useThreadmapStore();
   const { user } = useAuth();
   const { t, tp, lang } = useTranslation();
   const locale = getLocale(lang);
@@ -368,7 +368,7 @@ function BriefingContent() {
   );
 
   const briefingCandidates = useMemo(() => {
-    const unique = new Map<string, OrbitItem>();
+    const unique = new Map<string, ThreadmapItem>();
     for (const task of [...overdue, ...tasksDueToday, ...myDayTasks, ...items.filter(isOpenScheduledTask)]) {
       if (!unique.has(task.id)) unique.set(task.id, task);
     }
@@ -391,7 +391,7 @@ function BriefingContent() {
 
   const focusedTasks = journal.daily.priorityIds
     .map((id) => items.find((item) => item.id === id))
-    .filter((item): item is OrbitItem => Boolean(item));
+    .filter((item): item is ThreadmapItem => Boolean(item));
   const topTask = focusedTasks[0]
     || tasksDueToday.find(t => t.priority === 'high')
     || myDayTasks.find(t => t.priority === 'high')
@@ -433,7 +433,7 @@ function BriefingContent() {
   const completionScore = totalScheduled > 0 ? Math.round((completedToday.length / totalScheduled) * 100) : null;
   const habitScore = habitsToday.length > 0 ? Math.round((habitsCompleted.length / habitsToday.length) * 100) : null;
 
-  const toggleHabit = async (habit: OrbitItem) => {
+  const toggleHabit = async (habit: ThreadmapItem) => {
     const completions = { ...(habit.completions || {}) };
     completions[todayStr] = !completions[todayStr];
     try {
@@ -510,7 +510,7 @@ function BriefingContent() {
           <p className="text-[13px] text-muted-foreground/50">{dayLabel}</p>
         </div>
 
-        <div className="grid grid-cols-3 rounded-xl bg-foreground/[0.035] p-1" aria-label={t('briefing.period')}>
+        <div className="grid grid-cols-3 rounded-xl bg-foreground/[0.035] p-1" role="group" aria-label={t('briefing.period')}>
           {([
             { id: 'morning' as const, label: t('briefing.morning'), icon: Sun },
             { id: 'evening' as const, label: t('briefing.evening'), icon: Moon },
@@ -1071,7 +1071,7 @@ function BriefingCard({ icon, title, children }: { icon: React.ReactNode; title:
 }
 
 function TaskItem({ task, onClick, variant, locale }: {
-  task: OrbitItem;
+  task: ThreadmapItem;
   onClick: () => void;
   variant: 'overdue' | 'due' | 'normal';
   locale: Locale;

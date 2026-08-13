@@ -1,0 +1,223 @@
+/*
+ * Cross-platform mobile and installed-app contract.
+ *
+ * Keep browser-specific behavior centralized here. Components should consume
+ * the viewport and safe-area variables instead of detecting a browser.
+ */
+
+:root {
+  --visual-viewport-height: 100vh;
+  --visual-viewport-offset-top: 0px;
+  --keyboard-inset: 0px;
+  --safe-area-max-bottom: env(safe-area-max-inset-bottom, 36px);
+  color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --visual-viewport-height: 100dvh;
+  }
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html,
+body {
+  min-height: 100%;
+  max-width: 100%;
+}
+
+body {
+  min-height: 100svh;
+  -webkit-overflow-scrolling: touch;
+}
+
+html.standalone,
+html.standalone body {
+  overscroll-behavior: none;
+}
+
+button,
+[role="button"],
+a,
+input,
+textarea,
+[data-slot="select-trigger"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+[role="button"],
+a,
+[data-slot="select-trigger"],
+[data-slot="checkbox"],
+[data-slot="switch"] {
+  touch-action: manipulation;
+}
+
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"] {
+  font-family: inherit;
+  font-feature-settings: inherit;
+  font-variation-settings: inherit;
+}
+
+input:not(:disabled),
+textarea:not(:disabled) {
+  opacity: 1;
+  -webkit-text-fill-color: currentColor;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+input[type="number"],
+textarea {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"] {
+  min-width: 0;
+  color: inherit;
+  background-color: transparent;
+}
+
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value,
+input[type="month"]::-webkit-date-and-time-value {
+  min-height: 1.25em;
+  text-align: left;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  scroll-margin-block: max(5rem, 18vh);
+}
+
+[data-slot="dialog-overlay"],
+[data-slot="sheet-overlay"] {
+  -webkit-backdrop-filter: blur(6px);
+}
+
+[data-slot="sheet-content"] {
+  max-height: var(--visual-viewport-height);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+[data-slot="sheet-content"][data-side="left"],
+[data-slot="sheet-content"][data-side="right"] {
+  top: var(--visual-viewport-offset-top);
+  bottom: auto;
+  height: var(--visual-viewport-height);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+[data-slot="sheet-content"][data-side="bottom"] {
+  bottom: calc(var(--keyboard-inset) + env(safe-area-inset-bottom, 0px));
+  max-height: calc(
+    var(--visual-viewport-height) - max(0.75rem, env(safe-area-inset-top, 0px))
+  );
+  overflow-y: auto;
+}
+
+@media (pointer: coarse) {
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"] {
+    font-size: 16px !important;
+  }
+
+  [data-slot="textarea"] {
+    resize: none;
+  }
+
+  [data-slot="select-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="dropdown-menu-sub-trigger"] {
+    min-height: 44px;
+  }
+
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="select-content"] {
+    max-width: calc(100vw - max(1.5rem, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px)));
+    max-height: calc(var(--visual-viewport-height) - 1.5rem);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 767px), (max-height: 620px) and (pointer: coarse) {
+  [data-slot="dialog-content"] {
+    top: auto !important;
+    right: max(0.75rem, env(safe-area-inset-right, 0px)) !important;
+    bottom: calc(var(--keyboard-inset) + max(0.5rem, env(safe-area-inset-bottom, 0px))) !important;
+    left: max(0.75rem, env(safe-area-inset-left, 0px)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: calc(
+      var(--visual-viewport-height) -
+      max(1rem, env(safe-area-inset-top, 0px)) -
+      max(1rem, env(safe-area-inset-bottom, 0px))
+    ) !important;
+    margin: 0 !important;
+    padding: 1.25rem !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    transform: none !important;
+    border-radius: 1.5rem !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  [data-slot="dialog-header"] {
+    padding-right: 2.5rem;
+    text-align: left;
+  }
+
+  [data-slot="dialog-footer"] [data-slot="button"] {
+    width: 100%;
+  }
+
+  [data-slot="dialog-content"] > [data-slot="dialog-close"] {
+    display: grid;
+    min-width: 44px;
+    min-height: 44px;
+    place-items: center;
+  }
+}
+
+@media (display-mode: standalone) {
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dialog-content"],
+  [data-slot="dialog-overlay"],
+  [data-slot="sheet-content"],
+  [data-slot="sheet-overlay"] {
+    animation-duration: 100ms !important;
+    transition-duration: 100ms !important;
+  }
+}

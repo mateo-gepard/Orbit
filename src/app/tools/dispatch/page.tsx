@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, useMemo, useRef, type MouseEvent } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import {
   Route,
@@ -11,10 +11,9 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Search,
 } from 'lucide-react';
 import { cn, getLocale } from '@/lib/utils';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import {
   flushDispatchPlan,
@@ -32,7 +31,7 @@ import {
   type DispatchBusyInterval,
 } from '@/lib/dispatch-schedule';
 import { format, isToday, parseISO } from 'date-fns';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useSettingsStore } from '@/lib/settings-store';
 
@@ -121,7 +120,7 @@ function formatTimeSlot(h: number, m: number, timeFormat: '12h' | '24h'): string
 }
 
 function generateRoute(
-  tasks: OrbitItem[],
+  tasks: ThreadmapItem[],
   busyIntervals: DispatchBusyInterval[],
   language: 'en' | 'de',
   now = new Date(),
@@ -181,7 +180,7 @@ function generateRoute(
 }
 
 export default function DispatchPage() {
-  const { items } = useOrbitStore();
+  const { items } = useThreadmapStore();
   const { user } = useAuth();
   const timeFormat = useSettingsStore((state) => state.settings.timeFormat);
   const language = useSettingsStore((state) => state.settings.language);
@@ -190,9 +189,6 @@ export default function DispatchPage() {
   const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const [confirmReroute, setConfirmReroute] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
-  const [pickerTaskSearch, setPickerTaskSearch] = useState('');
-  const [unscheduledTaskSearch, setUnscheduledTaskSearch] = useState('');
-  const [handoffErrorBlockId, setHandoffErrorBlockId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const ownerScope = user?.uid || 'demo-user';
   const planDate = format(currentTime, 'yyyy-MM-dd');
@@ -363,26 +359,6 @@ export default function DispatchPage() {
     [activeTasks, scheduledTaskIds]
   );
 
-  const filterUnscheduledTasks = useCallback((query: string) => {
-    const normalized = query.trim().toLocaleLowerCase(language === 'de' ? 'de-DE' : 'en-US');
-    if (!normalized) return unscheduledTasks;
-    return unscheduledTasks.filter((task) =>
-      [task.title, ...(task.tags || [])]
-        .join(' ')
-        .toLocaleLowerCase(language === 'de' ? 'de-DE' : 'en-US')
-        .includes(normalized)
-    );
-  }, [language, unscheduledTasks]);
-
-  const pickerTasks = useMemo(
-    () => filterUnscheduledTasks(pickerTaskSearch),
-    [filterUnscheduledTasks, pickerTaskSearch]
-  );
-  const visibleUnscheduledTasks = useMemo(
-    () => filterUnscheduledTasks(unscheduledTaskSearch),
-    [filterUnscheduledTasks, unscheduledTaskSearch]
-  );
-
   const totalFocusMin = blocks.reduce((sum, b) => sum + b.durationMin, 0);
 
   const conflictingBlockIds = useMemo(() => new Set(
@@ -424,7 +400,7 @@ export default function DispatchPage() {
     );
   };
 
-  const handleAddTaskToBlock = (blockId: string, task: OrbitItem) => {
+  const handleAddTaskToBlock = (blockId: string, task: ThreadmapItem) => {
     commitBlocks((prev) =>
       prev.map((b) => {
         if (b.id !== blockId) return b;
@@ -433,22 +409,6 @@ export default function DispatchPage() {
       })
     );
     setAddingToBlock(null);
-    setPickerTaskSearch('');
-  };
-
-  const handleFlightHandoff = (event: MouseEvent<HTMLAnchorElement>, block: TimeBlock) => {
-    try {
-      saveDispatchFlightHandoff(ownerScope, {
-        label: block.label,
-        durationMin: block.durationMin,
-        taskIds: block.taskIds,
-      });
-      setHandoffErrorBlockId(null);
-    } catch (cause) {
-      console.error('[THREADMAP] Dispatch Flight handoff failed:', cause);
-      event.preventDefault();
-      setHandoffErrorBlockId(block.id);
-    }
   };
 
   const handleMoveBlock = (blockId: string, direction: 'up' | 'down') => {
@@ -475,7 +435,7 @@ export default function DispatchPage() {
   }
 
   return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6" aria-label={interpolate(copy.routeForDate, { date: format(currentTime, 'PPPP', { locale }) })}>
+    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6" role="region" aria-label={interpolate(copy.routeForDate, { date: format(currentTime, 'PPPP', { locale }) })}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

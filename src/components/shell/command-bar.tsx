@@ -12,7 +12,7 @@ import {
   CornerDownLeft,
   Hash,
 } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { parseCommand } from '@/lib/command-parser';
 import { resolveMention } from '@/lib/mention-resolution';
@@ -20,7 +20,7 @@ import { searchItems } from '@/lib/item-search';
 import { createItem, linkItems } from '@/lib/firestore';
 import { hasCalendarPermission } from '@/lib/google-calendar';
 import { flushPendingGoogleCalendarEvents } from '@/lib/google-calendar-sync';
-import { LIFE_AREA_TAGS, type ItemType, type NoteSubtype, type OrbitItem } from '@/lib/types';
+import { LIFE_AREA_TAGS, type ItemType, type NoteSubtype, type ThreadmapItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { getAllowedParentTypes } from '@/lib/links';
@@ -63,13 +63,13 @@ export const CAPTURE_SYNTAX = [
 
 export function CommandBar() {
   const { user } = useAuth();
-  const commandBarOpen = useOrbitStore((state) => state.commandBarOpen);
-  const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
-  const items = useOrbitStore((state) => state.items);
-  const customTags = useOrbitStore((state) => state.customTags);
-  const removedDefaultTags = useOrbitStore((state) => state.removedDefaultTags);
-  const addCustomTag = useOrbitStore((state) => state.addCustomTag);
-  const activeTag = useOrbitStore((state) => state.activeTag);
+  const commandBarOpen = useThreadmapStore((state) => state.commandBarOpen);
+  const setCommandBarOpen = useThreadmapStore((state) => state.setCommandBarOpen);
+  const items = useThreadmapStore((state) => state.items);
+  const customTags = useThreadmapStore((state) => state.customTags);
+  const removedDefaultTags = useThreadmapStore((state) => state.removedDefaultTags);
+  const addCustomTag = useThreadmapStore((state) => state.addCustomTag);
+  const activeTag = useThreadmapStore((state) => state.activeTag);
   const { t } = useTranslation();
   const settings = useSettingsStore((state) => state.settings);
   const googleCalendarSyncEnabled = settings.calendar.googleCalendarSync;
@@ -78,9 +78,10 @@ export function CommandBar() {
   // No hidden default selection: Enter follows the visible create action until
   // arrow-key navigation explicitly selects a suggestion or search result.
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [resolvedLink, setResolvedLink] = useState<OrbitItem | null>(null);
+  const [resolvedLink, setResolvedLink] = useState<ThreadmapItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const submitInFlightRef = useRef(false);
 
   const allTags = useMemo(() => {
@@ -225,7 +226,7 @@ export function CommandBar() {
     // valid; all other targets become peer links after creation. Because a match
     // can move the new item in the hierarchy, only a certain one is allowed to —
     // a guess becomes a peer link instead.
-    let relationshipTarget: OrbitItem | undefined;
+    let relationshipTarget: ThreadmapItem | undefined;
     let targetIsCertain = false;
 
     if (resolvedLink) {
@@ -258,7 +259,7 @@ export function CommandBar() {
         ? relationshipTarget.id
         : undefined;
 
-    const newItem: Omit<OrbitItem, 'id'> = {
+    const newItem: Omit<ThreadmapItem, 'id'> = {
       type: parsed.type,
       status: 'active',
       title: parsed.title, // Early returns ensure this is never empty
@@ -320,8 +321,8 @@ export function CommandBar() {
           ? 'Der Termin wurde lokal erstellt. Verbinde Google Kalender in den Einstellungen erneut und wähle dann „Erneut versuchen“.'
           : 'Event created locally. Reconnect Google Calendar in Settings, then use Retry.');
       } else {
-        const fullItem = useOrbitStore.getState().items.find((candidate) => candidate.id === itemId)
-          || ({ ...newItem, id: itemId } as OrbitItem);
+        const fullItem = useThreadmapStore.getState().items.find((candidate) => candidate.id === itemId)
+          || ({ ...newItem, id: itemId } as ThreadmapItem);
         const result = await flushPendingGoogleCalendarEvents(user.uid, [fullItem]);
         if (!result.success) {
           toast.warning(language === 'de'
@@ -349,7 +350,7 @@ export function CommandBar() {
   };
 
   const handleSelectItem = (itemId: string) => {
-    useOrbitStore.getState().setSelectedItemId(itemId);
+    useThreadmapStore.getState().setSelectedItemId(itemId);
     setCommandBarOpen(false);
   };
 
@@ -367,7 +368,7 @@ export function CommandBar() {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const handleSelectLink = (item: OrbitItem) => {
+  const handleSelectLink = (item: ThreadmapItem) => {
     const atIndex = input.lastIndexOf('@');
     if (atIndex === -1) return;
     const beforeAt = input.slice(0, atIndex);
@@ -420,19 +421,33 @@ export function CommandBar() {
         aria-busy={submitting}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
+          if (document.activeElement instanceof HTMLElement) {
+            returnFocusRef.current = document.activeElement;
+          }
           inputRef.current?.focus();
         }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          const returnTarget = returnFocusRef.current;
+          returnFocusRef.current = null;
+          requestAnimationFrame(() => {
+            if (returnTarget?.isConnected) returnTarget.focus();
+          });
+        }}
         className={cn(
-          'top-[max(env(safe-area-inset-top,0px),8px)] z-[100] max-w-[calc(100%-1.5rem)] translate-y-0 gap-0 border-0 bg-transparent p-0 shadow-none',
-          'lg:top-[18vh] lg:max-w-[520px]'
+          'left-0 right-0 top-auto bottom-0 z-[100] w-full max-w-none translate-x-0 translate-y-0 gap-0 border-0 bg-transparent p-0 shadow-none',
+          'lg:left-1/2 lg:right-auto lg:top-[18vh] lg:bottom-auto lg:max-w-[520px] lg:-translate-x-1/2'
         )}
       >
         <DialogTitle className="sr-only">
           {language === 'de' ? 'Suchen oder erstellen' : 'Search or create'}
         </DialogTitle>
-        <div className="surface-float overflow-hidden rounded-2xl">
+        <div className="surface-float overflow-hidden rounded-t-[28px] rounded-b-none border-b-0 lg:rounded-2xl lg:border-b">
+          <div className="flex h-6 items-center justify-center lg:hidden" aria-hidden="true">
+            <span className="h-1 w-9 rounded-full bg-foreground/15" />
+          </div>
           {/* Input */}
-          <div className="flex items-center gap-3 px-4 py-3.5 lg:py-3">
+          <div className="flex items-center gap-3 px-4 pb-3.5 pt-1.5 lg:py-3">
             <Search className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
             <input
               ref={inputRef}
@@ -531,7 +546,8 @@ export function CommandBar() {
               submitting && 'pointer-events-none opacity-60',
             )}
             style={{
-              maxHeight: 'min(56dvh, calc(var(--app-height) - max(var(--safe-top), 8px) - 88px))',
+              maxHeight: 'min(62dvh, calc(var(--app-height) - max(var(--safe-top), 8px) - 96px))',
+              paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)',
             }}
           >
             {/* Tag suggestions */}
@@ -750,11 +766,11 @@ export function CommandBar() {
 
             {/* Empty state — hints */}
             {!input.trim() && (
-              <div className="space-y-3 px-4 py-3.5">
+              <div className="space-y-4 px-4 py-3.5">
                 <div className="text-[10px] font-semibold uppercase text-muted-foreground/50">
                   {t('commandBar.commands')}
                 </div>
-                <div className="grid grid-cols-3 lg:grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-3 gap-2 lg:grid-cols-2 lg:gap-1.5">
                   {Object.entries(TYPE_ICONS).map(([type, Icon]) => (
                     <button
                       type="button"
@@ -769,7 +785,7 @@ export function CommandBar() {
                           inputRef.current?.focus();
                         });
                       }}
-                      className="orbit-pressable flex flex-col items-center gap-1.5 rounded-xl border border-transparent bg-foreground/[0.025] px-2.5 py-3 text-[12px] text-muted-foreground outline-none hover:border-border/50 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:flex-row lg:gap-2 lg:py-1.5"
+                      className="orbit-pressable flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl border border-border/45 bg-foreground/[0.025] px-2.5 py-3 text-[12px] text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-0 lg:flex-row lg:justify-start lg:gap-2 lg:rounded-xl lg:border-transparent lg:py-1.5"
                     >
                       <Icon className="h-5 w-5 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                       <span className="text-[11px] lg:text-[12px]">{t(`type.${type as ItemType}`)}</span>
@@ -777,24 +793,23 @@ export function CommandBar() {
                   ))}
                 </div>
 
-                <div className="text-[10px] font-semibold uppercase text-muted-foreground/50">
-                  {t('commandBar.syntax')}
-                </div>
-                <dl className="space-y-1.5">
-                  {CAPTURE_SYNTAX.map(({ labelKey, hintKey }) => (
-                    <div key={labelKey} className="flex items-baseline gap-2.5">
-                      <dt className="w-16 shrink-0 text-[11px] text-muted-foreground/60">
-                        {t(labelKey)}
-                      </dt>
-                      <dd className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
-                        {t(hintKey)}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-                <p className="text-[10px] text-muted-foreground/50">
-                  {t('commandBar.syntaxDateNote')}
-                </p>
+                <details className="group rounded-2xl border border-border/45 bg-foreground/[0.018] px-3.5 py-2.5 lg:rounded-none lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
+                  <summary className="mobile-touch-target flex cursor-pointer list-none items-center justify-between text-[12px] font-semibold text-muted-foreground marker:content-none lg:min-h-0 lg:text-[10px] lg:uppercase">
+                    <span>{t('commandBar.syntax')}</span>
+                    <span className="text-[11px] font-normal text-muted-foreground/60 lg:hidden"># · ! · @</span>
+                  </summary>
+                  <div className="space-y-2 pb-1 pt-2 lg:block lg:space-y-1.5 lg:pb-0 lg:pt-2">
+                    <dl className="space-y-2 lg:space-y-1.5">
+                      {CAPTURE_SYNTAX.map(({ labelKey, hintKey }) => (
+                        <div key={labelKey} className="flex items-baseline gap-2.5">
+                          <dt className="w-16 shrink-0 text-[11px] text-muted-foreground/60">{t(labelKey)}</dt>
+                          <dd className="min-w-0 flex-1 break-words font-mono text-[11px] text-muted-foreground">{t(hintKey)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <p className="text-[10px] text-muted-foreground/50">{t('commandBar.syntaxDateNote')}</p>
+                  </div>
+                </details>
               </div>
             )}
           </div>
