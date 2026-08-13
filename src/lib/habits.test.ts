@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getWeekCompletionRate, isHabitScheduledForDate } from './habits';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
-function habit(overrides: Partial<OrbitItem> = {}): OrbitItem {
+function habit(overrides: Partial<ThreadmapItem> = {}): ThreadmapItem {
   return {
     id: 'habit-1',
     type: 'habit',

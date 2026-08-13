@@ -12,8 +12,8 @@ import {
 import { app, isFirebaseStorageConfigured } from './firebase';
 import { cloudFunctions, db } from './firebase';
 import { httpsCallable } from 'firebase/functions';
-import type { OrbitItem, ProjectFile } from './types';
-import { useOrbitStore } from './store';
+import type { ThreadmapItem, ProjectFile } from './types';
+import { useThreadmapStore } from './store';
 
 const storage = app && isFirebaseStorageConfigured ? getStorage(app) : null;
 
@@ -151,13 +151,13 @@ function applyScopedAttachmentCommit(
   projectId: string,
   userId: string,
   committedRevision: number | null,
-  update: (item: OrbitItem) => OrbitItem,
+  update: (item: ThreadmapItem) => ThreadmapItem,
 ): void {
   if (!Number.isSafeInteger(committedRevision) || committedRevision === null || committedRevision < 1) {
     return;
   }
 
-  const state = useOrbitStore.getState();
+  const state = useThreadmapStore.getState();
   if (state._syncUserId !== userId) return;
 
   let changed = false;
@@ -171,8 +171,8 @@ function applyScopedAttachmentCommit(
     return update(item);
   });
 
-  if (changed && useOrbitStore.getState()._syncUserId === userId) {
-    useOrbitStore.getState().setItems(items);
+  if (changed && useThreadmapStore.getState()._syncUserId === userId) {
+    useThreadmapStore.getState().setItems(items);
   }
 }
 

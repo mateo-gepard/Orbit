@@ -4,32 +4,56 @@
       "collectionGroup": "items",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "flightLogs",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "startedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "fcmTokens",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "morningEnabled", "order": "ASCENDING" },
-        { "fieldPath": "nextMorningAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "morningEnabled",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nextMorningAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "fcmTokens",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "eveningEnabled", "order": "ASCENDING" },
-        { "fieldPath": "nextEveningAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "eveningEnabled",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nextEveningAt",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],
@@ -96,6 +120,12 @@
     },
     {
       "collectionGroup": "mcpAuditLogs",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "authEmailRateLimits",
       "fieldPath": "expireAt",
       "ttl": true,
       "indexes": []

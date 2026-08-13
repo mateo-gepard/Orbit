@@ -1,5 +1,5 @@
 import { isHabitCompletedForDate, isHabitScheduledForDate } from './habits';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 /**
  * Habit reminders.
@@ -44,10 +44,10 @@ export function formatHabitTime(value: string | undefined, use24Hour: boolean): 
  * the habit does not run, is noise.
  */
 export function getDueHabitReminders(
-  habits: readonly OrbitItem[],
+  habits: readonly ThreadmapItem[],
   now: Date,
   windowMinutes = REMINDER_WINDOW_MINUTES,
-): OrbitItem[] {
+): ThreadmapItem[] {
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   return habits.filter((habit) => {

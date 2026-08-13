@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { resolveMention } from './mention-resolution';
-import type { ItemStatus, ItemType, OrbitItem } from './types';
+import type { ItemStatus, ItemType, ThreadmapItem } from './types';
 
 function item(
   id: string,
   title: string,
   extra: { type?: ItemType; status?: ItemStatus; updatedAt?: number } = {}
-): OrbitItem {
+): ThreadmapItem {
   return {
     id,
     title,

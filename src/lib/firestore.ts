@@ -16,8 +16,8 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { cloudFunctions, db } from './firebase';
-import type { OrbitItem } from './types';
-import { useOrbitStore } from './store';
+import type { ThreadmapItem } from './types';
+import { useThreadmapStore } from './store';
 import { DEMO_USER_ID, migrateLegacyStorageToDemo, scopedStorageKey } from './account-storage';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import { writeLocalStorageVerified } from './verified-storage';
@@ -288,7 +288,7 @@ async function commitQueueableWrite(
 const VALID_TYPES = new Set(['task', 'project', 'habit', 'event', 'goal', 'note']);
 const VALID_STATUSES = new Set<string>(['active', 'waiting', 'done', 'archived']);
 
-function validateItem(item: Partial<OrbitItem>): boolean {
+function validateItem(item: Partial<ThreadmapItem>): boolean {
   if (!item.title || typeof item.title !== 'string') return false;
   if (item.type && !VALID_TYPES.has(item.type)) return false;
   if (item.status && !VALID_STATUSES.has(item.status)) return false;
@@ -298,7 +298,7 @@ function validateItem(item: Partial<OrbitItem>): boolean {
 }
 
 /** Exported for tests: this is the schema-drift boundary for every read. */
-export function sanitizeItem(item: OrbitItem): OrbitItem {
+export function sanitizeItem(item: ThreadmapItem): ThreadmapItem {
   // Preserve ALL existing fields — never strip unknown/future fields.
   // Only validate & default the required ones.
   const sanitized: Record<string, unknown> = {};
@@ -329,10 +329,10 @@ export function sanitizeItem(item: OrbitItem): OrbitItem {
   sanitized.tags = Array.isArray(item.tags) ? item.tags : [];
   sanitized.linkedIds = Array.isArray(item.linkedIds) ? item.linkedIds : [];
 
-  return sanitized as unknown as OrbitItem;
+  return sanitized as unknown as ThreadmapItem;
 }
 
-function itemDocumentFields(item: OrbitItem): Record<string, unknown> {
+function itemDocumentFields(item: ThreadmapItem): Record<string, unknown> {
   const fields = { ...item } as unknown as Record<string, unknown>;
   delete fields.id;
   return fields;
@@ -346,7 +346,7 @@ function localItemsKey(userId: string): string {
   return scopedStorageKey(LOCAL_STORAGE_KEY, userId);
 }
 
-function loadLocalItems(userId: string): OrbitItem[] {
+function loadLocalItems(userId: string): ThreadmapItem[] {
   if (typeof window === 'undefined') return [];
   try {
     const key = localItemsKey(userId);
@@ -394,7 +394,7 @@ const lastMirrorPayload = new Map<string, string>();
  * Cloud mode only: the cloud holds the complete history, so this cache is
  * allowed to be a bounded, most-recently-updated slice.
  */
-function saveSnapshotMirror(userId: string, items: OrbitItem[]): boolean {
+function saveSnapshotMirror(userId: string, items: ThreadmapItem[]): boolean {
   const mirrored = items.length > MAX_MIRRORED_ITEMS
     ? [...items].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, MAX_MIRRORED_ITEMS)
     : items;
@@ -410,7 +410,7 @@ function saveSnapshotMirror(userId: string, items: OrbitItem[]): boolean {
   return saved;
 }
 
-function saveLocalItems(userId: string, items: OrbitItem[]): boolean {
+function saveLocalItems(userId: string, items: ThreadmapItem[]): boolean {
   if (typeof window === 'undefined') return false;
   try {
     const serialized = JSON.stringify(items);
@@ -447,16 +447,16 @@ function saveLocalItems(userId: string, items: OrbitItem[]): boolean {
  */
 function updateScopedItems(
   userId: string,
-  mutator: (items: OrbitItem[]) => OrbitItem[],
+  mutator: (items: ThreadmapItem[]) => ThreadmapItem[],
   generation?: number,
-): OrbitItem[] {
+): ThreadmapItem[] {
   const isStillActive = activeUserId === userId
     && (generation === undefined || activeDataGeneration === generation);
   const source = isStillActive
-    ? useOrbitStore.getState().items
+    ? useThreadmapStore.getState().items
     : loadLocalItems(userId);
   const next = mutator([...source]);
-  if (isStillActive) useOrbitStore.getState().setItems(next);
+  if (isStillActive) useThreadmapStore.getState().setItems(next);
   saveLocalItems(userId, next);
   return next;
 }
@@ -464,22 +464,22 @@ function updateScopedItems(
 /** Optimistic update: immediately update Zustand, then persist. If persistence fails, rollback. */
 function optimisticLocalUpdate(
   userId: string,
-  mutator: (items: OrbitItem[]) => OrbitItem[],
-  rollbackItems?: OrbitItem[]
+  mutator: (items: ThreadmapItem[]) => ThreadmapItem[],
+  rollbackItems?: ThreadmapItem[]
 ): boolean {
   assertActiveAccount(userId);
   const oldItems = rollbackItems || loadLocalItems(userId);
   const newItems = mutator([...oldItems]);
 
   // Update store immediately (optimistic)
-  useOrbitStore.getState().setItems(newItems);
+  useThreadmapStore.getState().setItems(newItems);
 
   // Persist
   const saved = saveLocalItems(userId, newItems);
   if (!saved) {
     // Rollback on failure
     console.warn('[THREADMAP] Persistence failed — rolling back optimistic update');
-    useOrbitStore.getState().setItems(oldItems);
+    useThreadmapStore.getState().setItems(oldItems);
     return false;
   }
   return true;
@@ -557,14 +557,14 @@ async function replayItemMutation(record: ItemMutationRecord): Promise<void> {
       if (!snapshot.exists()
           || snapshot.data().userId !== record.userId
           || snapshot.data().status === 'archived'
-          || !getAllowedParentTypes(childType as OrbitItem['type']).includes(snapshot.data().type)) {
+          || !getAllowedParentTypes(childType as ThreadmapItem['type']).includes(snapshot.data().type)) {
         throw new ItemMutationConflictError('The selected parent item no longer exists in this account.');
       }
     });
-    const current = new Map<string, OrbitItem>();
+    const current = new Map<string, ThreadmapItem>();
     snapshots.forEach((snapshot) => {
       if (snapshot.exists()) {
-        current.set(snapshot.id, sanitizeItem({ id: snapshot.id, ...snapshot.data() } as OrbitItem));
+        current.set(snapshot.id, sanitizeItem({ id: snapshot.id, ...snapshot.data() } as ThreadmapItem));
       }
     });
     const itemsAlreadyMatch = itemMutationMatches(record, current);
@@ -720,9 +720,9 @@ export function retryQueuedItemMutations(
 
 function mergeQueuedItemMutations(
   userId: string,
-  cloudItems: OrbitItem[],
+  cloudItems: ThreadmapItem[],
   authoritative: boolean,
-): OrbitItem[] {
+): ThreadmapItem[] {
   const merge = mergeItemMutationRecovery(cloudItems, listItemMutations(userId), authoritative);
   for (const confirmed of merge.confirmed) {
     try {
@@ -751,7 +751,7 @@ function mergeQueuedItemMutations(
 
 export function subscribeToItems(
   userId: string,
-  callback: (items: OrbitItem[], source: 'cloud' | 'local' | 'fallback' | 'pending') => void,
+  callback: (items: ThreadmapItem[], source: 'cloud' | 'local' | 'fallback' | 'pending') => void,
   onError?: (error: Error) => void
 ): () => void {
   const generation = captureActiveDataContext(userId);
@@ -783,9 +783,9 @@ export function subscribeToItems(
     q,
     (snapshot) => {
       if (unsubscribed || !isFirestoreDataContextCurrent(userId, generation)) return;
-      const cloudItems: OrbitItem[] = [];
+      const cloudItems: ThreadmapItem[] = [];
       snapshot.forEach((d) => {
-        cloudItems.push(sanitizeItem({ id: d.id, ...d.data() } as OrbitItem));
+        cloudItems.push(sanitizeItem({ id: d.id, ...d.data() } as ThreadmapItem));
       });
 
       const authoritative = !snapshot.metadata.hasPendingWrites && !snapshot.metadata.fromCache;
@@ -844,7 +844,7 @@ export interface CreateItemOptions {
 }
 
 export async function createItem(
-  item: Omit<OrbitItem, 'id'>,
+  item: Omit<ThreadmapItem, 'id'>,
   options: CreateItemOptions = {},
 ): Promise<string> {
   const now = Date.now();
@@ -854,7 +854,7 @@ export async function createItem(
   }
   const contextGeneration = captureActiveDataContext(item.userId);
 
-  if (!validateItem(item as Partial<OrbitItem>)) {
+  if (!validateItem(item as Partial<ThreadmapItem>)) {
     console.error('[THREADMAP] Invalid item data, creating with defaults');
   }
 
@@ -864,9 +864,9 @@ export async function createItem(
     createdAt: now,
     updatedAt: now,
     revision: 1,
-  } as OrbitItem);
+  } as ThreadmapItem);
   if (newItem.parentId) {
-    const parent = useOrbitStore.getState().items.find((candidate) => candidate.id === newItem.parentId);
+    const parent = useThreadmapStore.getState().items.find((candidate) => candidate.id === newItem.parentId);
     if (!parent
         || parent.userId !== item.userId
         || parent.id === id
@@ -875,7 +875,7 @@ export async function createItem(
       throw new Error('Cannot create an item with a missing or invalid parent.');
     }
   }
-  const addWithoutDuplicate = (items: OrbitItem[]) => [
+  const addWithoutDuplicate = (items: ThreadmapItem[]) => [
     newItem,
     ...items.filter((entry) => entry.id !== id),
   ];
@@ -888,11 +888,11 @@ export async function createItem(
     return id;
   }
 
-  const previousItems = useOrbitStore.getState().items;
+  const previousItems = useThreadmapStore.getState().items;
   const optimisticItems = addWithoutDuplicate(previousItems);
-  useOrbitStore.getState().setItems(optimisticItems);
+  useThreadmapStore.getState().setItems(optimisticItems);
   if (!saveLocalItems(item.userId, optimisticItems)) {
-    useOrbitStore.getState().setItems(previousItems);
+    useThreadmapStore.getState().setItems(previousItems);
     throw new Error('The item could not be saved in browser storage. Free space and try again.');
   }
 
@@ -910,7 +910,7 @@ export async function createItem(
       }],
     });
   } catch (error) {
-    useOrbitStore.getState().setItems(previousItems);
+    useThreadmapStore.getState().setItems(previousItems);
     saveLocalItems(item.userId, previousItems);
     throw error;
   }
@@ -918,7 +918,7 @@ export async function createItem(
   try {
     const itemRef = doc(getDb(), ITEMS_COLLECTION, id);
     const persistedItem = itemDocumentFields(newItem);
-    let existingCanonical: OrbitItem | null = null;
+    let existingCanonical: ThreadmapItem | null = null;
     const observer = mutationObserver(mutation, contextGeneration);
     const adoptingObserver: QueueableWriteObserver = {
       ...observer,
@@ -946,7 +946,7 @@ export async function createItem(
               // device may already have created the canonical document; never
               // overwrite its newer edits with an import race. Adopt that
               // canonical copy into both Zustand and the scoped recovery cache.
-              existingCanonical = sanitizeItem({ id: existing.id, ...existing.data() } as OrbitItem);
+              existingCanonical = sanitizeItem({ id: existing.id, ...existing.data() } as ThreadmapItem);
               return;
             }
             transaction.set(itemRef, persistedItem);
@@ -968,11 +968,11 @@ export async function createItem(
 
 export async function updateItem(
   id: string,
-  updates: Partial<OrbitItem>,
+  updates: Partial<ThreadmapItem>,
   options: { expectedRevision?: number; expectedUpdatedAt?: number } = {},
 ): Promise<QueueableWriteOutcome> {
   if (updates.id && updates.id !== id) throw new Error('Cannot change an item ID.');
-  const existingItem = useOrbitStore.getState().items.find((i) => i.id === id);
+  const existingItem = useThreadmapStore.getState().items.find((i) => i.id === id);
   const ownerId = existingItem?.userId || updates.userId || activeUserId;
   if (!ownerId) throw new Error('Cannot update an item without an active owner.');
   assertActiveAccount(ownerId);
@@ -990,7 +990,7 @@ export async function updateItem(
 
 async function updateItemUnqueued(
   id: string,
-  updates: Partial<OrbitItem>,
+  updates: Partial<ThreadmapItem>,
   ownerId: string,
   options: { expectedRevision?: number; expectedUpdatedAt?: number },
 ): Promise<QueueableWriteOutcome> {
@@ -998,12 +998,12 @@ async function updateItemUnqueued(
   // allowing a stale mutation to reach local storage or Firestore.
   const contextGeneration = captureActiveDataContext(ownerId);
   const now = Date.now();
-  const existingItem = useOrbitStore.getState().items.find((i) => i.id === id);
+  const existingItem = useThreadmapStore.getState().items.find((i) => i.id === id);
   if (!existingItem) throw new Error(`Item ${id} was not found.`);
   const parentFieldSpecified = Object.prototype.hasOwnProperty.call(updates, 'parentId');
   const effectiveParentId = parentFieldSpecified ? updates.parentId : existingItem.parentId;
   if (typeof effectiveParentId === 'string') {
-    const parent = useOrbitStore.getState().items.find((candidate) => candidate.id === effectiveParentId);
+    const parent = useThreadmapStore.getState().items.find((candidate) => candidate.id === effectiveParentId);
     const nextType = updates.type || existingItem.type;
     if (!parent
         || parent.userId !== ownerId
@@ -1051,14 +1051,14 @@ async function updateItemUnqueued(
 
   // Optimistic: update store immediately
   const previousItem = existingItem;
-  const optimisticItems = useOrbitStore.getState().items.map((i) =>
+  const optimisticItems = useThreadmapStore.getState().items.map((i) =>
     i.id === id ? { ...i, ...updates, updatedAt: now, revision: nextRevision } : i
   );
   const optimisticItem = optimisticItems.find((item) => item.id === id);
   if (!optimisticItem) throw new Error(`Item ${id} was not found.`);
-  useOrbitStore.getState().setItems(optimisticItems);
+  useThreadmapStore.getState().setItems(optimisticItems);
   if (!saveLocalItems(ownerId, optimisticItems)) {
-    useOrbitStore.getState().setItems(previousItem
+    useThreadmapStore.getState().setItems(previousItem
       ? optimisticItems.map((item) => item.id === id ? previousItem : item)
       : optimisticItems);
     throw new Error('The change could not be saved in browser storage. Free space and try again.');
@@ -1088,7 +1088,7 @@ async function updateItemUnqueued(
       }],
     });
   } catch (error) {
-    useOrbitStore.getState().setItems(previousItem
+    useThreadmapStore.getState().setItems(previousItem
       ? optimisticItems.map((item) => item.id === id ? previousItem : item)
       : optimisticItems);
     if (previousItem) {
@@ -1168,7 +1168,7 @@ export async function deleteItem(
   id: string,
   options: { skipCalendar?: boolean } = {}
 ): Promise<void> {
-  const existingItem = useOrbitStore.getState().items.find((i) => i.id === id);
+  const existingItem = useThreadmapStore.getState().items.find((i) => i.id === id);
   const ownerId = existingItem?.userId || activeUserId;
   if (!ownerId) throw new Error('Cannot delete an item without an active owner.');
   if (!existingItem || existingItem.userId !== ownerId) {
@@ -1176,7 +1176,7 @@ export async function deleteItem(
   }
   const contextGeneration = captureActiveDataContext(ownerId);
   const now = Date.now();
-  const cascade = (items: OrbitItem[]) => items
+  const cascade = (items: ThreadmapItem[]) => items
     .filter((item) => item.id !== id)
     .map((item) => {
       const linkedIds = (item.linkedIds || []).filter((linkedId) => linkedId !== id);
@@ -1237,16 +1237,16 @@ export async function deleteItem(
   }
 
   // Optimistically remove the item and clean all in-browser references.
-  const prevItems = useOrbitStore.getState().items;
+  const prevItems = useThreadmapStore.getState().items;
   const affectedBefore = new Map(
     prevItems
       .filter((item) => item.id === id || item.parentId === id || item.linkedIds?.includes(id))
       .map((item) => [item.id, item])
   );
   const optimisticItems = cascade(prevItems);
-  useOrbitStore.getState().setItems(optimisticItems);
+  useThreadmapStore.getState().setItems(optimisticItems);
   if (!saveLocalItems(ownerId, optimisticItems)) {
-    useOrbitStore.getState().setItems(prevItems);
+    useThreadmapStore.getState().setItems(prevItems);
     if (calendarDeleted && existingItem) {
       try {
         await updateItem(id, { googleCalendarId: undefined, calendarSynced: false });
@@ -1306,7 +1306,7 @@ export async function deleteItem(
       try {
         const currentSnapshot = await getDoc(doc(getDb(), ITEMS_COLLECTION, id));
         if (currentSnapshot.exists() && currentSnapshot.data().userId === ownerId) {
-          const currentItem = sanitizeItem({ id, ...currentSnapshot.data() } as OrbitItem);
+          const currentItem = sanitizeItem({ id, ...currentSnapshot.data() } as ThreadmapItem);
           updateScopedItems(ownerId, (items) => [
             currentItem,
             ...items.filter((item) => item.id !== id),
@@ -1340,10 +1340,10 @@ export async function deleteItem(
   }
 }
 
-export async function getItem(id: string): Promise<OrbitItem | null> {
+export async function getItem(id: string): Promise<ThreadmapItem | null> {
   const ownerId = activeUserId;
   if (!ownerId) return null;
-  const localItem = useOrbitStore.getState().items.find((i) => i.id === id)
+  const localItem = useThreadmapStore.getState().items.find((i) => i.id === id)
     || loadLocalItems(ownerId).find((i) => i.id === id)
     || null;
 
@@ -1354,7 +1354,7 @@ export async function getItem(id: string): Promise<OrbitItem | null> {
   const result = await withRetry(async () => {
     const snap = await getDoc(doc(getDb(), ITEMS_COLLECTION, id));
     if (!snap.exists()) return null;
-    return sanitizeItem({ id: snap.id, ...snap.data() } as OrbitItem);
+    return sanitizeItem({ id: snap.id, ...snap.data() } as ThreadmapItem);
   }, 'getItem');
   assertActiveAccount(ownerId);
   return result?.userId === ownerId ? result : null;
@@ -1373,7 +1373,7 @@ export async function linkItems(
 ): Promise<void> {
   if (itemAId === itemBId) throw new Error('An item cannot link to itself.');
   const now = Date.now();
-  const currentItems = useOrbitStore.getState().items;
+  const currentItems = useThreadmapStore.getState().items;
   const localA = currentItems.find((item) => item.id === itemAId);
   const localB = currentItems.find((item) => item.id === itemBId);
   const localUserId = localA?.userId || localB?.userId || activeUserId;
@@ -1414,9 +1414,9 @@ export async function linkItems(
     if (item.id === itemBId) return { ...item, linkedIds: linkedB, updatedAt: now, revision: nextRevisionB };
     return item;
   });
-  useOrbitStore.getState().setItems(optimisticItems);
+  useThreadmapStore.getState().setItems(optimisticItems);
   if (!saveLocalItems(localUserId, optimisticItems)) {
-    useOrbitStore.getState().setItems(currentItems);
+    useThreadmapStore.getState().setItems(currentItems);
     throw new Error('The link could not be saved in browser storage.');
   }
 
@@ -1449,7 +1449,7 @@ export async function linkItems(
       ],
     });
   } catch (error) {
-    useOrbitStore.getState().setItems(currentItems);
+    useThreadmapStore.getState().setItems(currentItems);
     saveLocalItems(localUserId, currentItems);
     throw error;
   }
@@ -1501,7 +1501,7 @@ export async function unlinkItems(
 ): Promise<void> {
   if (itemAId === itemBId) throw new Error('An item cannot unlink from itself.');
   const now = Date.now();
-  const currentItems = useOrbitStore.getState().items;
+  const currentItems = useThreadmapStore.getState().items;
   const localA = currentItems.find((item) => item.id === itemAId);
   const localB = currentItems.find((item) => item.id === itemBId);
   const localUserId = localA?.userId || localB?.userId || activeUserId;
@@ -1542,9 +1542,9 @@ export async function unlinkItems(
     if (item.id === itemBId) return { ...item, linkedIds: linkedB, updatedAt: now, revision: nextRevisionB };
     return item;
   });
-  useOrbitStore.getState().setItems(optimisticItems);
+  useThreadmapStore.getState().setItems(optimisticItems);
   if (!saveLocalItems(localUserId, optimisticItems)) {
-    useOrbitStore.getState().setItems(currentItems);
+    useThreadmapStore.getState().setItems(currentItems);
     throw new Error('The link change could not be saved in browser storage.');
   }
 
@@ -1577,7 +1577,7 @@ export async function unlinkItems(
       ],
     });
   } catch (error) {
-    useOrbitStore.getState().setItems(currentItems);
+    useThreadmapStore.getState().setItems(currentItems);
     saveLocalItems(localUserId, currentItems);
     throw error;
   }
@@ -1778,7 +1778,7 @@ export async function saveUserSettings(
 export async function saveTagMutation(
   userId: string,
   settings: Omit<UserSettings, 'updatedAt' | 'revision'>,
-  affectedItems: Array<Pick<OrbitItem, 'id' | 'tags'>>,
+  affectedItems: Array<Pick<ThreadmapItem, 'id' | 'tags'>>,
   settingsBase: UserSettingsBase,
 ): Promise<UserSettingsSaveResult> {
   const contextGeneration = captureActiveDataContext(userId);
@@ -1814,7 +1814,7 @@ export async function saveTagMutation(
     return { outcome: 'committed', saved: settingsData };
   }
 
-  const chunks: Array<Array<Pick<OrbitItem, 'id' | 'tags'>>> = [];
+  const chunks: Array<Array<Pick<ThreadmapItem, 'id' | 'tags'>>> = [];
   for (let index = 0; index < affectedItems.length; index += 498) {
     chunks.push(affectedItems.slice(index, index + 498));
   }
@@ -1863,7 +1863,7 @@ export async function saveTagMutation(
     const revisions = new Map(updatedLocal
       .filter((item) => tagsById.has(item.id))
       .map((item) => [item.id, item]));
-    useOrbitStore.getState().setItems(useOrbitStore.getState().items.map((item) => {
+    useThreadmapStore.getState().setItems(useThreadmapStore.getState().items.map((item) => {
       const updated = revisions.get(item.id);
       return updated
         ? { ...item, updatedAt: updated.updatedAt, revision: updated.revision }

@@ -20,13 +20,13 @@ import {
   ChevronDown,
   GanttChart,
 } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { updateItem, deleteItem, createItem } from '@/lib/firestore';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { LinkGraph } from '@/components/items/link-graph';
 import { ProjectRoadmap } from '@/components/items/project-roadmap';
-import type { OrbitItem, ItemStatus, ProjectTier } from '@/lib/types';
+import type { ThreadmapItem, ItemStatus, ProjectTier } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -54,7 +54,7 @@ type OptionsMenuState = {
 };
 
 export function ProjectDashboard() {
-  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags } = useOrbitStore();
+  const { selectedItemId, setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags } = useThreadmapStore();
   const { user } = useAuth();
   const { t, lang } = useTranslation();
   const locale = getLocale(lang);
@@ -115,7 +115,7 @@ export function ProjectDashboard() {
 
   const projectNotes = items.filter((i) => i.parentId === item.id && i.type === 'note' && i.status !== 'archived');
 
-  const handleUpdate = async (updates: Partial<OrbitItem>) => {
+  const handleUpdate = async (updates: Partial<ThreadmapItem>) => {
     try {
       await updateItem(item.id, updates);
     } catch {

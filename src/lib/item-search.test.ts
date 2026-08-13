@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { matchesSearch, searchItems } from './item-search';
-import type { ItemStatus, OrbitItem } from './types';
+import type { ItemStatus, ThreadmapItem } from './types';
 
 function item(
   id: string,
   extra: { title?: string; content?: string; tags?: string[]; status?: ItemStatus } = {}
-): OrbitItem {
+): ThreadmapItem {
   return {
     id,
     title: extra.title ?? id,

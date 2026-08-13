@@ -1,4 +1,4 @@
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
@@ -15,7 +15,7 @@ function isTimestamp(value: unknown): value is number {
  * the very next render — the user saw an "Item restored" toast and watched the
  * row vanish, forever, burning a write each attempt.
  */
-function retentionStart(item: OrbitItem): number | null {
+function retentionStart(item: ThreadmapItem): number | null {
   if (!isTimestamp(item.completedAt)) return null;
   return isTimestamp(item.restoredAt)
     ? Math.max(item.completedAt, item.restoredAt)
@@ -24,7 +24,7 @@ function retentionStart(item: OrbitItem): number | null {
 
 /** Return only completed task IDs old enough for the task retention policy. */
 export function getAutoArchiveTaskIds(
-  items: OrbitItem[],
+  items: ThreadmapItem[],
   autoArchiveDays: number,
   now = Date.now()
 ): string[] {

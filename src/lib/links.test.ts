@@ -5,9 +5,9 @@ import {
   getAllowedParentTypes,
   setParent,
 } from './links';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
-function item(overrides: Partial<OrbitItem>): OrbitItem {
+function item(overrides: Partial<ThreadmapItem>): ThreadmapItem {
   return {
     id: overrides.id ?? crypto.randomUUID(),
     type: overrides.type ?? 'task',
@@ -17,7 +17,7 @@ function item(overrides: Partial<OrbitItem>): OrbitItem {
     updatedAt: 1,
     userId: 'user-1',
     ...overrides,
-  } as OrbitItem;
+  } as ThreadmapItem;
 }
 
 describe('link utilities', () => {

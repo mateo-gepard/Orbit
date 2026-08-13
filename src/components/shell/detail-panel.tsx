@@ -25,7 +25,7 @@ import {
   Network,
   Paperclip,
 } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { updateItem, deleteItem, ItemRevisionConflictError } from '@/lib/firestore';
 import { useSettingsStore } from '@/lib/settings-store';
 
@@ -43,7 +43,7 @@ import { LinkGraph } from '@/components/items/link-graph';
 import { ProjectDashboard } from './project-dashboard';
 import { FileUpload } from '@/components/files/file-upload';
 import { getItemRelationships } from '@/lib/links';
-import type { OrbitItem, ItemType, ItemStatus, Priority, ChecklistItem, GoalTimeframe, HabitFrequency, NoteSubtype } from '@/lib/types';
+import type { ThreadmapItem, ItemType, ItemStatus, Priority, ChecklistItem, GoalTimeframe, HabitFrequency, NoteSubtype } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -126,7 +126,7 @@ function BufferedTextFields({
   onChange,
   onSave,
 }: {
-  item: OrbitItem;
+  item: ThreadmapItem;
   draft: DurableItemDetailDraft;
   disabled: boolean;
   saveState: DetailSaveState;
@@ -184,7 +184,7 @@ function BufferedTextFields({
   );
 }
 
-function editableSchedule(item: OrbitItem): Required<CalendarEventSchedule> {
+function editableSchedule(item: ThreadmapItem): Required<CalendarEventSchedule> {
   return {
     startDate: item.startDate || '',
     endDate: item.endDate || '',
@@ -219,7 +219,7 @@ function EventScheduleFields({
   onChange,
   onSave,
 }: {
-  item: OrbitItem;
+  item: ThreadmapItem;
   draft: DurableItemDetailDraft;
   disabled: boolean;
   dirty: boolean;
@@ -335,8 +335,8 @@ function EventScheduleFields({
 }
 
 export function DetailPanel() {
-  const selectedItemId = useOrbitStore((state) => state.selectedItemId);
-  const selectedItem = useOrbitStore((state) => (
+  const selectedItemId = useThreadmapStore((state) => state.selectedItemId);
+  const selectedItem = useThreadmapStore((state) => (
     selectedItemId ? state.items.find((item) => item.id === selectedItemId) : undefined
   ));
 
@@ -346,8 +346,8 @@ export function DetailPanel() {
   return <DetailPanelForItem key={selectedItem.id} initialItem={selectedItem} />;
 }
 
-function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
-  const { setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags, setCompletionAnimation } = useOrbitStore();
+function DetailPanelForItem({ initialItem }: { initialItem: ThreadmapItem }) {
+  const { setSelectedItemId, detailPanelOpen, setDetailPanelOpen, items, getAllTags, setCompletionAnimation } = useThreadmapStore();
   const item = items.find((candidate) => candidate.id === initialItem.id) || initialItem;
   const { t } = useTranslation();
   const initialCloudDraftRef = useRef(itemDetailDraftFromItem(initialItem));
@@ -457,7 +457,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
       async (value, version) => {
         if (detailMountedRef.current) setDetailSaveState('saving');
         const expectedBase = { ...detailDraftBaseRef.current };
-        const latestItem = useOrbitStore.getState().items.find(
+        const latestItem = useThreadmapStore.getState().items.find(
           (candidate) => candidate.id === initialItem.id,
         );
         if (!latestItem || latestItem.userId !== initialItem.userId) {
@@ -477,7 +477,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
 
         const shouldPushCalendarEdit = latestItem.type === 'event'
           && Boolean(latestItem.googleCalendarId);
-        const updates: Partial<OrbitItem> = {
+        const updates: Partial<ThreadmapItem> = {
           title: value.title.trim(),
           content: value.content,
           ...(latestItem.type === 'goal' ? { metric: value.metric } : {}),
@@ -497,7 +497,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             expectedRevision: expectedBase.revision,
             expectedUpdatedAt: expectedBase.updatedAt,
           });
-          const savedItem = useOrbitStore.getState().items.find(
+          const savedItem = useThreadmapStore.getState().items.find(
             (candidate) => candidate.id === initialItem.id,
           );
           detailDraftBaseRef.current = {
@@ -549,8 +549,8 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
   const detailSaveQueue = detailSaveQueueRef.current;
 
   const persistUpdateForItem = useCallback(async (
-    targetItem: OrbitItem,
-    updates: Partial<OrbitItem>,
+    targetItem: ThreadmapItem,
+    updates: Partial<ThreadmapItem>,
   ): Promise<boolean> => {
     const shouldPushCalendarEdit = targetItem.type === 'event' && Boolean(targetItem.googleCalendarId);
     try {
@@ -609,9 +609,9 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
   }, [conflictingDetailDraft, detailDraft.title, detailSaveQueue, detailScheduleValidation, item.type, t]);
 
   const handleUpdate = useCallback(
-    async (updates: Partial<OrbitItem>): Promise<boolean> => {
+    async (updates: Partial<ThreadmapItem>): Promise<boolean> => {
       if (!(await flushEditableFields())) return false;
-      const latestItem = useOrbitStore.getState().items.find(
+      const latestItem = useThreadmapStore.getState().items.find(
         (candidate) => candidate.id === initialItem.id,
       );
       return latestItem ? persistUpdateForItem(latestItem, updates) : false;
@@ -656,7 +656,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
   useEffect(() => {
     if (recoveryLoadedRef.current) return;
     recoveryLoadedRef.current = true;
-    const latestItem = useOrbitStore.getState().items.find(
+    const latestItem = useThreadmapStore.getState().items.find(
       (candidate) => candidate.id === initialItem.id,
     ) || initialItem;
     const recovered = readItemDetailDraft(latestItem);
@@ -728,7 +728,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
 
   const restoreAndRebaseDetailDraft = useCallback(() => {
     if (!conflictingDetailDraft) return;
-    const latestItem = useOrbitStore.getState().items.find(
+    const latestItem = useThreadmapStore.getState().items.find(
       (candidate) => candidate.id === initialItem.id,
     );
     if (!latestItem || latestItem.userId !== initialItem.userId) return;
@@ -753,7 +753,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
   }, [conflictingDetailDraft, detailSaveQueue, initialItem.id, initialItem.userId]);
 
   const discardDetailDraft = useCallback(() => {
-    const latestItem = useOrbitStore.getState().items.find(
+    const latestItem = useThreadmapStore.getState().items.find(
       (candidate) => candidate.id === initialItem.id,
     );
     if (!latestItem || latestItem.userId !== initialItem.userId) return;
@@ -827,7 +827,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
         await requestCalendarPermission();
       }
       if (!(await flushEditableFields())) return;
-      const latestItem = useOrbitStore.getState().items.find((candidate) => candidate.id === item.id);
+      const latestItem = useThreadmapStore.getState().items.find((candidate) => candidate.id === item.id);
       if (!latestItem || latestItem.type !== 'event') {
         throw new Error('The event is no longer available.');
       }
@@ -842,7 +842,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
       if (latestItem.calendarSynced !== false) {
         await updateItem(item.id, { calendarSynced: false });
       }
-      const pendingItem = useOrbitStore.getState().items.find((candidate) => candidate.id === item.id)
+      const pendingItem = useThreadmapStore.getState().items.find((candidate) => candidate.id === item.id)
         || { ...latestItem, calendarSynced: false };
       const result = await flushPendingGoogleCalendarEvents(latestItem.userId, [pendingItem]);
       if (!result.success) throw new Error('Google Calendar sync did not finish.');

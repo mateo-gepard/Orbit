@@ -1,6 +1,6 @@
 import { MarkerType } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
-import type { OrbitItem, ProjectFile } from '@/lib/types';
+import type { ThreadmapItem, ProjectFile } from '@/lib/types';
 
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 56;
@@ -48,7 +48,7 @@ const EDGE_STYLES = {
 
 // ─── Types ─────────────────────────────────────────────────
 interface GraphItem {
-  item: OrbitItem;
+  item: ThreadmapItem;
   depth: number;
   /** How this item connects to its "discoverer" */
   edgeType: 'root' | 'parent' | 'child' | 'linked' | 'reverseLinked' | 'sibling' | 'deepLinked';
@@ -62,10 +62,10 @@ interface GraphItem {
  * following ALL connection types up to MAX_DEPTH hops.
  */
 export function buildGraphData(
-  currentItem: OrbitItem,
-  allItems: OrbitItem[],
+  currentItem: ThreadmapItem,
+  allItems: ThreadmapItem[],
 ): { nodes: Node[]; edges: Edge[] } {
-  const itemMap = new Map<string, OrbitItem>();
+  const itemMap = new Map<string, ThreadmapItem>();
   for (const item of allItems) {
     if (item.status !== 'archived') {
       itemMap.set(item.id, item);
@@ -93,7 +93,7 @@ export function buildGraphData(
     edgeType: 'root',
   });
 
-  const queue: Array<{ item: OrbitItem; depth: number }> = [
+  const queue: Array<{ item: ThreadmapItem; depth: number }> = [
     { item: currentItem, depth: 0 },
   ];
 
@@ -321,7 +321,7 @@ class OccupiedGrid {
 function layoutGraph(
   nodes: Node[],
   edges: Edge[],
-  currentItem: OrbitItem,
+  currentItem: ThreadmapItem,
   visited: Map<string, GraphItem>,
   fileNodes: Array<{ file: ProjectFile; ownerId: string }>,
 ): { nodes: Node[]; edges: Edge[] } {

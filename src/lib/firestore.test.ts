@@ -23,9 +23,9 @@ const {
   isFirestoreDataContextCurrent,
 } = await import('./firestore');
 
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
-function raw(overrides: Record<string, unknown> = {}): OrbitItem {
+function raw(overrides: Record<string, unknown> = {}): ThreadmapItem {
   return {
     id: 'i1',
     title: 'Task',
@@ -35,7 +35,7 @@ function raw(overrides: Record<string, unknown> = {}): OrbitItem {
     updatedAt: 20,
     userId: 'u1',
     ...overrides,
-  } as OrbitItem;
+  } as ThreadmapItem;
 }
 
 /**

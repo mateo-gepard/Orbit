@@ -1,5 +1,5 @@
 import { scopedStorageKey } from '@/lib/account-storage';
-import type { ItemType, OrbitItem } from '@/lib/types';
+import type { ItemType, ThreadmapItem } from '@/lib/types';
 import { removeStorageVerified, writeStorageVerified } from '@/lib/verified-storage';
 
 export const ITEM_DETAIL_DRAFT_STORAGE_PREFIX = 'orbit-item-detail-draft';
@@ -40,7 +40,7 @@ function browserStorage(): DraftStorage {
   return localStorage;
 }
 
-function draftKey(item: Pick<OrbitItem, 'id' | 'userId'>): string {
+function draftKey(item: Pick<ThreadmapItem, 'id' | 'userId'>): string {
   return scopedStorageKey(`${ITEM_DETAIL_DRAFT_STORAGE_PREFIX}:${item.id}`, item.userId);
 }
 
@@ -60,7 +60,7 @@ function validItemType(value: unknown): value is ItemType {
   return ['task', 'project', 'habit', 'event', 'goal', 'note'].includes(String(value));
 }
 
-export function itemDetailDraftFromItem(item: OrbitItem): DurableItemDetailDraft {
+export function itemDetailDraftFromItem(item: ThreadmapItem): DurableItemDetailDraft {
   return {
     title: item.title,
     content: item.content || '',
@@ -86,7 +86,7 @@ export function itemDetailDraftsEqual(
 }
 
 export function readItemDetailDraft(
-  item: OrbitItem,
+  item: ThreadmapItem,
   storage: DraftStorage = browserStorage(),
 ): RecoveredItemDetailDraft | null {
   try {
@@ -120,7 +120,7 @@ export function readItemDetailDraft(
 }
 
 export function writeItemDetailDraft(
-  item: Pick<OrbitItem, 'id' | 'type' | 'userId'>,
+  item: Pick<ThreadmapItem, 'id' | 'type' | 'userId'>,
   draft: DurableItemDetailDraft,
   base: { revision: number; updatedAt: number },
   storage: DraftStorage = browserStorage(),
@@ -139,7 +139,7 @@ export function writeItemDetailDraft(
 }
 
 export function clearItemDetailDraft(
-  item: Pick<OrbitItem, 'id' | 'userId'>,
+  item: Pick<ThreadmapItem, 'id' | 'userId'>,
   storage: DraftStorage = browserStorage(),
 ): void {
   removeStorageVerified(storage, draftKey(item));

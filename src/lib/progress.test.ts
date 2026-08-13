@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getGoalStats, getProjectStats, getProjectTaskProgress, getProjectTasks } from './progress';
-import type { ItemStatus, ItemType, OrbitItem } from './types';
+import type { ItemStatus, ItemType, ThreadmapItem } from './types';
 
 function item(
   id: string,
   type: ItemType,
   extra: { status?: ItemStatus; parentId?: string; linkedIds?: string[] } = {}
-): OrbitItem {
+): ThreadmapItem {
   return {
     id,
     title: id,

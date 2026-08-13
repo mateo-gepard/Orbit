@@ -1,4 +1,4 @@
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 /**
  * How confident we are that a typed `@mention` means a particular item.
@@ -10,14 +10,14 @@ import type { OrbitItem } from './types';
 export type MentionConfidence = 'exact' | 'partial';
 
 export interface MentionMatch {
-  item: OrbitItem;
+  item: ThreadmapItem;
   confidence: MentionConfidence;
 }
 
 /** Below this, a partial match is too weak to be worth guessing from. */
 const MIN_PARTIAL_QUERY_LENGTH = 3;
 
-function mostRecent(items: OrbitItem[]): OrbitItem {
+function mostRecent(items: ThreadmapItem[]): ThreadmapItem {
   return items.reduce((best, candidate) =>
     (candidate.updatedAt ?? 0) > (best.updatedAt ?? 0) ? candidate : best
   );
@@ -34,7 +34,7 @@ function mostRecent(items: OrbitItem[]): OrbitItem {
  * reverse, and an ambiguous partial match resolves to nothing rather than to
  * whichever item was touched last.
  */
-export function resolveMention(query: string, items: readonly OrbitItem[]): MentionMatch | null {
+export function resolveMention(query: string, items: readonly ThreadmapItem[]): MentionMatch | null {
   const needle = query.trim().toLowerCase();
   if (!needle) return null;
 

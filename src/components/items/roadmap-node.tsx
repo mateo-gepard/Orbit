@@ -11,7 +11,7 @@ import {
   CalendarDays,
   AlertTriangle,
 } from 'lucide-react';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
 import { useTranslation } from '@/lib/i18n';
 import { useSettingsStore } from '@/lib/settings-store';
@@ -49,7 +49,7 @@ function useRoadmapDateFormatter(): { formatDueDate: (value: string) => string }
 // ─── Project root node ──────────────────────────────────
 
 interface ProjectNodeData {
-  item: OrbitItem;
+  item: ThreadmapItem;
   progress: number;
   taskCount: number;
   doneCount: number;
@@ -115,7 +115,7 @@ function ProjectNodeComponent({ data }: { data: ProjectNodeData }) {
 // ─── Milestone node ─────────────────────────────────────
 
 interface MilestoneNodeData {
-  item: OrbitItem;
+  item: ThreadmapItem;
   progress: number;
   taskCount: number;
   doneCount: number;
@@ -228,7 +228,7 @@ function MilestoneNodeComponent({ data }: { data: MilestoneNodeData }) {
 // ─── Task node ──────────────────────────────────────────
 
 interface TaskNodeData {
-  item: OrbitItem;
+  item: ThreadmapItem;
   projectColor: string;
   [key: string]: unknown;
 }

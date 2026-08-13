@@ -136,8 +136,6 @@ export interface UserSettings {
   // Data
   data: DataSettings;
 
-  // Easter Eggs
-  hockeyMode: boolean;
 
   // Metadata
   updatedAt: number;
@@ -200,7 +198,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
     lastExportAt: null,
   },
 
-  hockeyMode: false,
 
   updatedAt: 0,
 };
@@ -361,7 +358,6 @@ function normalizeSettings(settings: unknown = {}): UserSettings {
     data: {
       lastExportAt: nullableTimestamp(data.lastExportAt),
     },
-    hockeyMode: booleanValue(source.hockeyMode, DEFAULT_SETTINGS.hockeyMode),
     updatedAt: numberValue(source.updatedAt, 0, 0, Number.MAX_SAFE_INTEGER),
   };
 }

@@ -72,15 +72,15 @@ export function QuickCreateDialog({
       }}
     >
       <DialogContent
-        className="max-w-[420px]"
+        className="left-0 right-0 top-auto bottom-0 w-full max-w-none translate-x-0 translate-y-0 gap-5 rounded-b-none rounded-t-[28px] border-x-0 border-b-0 px-5 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)] pt-7 sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:max-w-[420px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:p-6"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           inputRef.current?.focus();
         }}
       >
         <DialogHeader>
-          <DialogTitle className="text-[15px]">{title}</DialogTitle>
-          <DialogDescription className="text-[12px]">{description}</DialogDescription>
+          <DialogTitle className="text-[19px] tracking-tight sm:text-[15px]">{title}</DialogTitle>
+          <DialogDescription className="text-[14px] leading-relaxed sm:text-[12px]">{description}</DialogDescription>
         </DialogHeader>
 
         <Input
@@ -104,12 +104,13 @@ export function QuickCreateDialog({
           </p>
         )}
 
-        <div className="flex justify-end gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
           <Button
             type="button"
             variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={submitting}
+            className="min-h-12 sm:min-h-9"
           >
             {t('common.cancel')}
           </Button>
@@ -118,6 +119,7 @@ export function QuickCreateDialog({
             onClick={() => void submit()}
             disabled={submitting || !value.trim()}
             aria-busy={submitting}
+            className="min-h-12 sm:min-h-9"
           >
             {submitLabel ?? t('common.create')}
           </Button>

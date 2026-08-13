@@ -50,3 +50,7 @@ firestore-debug.log
 ui-debug.log
 functions/lib
 functions/node_modules
+
+# Local agent skill bundles installed for this workspace
+/.agents/
+/skills-lock.json

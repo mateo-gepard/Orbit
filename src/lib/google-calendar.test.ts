@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assertCalendarAccess } from './calendar-access';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 vi.mock('./settings-store', () => ({
   detectDeviceTimeZone: () => 'UTC',
@@ -19,14 +19,14 @@ import {
   createGoogleEvent,
   findGoogleEventByThreadmapItemId,
   getGoogleAccessToken,
-  googleEventIdForOrbitItem,
+  googleEventIdForThreadmapItem,
   orbitToGoogleEvent,
   requestCalendarPermission,
   setGoogleAccessToken,
   setGoogleCalendarOwner,
 } from './google-calendar';
 
-function event(overrides: Partial<OrbitItem> = {}): OrbitItem {
+function event(overrides: Partial<ThreadmapItem> = {}): ThreadmapItem {
   return {
     id: 'event-1',
     type: 'event',
@@ -111,10 +111,10 @@ describe('Google Calendar consent', () => {
 
 describe('Google Calendar event serialization', () => {
   it('derives a stable, owner-scoped Google-safe event ID', () => {
-    const first = googleEventIdForOrbitItem(event());
-    const repeated = googleEventIdForOrbitItem(event());
-    const otherItem = googleEventIdForOrbitItem(event({ id: 'event-2' }));
-    const otherOwner = googleEventIdForOrbitItem(event({ userId: 'other-owner' }));
+    const first = googleEventIdForThreadmapItem(event());
+    const repeated = googleEventIdForThreadmapItem(event());
+    const otherItem = googleEventIdForThreadmapItem(event({ id: 'event-2' }));
+    const otherOwner = googleEventIdForThreadmapItem(event({ userId: 'other-owner' }));
 
     expect(first).toBe(repeated);
     expect(first).toMatch(/^[0-9a-v]{5,1024}$/);
@@ -163,7 +163,7 @@ describe('Google Calendar idempotent creation', () => {
     setGoogleCalendarOwner('calendar-user');
     setGoogleAccessToken('calendar-token');
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      id: googleEventIdForOrbitItem(event()),
+      id: googleEventIdForThreadmapItem(event()),
     }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -171,7 +171,7 @@ describe('Google Calendar idempotent creation', () => {
     const request = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(request[1].body));
 
-    expect(createdId).toBe(googleEventIdForOrbitItem(event()));
+    expect(createdId).toBe(googleEventIdForThreadmapItem(event()));
     expect(request[1].method).toBe('POST');
     expect(body).toMatchObject({
       id: createdId,
@@ -192,7 +192,7 @@ describe('Google Calendar idempotent creation', () => {
     const createdId = await createGoogleEvent(event());
     const requests = fetchMock.mock.calls as [string, RequestInit][];
 
-    expect(createdId).toBe(googleEventIdForOrbitItem(event()));
+    expect(createdId).toBe(googleEventIdForThreadmapItem(event()));
     expect(requests).toHaveLength(2);
     expect(requests[0][1].method).toBe('POST');
     expect(requests[1][0]).toContain(`/events/${createdId}`);

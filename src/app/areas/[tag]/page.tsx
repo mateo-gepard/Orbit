@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { ItemRow } from '@/components/items/item-row';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useTranslation } from '@/lib/i18n';
 import { matchesSearch } from '@/lib/item-search';
@@ -26,9 +26,9 @@ function decodeTag(value: string | string[] | undefined): string {
 export default function AreaPage() {
   const params = useParams<{ tag: string | string[] }>();
   const tag = useMemo(() => decodeTag(params.tag), [params.tag]);
-  const items = useOrbitStore((state) => state.items);
-  const setActiveTag = useOrbitStore((state) => state.setActiveTag);
-  const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
+  const items = useThreadmapStore((state) => state.items);
+  const setActiveTag = useThreadmapStore((state) => state.setActiveTag);
+  const setCommandBarOpen = useThreadmapStore((state) => state.setCommandBarOpen);
   const language = useSettingsStore((state) => state.settings.language);
   const { t, tp } = useTranslation();
   const [view, setView] = useState<AreaView>('active');
@@ -37,8 +37,8 @@ export default function AreaPage() {
   useEffect(() => {
     setActiveTag(tag || null);
     return () => {
-      if (useOrbitStore.getState().activeTag === tag) {
-        useOrbitStore.getState().setActiveTag(null);
+      if (useThreadmapStore.getState().activeTag === tag) {
+        useThreadmapStore.getState().setActiveTag(null);
       }
     };
   }, [setActiveTag, tag]);

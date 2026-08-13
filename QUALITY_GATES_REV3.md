@@ -29,11 +29,11 @@ Assessment date: 12 August 2026.
 | No real data in preview/test | Pass | Isolated staging Firebase project, preview-aware EU MCP routing, and Vercel preview environment; production routing is selected only for `VERCEL_ENV=production` |
 | Public brand/domain | Pass | `threadmap.app`, unified Threadmap identity and legal/security routes |
 | Rate limiting/basic abuse protection | Partial | App Check and Vercel DDoS protection are active; WAF observes 120 `/api/` requests/min/IP but safe 429 enforcement awaits traffic review |
-| Incident owner and escalation path | Partial | `INCIDENT_RESPONSE.md` and named technical owner exist; working security mailbox and second owner remain open |
+| Incident owner and escalation path | Partial | `INCIDENT_RESPONSE.md`, named technical owner, and working Threadmap forwarding exist; a second human owner and a tested MFA-recovery notification remain open |
 | Automated dependency/vulnerability/license scans | Pass | npm audits, Dependabot, CodeQL, secret scanning, and deterministic production-license policy in CI |
 | Platform-native and boundary testing | Pass/partial | Firebase rule suite, App Check smoke tests, callable tests, and this boundary review pass; independent human sign-off remains open |
 | In-region data services | Pass/Legal | Firestore, Storage, Functions, staging, and backups are EU-based; Legal must verify processor contract/transfer language including Auth/Vercel |
-| DPAs, SCCs, lawful basis, privacy approval | Blocked | Requires controller identity, Legal execution, and a maintained subprocessor register; must not be invented in code |
+| DPAs, SCCs, lawful basis, privacy approval | Blocked | A repository subprocessor register now covers Google, Vercel, and Resend; controller identity, contract execution, transfer review, and counsel approval remain owner/legal actions and must not be invented in code |
 | External-user MFA available | Pass | Optional TOTP enrollment/challenge added and Identity Platform TOTP enabled in production/staging |
 | AI/MCP flow documented | Pass | `DATA_GOVERNANCE.md` documents destinations, scopes, data returned, and provider boundary |
 | Agent least privilege and human approval | Pass/partial | Separate scopes, omitted unauthorized tools, revisions/idempotency, destructive hints, quotas, and two-step deletion; client remains responsible for presenting approval for non-delete writes |

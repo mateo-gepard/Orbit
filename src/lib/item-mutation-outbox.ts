@@ -1,4 +1,4 @@
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 import { removeStorageVerified, writeStorageVerified } from './verified-storage';
 
 export const ITEM_MUTATION_STORAGE_PREFIX = 'orbit-item-mutation';
@@ -31,7 +31,7 @@ export interface ItemMutationRecord {
   label: string;
   createdAt: number;
   state: ItemMutationState;
-  recoveryItems: OrbitItem[];
+  recoveryItems: ThreadmapItem[];
   patches: ItemMutationPatch[];
   /**
    * Earlier browser mutations whose optimistic revisions this mutation was
@@ -55,7 +55,7 @@ export interface NewItemMutation {
   kind: ItemMutationKind;
   label: string;
   createdAt: number;
-  recoveryItems: OrbitItem[];
+  recoveryItems: ThreadmapItem[];
   patches: ItemMutationPatch[];
   dependsOnMutationIds?: string[];
   tagSettings?: ItemMutationRecord['tagSettings'];
@@ -276,7 +276,7 @@ function equalValue(left: unknown, right: unknown): boolean {
 
 export function itemMutationMatches(
   record: ItemMutationRecord,
-  itemsById: ReadonlyMap<string, OrbitItem>,
+  itemsById: ReadonlyMap<string, ThreadmapItem>,
 ): boolean {
   return record.patches.every((patch) => {
     const item = itemsById.get(patch.itemId);
@@ -303,7 +303,7 @@ export function itemMutationMatches(
 }
 
 export interface MutationRecoveryMerge {
-  items: OrbitItem[];
+  items: ThreadmapItem[];
   confirmed: ItemMutationRecord[];
   superseded: ItemMutationRecord[];
   recovered: ItemMutationRecord[];
@@ -315,7 +315,7 @@ export interface MutationRecoveryMerge {
  * (and account export) until the user can resolve it.
  */
 export function mergeItemMutationRecovery(
-  cloudItems: OrbitItem[],
+  cloudItems: ThreadmapItem[],
   mutations: ItemMutationRecord[],
   authoritative: boolean,
 ): MutationRecoveryMerge {

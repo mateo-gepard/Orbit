@@ -19,7 +19,6 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
-  sendSignInLinkToEmail,
   isSignInWithEmailLink,
   signInWithEmailLink,
   sendPasswordResetEmail,
@@ -36,6 +35,8 @@ import { clearGoogleAccessToken } from '@/lib/google-calendar';
 import { deleteAccountData } from '@/lib/account-data';
 import { unregisterFCMToken } from '@/lib/fcm';
 import { findTotpFactor, normalizeTotpCode, recoverMfaWithCode } from '@/lib/mfa';
+import { requestThreadmapSignInLink } from '@/lib/auth-email';
+import { isIOS, isStandalone } from '@/lib/mobile';
 
 /**
  * How long to wait for Firebase to report an auth state before falling back to
@@ -274,7 +275,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     try {
-      await unregisterCurrentDevice();
+      // Keep popup creation in the original user-activation task. Awaiting
+      // unrelated cleanup first causes Safari and stricter popup blockers to
+      // discard the gesture and silently block Firebase's auth window.
+      if (auth.currentUser) await unregisterCurrentDevice();
+
+      // Redirect is Firebase's reliable mobile path: it avoids popup blockers,
+      // standalone-PWA window ownership quirks, and iOS WebKit popup handling.
+      const prefersRedirect = isStandalone()
+        || isIOS()
+        || window.matchMedia('(max-width: 767px) and (pointer: coarse)').matches;
+      if (prefersRedirect) {
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+
       await signInWithPopup(auth, googleProvider);
     } catch (error: unknown) {
       if (beginMfaChallenge(error)) return;
@@ -332,11 +347,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sendEmailLinkFn = useCallback(async (email: string) => {
     if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
-    const actionCodeSettings = {
-      url: window.location.origin,
-      handleCodeInApp: true,
-    };
-    await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+    await requestThreadmapSignInLink(email);
     window.localStorage.setItem(EMAIL_LINK_KEY, email);
   }, []);
 

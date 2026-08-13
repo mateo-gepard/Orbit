@@ -17,7 +17,7 @@ import {
   Trash2,
   ListChecks,
 } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem, deleteItem, updateItem } from '@/lib/firestore';
 import { searchItems } from '@/lib/item-search';
@@ -29,7 +29,7 @@ import { ItemRow } from '@/components/items/item-row';
 import { cn } from '@/lib/utils';
 import { format, isPast, isToday, isValid, parseISO, startOfWeek } from 'date-fns';
 import type { Locale } from 'date-fns';
-import type { OrbitItem, Priority } from '@/lib/types';
+import type { ThreadmapItem, Priority } from '@/lib/types';
 import { useTranslation, type Translate, type TranslationKey } from '@/lib/i18n';
 import { useSettingsStore } from '@/lib/settings-store';
 import { getLocale } from '@/lib/utils';
@@ -57,7 +57,7 @@ interface TaskGroup {
   key: string;
   label: string;
   emoji?: string;
-  items: OrbitItem[];
+  items: ThreadmapItem[];
   sortValue?: number;
 }
 
@@ -65,7 +65,7 @@ interface TaskGroup {
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
-function getTaskGoal(task: OrbitItem, allItems: OrbitItem[]): OrbitItem | undefined {
+function getTaskGoal(task: ThreadmapItem, allItems: ThreadmapItem[]): ThreadmapItem | undefined {
   const parentGoal = task.parentId
     ? allItems.find((i) => i.id === task.parentId && i.type === 'goal' && i.status !== 'archived')
     : undefined;
@@ -78,7 +78,7 @@ function getTaskGoal(task: OrbitItem, allItems: OrbitItem[]): OrbitItem | undefi
   );
 }
 
-function getTaskProject(task: OrbitItem, allItems: OrbitItem[]): OrbitItem | undefined {
+function getTaskProject(task: ThreadmapItem, allItems: ThreadmapItem[]): ThreadmapItem | undefined {
   const parent = task.parentId
     ? allItems.find((i) => i.id === task.parentId && i.status !== 'archived')
     : undefined;
@@ -97,9 +97,9 @@ function getTaskProject(task: OrbitItem, allItems: OrbitItem[]): OrbitItem | und
 }
 
 function groupTasks(
-  tasks: OrbitItem[],
+  tasks: ThreadmapItem[],
   groupBy: GroupBy,
-  allItems: OrbitItem[],
+  allItems: ThreadmapItem[],
   weekStartsOn: 0 | 1,
   translate: Translate,
   locale: Locale,
@@ -240,7 +240,7 @@ const GROUP_OPTIONS: { key: GroupBy; labelKey: TranslationKey; icon: typeof Fold
 ];
 
 export default function TasksPage() {
-  const { items, getAllTags } = useOrbitStore();
+  const { items, getAllTags } = useThreadmapStore();
   const { user } = useAuth();
   const { t, lang } = useTranslation();
   const locale = getLocale(lang);
@@ -269,6 +269,7 @@ export default function TasksPage() {
   // Toolbar open states (mobile)
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const allTags = getAllTags();
 
@@ -374,6 +375,10 @@ export default function TasksPage() {
 
   const totalCount = filteredTasks.length;
   const hasCustomView = !isDefaultTaskView(view);
+  const advancedFilterCount = Number(Boolean(priorityFilter))
+    + Number(Boolean(tagFilter))
+    + Number(sortKey !== 'dueDate')
+    + Number(groupBy !== 'none');
 
   const handleInlineCreate = async () => {
     const title = newTaskTitle.trim();
@@ -415,9 +420,9 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="mobile-page-gutter mx-auto max-w-3xl space-y-4 py-4 lg:space-y-5 lg:p-8" data-slot="page-content">
+    <div className="mobile-page-gutter mx-auto flex max-w-3xl flex-col gap-4 py-4 lg:gap-5 lg:p-8" data-slot="page-content">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="order-1 flex items-center justify-between lg:order-none">
         <div className="flex items-center gap-2.5">
           <CheckSquare className="h-5 w-5 text-muted-foreground/60" strokeWidth={1.5} />
           <h1 className="text-xl font-semibold tracking-tight">{t('nav.tasks')}</h1>
@@ -426,7 +431,7 @@ export default function TasksPage() {
       </div>
 
       {/* Search */}
-      <div className="relative">
+      <div className="relative order-3 lg:order-none">
         <label htmlFor="task-search" className="sr-only">
           {t('tasks.searchLabel')}
         </label>
@@ -455,7 +460,7 @@ export default function TasksPage() {
       </div>
 
       {/* Filter bar — horizontally scrollable on mobile */}
-      <div className="space-y-2.5">
+      <div className="order-4 space-y-2.5 lg:order-none">
         {/* Status tabs */}
         <div className="-mx-4 flex items-center gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
           <SegmentedControl
@@ -471,7 +476,28 @@ export default function TasksPage() {
             ]}
           />
 
-          <div className="h-4 w-px bg-border/40 mx-1 shrink-0" />
+          <button
+            type="button"
+            onClick={() => setShowAdvancedFilters((current) => !current)}
+            aria-expanded={showAdvancedFilters}
+            className={cn(
+              'mobile-touch-target ml-auto flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-semibold lg:hidden',
+              showAdvancedFilters || advancedFilterCount > 0
+                ? 'border-foreground/10 bg-foreground text-background'
+                : 'border-border/50 bg-card text-muted-foreground',
+            )}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            {lang === 'de' ? 'Filter' : 'Filters'}
+            {advancedFilterCount > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-background/20 px-1 text-[9px] tabular-nums">
+                {advancedFilterCount}
+              </span>
+            )}
+            <ChevronDown className={cn('h-3 w-3 transition-transform', showAdvancedFilters && 'rotate-180')} />
+          </button>
+
+          <div className={cn('h-4 w-px bg-border/40 mx-1 shrink-0 hidden lg:block', showAdvancedFilters && 'block')} />
 
           {/* Priority filter chips */}
           {(['high', 'medium', 'low'] as Priority[]).map((p) => (
@@ -481,7 +507,8 @@ export default function TasksPage() {
               onClick={() => setPriorityFilter(priorityFilter === p ? null : p)}
               aria-pressed={priorityFilter === p}
               className={cn(
-                'mobile-touch-target flex shrink-0 items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:min-h-0 lg:rounded-lg',
+                'mobile-touch-target hidden shrink-0 items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all active:scale-95 lg:flex lg:min-h-0 lg:rounded-lg',
+                showAdvancedFilters && 'flex',
                 priorityFilter === p
                   ? 'bg-foreground text-background'
                   : 'bg-foreground/[0.04] text-muted-foreground/60 hover:bg-foreground/[0.08]'
@@ -500,7 +527,7 @@ export default function TasksPage() {
         </div>
 
         {/* Tag filters */}
-        <div className="-mx-4 flex items-center gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
+        <div className={cn('-mx-4 hidden items-center gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex lg:px-0', showAdvancedFilters && 'flex')}>
           <Tag className="h-3 w-3 text-muted-foreground/30 shrink-0 mr-0.5" />
           {allTags.map((tag) => (
             <button
@@ -531,7 +558,7 @@ export default function TasksPage() {
         </div>
 
         {/* Sort & Group controls */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={cn('hidden flex-wrap items-center gap-2 lg:flex', showAdvancedFilters && 'flex')}>
           {/* Sort dropdown */}
           <DropdownMenu
             open={showSortMenu}
@@ -671,7 +698,7 @@ export default function TasksPage() {
           event.preventDefault();
           void handleInlineCreate();
         }}
-        className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2"
+        className="order-2 flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-3 py-2.5 shadow-[var(--shadow-hairline)] lg:order-none lg:rounded-xl lg:py-2"
       >
         <Plus className="h-4 w-4 shrink-0 text-muted-foreground/40" aria-hidden="true" />
         <input
@@ -685,14 +712,14 @@ export default function TasksPage() {
         <button
           type="submit"
           disabled={creatingTask || !newTaskTitle.trim()}
-          className="shrink-0 rounded-lg bg-foreground px-2.5 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="mobile-touch-target shrink-0 rounded-xl bg-foreground px-3 py-1 text-[11px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-40 lg:min-h-0 lg:rounded-lg"
         >
           {creatingTask ? t('tasks.adding') : t('common.add')}
         </button>
       </form>
 
       {/* Task list */}
-      <div className="space-y-3">
+      <div className="order-5 space-y-3 lg:order-none">
         {groups.map((group) => {
           const isCollapsed = collapsedGroups.has(group.key);
           const isUngrouped = groupBy === 'none';

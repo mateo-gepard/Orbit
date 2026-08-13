@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import {
   clearItemDetailDraft,
   itemDetailDraftFromItem,
@@ -19,7 +19,7 @@ function memoryStorage(): Storage {
   };
 }
 
-const item: OrbitItem = {
+const item: ThreadmapItem = {
   id: 'event-1',
   userId: 'user-a',
   type: 'event',

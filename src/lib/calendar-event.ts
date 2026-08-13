@@ -1,4 +1,4 @@
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 export interface CalendarEventSchedule {
   startDate?: string;
@@ -99,7 +99,7 @@ export function assertValidCalendarEventSchedule(
   return validation;
 }
 
-export function calendarEventScheduleFromItem(item: OrbitItem): CalendarEventSchedule {
+export function calendarEventScheduleFromItem(item: ThreadmapItem): CalendarEventSchedule {
   return {
     startDate: item.startDate,
     endDate: item.endDate,

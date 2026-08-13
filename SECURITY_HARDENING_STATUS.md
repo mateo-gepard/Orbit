@@ -4,9 +4,10 @@ Updated: 2026-08-13
 
 ## Dependency and CI remediation
 
-- The open GitHub development alert is `GHSA-w5hq-g745-h8pq` in `uuid`, reached through `firebase-tools -> gaxios`.
-- `firebase-tools` is already at the latest available release (`15.26.0`). Downgrading to the audit-suggested `14.23.0` was rejected because that version introduces a critical `tar` advisory and two moderate advisories.
-- The vulnerable `gaxios@6.7.1` edge is constrained to `uuid@11.1.1`, the first patched release. This keeps the current Firebase CLI while removing the active Dependabot finding.
+- The previous `GHSA-w5hq-g745-h8pq` development alert in `uuid`, reached through `firebase-tools -> gaxios`, remains resolved by constraining that edge to `uuid@11.1.1`.
+- A newer moderate development-only finding, `GHSA-8988-4f7v-96qf`, is present through `firebase-tools -> @google-cloud/pubsub@5.3.1 -> @opentelemetry/core@1.30.1`.
+- `firebase-tools` is already at the latest available release (`15.26.0`). The patched OpenTelemetry chain requires `@google-cloud/pubsub` 6.x, while Firebase CLI declares `^5.2.0`; npm's suggested downgrade to Firebase CLI 14.23.0 also introduces more severe advisories. No unsafe major override or downgrade was applied.
+- Both application and Functions production dependency audits pass with zero findings when development tooling is omitted.
 - GitHub Actions now use the supported majors `actions/checkout@v7`, `actions/setup-node@v7`, and `actions/setup-java@v5`.
 
 ## MFA recovery security model
@@ -17,7 +18,7 @@ Updated: 2026-08-13
 - Recovery attempts are limited to eight per source address per 15-minute window and are additionally protected by Firebase App Check when enforcement is enabled.
 - A code is transactionally claimed before use. Successful recovery clears enrolled second factors, revokes refresh tokens, deletes the entire code set, and records a content-free audit event.
 - Recovery never issues a login token. The user must repeat their primary sign-in after the second factor is removed.
-- The remaining operational gap is an out-of-band security notification after recovery; Threadmap does not yet have a verified transactional-email channel.
+- The authenticated Resend channel is now verified. The remaining operational gap is implementing and validating an out-of-band security notification after recovery.
 
 ## WAF analysis and recommendation
 

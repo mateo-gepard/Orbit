@@ -1,21 +1,21 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { FileText, Search, Download, Eye } from 'lucide-react';
 import { downloadProjectFile, formatFileSize, getFileIcon } from '@/lib/storage';
 import { Input } from '@/components/ui/input';
 import { getLocale } from '@/lib/utils';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { format, isValid } from 'date-fns';
-import type { OrbitItem, ProjectFile } from '@/lib/types';
+import type { ThreadmapItem, ProjectFile } from '@/lib/types';
 import { FileViewer } from '@/components/files/file-viewer';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { useTranslation } from '@/lib/i18n';
 
 export default function FilesPage() {
-  const { items, setSelectedItemId, setDetailPanelOpen } = useOrbitStore();
+  const { items, setSelectedItemId, setDetailPanelOpen } = useThreadmapStore();
   const { t, tp, lang } = useTranslation();
   const locale = getLocale(lang);
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,7 +37,7 @@ export default function FilesPage() {
   const allFiles = useMemo(() => {
     const files: Array<{
       file: ProjectFile;
-      project: OrbitItem;
+      project: ThreadmapItem;
     }> = [];
 
     items.filter((item) => item.status !== 'archived').forEach(item => {

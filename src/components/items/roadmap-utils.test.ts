@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import { buildRoadmapGraph } from './roadmap-utils';
 
-function item(overrides: Partial<OrbitItem>): OrbitItem {
+function item(overrides: Partial<ThreadmapItem>): ThreadmapItem {
   return {
     id: 'item',
     type: 'task',

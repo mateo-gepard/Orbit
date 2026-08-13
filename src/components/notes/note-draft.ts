@@ -1,6 +1,6 @@
 import { scopedStorageKey } from '@/lib/account-storage';
 import { removeStorageVerified, writeStorageVerified } from '@/lib/verified-storage';
-import type { NoteSubtype, OrbitItem } from '@/lib/types';
+import type { NoteSubtype, ThreadmapItem } from '@/lib/types';
 
 export const NOTE_DRAFT_STORAGE_PREFIX = 'orbit-note-draft';
 
@@ -28,7 +28,7 @@ function browserStorage(): DraftStorage {
   return localStorage;
 }
 
-function draftKey(note: Pick<OrbitItem, 'id' | 'userId'>): string {
+function draftKey(note: Pick<ThreadmapItem, 'id' | 'userId'>): string {
   return scopedStorageKey(`${NOTE_DRAFT_STORAGE_PREFIX}:${note.id}`, note.userId);
 }
 
@@ -43,7 +43,7 @@ function validDraft(value: unknown): value is DurableNoteDraft {
 }
 
 export function readNoteDraft(
-  note: Pick<OrbitItem, 'id' | 'userId' | 'updatedAt' | 'revision' | 'title' | 'content' | 'tags' | 'noteSubtype'>,
+  note: Pick<ThreadmapItem, 'id' | 'userId' | 'updatedAt' | 'revision' | 'title' | 'content' | 'tags' | 'noteSubtype'>,
   storage: DraftStorage = browserStorage(),
 ): {
   draft: DurableNoteDraft;
@@ -79,7 +79,7 @@ export function readNoteDraft(
 }
 
 export function writeNoteDraft(
-  note: Pick<OrbitItem, 'id' | 'userId'>,
+  note: Pick<ThreadmapItem, 'id' | 'userId'>,
   draft: DurableNoteDraft,
   base: { revision: number; updatedAt: number },
   storage: DraftStorage = browserStorage(),
@@ -97,7 +97,7 @@ export function writeNoteDraft(
 }
 
 export function clearNoteDraft(
-  note: Pick<OrbitItem, 'id' | 'userId'>,
+  note: Pick<ThreadmapItem, 'id' | 'userId'>,
   storage: DraftStorage = browserStorage(),
 ): void {
   removeStorageVerified(storage, draftKey(note));

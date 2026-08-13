@@ -2,7 +2,7 @@
 // Threadmap — Google Calendar API Integration
 // ═══════════════════════════════════════════════════════════
 
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 import { scopedStorageKey } from './account-storage';
 import {
   detectDeviceTimeZone,
@@ -16,7 +16,7 @@ import {
 } from './calendar-event';
 
 const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
-const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
+const SCOPES = ['https://www.googleapis.com/auth/calendar.events.owned'];
 const TOKEN_STORAGE_KEY = 'orbit-google-token';
 const TOKEN_EXPIRY_KEY = 'orbit-google-token-expiry';
 const GOOGLE_IDENTITY_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
@@ -108,8 +108,8 @@ function base32Hex(value: string): string {
  * makes a retried insert address the same Google event without another write
  * journal being required.
  */
-export function googleEventIdForOrbitItem(
-  item: Pick<OrbitItem, 'id' | 'userId'>,
+export function googleEventIdForThreadmapItem(
+  item: Pick<ThreadmapItem, 'id' | 'userId'>,
 ): string {
   const eventId = `tm1${base32Hex(JSON.stringify([item.userId, item.id]))}`;
   if (eventId.length > 1024) {
@@ -505,7 +505,7 @@ async function calendarFetch<T = unknown>(
 // Convert Threadmap Event ↔ Google Calendar Event
 // ═══════════════════════════════════════════════════════════
 
-export function orbitToGoogleEvent(item: OrbitItem): GCalEvent {
+export function orbitToGoogleEvent(item: ThreadmapItem): GCalEvent {
   if (item.type !== 'event') {
     throw new Error('Only event items can be synced to Google Calendar');
   }
@@ -544,7 +544,7 @@ export function orbitToGoogleEvent(item: OrbitItem): GCalEvent {
   return event;
 }
 
-export function googleToOrbitEvent(gcalEvent: GCalEvent, userId: string): Partial<OrbitItem> {
+export function googleToThreadmapEvent(gcalEvent: GCalEvent, userId: string): Partial<ThreadmapItem> {
   // Google Calendar uses different formats for all-day vs timed events
   const isAllDay = !!gcalEvent.start?.date;
 
@@ -610,9 +610,9 @@ export function googleToOrbitEvent(gcalEvent: GCalEvent, userId: string): Partia
 // CRUD Operations
 // ═══════════════════════════════════════════════════════════
 
-export async function createGoogleEvent(item: OrbitItem): Promise<string> {
+export async function createGoogleEvent(item: ThreadmapItem): Promise<string> {
   assertCalendarEnabled();
-  const eventId = googleEventIdForOrbitItem(item);
+  const eventId = googleEventIdForThreadmapItem(item);
   const gcalEvent = { ...orbitToGoogleEvent(item), id: eventId };
   try {
     const result = await calendarFetch<GCalEvent>('/calendars/primary/events', {
@@ -630,7 +630,7 @@ export async function createGoogleEvent(item: OrbitItem): Promise<string> {
 
 export async function updateGoogleEvent(
   googleCalendarId: string,
-  item: OrbitItem
+  item: ThreadmapItem
 ): Promise<void> {
   assertCalendarEnabled();
   const gcalEvent = orbitToGoogleEvent(item);
@@ -713,12 +713,12 @@ export async function findGoogleEventByThreadmapItemId(
 export async function importGoogleEvent(
   gcalEventId: string,
   userId: string
-): Promise<Partial<OrbitItem>> {
+): Promise<Partial<ThreadmapItem>> {
   const gcalEvent = await calendarFetch<GCalEvent>(
     `/calendars/primary/events/${encodeURIComponent(gcalEventId)}`,
   );
   if (!gcalEvent) throw new Error('Google Calendar event was not found.');
-  return googleToOrbitEvent(gcalEvent, userId);
+  return googleToThreadmapEvent(gcalEvent, userId);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -729,7 +729,7 @@ export function hasCalendarPermission(): boolean {
   return getStoredGoogleAccessToken() !== null;
 }
 
-export async function syncEventToGoogle(item: OrbitItem): Promise<string> {
+export async function syncEventToGoogle(item: ThreadmapItem): Promise<string> {
   assertCalendarEnabled();
   if (calendarOwnerId !== item.userId) {
     throw new Error('Calendar credentials do not belong to this item owner.');

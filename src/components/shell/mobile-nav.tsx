@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -10,122 +11,106 @@ import {
   FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { haptic } from '@/lib/mobile';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 
-const TABS: { href: string; icon: typeof LayoutDashboard; labelKey: TranslationKey }[] = [
+const PRIMARY_TABS: { href: string; icon: typeof LayoutDashboard; labelKey: TranslationKey }[] = [
   { href: '/', icon: LayoutDashboard, labelKey: 'mobile.home' },
   { href: '/tasks', icon: CheckSquare, labelKey: 'mobile.tasks' },
+];
+
+const SECONDARY_TABS: { href: string; icon: typeof LayoutDashboard; labelKey: TranslationKey }[] = [
   { href: '/habits', icon: Repeat, labelKey: 'mobile.habits' },
   { href: '/notes', icon: FileText, labelKey: 'mobile.notes' },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
-  const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
-  const sidebarOpen = useOrbitStore((state) => state.sidebarOpen);
+  const setCommandBarOpen = useThreadmapStore((state) => state.setCommandBarOpen);
+  const setSidebarOpen = useThreadmapStore((state) => state.setSidebarOpen);
+  const sidebarOpen = useThreadmapStore((state) => state.sidebarOpen);
   const { t } = useTranslation();
 
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname, setSidebarOpen]);
+
+  const renderTab = (tab: (typeof PRIMARY_TABS)[number]) => {
+    const isActive = pathname === tab.href || (tab.href !== '/' && pathname.startsWith(tab.href));
+    const Icon = tab.icon;
+
+    return (
+      <Link
+        key={tab.href}
+        href={tab.href}
+        aria-label={t(tab.labelKey)}
+        aria-current={isActive ? 'page' : undefined}
+        onClick={() => haptic('light')}
+        className={cn(
+          'orbit-pressable relative flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-1.5',
+          'active:scale-95 motion-reduce:active:scale-100',
+          isActive ? 'text-foreground' : 'text-muted-foreground/60',
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute inset-x-2 inset-y-1 rounded-2xl transition-colors',
+            isActive && 'bg-foreground/[0.065]',
+          )}
+        />
+        <Icon
+          aria-hidden="true"
+          className="relative h-[21px] w-[21px]"
+          strokeWidth={isActive ? 2.35 : 1.8}
+        />
+        <span className="relative text-[10px] font-semibold leading-none tracking-[-0.01em]">
+          {t(tab.labelKey)}
+        </span>
+      </Link>
+    );
+  };
+
   return (
-    <>
-      <button
-        type="button"
-        disabled={sidebarOpen}
-        aria-hidden={sidebarOpen ? true : undefined}
-        onClick={() => {
-          if (sidebarOpen) return;
-          haptic('medium');
-          setCommandBarOpen(true);
-        }}
-        aria-label={t('common.create')}
-        className={cn(
-          'lg:hidden disabled:pointer-events-none disabled:invisible',
-          'flex h-14 w-14 items-center justify-center',
-          'rounded-full bg-foreground text-background',
-          'shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]',
-          'active:scale-95 transition-transform duration-150 motion-reduce:active:scale-100 motion-reduce:transition-none',
-        )}
-        style={{
-          position: 'fixed',
-          right: '16px',
-          bottom: 'calc(44px + env(safe-area-inset-bottom, 0px) + 12px)',
-          zIndex: 30,
-        }}
-      >
-        <Plus aria-hidden="true" className="h-6 w-6" strokeWidth={2.5} />
-      </button>
+    <nav
+      id="mobile-nav"
+      inert={sidebarOpen ? true : undefined}
+      aria-hidden={sidebarOpen ? true : undefined}
+      aria-label="Primary mobile navigation"
+      className={cn(
+        'surface-float lg:hidden border-x-0 border-b-0 bg-background/92',
+        sidebarOpen && 'pointer-events-none invisible',
+      )}
+      style={{
+        position: 'fixed',
+        bottom: '0px',
+        left: '0px',
+        right: '0px',
+        zIndex: 30,
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}
+    >
+      <div className="mx-auto grid max-w-lg grid-cols-5 items-center px-1.5" style={{ height: 'var(--bottom-nav-height)' }}>
+        {PRIMARY_TABS.map(renderTab)}
 
-      <nav
-        id="mobile-nav"
-        inert={sidebarOpen ? true : undefined}
-        aria-hidden={sidebarOpen ? true : undefined}
-        className={cn(
-          'lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150',
-          sidebarOpen && 'pointer-events-none invisible',
-        )}
-        style={{
-          position: 'fixed',
-          bottom: '0px',
-          left: '0px',
-          right: '0px',
-          zIndex: 30,
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        }}
-      >
-        <div
-          className="flex items-center justify-around"
-          style={{ height: 'var(--bottom-nav-height)' }}
+        <button
+          type="button"
+          onClick={() => {
+            haptic('medium');
+            setCommandBarOpen(true);
+          }}
+          aria-label={t('common.create')}
+          className="group relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl text-foreground active:scale-95 motion-reduce:active:scale-100"
         >
-          {TABS.map((tab) => {
-            const isActive =
-              pathname === tab.href ||
-              (tab.href !== '/' && pathname.startsWith(tab.href));
-            const Icon = tab.icon;
+          <span className="flex h-10 w-10 items-center justify-center rounded-[15px] bg-foreground text-background shadow-[0_8px_24px_rgba(0,0,0,0.18)] transition-transform group-active:scale-95 dark:shadow-[0_8px_28px_rgba(0,0,0,0.5)]">
+            <Plus aria-hidden="true" className="h-5 w-5" strokeWidth={2.5} />
+          </span>
+          <span className="sr-only">{t('common.create')}</span>
+        </button>
 
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                aria-label={t(tab.labelKey)}
-                aria-current={isActive ? 'page' : undefined}
-                onClick={() => haptic('light')}
-                className={cn(
-                  'relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 transition-all duration-200',
-                  'active:scale-90 motion-reduce:active:scale-100 motion-reduce:transition-none',
-                  isActive
-                    ? 'text-foreground'
-                    : 'text-muted-foreground/50',
-                )}
-              >
-                {isActive && (
-                  <div className="absolute -top-1 h-1 w-1 rounded-full bg-foreground animate-scale-in motion-reduce:animate-none" />
-                )}
-                <div
-                  className="relative"
-                >
-                  <Icon
-                    aria-hidden="true"
-                    className={cn(
-                      'h-5 w-5 transition-all duration-200',
-                      isActive && 'scale-110',
-                    )}
-                    strokeWidth={isActive ? 2.2 : 1.8}
-                  />
-                </div>
-                <span
-                  className={cn(
-                    'text-[10px] font-medium leading-none transition-all duration-200',
-                    isActive ? 'text-foreground' : 'text-muted-foreground/70',
-                  )}
-                >
-                  {t(tab.labelKey)}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
-    </>
+        {SECONDARY_TABS.map(renderTab)}
+      </div>
+    </nav>
   );
 }

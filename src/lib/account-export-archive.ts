@@ -204,7 +204,7 @@ export async function buildAccountExportArchive(
     itemId: string,
     file: AccountExportAttachment,
   ) => {
-    // Keep Firebase Storage and the Orbit store out of JSON-only/demo exports
+    // Keep Firebase Storage and the Threadmap store out of JSON-only/demo exports
     // and out of the initial settings bundle until an attachment is needed.
     const { getOwnedProjectFileBlob } = await import('./storage');
     return getOwnedProjectFileBlob(expectedUserId, itemId, file);

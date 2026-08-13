@@ -5,7 +5,7 @@
  * between items, parent-child relationships, and graph traversal.
  */
 
-import type { OrbitItem, ItemType } from './types';
+import type { ThreadmapItem, ItemType } from './types';
 
 const ALLOWED_PARENT_TYPES: Record<ItemType, ItemType[]> = {
   // Projects nest. Goals were the only intermediate layer, so a large effort
@@ -27,16 +27,16 @@ export function getAllowedParentTypes(type: ItemType): ItemType[] {
 /**
  * Get all items that are directly linked to the given item
  */
-export function getLinkedItems(item: OrbitItem, allItems: OrbitItem[]): OrbitItem[] {
+export function getLinkedItems(item: ThreadmapItem, allItems: ThreadmapItem[]): ThreadmapItem[] {
   return (item.linkedIds || [])
     .map(id => allItems.find(i => i.id === id))
-    .filter((i): i is OrbitItem => i !== undefined && i.status !== 'archived');
+    .filter((i): i is ThreadmapItem => i !== undefined && i.status !== 'archived');
 }
 
 /**
  * Get all items that link TO the given item (reverse links)
  */
-export function getReverseLinkedItems(item: OrbitItem, allItems: OrbitItem[]): OrbitItem[] {
+export function getReverseLinkedItems(item: ThreadmapItem, allItems: ThreadmapItem[]): ThreadmapItem[] {
   return allItems.filter(i => 
     i.linkedIds?.includes(item.id) && 
     i.status !== 'archived' &&
@@ -47,7 +47,7 @@ export function getReverseLinkedItems(item: OrbitItem, allItems: OrbitItem[]): O
 /**
  * Get the parent item of the given item
  */
-export function getParentItem(item: OrbitItem, allItems: OrbitItem[]): OrbitItem | undefined {
+export function getParentItem(item: ThreadmapItem, allItems: ThreadmapItem[]): ThreadmapItem | undefined {
   if (!item.parentId) return undefined;
   return allItems.find(i => i.id === item.parentId && i.status !== 'archived');
 }
@@ -55,7 +55,7 @@ export function getParentItem(item: OrbitItem, allItems: OrbitItem[]): OrbitItem
 /**
  * Get all child items of the given item
  */
-export function getChildItems(item: OrbitItem, allItems: OrbitItem[]): OrbitItem[] {
+export function getChildItems(item: ThreadmapItem, allItems: ThreadmapItem[]): ThreadmapItem[] {
   return allItems.filter(i => 
     i.parentId === item.id && 
     i.status !== 'archived'
@@ -65,12 +65,12 @@ export function getChildItems(item: OrbitItem, allItems: OrbitItem[]): OrbitItem
 /**
  * Get all descendants (children, grandchildren, etc.) recursively
  */
-export function getAllDescendants(item: OrbitItem, allItems: OrbitItem[], visited = new Set<string>()): OrbitItem[] {
+export function getAllDescendants(item: ThreadmapItem, allItems: ThreadmapItem[], visited = new Set<string>()): ThreadmapItem[] {
   if (visited.has(item.id)) return [];
   visited.add(item.id);
   
   const children = getChildItems(item, allItems);
-  const descendants: OrbitItem[] = [...children];
+  const descendants: ThreadmapItem[] = [...children];
   
   for (const child of children) {
     descendants.push(...getAllDescendants(child, allItems, visited));
@@ -82,7 +82,7 @@ export function getAllDescendants(item: OrbitItem, allItems: OrbitItem[], visite
 /**
  * Get all ancestors (parent, grandparent, etc.) recursively
  */
-export function getAllAncestors(item: OrbitItem, allItems: OrbitItem[], visited = new Set<string>()): OrbitItem[] {
+export function getAllAncestors(item: ThreadmapItem, allItems: ThreadmapItem[], visited = new Set<string>()): ThreadmapItem[] {
   if (visited.has(item.id)) return [];
   visited.add(item.id);
   
@@ -96,11 +96,11 @@ export function getAllAncestors(item: OrbitItem, allItems: OrbitItem[], visited 
  * Get ALL related items following any connection type recursively
  * (links, reverse links, parent, children)
  */
-export function getAllRelatedItems(item: OrbitItem, allItems: OrbitItem[], visited = new Set<string>()): OrbitItem[] {
+export function getAllRelatedItems(item: ThreadmapItem, allItems: ThreadmapItem[], visited = new Set<string>()): ThreadmapItem[] {
   if (visited.has(item.id)) return [];
   visited.add(item.id);
   
-  const related: OrbitItem[] = [];
+  const related: ThreadmapItem[] = [];
   
   // Get all immediate connections
   const linkedItems = getLinkedItems(item, allItems);
@@ -130,7 +130,7 @@ export function getAllRelatedItems(item: OrbitItem, allItems: OrbitItem[], visit
  * Get all items that can be linked to the given item
  * (excludes self, already linked, parent, children, archived)
  */
-export function getLinkableItems(item: OrbitItem, allItems: OrbitItem[], typeFilter?: ItemType): OrbitItem[] {
+export function getLinkableItems(item: ThreadmapItem, allItems: ThreadmapItem[], typeFilter?: ItemType): ThreadmapItem[] {
   const reverseLinkedIds = getReverseLinkedItems(item, allItems).map(i => i.id);
   const excludedIds = new Set([
     item.id,
@@ -151,7 +151,7 @@ export function getLinkableItems(item: OrbitItem, allItems: OrbitItem[], typeFil
 /**
  * Get items that can be used as a hierarchy parent for the given item.
  */
-export function getParentableItems(item: OrbitItem, allItems: OrbitItem[], typeFilter?: ItemType): OrbitItem[] {
+export function getParentableItems(item: ThreadmapItem, allItems: ThreadmapItem[], typeFilter?: ItemType): ThreadmapItem[] {
   const allowedTypes = getAllowedParentTypes(item.type);
   if (allowedTypes.length === 0) return [];
 
@@ -162,7 +162,7 @@ export function getParentableItems(item: OrbitItem, allItems: OrbitItem[], typeF
   );
 }
 
-export function canSetParent(item: OrbitItem, potentialParent: OrbitItem, allItems: OrbitItem[]): boolean {
+export function canSetParent(item: ThreadmapItem, potentialParent: ThreadmapItem, allItems: ThreadmapItem[]): boolean {
   if (potentialParent.id === item.id) return false;
   if (potentialParent.status === 'archived') return false;
   if (!getAllowedParentTypes(item.type).includes(potentialParent.type)) return false;
@@ -176,7 +176,7 @@ export function canSetParent(item: OrbitItem, potentialParent: OrbitItem, allIte
 /**
  * Set parent for an item
  */
-export function setParent(item: OrbitItem, parentId: string | undefined, allItems: OrbitItem[]): Partial<OrbitItem> {
+export function setParent(item: ThreadmapItem, parentId: string | undefined, allItems: ThreadmapItem[]): Partial<ThreadmapItem> {
   if (item.parentId === parentId) return {};
 
   // Prevent circular parent relationships
@@ -194,16 +194,16 @@ export function setParent(item: OrbitItem, parentId: string | undefined, allItem
  * Get a categorized view of all relationships for an item
  */
 export interface ItemRelationships {
-  parent?: OrbitItem;
-  ancestors: OrbitItem[];
-  children: OrbitItem[];
-  descendants: OrbitItem[];
-  linked: OrbitItem[];
-  reverseLinked: OrbitItem[];
-  allRelated: OrbitItem[];
+  parent?: ThreadmapItem;
+  ancestors: ThreadmapItem[];
+  children: ThreadmapItem[];
+  descendants: ThreadmapItem[];
+  linked: ThreadmapItem[];
+  reverseLinked: ThreadmapItem[];
+  allRelated: ThreadmapItem[];
 }
 
-export function getItemRelationships(item: OrbitItem, allItems: OrbitItem[]): ItemRelationships {
+export function getItemRelationships(item: ThreadmapItem, allItems: ThreadmapItem[]): ItemRelationships {
   const parent = getParentItem(item, allItems);
   const ancestors = getAllAncestors(item, allItems);
   const children = getChildItems(item, allItems);

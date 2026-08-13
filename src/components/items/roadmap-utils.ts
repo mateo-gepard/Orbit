@@ -1,6 +1,6 @@
 import { MarkerType } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 
 // ─── Layout constants ────────────────────────────────────
 const NODE_W = 200;
@@ -26,8 +26,8 @@ const EDGE_DEPENDENCY = {
 
 // ─── Build full roadmap graph ────────────────────────────
 export function buildRoadmapGraph(
-  project: OrbitItem,
-  allItems: OrbitItem[],
+  project: ThreadmapItem,
+  allItems: ThreadmapItem[],
   options: { dependencyLabel?: string } = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
@@ -47,7 +47,7 @@ export function buildRoadmapGraph(
     });
 
   // ── Collect tasks per milestone ──
-  const tasksByMilestone = new Map<string, OrbitItem[]>();
+  const tasksByMilestone = new Map<string, ThreadmapItem[]>();
 
   for (const ms of milestones) {
     const tasks = allItems
@@ -100,8 +100,8 @@ export function buildRoadmapGraph(
   // Create "columns": one per milestone + one for ungrouped if exists
   interface Column {
     milestoneId: string | null;
-    milestone: OrbitItem | null;
-    tasks: OrbitItem[];
+    milestone: ThreadmapItem | null;
+    tasks: ThreadmapItem[];
   }
 
   const columns: Column[] = milestones.map(ms => ({

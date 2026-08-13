@@ -93,7 +93,11 @@ export function registerServiceWorker(): () => void {
 
   const register = async () => {
     try {
-      await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+        updateViaCache: 'none',
+      });
+      void registration.update();
     } catch {
       // The application remains usable online if registration is unavailable.
     }
@@ -112,40 +116,75 @@ export function registerServiceWorker(): () => void {
 export function setupViewportHeight(): () => void {
   if (typeof window === 'undefined') return () => {};
 
+  const root = document.documentElement;
+  const standaloneQuery = window.matchMedia('(display-mode: standalone)');
   let orientationTimer: ReturnType<typeof setTimeout> | null = null;
+  let animationFrame: number | null = null;
 
   const setVH = () => {
-    // Use visualViewport if available (more accurate on mobile)
-    const height = window.visualViewport?.height || window.innerHeight;
+    animationFrame = null;
+    const visualViewport = window.visualViewport;
+    const height = Math.round(visualViewport?.height || window.innerHeight);
+    const offsetTop = Math.max(0, Math.round(visualViewport?.offsetTop || 0));
+    const rawKeyboardInset = Math.max(0, Math.round(window.innerHeight - height - offsetTop));
+    const activeElement = document.activeElement;
+    const editing = activeElement instanceof HTMLElement && activeElement.matches(
+      'input, textarea, select, [contenteditable="true"]',
+    );
+    const keyboardOpen = editing && rawKeyboardInset > 80;
     const vh = height * 0.01;
-    document.documentElement.style.setProperty('--vh', `${vh}px`);
-    
-    // Also set --real-vh for calculations
-    document.documentElement.style.setProperty('--real-vh', `${height}px`);
+
+    root.style.setProperty('--vh', `${vh}px`);
+    root.style.setProperty('--real-vh', `${height}px`);
+    root.style.setProperty('--app-height', `${height}px`);
+    root.style.setProperty('--visual-viewport-height', `${height}px`);
+    root.style.setProperty('--visual-viewport-offset-top', `${offsetTop}px`);
+    root.style.setProperty('--keyboard-inset', keyboardOpen ? `${rawKeyboardInset}px` : '0px');
+    root.dataset.keyboard = keyboardOpen ? 'open' : 'closed';
+  };
+
+  const scheduleViewportUpdate = () => {
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    animationFrame = requestAnimationFrame(setVH);
+  };
+
+  const setDisplayMode = () => {
+    const standalone = isStandalone();
+    root.classList.toggle('standalone', standalone);
+    root.dataset.displayMode = standalone ? 'standalone' : 'browser';
   };
 
   setVH();
-  
-  // Listen to both resize events
-  window.addEventListener('resize', setVH);
+  setDisplayMode();
+
+  window.addEventListener('resize', scheduleViewportUpdate);
+  window.addEventListener('focusin', scheduleViewportUpdate);
+  window.addEventListener('focusout', scheduleViewportUpdate);
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', setVH);
-    window.visualViewport.addEventListener('scroll', setVH);
+    window.visualViewport.addEventListener('resize', scheduleViewportUpdate);
+    window.visualViewport.addEventListener('scroll', scheduleViewportUpdate);
   }
-  
-  // Also run on orientation change
+  standaloneQuery.addEventListener('change', setDisplayMode);
+
   const handleOrientationChange = () => {
     if (orientationTimer) clearTimeout(orientationTimer);
-    orientationTimer = setTimeout(setVH, 100);
+    orientationTimer = setTimeout(scheduleViewportUpdate, 150);
   };
   window.addEventListener('orientationchange', handleOrientationChange);
 
   return () => {
-    window.removeEventListener('resize', setVH);
-    window.visualViewport?.removeEventListener('resize', setVH);
-    window.visualViewport?.removeEventListener('scroll', setVH);
+    window.removeEventListener('resize', scheduleViewportUpdate);
+    window.removeEventListener('focusin', scheduleViewportUpdate);
+    window.removeEventListener('focusout', scheduleViewportUpdate);
+    window.visualViewport?.removeEventListener('resize', scheduleViewportUpdate);
+    window.visualViewport?.removeEventListener('scroll', scheduleViewportUpdate);
     window.removeEventListener('orientationchange', handleOrientationChange);
+    standaloneQuery.removeEventListener('change', setDisplayMode);
     if (orientationTimer) clearTimeout(orientationTimer);
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    root.classList.remove('standalone');
+    delete root.dataset.displayMode;
+    delete root.dataset.keyboard;
   };
 }
 

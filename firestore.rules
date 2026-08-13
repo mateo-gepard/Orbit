@@ -237,6 +237,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Passwordless-email abuse controls are server-only and contain only
+    // one-way quota identifiers, never plaintext email addresses.
+    match /authEmailRateLimits/{quotaId} {
+      allow read, write: if false;
+    }
+
     // MFA recovery material is Cloud Functions-only. Browsers receive plaintext
     // codes once and can never read their keyed digests or security audit data.
     match /mfaRecoveryCodes/{codeDigest} {

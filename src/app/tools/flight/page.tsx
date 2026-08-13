@@ -27,7 +27,7 @@ import {
   Crown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { updateItem } from '@/lib/firestore';
 import { PlaneAnimation } from '@/components/flight/plane-animation';
@@ -56,7 +56,7 @@ import {
   type TurbulenceLog,
   type FlightClass,
 } from '@/lib/flight';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import { scopedStorageKey } from '@/lib/account-storage';
 import { consumeDispatchFlightHandoff } from '@/lib/dispatch';
 import { removeLocalStorageVerified, writeLocalStorageVerified } from '@/lib/verified-storage';
@@ -232,7 +232,7 @@ export default function FlightPage() {
 }
 
 function FlightPageContent() {
-  const items = useOrbitStore((state) => state.items);
+  const items = useThreadmapStore((state) => state.items);
   const { user } = useAuth();
   const { lang, text } = useFlightLocale();
   const [mountedUserId, setMountedUserId] = useState<string | null>(null);
@@ -383,7 +383,7 @@ function FlightPageContent() {
       if (!handoff) return;
       const handedOffTasks = handoff.taskIds
         .map((taskId) => items.find((item) => item.id === taskId))
-        .filter((item): item is OrbitItem => Boolean(item))
+        .filter((item): item is ThreadmapItem => Boolean(item))
         .map((item, index) => ({
           id: item.id,
           title: item.title,
@@ -743,7 +743,7 @@ function FlightPageContent() {
     setTasks(updated);
   };
 
-  const handleAddTask = (item: OrbitItem) => {
+  const handleAddTask = (item: ThreadmapItem) => {
     if (isPrivate) {
       // Private mode: single mission only, replace existing
       setTasks([{ id: item.id, title: item.title, type: 'primary', completed: false }]);

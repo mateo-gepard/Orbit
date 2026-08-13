@@ -4,14 +4,14 @@ import { useState, useRef, useEffect } from 'react';
 import { Plus, X, Link as LinkIcon, FolderOpen, Target, Calendar, StickyNote, CheckSquare, ChevronLeft, Search, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { OrbitItem, ItemType } from '@/lib/types';
+import type { ThreadmapItem, ItemType } from '@/lib/types';
 import { useLinks } from '@/lib/hooks/use-links';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 
 interface LinkManagerProps {
-  item: OrbitItem;
-  allItems: OrbitItem[];
-  onUpdate: (updates: Partial<OrbitItem>) => void;
+  item: ThreadmapItem;
+  allItems: ThreadmapItem[];
+  onUpdate: (updates: Partial<ThreadmapItem>) => void;
 }
 
 const ITEM_TYPE_CONFIG = {
@@ -64,7 +64,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
   };
 
   // Get items for the selected category, filtered by search
-  const getCategoryItems = (): OrbitItem[] => {
+  const getCategoryItems = (): ThreadmapItem[] => {
     if (!selectedType) return [];
     const items = pickerMode === 'parent'
       ? links.getParentableByType(selectedType)
@@ -85,7 +85,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
     return links.getLinkableByType(type).length;
   };
 
-  const renderItemBadge = (linkedItem: OrbitItem, onRemove?: () => void) => {
+  const renderItemBadge = (linkedItem: ThreadmapItem, onRemove?: () => void) => {
     const config = ITEM_TYPE_CONFIG[linkedItem.type];
     const Icon = config.icon;
 
@@ -251,7 +251,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {visibleLinkedItems.map((linkedItem: OrbitItem) =>
+            {visibleLinkedItems.map((linkedItem: ThreadmapItem) =>
               renderItemBadge(linkedItem, () => links.handleRemoveLink(linkedItem.id))
             )}
           </div>
@@ -268,7 +268,7 @@ export function LinkManager({ item, allItems, onUpdate }: LinkManagerProps) {
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {links.relationships.children.map((childItem: OrbitItem) => renderItemBadge(childItem))}
+            {links.relationships.children.map((childItem: ThreadmapItem) => renderItemBadge(childItem))}
           </div>
         </div>
       )}

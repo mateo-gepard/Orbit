@@ -41,6 +41,11 @@ const securityHeaders = [
     : []),
 ];
 
+export const firebaseAuthRewrite = {
+  source: "/__/auth/:path*",
+  destination: "https://orbit-9e0b6.firebaseapp.com/__/auth/:path*",
+} as const;
+
 const nextConfig: NextConfig = {
   reactCompiler: true,
   poweredByHeader: false,
@@ -49,6 +54,7 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      firebaseAuthRewrite,
       { source: "/mcp", destination: `${mcpFunctionOrigin}/mcp` },
       {
         source: "/.well-known/oauth-authorization-server",

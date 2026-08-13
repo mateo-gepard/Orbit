@@ -6,17 +6,17 @@ import { Badge } from '@/components/ui/badge';
 import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ITEM_TYPE_CONFIG } from './link-graph-config';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
 
-interface OrbitNodeData {
-  item: OrbitItem;
+interface ThreadmapNodeData {
+  item: ThreadmapItem;
   isCurrent: boolean;
   depth?: number;
   [key: string]: unknown;
 }
 
-function OrbitNodeComponent({ data }: { data: OrbitNodeData }) {
+function ThreadmapNodeComponent({ data }: { data: ThreadmapNodeData }) {
   const { t } = useTranslation();
   const { item, isCurrent, depth = 0 } = data;
   const config = ITEM_TYPE_CONFIG[item.type];
@@ -98,4 +98,4 @@ function OrbitNodeComponent({ data }: { data: OrbitNodeData }) {
   );
 }
 
-export const OrbitNode = memo(OrbitNodeComponent);
+export const ThreadmapNode = memo(ThreadmapNodeComponent);

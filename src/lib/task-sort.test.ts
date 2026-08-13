@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { defaultAscending, sortTasks } from './task-sort';
-import type { OrbitItem, Priority } from './types';
+import type { ThreadmapItem, Priority } from './types';
 
 function task(
   id: string,
   extra: { dueDate?: string; priority?: Priority; createdAt?: number; title?: string } = {}
-): OrbitItem {
+): ThreadmapItem {
   return {
     id,
     title: extra.title ?? id,
@@ -19,7 +19,7 @@ function task(
   };
 }
 
-const ids = (items: OrbitItem[]) => items.map((item) => item.id);
+const ids = (items: ThreadmapItem[]) => items.map((item) => item.id);
 
 describe('sortTasks by due date', () => {
   const tasks = [

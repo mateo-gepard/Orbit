@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OrbitItem, ProjectFile } from './types';
+import type { ThreadmapItem, ProjectFile } from './types';
 
 interface TestStoreState {
-  items: OrbitItem[];
+  items: ThreadmapItem[];
   _syncUserId: string | null;
-  setItems: ReturnType<typeof vi.fn<(items: OrbitItem[]) => void>>;
+  setItems: ReturnType<typeof vi.fn<(items: ThreadmapItem[]) => void>>;
 }
 
 type CallableHandler = (input: unknown) => Promise<unknown>;
@@ -22,7 +22,7 @@ vi.mock('./firebase', () => ({
 }));
 
 vi.mock('./store', () => ({
-  useOrbitStore: {
+  useThreadmapStore: {
     getState: () => {
       if (!harness.store) throw new Error('Test store is unavailable.');
       return harness.store;
@@ -81,7 +81,7 @@ function project(
   revision: number,
   files: ProjectFile[] = [ownerFile],
   userId = 'user-a',
-): OrbitItem {
+): ThreadmapItem {
   return {
     id: 'project-1',
     type: 'project',
@@ -95,8 +95,8 @@ function project(
   };
 }
 
-function setStore(items: OrbitItem[], userId: string | null) {
-  const setItems = vi.fn<(items: OrbitItem[]) => void>((nextItems) => {
+function setStore(items: ThreadmapItem[], userId: string | null) {
+  const setItems = vi.fn<(items: ThreadmapItem[]) => void>((nextItems) => {
     if (harness.store) harness.store.items = nextItems;
   });
   harness.store = { items, _syncUserId: userId, setItems };

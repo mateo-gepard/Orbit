@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Repeat, Flame, Plus, CheckSquare, CalendarDays, Calendar, ChevronLeft, ChevronRight, Pause, Play, Clock } from 'lucide-react';
 import { toast } from 'sonner';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem, updateItem } from '@/lib/firestore';
 import { cn } from '@/lib/utils';
@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { formatHabitTime } from '@/lib/habit-reminders';
-import type { HabitFrequency, OrbitItem } from '@/lib/types';
+import type { HabitFrequency, ThreadmapItem } from '@/lib/types';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
@@ -44,7 +44,7 @@ function toggleKey(habitId: string, dateKey: string): string {
 }
 
 export default function HabitsPage() {
-  const { items, setSelectedItemId } = useOrbitStore();
+  const { items, setSelectedItemId } = useThreadmapStore();
   const { user } = useAuth();
   const { t, lang } = useTranslation();
   const locale = getLocale(lang);
@@ -135,7 +135,7 @@ export default function HabitsPage() {
 
     let desired = requestedDesired;
     try {
-      const latestHabit = useOrbitStore.getState().items.find(
+      const latestHabit = useThreadmapStore.getState().items.find(
         (item) => item.id === habitId && item.type === 'habit'
       );
       if (!latestHabit) throw new Error('Habit is no longer available.');
@@ -285,7 +285,7 @@ export default function HabitsPage() {
     { key: 'all', labelKey: 'habits.filterAll' },
   ];
 
-  const renderHabitTime = (habit: OrbitItem) => {
+  const renderHabitTime = (habit: ThreadmapItem) => {
     const label = formatHabitTime(habit.habitTime, timeFormat === '24h');
     if (!label) return null;
     return (
@@ -296,7 +296,7 @@ export default function HabitsPage() {
     );
   };
 
-  const renderPauseButton = (habit: OrbitItem) => {
+  const renderPauseButton = (habit: ThreadmapItem) => {
     const paused = habit.status === PAUSED_STATUS;
     return (
       <button

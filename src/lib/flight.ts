@@ -63,7 +63,7 @@ export interface FlightRoute {
 }
 
 export interface FlightTask {
-  id: string;        // OrbitItem id
+  id: string;        // ThreadmapItem id
   title: string;
   type: 'primary' | 'carry-on';
   completed: boolean;

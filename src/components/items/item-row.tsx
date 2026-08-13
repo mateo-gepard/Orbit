@@ -1,9 +1,9 @@
 'use client';
 
 import { Check, Clock, CalendarClock, CalendarPlus, CalendarX } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
-import type { OrbitItem, Priority } from '@/lib/types';
+import type { ThreadmapItem, Priority } from '@/lib/types';
 import { cn, shortDatePattern, getLocale } from '@/lib/utils';
 import { format, isPast, isToday, isValid, parseISO } from 'date-fns';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
@@ -21,7 +21,7 @@ const PRIORITY_DOTS: Record<Priority, string> = {
 };
 
 interface ItemRowProps {
-  item: OrbitItem;
+  item: ThreadmapItem;
   showType?: boolean;
   showProject?: boolean;
   compact?: boolean;
@@ -29,13 +29,12 @@ interface ItemRowProps {
 }
 
 export function ItemRow({ item, showType = false, showProject = false, compact = false, enableSwipe = true }: ItemRowProps) {
-  const setSelectedItemId = useOrbitStore((state) => state.setSelectedItemId);
-  const setCompletionAnimation = useOrbitStore((state) => state.setCompletionAnimation);
-  const parent = useOrbitStore((state) => item.parentId
+  const setSelectedItemId = useThreadmapStore((state) => state.setSelectedItemId);
+  const setCompletionAnimation = useThreadmapStore((state) => state.setCompletionAnimation);
+  const parent = useThreadmapStore((state) => item.parentId
     ? state.items.find((candidate) => candidate.id === item.parentId)
     : undefined);
   const { dateFormat, language, timeFormat } = useSettingsStore((s) => s.settings);
-  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
   const { t } = useTranslation();
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const isComplete = item.type === 'habit'
@@ -157,7 +156,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
     <div
       data-slot="item-row"
       className={cn(
-        'group mobile-touch-target orbit-pressable relative flex w-full touch-manipulation items-center gap-3 rounded-xl px-3.5 text-left outline-none',
+        'group mobile-touch-target orbit-pressable relative flex w-full touch-manipulation items-center gap-3 rounded-xl px-3 text-left outline-none lg:px-3.5',
         'hover:bg-foreground/[0.035] active:bg-foreground/[0.055]',
         'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
         // Bigger touch targets on mobile
@@ -182,7 +181,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           aria-label={isComplete ? t('itemRow.markIncomplete') : t('itemRow.markComplete')}
           aria-pressed={isComplete}
           className={cn(
-            'relative z-10 flex h-6 w-6 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border bg-background/60 shadow-[var(--shadow-hairline)] transition-all',
+            'relative z-10 flex h-7 w-7 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border bg-background/60 shadow-[var(--shadow-hairline)] transition-all',
             'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
             isComplete
               ? 'border-foreground/25 bg-foreground/10 text-foreground/60'
@@ -217,7 +216,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         <div className="flex items-center gap-1.5">
           <span
             className={cn(
-              'truncate text-[14px] leading-snug lg:text-[13px]',
+              'line-clamp-2 break-words text-[15px] font-medium leading-[1.3] lg:truncate lg:text-[13px] lg:font-normal',
               isComplete ? 'text-muted-foreground/60 line-through' : 'text-foreground'
             )}
           >
@@ -283,7 +282,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           aria-label={t(shouldClearMyDay ? 'itemRow.removeTodayLabel' : 'itemRow.addTodayLabel', { title: item.title })}
           aria-pressed={shouldClearMyDay}
           className={cn(
-            'relative z-10 flex h-9 w-9 items-center justify-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-all shrink-0 shadow-[var(--shadow-hairline)] lg:h-auto lg:w-auto',
+            'relative z-10 flex h-11 w-11 items-center justify-center gap-1 rounded-xl px-2 py-1 text-[11px] font-medium transition-all shrink-0 shadow-[var(--shadow-hairline)] lg:h-auto lg:w-auto lg:rounded-lg',
             'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
             'opacity-70 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100',
             isMyDay 
@@ -292,7 +291,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           )}
         >
           <CalendarClock className="h-3 w-3" />
-          <span className="hidden lg:inline">{shouldClearMyDay ? (hockeyMode ? 'Rausnehmen' : t('itemRow.removeBtn')) : t('nav.today')}</span>
+          <span className="hidden lg:inline">{shouldClearMyDay ? (t('itemRow.removeBtn')) : t('nav.today')}</span>
         </button>
       )}
 
@@ -322,7 +321,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
         onSwipeRight={item.type === 'task' || (item.type === 'habit' && canToggleHabitToday) ? handleSwipeComplete : undefined}
         onSwipeLeft={canToggleToday ? handleSwipeToday : undefined}
         rightLabel={t('itemRow.doneSwipe')}
-        leftLabel={shouldClearMyDay ? (hockeyMode ? 'Raus' : t('itemRow.removeBtn')) : (hockeyMode ? 'Aufstellung' : t('itemRow.todayBtn'))}
+        leftLabel={shouldClearMyDay ? (t('itemRow.removeBtn')) : (t('itemRow.todayBtn'))}
         rightIcon={Check}
         leftIcon={shouldClearMyDay ? CalendarX : CalendarPlus}
       >

@@ -116,12 +116,13 @@ function PopoverContent({
 
     return (
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-[159] bg-black/35 backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Overlay data-slot="responsive-menu-overlay" className="fixed inset-0 z-[159] bg-black/35 backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
+          data-slot="responsive-menu-content"
           onEscapeKeyDown={onEscapeKeyDown}
           onPointerDownOutside={onPointerDownOutside}
           className={cn(
-            'fixed inset-x-0 bottom-0 z-[160] max-h-[min(84dvh,46rem)] overflow-hidden rounded-t-[28px] border border-b-0 border-border/70 bg-popover text-popover-foreground shadow-[0_-24px_70px_rgba(0,0,0,0.18)] outline-none',
+            'fixed inset-x-0 z-[160] max-h-[min(84dvh,46rem)] overflow-hidden rounded-t-[28px] border border-b-0 border-border/70 bg-popover text-popover-foreground shadow-[0_-24px_70px_rgba(0,0,0,0.18)] outline-none bottom-[calc(var(--keyboard-inset,0px)+env(safe-area-inset-bottom,0px)-var(--safe-area-max-bottom,36px))] pb-[var(--safe-area-max-bottom,36px)]',
             'data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
           )}
         >
@@ -131,7 +132,7 @@ function PopoverContent({
           <MenuHeader mobile title={menuTitle} description={menuDescription} />
           <div
             className={cn(
-              'max-h-[calc(min(84dvh,46rem)-7.75rem)] !w-full overflow-y-auto overscroll-contain !px-5 !pt-5 !pb-[max(1.5rem,env(safe-area-inset-bottom))]',
+              'max-h-[calc(min(84dvh,46rem)-7.75rem)] !w-full overflow-y-auto overscroll-contain !px-5 !pt-5 !pb-6',
               '[&>div]:space-y-4 [&_[role=separator]]:my-4 [&_button]:min-h-11 [&_label]:leading-5',
               className,
             )}
@@ -139,7 +140,7 @@ function PopoverContent({
             {children}
           </div>
           <DialogPrimitive.Close
-            className="absolute right-4 top-8 flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="absolute right-3 top-6 flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:right-4 lg:top-8 lg:size-9"
             aria-label="Close item options"
           >
             <X className="size-4" aria-hidden="true" />

@@ -2,11 +2,10 @@
 // Threadmap — Briefing Notifications
 // Real browser push notifications with smart, human briefings.
 // Morning: what's ahead. Evening: what you accomplished.
-// Hockey Mode: sports commentary + medical vibes (German).
 // ═══════════════════════════════════════════════════════════
 
 import { addDays, format } from 'date-fns';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 import { isHabitScheduledForDate, isHabitCompletedForDate, calculateStreak } from './habits';
 import { getDueHabitReminders } from './habit-reminders';
 import { useSettingsStore } from './settings-store';
@@ -65,7 +64,7 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function eventOccursOnDate(item: OrbitItem, date: string): boolean {
+function eventOccursOnDate(item: ThreadmapItem, date: string): boolean {
   if (item.type !== 'event' || item.status !== 'active' || !item.startDate) return false;
   const endDate = item.endDate || item.startDate;
   return item.startDate <= date && endDate >= date;
@@ -78,129 +77,6 @@ function localDayBounds(date: Date): { start: number; end: number } {
   };
 }
 
-// ── Hockey mode: German sports commentary ─────────────────
-
-const HOCKEY_MORNING_GREETINGS = [
-  'Aufwärmen, Dr.! 🏒',
-  'Spielfeld frei! Los geht\'s.',
-  'Anpfiff in 3... 2... 1... 🚨',
-  'Die Kabine ist bereit, Dr.',
-  'Schienbeinschoner an, geht los!',
-  'Guten Morgen, Dr. — Spieltag!',
-  'Der Kunstrasen ruft, Dr.! 🏟️',
-  'Schläger in die Hand — Visite beginnt! 🩺',
-  'Mannschaftsbesprechung: Dein Tag.',
-  'Aufstellung steht — du bist dran!',
-  'Guten Morgen! Diagnose: Produktiv. 💪',
-  'Short Corner für den Tag — mach was draus!',
-];
-
-const HOCKEY_EVENING_GREETINGS = [
-  'Schlusspfiff! 🏒',
-  'Das Spiel ist aus, Dr.',
-  'Abpfiff — ab in die Kabine.',
-  'Der Platz wird gesperrt.',
-  'Schichtende, Dr. — Feierabend!',
-  'Visite beendet. 🩺',
-  'Trikot aus, Dusche an. 🚿',
-  'Ergebnis steht, Dr.',
-  'Post-Match-Analyse:',
-  'Kabine auf — Analyse läuft.',
-  'Strafbank-Report des Tages:',
-];
-
-function generateHockeyMorningBriefing(items: OrbitItem[]): BriefingData {
-  const today = new Date();
-  const todayStr = format(today, 'yyyy-MM-dd');
-
-  const tasksDueToday = items.filter(
-    (i) => i.type === 'task' && i.status === 'active' && i.dueDate === todayStr
-  );
-  const overdue = items.filter(
-    (i) => i.type === 'task' && i.status === 'active' && i.dueDate && i.dueDate < todayStr
-  );
-  const eventsToday = items.filter((item) => eventOccursOnDate(item, todayStr));
-  const habitsToday = items.filter(
-    (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
-  );
-
-  const title = pickRandom(HOCKEY_MORNING_GREETINGS);
-
-  // Build a single-line summary that won't get cut off on mobile
-  const counts: string[] = [];
-  if (tasksDueToday.length > 0) counts.push(`${tasksDueToday.length} Spielzüge`);
-  if (eventsToday.length > 0) counts.push(`${eventsToday.length} ${eventsToday.length > 1 ? 'Anpfiffe' : 'Anpfiff'}`);
-  if (habitsToday.length > 0) counts.push(`${habitsToday.length}× Training`);
-  if (overdue.length > 0) counts.push(`${overdue.length} überfällig ⏱️`);
-
-  let body: string;
-  if (counts.length > 0) {
-    body = counts.join(' · ');
-    const topTask = tasksDueToday.find((t) => t.priority === 'high') || tasksDueToday[0];
-    if (topTask) body += ` → ${topTask.title}`;
-  } else {
-    body = 'Spielfrei — plane deine Züge, Dr.';
-  }
-
-  return { title, body, tag: 'threadmap-morning-briefing' };
-}
-
-function generateHockeyEveningBriefing(items: OrbitItem[]): BriefingData {
-  const today = new Date();
-  const todayStr = format(today, 'yyyy-MM-dd');
-  const { start: todayStart, end: todayEnd } = localDayBounds(today);
-
-  const completedToday = items.filter(
-    (i) => i.type === 'task' && i.status === 'done' && i.completedAt && i.completedAt >= todayStart && i.completedAt < todayEnd
-  );
-  const unfinished = items.filter(
-    (i) => i.type === 'task' && i.status === 'active' && i.dueDate === todayStr
-  );
-  const habitsToday = items.filter(
-    (i) => i.type === 'habit' && i.status === 'active' && isHabitScheduledForDate(i, today)
-  );
-  const habitsDone = habitsToday.filter((h) => isHabitCompletedForDate(h, today));
-  const bestStreak = habitsToday.reduce((max, h) => {
-    const s = calculateStreak(h);
-    return s > max ? s : max;
-  }, 0);
-
-  const tomorrowStr = format(addDays(today, 1), 'yyyy-MM-dd');
-  const dueTomorrow = items.filter(
-    (i) => i.type === 'task' && i.status === 'active' && i.dueDate === tomorrowStr
-  );
-
-  const title = pickRandom(HOCKEY_EVENING_GREETINGS);
-  // Build concise single-line body for notification
-  const parts: string[] = [];
-
-  if (completedToday.length > 0) {
-    parts.push(`${completedToday.length} Tor${completedToday.length > 1 ? 'e' : ''} ✓`);
-  }
-  if (unfinished.length > 0) {
-    parts.push(`${unfinished.length} offen`);
-  }
-  if (habitsToday.length > 0) {
-    parts.push(`Training ${habitsDone.length}/${habitsToday.length}`);
-  }
-  if (bestStreak > 1) {
-    parts.push(`${bestStreak}d Serie 🏒`);
-  }
-
-  let body: string;
-  if (parts.length > 0) {
-    body = parts.join(' · ');
-  } else {
-    body = 'Spielfrei heute — Ruhetag, Dr.';
-  }
-
-  if (dueTomorrow.length > 0) {
-    body += ` → Morgen: ${dueTomorrow.length} Spielzüge`;
-  }
-
-  return { title, body, tag: 'threadmap-evening-briefing' };
-}
-
 // ── Morning briefing content ──────────────────────────────
 
 interface BriefingData {
@@ -209,12 +85,8 @@ interface BriefingData {
   tag: string;
 }
 
-export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
-  // Hockey mode: use themed German briefing
+export function generateMorningBriefing(items: ThreadmapItem[]): BriefingData {
   const { settings } = useSettingsStore.getState();
-  if (settings.hockeyMode && settings.language === 'de') {
-    return generateHockeyMorningBriefing(items);
-  }
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
@@ -273,12 +145,8 @@ export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
 
 // ── Evening briefing content ──────────────────────────────
 
-export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
-  // Hockey mode: use themed German briefing
+export function generateEveningBriefing(items: ThreadmapItem[]): BriefingData {
   const { settings } = useSettingsStore.getState();
-  if (settings.hockeyMode && settings.language === 'de') {
-    return generateHockeyEveningBriefing(items);
-  }
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
@@ -478,7 +346,7 @@ async function registerPeriodicSync() {
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let swMessageListenerRegistered = false;
-let currentGetItems: () => OrbitItem[] = () => [];
+let currentGetItems: () => ThreadmapItem[] = () => [];
 
 function lastFiredKey(): string | null {
   return currentBriefingOwnerId
@@ -547,7 +415,7 @@ function rememberRemindedHabits(ids: Set<string>): void {
  * no scheduling, no display, no sorting. This is the reader the input has
  * always implied it had.
  */
-function fireDueHabitReminders(items: OrbitItem[]): void {
+function fireDueHabitReminders(items: ThreadmapItem[]): void {
   const { settings } = useSettingsStore.getState();
   if (!settings.notifications.enabled || !settings.notifications.habitReminders) return;
   if (!hasNotificationPermission()) return;
@@ -587,7 +455,7 @@ function isBriefingDueToday(targetHHMM: string, type: 'morning' | 'evening'): bo
   return diff >= 0 && diff <= graceMinutes * 60_000;
 }
 
-export function startBriefingScheduler(userId: string, getItems: () => OrbitItem[]) {
+export function startBriefingScheduler(userId: string, getItems: () => ThreadmapItem[]) {
   if (currentBriefingOwnerId !== userId) {
     stopBriefingScheduler();
     currentBriefingOwnerId = userId;
@@ -702,13 +570,13 @@ export function stopBriefingScheduler() {
 
 // ── Manual triggers (for testing / on-demand) ─────────────
 
-export function sendMorningBriefingNow(items: OrbitItem[]) {
+export function sendMorningBriefingNow(items: ThreadmapItem[]) {
   const briefing = generateMorningBriefing(items);
   sendNotification(briefing);
   return briefing;
 }
 
-export function sendEveningBriefingNow(items: OrbitItem[]) {
+export function sendEveningBriefingNow(items: ThreadmapItem[]) {
   const briefing = generateEveningBriefing(items);
   sendNotification(briefing);
   return briefing;

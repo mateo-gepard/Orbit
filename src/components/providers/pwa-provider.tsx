@@ -14,7 +14,7 @@ import {
  * PWA Provider — Initializes PWA features:
  * - Service worker registration
  * - Install prompt capture
- * - Viewport height CSS variable
+ * - Visual viewport, keyboard, safe-area, and display-mode CSS variables
  * - Overscroll prevention in standalone
  * - SW NAVIGATE message handler
  */
@@ -52,14 +52,6 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    const isStandalone = 
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as unknown as { standalone: boolean }).standalone === true;
-    
-    if (isStandalone) {
-      document.documentElement.classList.add('standalone');
-    }
-
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
@@ -67,7 +59,6 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
       unregisterLoadListener();
       cleanupViewport();
       cleanupOverscroll();
-      document.documentElement.classList.remove('standalone');
     };
   }, [router]);
 

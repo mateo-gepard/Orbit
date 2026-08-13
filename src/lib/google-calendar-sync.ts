@@ -8,15 +8,15 @@ import {
   fetchGoogleEvents,
   findGoogleEventByThreadmapItemId,
   getGoogleEvent,
-  googleEventIdForOrbitItem,
+  googleEventIdForThreadmapItem,
   hasCalendarPermission,
-  googleToOrbitEvent,
+  googleToThreadmapEvent,
   syncEventToGoogle,
   type GCalEvent
 } from './google-calendar';
 import { createItem, updateItem, deleteItem } from './firestore';
-import { useOrbitStore } from './store';
-import type { OrbitItem } from './types';
+import { useThreadmapStore } from './store';
+import type { ThreadmapItem } from './types';
 import { collapseRecurringInstances } from './google-calendar-recurrence';
 import type { RecurrenceRule } from './recurrence';
 import { useSettingsStore } from './settings-store';
@@ -122,19 +122,19 @@ function forgetCreatedGoogleEvent(userId: string, itemId: string): void {
 }
 
 /** A false marker is a durable request to push this event before accepting inbound data. */
-export function isPendingGoogleCalendarPush(item: OrbitItem): boolean {
+export function isPendingGoogleCalendarPush(item: ThreadmapItem): boolean {
   return item.type === 'event' && item.status !== 'archived' && item.calendarSynced === false;
 }
 
 /** Stable ordering keeps an interrupted flush deterministic and easy to resume. */
-export function pendingGoogleCalendarPushes(items: OrbitItem[]): OrbitItem[] {
+export function pendingGoogleCalendarPushes(items: ThreadmapItem[]): ThreadmapItem[] {
   return items
     .filter(isPendingGoogleCalendarPush)
     .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
 }
 
 /** Pending local changes always take precedence over imported Calendar data. */
-export function canAcceptInboundGoogleCalendarUpdate(item: OrbitItem): boolean {
+export function canAcceptInboundGoogleCalendarUpdate(item: ThreadmapItem): boolean {
   return Boolean(item.googleCalendarId) && item.calendarSynced !== false;
 }
 
@@ -204,7 +204,7 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
     if (generation !== syncGeneration || syncOwnerId !== userId) {
       return { success: false, pushed: outbound.pushed, imported: 0 };
     }
-    const orbitItems = useOrbitStore.getState().items;
+    const orbitItems = useThreadmapStore.getState().items;
     const syncedItems = orbitItems.filter(i => i.googleCalendarId);
 
     // Map Google Calendar events by ID
@@ -218,7 +218,7 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
     // CLEANUP: Preserve user content when legacy races produced multiple local
     // records for one Google event. Keep one deterministic canonical mapping
     // and detach the others from sync instead of deleting their notes/files.
-    const byGoogleId = new Map<string, OrbitItem[]>();
+    const byGoogleId = new Map<string, ThreadmapItem[]>();
     for (const item of syncedItems) {
       if (!item.googleCalendarId) continue;
       const matches = byGoogleId.get(item.googleCalendarId) || [];
@@ -247,10 +247,10 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
     }
 
     // Refresh syncedItems after cleanup
-    const cleanedOrbitItems = useOrbitStore.getState().items;
+    const cleanedThreadmapItems = useThreadmapStore.getState().items;
     // A false marker means a newer local edit is waiting to be pushed. Never
     // let an inbound update or cancellation win over that pending edit.
-    const cleanedSyncedItems = cleanedOrbitItems.filter(canAcceptInboundGoogleCalendarUpdate);
+    const cleanedSyncedItems = cleanedThreadmapItems.filter(canAcceptInboundGoogleCalendarUpdate);
 
     // Track imported IDs in this sync run to prevent duplicates
     const importedInThisRun = new Set<string>();
@@ -264,7 +264,7 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
       if (gcalEvent.status === 'cancelled') continue;
       const sourceItemId = threadmapSourceItemId(gcalEvent, userId);
       const sourceItem = sourceItemId
-        ? cleanedOrbitItems.find((item) => item.id === sourceItemId && item.userId === userId)
+        ? cleanedThreadmapItems.find((item) => item.id === sourceItemId && item.userId === userId)
         : undefined;
       if (
         sourceItem?.type === 'event'
@@ -276,7 +276,7 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
           calendarSynced: true,
         });
       }
-      const alreadyExists = cleanedOrbitItems.some(i => i.googleCalendarId === gcalId)
+      const alreadyExists = cleanedThreadmapItems.some(i => i.googleCalendarId === gcalId)
         || Boolean(sourceItem);
       if (!alreadyExists && !importedInThisRun.has(gcalId)) {
         await importGoogleEvent(gcalEvent, userId, googleSeries.get(gcalId)?.rule ?? null);
@@ -324,7 +324,7 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
  */
 export function flushPendingGoogleCalendarEvents(
   userId: string,
-  additionalItems: OrbitItem[] = []
+  additionalItems: ThreadmapItem[] = []
 ): Promise<GoogleCalendarOutboundResult> {
   const generation = syncGeneration;
   if (!isOutboundContextCurrent(userId, generation)) {
@@ -363,7 +363,7 @@ export function flushPendingGoogleCalendarEvents(
 
 async function performOutboundFlush(
   userId: string,
-  additionalItems: OrbitItem[],
+  additionalItems: ThreadmapItem[],
   generation: number,
 ): Promise<GoogleCalendarOutboundResult> {
   if (
@@ -375,8 +375,8 @@ async function performOutboundFlush(
     return { success: false, pushed: 0, failed: additionalItems.filter(isPendingGoogleCalendarPush).length };
   }
 
-  const currentItems = useOrbitStore.getState().items;
-  const byId = new Map<string, OrbitItem>();
+  const currentItems = useThreadmapStore.getState().items;
+  const byId = new Map<string, ThreadmapItem>();
   for (const item of currentItems) {
     if (item.userId === userId && isPendingGoogleCalendarPush(item)) byId.set(item.id, item);
   }
@@ -397,7 +397,7 @@ async function performOutboundFlush(
     if (!isOutboundContextCurrent(userId, generation)) {
       return { success: false, pushed, failed };
     }
-    const item = byId.get(itemId) || useOrbitStore.getState().items.find((candidate) => candidate.id === itemId);
+    const item = byId.get(itemId) || useThreadmapStore.getState().items.find((candidate) => candidate.id === itemId);
     if (
       item?.googleCalendarId === googleCalendarId
       && (item.calendarSynced !== false || !isPendingGoogleCalendarPush(item))
@@ -472,7 +472,7 @@ async function performOutboundFlush(
         rememberCreatedGoogleEvent(
           userId,
           item.id,
-          googleEventIdForOrbitItem(item),
+          googleEventIdForThreadmapItem(item),
         );
       }
       const googleCalendarId = await syncEventToGoogle(item);
@@ -501,7 +501,7 @@ async function performOutboundFlush(
 }
 
 async function finishOutboundGoogleCalendarPush(
-  source: OrbitItem,
+  source: ThreadmapItem,
   googleCalendarId: string,
   journalManaged: boolean,
   generation: number,
@@ -514,7 +514,7 @@ async function finishOutboundGoogleCalendarPush(
   };
 
   if (!isOutboundContextCurrent(source.userId, generation)) return 'deferred';
-  let latest = useOrbitStore.getState().items.find((item) => item.id === source.id);
+  let latest = useThreadmapStore.getState().items.find((item) => item.id === source.id);
   if (!latest || latest.userId !== source.userId || !isPendingGoogleCalendarPush(latest)) {
     if (latest?.userId === source.userId && latest.googleCalendarId === googleCalendarId) {
       return 'mapped-for-retry';
@@ -530,7 +530,7 @@ async function finishOutboundGoogleCalendarPush(
     if (!isOutboundContextCurrent(source.userId, generation)) return 'deferred';
   }
 
-  const afterPush = useOrbitStore.getState().items.find((item) => item.id === source.id);
+  const afterPush = useThreadmapStore.getState().items.find((item) => item.id === source.id);
   // The item may have been archived, deleted, or converted while Google was
   // responding. Never reattach a Calendar mapping to a workflow that is no
   // longer an outbound event.
@@ -559,7 +559,7 @@ async function finishOutboundGoogleCalendarPush(
     const mappingOutcome = await updateItem(source.id, { googleCalendarId, calendarSynced: false });
     if (!isOutboundContextCurrent(source.userId, generation)) return 'deferred';
     if (mappingOutcome !== 'committed') return 'mapped-for-retry';
-    latest = useOrbitStore.getState().items.find((item) => item.id === source.id);
+    latest = useThreadmapStore.getState().items.find((item) => item.id === source.id);
     if (!latest || latest.userId !== source.userId || !isPendingGoogleCalendarPush(latest)) {
       if (latest?.userId === source.userId && latest.googleCalendarId === googleCalendarId) {
         return 'mapped-for-retry';
@@ -577,7 +577,7 @@ async function finishOutboundGoogleCalendarPush(
   return acknowledgementOutcome === 'committed' ? 'synced' : 'mapped-for-retry';
 }
 
-function sameOutboundEventPayload(left: OrbitItem, right: OrbitItem): boolean {
+function sameOutboundEventPayload(left: ThreadmapItem, right: ThreadmapItem): boolean {
   return left.type === right.type
     && left.title === right.title
     && (left.content || '') === (right.content || '')
@@ -611,7 +611,7 @@ function threadmapSourceItemId(gcalEvent: GCalEvent, userId: string): string | n
     return null;
   }
   try {
-    return googleEventIdForOrbitItem({ id: sourceItemId, userId }) === gcalEvent.id
+    return googleEventIdForThreadmapItem({ id: sourceItemId, userId }) === gcalEvent.id
       ? sourceItemId
       : null;
   } catch {
@@ -624,9 +624,9 @@ async function importGoogleEvent(
   userId: string,
   recurrence: RecurrenceRule | null = null,
 ): Promise<void> {
-  const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
+  const convertedEvent = googleToThreadmapEvent(gcalEvent, userId);
 
-  const newEvent: Omit<OrbitItem, 'id'> = {
+  const newEvent: Omit<ThreadmapItem, 'id'> = {
     type: 'event',
     title: convertedEvent.title || 'Untitled Event',
     status: 'active',
@@ -657,9 +657,9 @@ async function updateFromGoogleEvent(
   userId: string,
   recurrence: RecurrenceRule | null = null,
 ): Promise<void> {
-  const convertedEvent = googleToOrbitEvent(gcalEvent, userId);
+  const convertedEvent = googleToThreadmapEvent(gcalEvent, userId);
 
-  const updates: Partial<OrbitItem> = {
+  const updates: Partial<ThreadmapItem> = {
     title: convertedEvent.title || 'Untitled Event',
     content: convertedEvent.content,
     startDate: convertedEvent.startDate,
@@ -675,9 +675,9 @@ async function updateFromGoogleEvent(
   await updateItem(orbitItemId, updates);
 }
 
-function eventHasChanges(orbitItem: OrbitItem, gcalEvent: GCalEvent): boolean {
+function eventHasChanges(orbitItem: ThreadmapItem, gcalEvent: GCalEvent): boolean {
   // Use the same conversion logic to compare consistently
-  const converted = googleToOrbitEvent(gcalEvent, orbitItem.userId);
+  const converted = googleToThreadmapEvent(gcalEvent, orbitItem.userId);
 
   if ((converted.title || 'Untitled Event') !== orbitItem.title) return true;
   if ((converted.content || '') !== (orbitItem.content || '')) return true;

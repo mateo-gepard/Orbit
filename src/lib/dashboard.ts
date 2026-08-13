@@ -1,4 +1,4 @@
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 import { normalizeRecurrence, recurrenceOccursOnDate } from './recurrence';
 
 /**
@@ -7,7 +7,7 @@ import { normalizeRecurrence, recurrenceOccursOnDate } from './recurrence';
  * A repeating event is one item carrying a rule, so its later occurrences are
  * computed here rather than existing as hundreds of separate items.
  */
-export function eventOccursOnDate(event: OrbitItem, dateKey: string): boolean {
+export function eventOccursOnDate(event: ThreadmapItem, dateKey: string): boolean {
   if (event.type !== 'event' || event.status === 'archived') return false;
   const start = event.startDate || event.dueDate;
   if (!start) return false;

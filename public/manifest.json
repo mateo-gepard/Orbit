@@ -1,7 +1,7 @@
 {
   "name": "Threadmap",
   "short_name": "Threadmap",
-  "description": "Threadmap",
+  "description": "A private, connected workspace for tasks, notes, habits, projects, and goals.",
   "version": "0.2.0",
   "start_url": "/",
   "scope": "/",
@@ -12,6 +12,8 @@
   "theme_color": "#faf9f7",
   "categories": ["productivity", "utilities"],
   "dir": "ltr",
+  "lang": "en",
+  "orientation": "any",
   "prefer_related_applications": false,
   "launch_handler": {
     "client_mode": "navigate-existing"

@@ -10,7 +10,7 @@ interface DebugEntry {
   message: string;
 }
 
-type OrbitDebugWindow = Window & {
+type ThreadmapDebugWindow = Window & {
   __orbitDebug?: typeof addDebug;
   __NEXT_DATA__?: {
     buildId?: string;
@@ -37,7 +37,7 @@ function addDebug(category: DebugEntry['category'], message: string) {
 
 // Expose globally so other modules can log
 if (typeof window !== 'undefined') {
-  (window as OrbitDebugWindow).__orbitDebug = addDebug;
+  (window as ThreadmapDebugWindow).__orbitDebug = addDebug;
 }
 
 export function DebugPanel() {
@@ -129,7 +129,7 @@ export function DebugPanel() {
     }
 
     // Try to detect the build ID from __NEXT_DATA__
-    const nextData = (window as OrbitDebugWindow).__NEXT_DATA__;
+    const nextData = (window as ThreadmapDebugWindow).__NEXT_DATA__;
     if (nextData) {
       setBuildId(nextData.buildId || 'unknown');
       addDebug('cache', `Next.js buildId: ${nextData.buildId || 'unknown'}`);

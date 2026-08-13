@@ -17,15 +17,15 @@ import { X, Network, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import type { OrbitItem, ProjectFile } from '@/lib/types';
-import { OrbitNode } from './link-graph-node';
+import type { ThreadmapItem, ProjectFile } from '@/lib/types';
+import { ThreadmapNode } from './link-graph-node';
 import { FileNode } from './link-graph-file-node';
 import { buildGraphData } from './link-graph-utils';
 import { downloadProjectFile } from '@/lib/storage';
 import { toast } from 'sonner';
 import { useTranslation, type Translate } from '@/lib/i18n';
 
-const nodeTypes = { orbitNode: OrbitNode, fileNode: FileNode };
+const nodeTypes = { orbitNode: ThreadmapNode, fileNode: FileNode };
 
 function graphAriaLabels(translate: Translate): Partial<AriaLabelConfig> {
   return {
@@ -46,8 +46,8 @@ function graphAriaLabels(translate: Translate): Partial<AriaLabelConfig> {
 interface LinkGraphProps {
   open: boolean;
   onClose: () => void;
-  currentItem: OrbitItem;
-  allItems: OrbitItem[];
+  currentItem: ThreadmapItem;
+  allItems: ThreadmapItem[];
   onNavigate: (itemId: string) => void;
 }
 
@@ -79,7 +79,7 @@ export function LinkGraph({ open, onClose, currentItem, allItems, onNavigate }: 
         void downloadProjectFile(data.file).catch(() => toast.error(t('files.downloadError', { name: data.file.name })));
         return;
       }
-      const data = node.data as { item: OrbitItem; isCurrent: boolean };
+      const data = node.data as { item: ThreadmapItem; isCurrent: boolean };
       if (!data.isCurrent) {
         onNavigate(data.item.id);
         onClose();

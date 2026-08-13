@@ -17,238 +17,6 @@ export type TranslatePlural = (
   values?: TranslationValues
 ) => string;
 
-// ── Hockey / Medical mode overrides (German only) ──────────
-// When hockeyMode is on, these keys replace the normal German
-// translations to give the app a fun hockey + medical vibe.
-
-const hockeyOverrides: Partial<Record<TranslationKey, string>> = {
-  // ── Greetings (medical visite style) ─────────────────────
-  'greeting.morning': 'Guten Morgen, Dr.',
-  'greeting.afternoon': 'Mahlzeit, Dr.',
-  'greeting.evening': 'Guten Abend, Dr.',
-
-  // ── Types (hockey/medical terms) ─────────────────────────
-  'type.task': 'Spielzug',
-  'type.project': 'Saison',
-  'type.habit': 'Training',
-  'type.event': 'Anpfiff',
-  'type.goal': 'Meisterschaft',
-  'type.note': 'Rezept',
-
-
-  // ── Status ───────────────────────────────────────────────
-  'status.active': 'Im Spiel',
-  'status.waiting': 'Auf der Bank',
-  'status.done': 'Tor! ✓',
-  'status.archived': 'Ruhestand',
-
-  // ── Priority (triage) ───────────────────────────────────
-  'priority.high': 'Notfall 🚨',
-  'priority.medium': 'Dringend',
-  'priority.low': 'Wartezimmer',
-  'priority.none': 'Keine Triage',
-
-  // ── Habits ───────────────────────────────────────────────
-  'habits.streak': 'Siegesserie',
-  'habits.noHabits': 'Kein Training geplant',
-  'habits.noHabitsTap': 'Tippe auf + um dein erstes Training zu starten',
-  'habits.week': 'Spielwoche',
-  'habits.month': 'Spielmonat',
-
-  // ── Dashboard ────────────────────────────────────────────
-  'dashboard.events': 'Anpfiffe',
-  'dashboard.tasks': 'Spielzüge',
-  'dashboard.habitsLabel': 'Training',
-  'dashboard.nothingScheduled': 'Spielfrei — genieße die Pause, Dr. 🩺',
-  'dashboard.noTasksPast': 'Kein Spiel an diesem Tag',
-  'dashboard.noHabitsScheduled': 'Trainingsfreier Tag — Regeneration! 💪',
-  'dashboard.allCaughtUp': 'Alles aufgeholt — stark! 💪',
-
-  // ── Today page ───────────────────────────────────────────
-  'today.myDay': 'Mein Spieltag',
-  'today.habits': 'Training',
-  'today.noHabits': 'Heute kein Training geplant — Ruhetag, Dr.',
-  'today.overdue': 'Nachspielzeit ⏱️',
-  'today.notDoneFromBefore': 'Nachholspiele',
-
-  // ── Goals page ───────────────────────────────────────────
-  'goals.thisQuarter': 'Diese Halbsaison',
-  'goals.thisYear': 'Diese Saison',
-  'goals.longterm': 'Karriereziel',
-  'goals.noGoals': 'Noch keine Meisterschaften',
-  'goals.noGoalsDesc': 'Definiere Meisterschaften und verknüpfe Spielzüge für den Pokal. 🏆',
-
-  // ── Projects page ────────────────────────────────────────
-  'projects.newProject': 'Neue Saison',
-  'projects.noProjects': 'Noch keine Saisons',
-  'projects.addTask': 'Spielzug hinzufügen',
-  'projects.createToStart': 'Starte eine neue Saison',
-  'projects.milestones': 'Spieltage',
-  'projects.grid': 'Aufstellung',
-  'kanban.inProgress': 'Auf dem Feld',
-  'kanban.waiting': 'Auf der Bank',
-  'kanban.done': 'Tor!',
-
-  // ── Onboarding ───────────────────────────────────────────
-  'onboarding.title': 'Anpfiff! 🏒',
-  'onboarding.description': 'Plane deinen ersten Spielzug, Dr.',
-  'onboarding.cta': 'Anpfiff!',
-
-  // ── Command bar ──────────────────────────────────────────
-  'commandBar.placeholder': 'Spielzug ansagen, Dr. ...',
-  'commandBar.tip': 'Tipp: Nutze #tag !notfall @saison und Daten wie morgen oder 15.03',
-  'commandBar.results': 'Spielzüge',
-  'commandBar.commands': 'Taktiken',
-
-  // ── Item row ─────────────────────────────────────────────
-  'itemRow.doneSwipe': 'TOR!',
-  'itemRow.waiting': 'Bank',
-  'itemRow.todayBtn': 'Spieltag',
-
-  // ── Common ───────────────────────────────────────────────
-  'common.done': 'Tor!',
-  'common.overdue': 'Nachspielzeit',
-  'common.new': 'Einwechseln',
-  'common.create': 'Aufstellen',
-  'common.delete': 'Rote Karte',
-  'common.archive': 'In Ruhestand',
-  'common.restore': 'Comeback',
-  'common.search': 'Scouting',
-
-  // ── Notes ────────────────────────────────────────────────
-  'notes.takeANote': 'Rezept schreiben...',
-  'notes.noNotes': 'Noch keine Rezepte',
-  'notes.noNotesDesc': 'Schreibe Rezepte, Diagnosen und Behandlungspläne. 🩺',
-  'notes.titlePlaceholder': 'Diagnose...',
-  'notes.contentPlaceholder': 'Rezept schreiben... (nutze - oder • für Listen)',
-
-  // ── Note subtypes ────────────────────────────────────────
-  'noteSubtype.general': 'Befund',
-  'noteSubtype.idea': 'Taktik-Idee',
-  'noteSubtype.principle': 'Spielregel',
-  'noteSubtype.plan': 'Taktikplan',
-  'noteSubtype.journal': 'Spieltagebuch',
-  'notes.all': 'Alle',
-  'notes.ideas': 'Taktiken',
-  'notes.principles': 'Spielregeln',
-  'notes.plans': 'Taktikpläne',
-  'notes.journal': 'Spieltagebuch',
-
-  // ── Archive ──────────────────────────────────────────────
-  'archive.subtitle': 'Abgeschlossene Spiele und Karriereende',
-  'archive.completedTab': 'Tore',
-  'archive.archivedTab': 'Ruhestand',
-  'archive.uncomplete': 'Tor aberkennen',
-  'archive.noCompleted': 'Noch keine Tore geschossen',
-  'archive.noCompletedDesc': 'Erledigte Spielzüge erscheinen hier',
-  'archive.archiveEmpty': 'Ruhestandsliste leer',
-  'archive.archiveEmptyDesc': 'Karriere-beendete Einträge erscheinen hier',
-
-  // ── Navigation (fun labels) ──────────────────────────────
-  'nav.dashboard': 'Spielfeld',
-  'nav.tasks': 'Spielzüge',
-  'nav.habits': 'Training',
-  'nav.goals': 'Pokale',
-  'nav.notes': 'Rezepte',
-  'nav.archive': 'Ruhestand',
-  'nav.projects': 'Saisons',
-  'nav.today': 'Spieltag',
-  'nav.calendar': 'Spielplan',
-  'nav.files': 'Röntgenbilder',
-  'nav.toolbox': 'Arztkoffer',
-  'nav.organize': 'Aufstellung',
-  'nav.capture': 'Diagnose',
-
-  // ── Mobile nav ───────────────────────────────────────────
-  'mobile.home': 'Feld',
-  'mobile.tasks': 'Spielzüge',
-  'mobile.habits': 'Training',
-  'mobile.notes': 'Rezepte',
-  'mobile.toolbox': 'Arztkoffer',
-
-  // ── Sidebar ──────────────────────────────────────────────
-  'sidebar.quickAdd': 'Einwechseln...',
-  'sidebar.localMode': 'Trainingslager',
-  'sidebar.signOut': 'Pfeife weg',
-
-  // ── Detail panel ─────────────────────────────────────────
-  'detail.changeType': 'Position ändern',
-  'detail.changeStatus': 'Spielstatus ändern',
-  'detail.linksRelations': 'Pässe & Assists',
-  'detail.frequency': 'Trainingsrhythmus',
-  'detail.timeframe': 'Saisonphase',
-  'detail.category': 'Abteilung',
-  'detail.priority': 'Triage',
-  'detail.checklist': 'Behandlungsplan',
-  'detail.notes': 'Patientenakte',
-  'detail.tags': 'Trikot-Labels',
-  'detail.parent': 'Mannschaft',
-  'detail.addToToday': 'Für Spieltag nominieren',
-  'detail.itemDetails': 'Spieler-Profil',
-  'detail.metricPlaceholder': 'Wann gilt der Patient als geheilt?',
-  'detail.checklistPlaceholder': 'Behandlungsschritt hinzufügen…',
-  'detail.notesPlaceholder': 'Patientenakte führen…',
-  'detail.successMetric': 'Heilungskriterium',
-
-  // ── Filter / Sort / Group ────────────────────────────────
-  'filter.active': 'Im Spiel',
-  'filter.completed': 'Tore',
-  'filter.all': 'Gesamtkader',
-  'sort.dueDate': 'Spieltag',
-  'sort.priority': 'Triage-Stufe',
-  'sort.newest': 'Neuzugang',
-  'group.none': 'Freies Spiel',
-  'group.byProject': 'Nach Saison',
-  'group.byGoal': 'Nach Pokal',
-  'group.byPriority': 'Nach Triage',
-  'group.byDueDate': 'Nach Spieltag',
-  'group.allTasks': 'Gesamtkader',
-  'group.noProject': 'Vereinslos',
-  'group.noGoal': 'Ohne Pokal',
-  'group.highPriority': 'Notfall-OP',
-  'group.mediumPriority': 'Dringend',
-  'group.lowPriority': 'Wartezimmer',
-
-  // ── Frequency ────────────────────────────────────────────
-  'frequency.daily': 'tägliches Training',
-  'frequency.weekly': 'wöchentliches Training',
-
-  // ── Timeframe ────────────────────────────────────────────
-  'timeframe.quarterly': 'Halbsaison',
-  'timeframe.yearly': 'Vollsaison',
-  'timeframe.longterm': 'Karriereziel',
-
-  // ── Tasks page ───────────────────────────────────────────
-  'tasks.searchPlaceholder': 'Spielzüge scouten...',
-  'tasks.noTasks': 'Keine Spielzüge',
-  'tasks.noMatchSearch': 'Kein Spielzug gefunden',
-  'tasks.noCompleted': 'Noch keine Tore',
-  'tasks.noActiveHint': 'Keine aktiven Spielzüge',
-  'tasks.clearFilters': 'Taktiktafel löschen',
-
-  // ── Calendar ─────────────────────────────────────────────
-  'calendar.eventsThisMonth': 'Spieltage diesen Monat',
-  'calendar.noEventsOrTasks': 'Kein Spiel an diesem Tag',
-
-  // ── Date context ─────────────────────────────────────────
-  'date.past': 'Abgepfiffen',
-  'date.future': 'Ausstehend',
-  'date.today': 'Spieltag',
-  'date.previousDay': 'Letztes Spiel',
-  'date.nextDay': 'Nächstes Spiel',
-
-  // ── Settings page references ─────────────────────────────
-  'settings.dangerZone': 'Strafbank 🟥',
-  'settings.resetAll': 'Saison-Reset',
-  'settings.resetAllDesc': 'Alle Einstellungen auf Startaufstellung zurücksetzen',
-  'settings.deleteAccount': 'Karriereende',
-  'settings.deleteAccountDesc': 'Endgültiger Rücktritt — alle Daten werden gelöscht',
-  'settings.yesDeleteEverything': 'Ja, Karriere beenden',
-  'settings.version': 'Threadmap v0.1.0 · Made with Hockeygeist 🏒',
-};
-
-// ── English (default) ──────────────────────────────────────
-
 const en = {
   // ── Navigation ───────────────────────────────────────────
   'nav.dashboard': 'Dashboard',
@@ -1020,24 +788,6 @@ const en = {
   'settings.version': 'Threadmap v0.1.0 · Made with focus',
   'settings.syncedLocally': 'Settings stored on this device',
   'settings.syncedFirebase': 'Settings stored in Firebase',
-
-  // ── Easter Eggs ──────────────────────────────────────────
-  'settings.easterEggs': 'Easter Eggs',
-  'settings.hockeyMode': 'Hockey & Medizin Mode',
-  'settings.hockeyModeDesc': 'Transform Threadmap into a hockey field meets hospital. Tasks become plays, habits become training, and completions trigger goal celebrations.',
-  'settings.hockeyPreview': 'Active changes',
-  'settings.easterEggLabel': 'Easter Egg',
-  'settings.previewTask': 'Task',
-  'settings.previewProject': 'Project',
-  'settings.previewHabit': 'Habit',
-  'settings.previewEvent': 'Event',
-  'settings.previewGoal': 'Goal',
-  'settings.previewNote': 'Note',
-  'settings.hockeyGermanHint': 'Hockey Mode works best in German — switch languages for the full experience.',
-  'settings.hockeyFeature1': 'TOR! animation when completing tasks (+ Hat-Trick bonus)',
-  'settings.hockeyFeature2': 'Medical triage priority labels (Notfall, Dringend, Wartezimmer)',
-  'settings.hockeyFeature3': 'Hockey-themed notifications with game commentary',
-  'settings.hockeyFeature4': 'Scoreboard display, motivational quotes & hockey emojis everywhere',
 
   // ── Core surfaces ───────────────────────────────────────
   'common.close': 'Close',
@@ -2205,24 +1955,6 @@ const de: Record<TranslationKey, string> = {
   'settings.syncedLocally': 'Einstellungen auf diesem Gerät gespeichert',
   'settings.syncedFirebase': 'Einstellungen in Firebase gespeichert',
 
-  // ── Easter Eggs ──────────────────────────────────────────
-  'settings.easterEggs': 'Easter Eggs',
-  'settings.hockeyMode': 'Hockey & Medizin Modus',
-  'settings.hockeyModeDesc': 'Verwandle Threadmap in ein Hockeyfeld trifft Krankenhaus. Aufgaben werden Spielzüge, Gewohnheiten werden Training, und abgeschlossene Aufgaben lösen Tor-Jubel aus.',
-  'settings.hockeyPreview': 'Aktive Änderungen',
-  'settings.easterEggLabel': 'Easter Egg',
-  'settings.previewTask': 'Aufgabe',
-  'settings.previewProject': 'Projekt',
-  'settings.previewHabit': 'Gewohnheit',
-  'settings.previewEvent': 'Termin',
-  'settings.previewGoal': 'Ziel',
-  'settings.previewNote': 'Notiz',
-  'settings.hockeyGermanHint': 'Der Hockey-Modus funktioniert am besten auf Deutsch — wechsle die Sprache für das volle Erlebnis.',
-  'settings.hockeyFeature1': 'TOR!-Animation beim Abschließen von Aufgaben (+ Hat-Trick Bonus)',
-  'settings.hockeyFeature2': 'Medizinische Triage-Prioritäten (Notfall, Dringend, Wartezimmer)',
-  'settings.hockeyFeature3': 'Hockey-Benachrichtigungen im Sport-Kommentarstil',
-  'settings.hockeyFeature4': 'Spielstand-Anzeige, Motivationssprüche & Hockey-Emojis überall',
-
   // ── Zentrale Oberflächen ─────────────────────────────────
   'common.close': 'Schließen',
   'common.retry': 'Erneut versuchen',
@@ -2650,20 +2382,12 @@ export function tp(
   return t(category === 'one' ? oneKey : otherKey, lang, { ...values, count });
 }
 
-/**
- * React hook — returns a `t(key)` function bound to the current language.
- * When hockeyMode is on and language is German, applies hockey/medical overrides.
- */
+/** React hook returning translators bound to the current language. */
 export function useTranslation() {
   const lang = useSettingsStore((s) => s.settings.language);
-  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode);
-  const translate = useCallback((key: TranslationKey, values?: TranslationValues) => {
-    // Hockey mode only applies to German
-    if (hockeyMode && lang === 'de' && key in hockeyOverrides) {
-      return interpolate(hockeyOverrides[key]!, values);
-    }
-    return t(key, lang, values);
-  }, [hockeyMode, lang]);
+  const translate = useCallback((key: TranslationKey, values?: TranslationValues) => (
+    t(key, lang, values)
+  ), [lang]);
   const translatePlural = useCallback((
     oneKey: TranslationKey,
     otherKey: TranslationKey,
@@ -2675,6 +2399,5 @@ export function useTranslation() {
     t: translate,
     tp: translatePlural,
     lang,
-    hockeyMode: hockeyMode && lang === 'de',
   };
 }

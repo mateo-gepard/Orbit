@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Archive, MoreVertical, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { deleteItem, ItemRevisionConflictError, updateItem } from '@/lib/firestore';
 import { useSettingsStore } from '@/lib/settings-store';
-import type { NoteSubtype, OrbitItem } from '@/lib/types';
+import type { NoteSubtype, ThreadmapItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useLinks } from '@/lib/hooks/use-links';
 import {
@@ -25,7 +25,7 @@ import { useTranslation } from '@/lib/i18n';
 import { hasOutstandingItemMutation } from '@/lib/item-mutation-outbox';
 
 interface NoteEditorProps {
-  note: OrbitItem;
+  note: ThreadmapItem;
   onClose: () => void;
 }
 
@@ -33,7 +33,7 @@ type NoteDraft = DurableNoteDraft;
 
 const NOTE_SUBTYPE_OPTIONS: NoteSubtype[] = ['general', 'idea', 'principle', 'plan', 'journal'];
 
-function initialDraft(note: OrbitItem): NoteDraft {
+function initialDraft(note: ThreadmapItem): NoteDraft {
   return {
     title: note.title,
     content: note.content || '',
@@ -44,8 +44,8 @@ function initialDraft(note: OrbitItem): NoteDraft {
 
 export function NoteEditor({ note, onClose }: NoteEditorProps) {
   const { t, tp } = useTranslation();
-  const items = useOrbitStore((state) => state.items);
-  const getAllTags = useOrbitStore((state) => state.getAllTags);
+  const items = useThreadmapStore((state) => state.items);
+  const getAllTags = useThreadmapStore((state) => state.getAllTags);
   const { confirmBeforeDelete, archiveInsteadOfDelete } = useSettingsStore((state) => state.settings);
   const baseDraftRef = useRef<NoteDraft>(initialDraft(note));
   const recoveredDraftRef = useRef<ReturnType<typeof readNoteDraft> | undefined>(undefined);
@@ -105,7 +105,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
           }
           return;
         }
-        const savedItem = useOrbitStore.getState().items.find((item) => item.id === note.id);
+        const savedItem = useThreadmapStore.getState().items.find((item) => item.id === note.id);
         if (savedItem) {
           draftBaseRef.current = {
             revision: Number(savedItem.revision || 0),
@@ -448,7 +448,7 @@ export function NoteEditor({ note, onClose }: NoteEditorProps) {
                       )}
                     </p>
                     <div className="flex max-h-[160px] flex-col gap-1 overflow-y-auto">
-                      {linkPickerItems.map((item: OrbitItem) => (
+                      {linkPickerItems.map((item: ThreadmapItem) => (
                         <button
                           key={item.id}
                           type="button"

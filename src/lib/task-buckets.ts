@@ -1,7 +1,7 @@
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 export interface TaskBucketInput {
-  items: OrbitItem[];
+  items: ThreadmapItem[];
   selectedDateStr: string;
   todayStr: string;
   isViewingPast: boolean;
@@ -9,13 +9,13 @@ export interface TaskBucketInput {
 }
 
 export interface TaskBuckets {
-  todayTasks: OrbitItem[];
-  myDayTasks: OrbitItem[];
-  notDoneFromBefore: OrbitItem[];
-  overdueItems: OrbitItem[];
+  todayTasks: ThreadmapItem[];
+  myDayTasks: ThreadmapItem[];
+  notDoneFromBefore: ThreadmapItem[];
+  overdueItems: ThreadmapItem[];
 }
 
-function isOpenTask(item: OrbitItem) {
+function isOpenTask(item: ThreadmapItem) {
   return item.type === 'task' && item.status !== 'done' && item.status !== 'archived';
 }
 

@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import type { OrbitItem, ItemType } from '@/lib/types';
+import type { ThreadmapItem, ItemType } from '@/lib/types';
 import {
   getLinkableItems,
   getParentableItems,
@@ -14,23 +14,23 @@ import {
 import { linkItems, unlinkItems } from '@/lib/firestore';
 
 export interface UseLinksProps {
-  item: OrbitItem;
-  allItems: OrbitItem[];
-  onUpdate: (updates: Partial<OrbitItem>) => void | Promise<unknown>;
+  item: ThreadmapItem;
+  allItems: ThreadmapItem[];
+  onUpdate: (updates: Partial<ThreadmapItem>) => void | Promise<unknown>;
 }
 
 export interface UseLinksReturn {
   relationships: ItemRelationships;
-  linkableItems: OrbitItem[];
-  parentableItems: OrbitItem[];
+  linkableItems: ThreadmapItem[];
+  parentableItems: ThreadmapItem[];
 
   handleAddLink: (targetId: string) => Promise<void>;
   handleRemoveLink: (targetId: string) => Promise<void>;
   handleSetParent: (parentId: string | undefined) => Promise<void>;
   isLinked: (targetId: string) => boolean;
   canLink: (targetId: string) => boolean;
-  getLinkableByType: (type: ItemType) => OrbitItem[];
-  getParentableByType: (type: ItemType) => OrbitItem[];
+  getLinkableByType: (type: ItemType) => ThreadmapItem[];
+  getParentableByType: (type: ItemType) => ThreadmapItem[];
 }
 
 export function useLinks({ item, allItems, onUpdate }: UseLinksProps): UseLinksReturn {

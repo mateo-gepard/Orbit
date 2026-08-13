@@ -1,4 +1,4 @@
-import type { ItemType, OrbitItem } from './types';
+import type { ItemType, ThreadmapItem } from './types';
 
 /**
  * Types that have a completion lifecycle, and so belong in a progress ratio.
@@ -20,11 +20,11 @@ export interface ProgressStats {
   progress: number;
 }
 
-export function isCompletable(item: OrbitItem): boolean {
+export function isCompletable(item: ThreadmapItem): boolean {
   return COMPLETABLE_TYPES.has(item.type);
 }
 
-function summarise(items: OrbitItem[]): ProgressStats {
+function summarise(items: ThreadmapItem[]): ProgressStats {
   const total = items.length;
   const done = items.filter((item) => item.status === 'done').length;
   return {
@@ -40,7 +40,7 @@ function summarise(items: OrbitItem[]): ProgressStats {
  * Everything attached to a goal, as child or as link, that can actually
  * complete. Archived items are excluded — they are no longer part of the work.
  */
-export function getGoalRelatedItems(items: OrbitItem[], goalId: string): OrbitItem[] {
+export function getGoalRelatedItems(items: ThreadmapItem[], goalId: string): ThreadmapItem[] {
   const goal = items.find((item) => item.id === goalId);
   if (!goal) return [];
   return items.filter((candidate) => (
@@ -59,7 +59,7 @@ export interface GoalStats extends ProgressStats {
   relatedCount: number;
 }
 
-export function getGoalStats(items: OrbitItem[], goalId: string): GoalStats {
+export function getGoalStats(items: ThreadmapItem[], goalId: string): GoalStats {
   const related = getGoalRelatedItems(items, goalId);
   return {
     ...summarise(related.filter(isCompletable)),
@@ -76,7 +76,7 @@ export function getGoalStats(items: OrbitItem[], goalId: string): GoalStats {
  * "Match the Projects view", which is exactly the note you leave on a copy
  * that is free to drift.
  */
-export function getProjectTasks(items: OrbitItem[], projectId: string): OrbitItem[] {
+export function getProjectTasks(items: ThreadmapItem[], projectId: string): ThreadmapItem[] {
   const goalIds = new Set(
     items
       .filter((item) => item.type === 'goal' && item.parentId === projectId && item.status !== 'archived')
@@ -89,10 +89,10 @@ export function getProjectTasks(items: OrbitItem[], projectId: string): OrbitIte
   ));
 }
 
-export function getProjectStats(items: OrbitItem[], projectId: string): ProgressStats {
+export function getProjectStats(items: ThreadmapItem[], projectId: string): ProgressStats {
   return summarise(getProjectTasks(items, projectId));
 }
 
-export function getProjectTaskProgress(items: OrbitItem[], projectId: string): number {
+export function getProjectTaskProgress(items: ThreadmapItem[], projectId: string): number {
   return getProjectStats(items, projectId).progress;
 }

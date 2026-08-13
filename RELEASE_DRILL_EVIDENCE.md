@@ -42,10 +42,12 @@ The rehearsal changed only the disposable alias. `threadmap.app` was never reass
 | Functions TypeScript build | PASS |
 | Changed-file ESLint | PASS |
 | Next.js production build | PASS |
-| Application unit tests | PASS: 458 passed, 19 emulator-only tests skipped in this command |
+| Application unit tests | PASS: 461 passed, 19 emulator-only tests skipped in this command |
 | Firestore and Storage rules tests | PASS: 19 passed |
-| Functions tests | PASS: 44 passed |
+| Functions tests | PASS: 49 passed |
 | Active `uuid` Dependabot advisory in lock graph | PASS: removed |
+| Production dependency audits | PASS: application and Functions report zero production findings |
+| Production environment preflight | PASS with explicit pre-release legal values; real operator identity remains an owner/legal gate |
 
 The repository-wide normal lint command passes with ten pre-existing warnings outside this change. This change adds no lint warnings.
 
@@ -53,5 +55,5 @@ The repository-wide normal lint command passes with ten pre-existing warnings ou
 
 - WAF blocking remains disabled because historical per-rule metrics are unavailable on the current Vercel plan. Review at least seven representative days before enforcement.
 - The two unidentified legacy Google API keys remain unchanged because no owned consumer could be proven. Review per-credential Metrics Explorer traffic before a disable/delete canary.
-- An out-of-band email notification for MFA recovery remains blocked on a verified transactional-email channel.
+- The transactional email channel is verified; implementing and validating the MFA-recovery security notification remains open.
 - An independent engineer should review tenant boundaries and the MFA recovery threat model before formal release.

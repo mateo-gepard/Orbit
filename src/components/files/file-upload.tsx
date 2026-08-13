@@ -14,7 +14,7 @@ import {
   type UploadProgress,
 } from '@/lib/storage';
 import { useAuth } from '@/components/providers/auth-provider';
-import type { OrbitItem, ProjectFile } from '@/lib/types';
+import type { ThreadmapItem, ProjectFile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { FileViewer } from '@/components/files/file-viewer';
 import { format, isValid } from 'date-fns';
@@ -29,7 +29,7 @@ interface FileUploadProps {
    * dashboard ever rendered this, so tasks, notes, goals and events could not
    * hold an attachment — which cut against the unified-item premise.
    */
-  item: OrbitItem;
+  item: ThreadmapItem;
 }
 
 export function FileUpload({ item }: FileUploadProps) {

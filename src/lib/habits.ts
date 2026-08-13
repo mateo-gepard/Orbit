@@ -1,10 +1,10 @@
 import { format, subDays, startOfWeek, addDays, differenceInCalendarDays, startOfDay } from 'date-fns';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 /**
  * Check if a habit is scheduled for a given date
  */
-export function isHabitScheduledForDate(habit: OrbitItem, date: Date): boolean {
+export function isHabitScheduledForDate(habit: ThreadmapItem, date: Date): boolean {
   if (habit.frequency === 'daily') return true;
   if (habit.frequency === 'weekly') {
     const dayOfWeek = (date.getDay() + 6) % 7; // Convert to Mon=0, Sun=6
@@ -22,7 +22,7 @@ export function isHabitScheduledForDate(habit: OrbitItem, date: Date): boolean {
 /**
  * Check if a habit is completed for a given date
  */
-export function isHabitCompletedForDate(habit: OrbitItem, date: Date): boolean {
+export function isHabitCompletedForDate(habit: ThreadmapItem, date: Date): boolean {
   const dateKey = format(date, 'yyyy-MM-dd');
   return habit.completions?.[dateKey] === true;
 }
@@ -30,7 +30,7 @@ export function isHabitCompletedForDate(habit: OrbitItem, date: Date): boolean {
 /**
  * Calculate streak for a habit (consecutive scheduled days completed)
  */
-export function calculateStreak(habit: OrbitItem): number {
+export function calculateStreak(habit: ThreadmapItem): number {
   let streak = 0;
   let currentDate = new Date();
 
@@ -61,7 +61,7 @@ export function calculateStreak(habit: OrbitItem): number {
 /**
  * Get week completion rate for all habits
  */
-export function getWeekCompletionRate(habits: OrbitItem[], weekStart?: Date): number | null {
+export function getWeekCompletionRate(habits: ThreadmapItem[], weekStart?: Date): number | null {
   const start = weekStart || startOfWeek(new Date(), { weekStartsOn: 1 });
   const today = startOfDay(new Date());
   const daysThroughToday = differenceInCalendarDays(today, startOfDay(start));

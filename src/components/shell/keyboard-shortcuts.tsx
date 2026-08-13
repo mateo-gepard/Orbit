@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 import {
   Dialog,
@@ -72,7 +72,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function KeyboardShortcuts() {
   const router = useRouter();
   const { t } = useTranslation();
-  const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
+  const setCommandBarOpen = useThreadmapStore((state) => state.setCommandBarOpen);
   const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {

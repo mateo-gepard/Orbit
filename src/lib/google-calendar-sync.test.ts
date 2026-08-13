@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GCalEvent } from './google-calendar';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
-const testState = vi.hoisted(() => ({ items: [] as OrbitItem[] }));
+const testState = vi.hoisted(() => ({ items: [] as ThreadmapItem[] }));
 const calendarMocks = vi.hoisted(() => ({
   cancelPendingGoogleCalendarRequests: vi.fn(),
   deleteGoogleEvent: vi.fn(),
   fetchGoogleEvents: vi.fn(async (): Promise<GCalEvent[]> => []),
   findGoogleEventByThreadmapItemId: vi.fn(),
   getGoogleEvent: vi.fn(),
-  googleEventIdForOrbitItem: vi.fn((item: Pick<OrbitItem, 'id' | 'userId'>) =>
+  googleEventIdForThreadmapItem: vi.fn((item: Pick<ThreadmapItem, 'id' | 'userId'>) =>
     `google-${item.userId}-${item.id}`),
   hasCalendarPermission: vi.fn(() => true),
-  googleToOrbitEvent: vi.fn(),
+  googleToThreadmapEvent: vi.fn(),
   syncEventToGoogle: vi.fn(),
 }));
 const firestoreMocks = vi.hoisted(() => ({
@@ -27,7 +27,7 @@ vi.mock('./firestore', () => ({
   updateItem: firestoreMocks.updateItem,
 }));
 vi.mock('./store', () => ({
-  useOrbitStore: { getState: vi.fn(() => ({ items: testState.items })) },
+  useThreadmapStore: { getState: vi.fn(() => ({ items: testState.items })) },
 }));
 vi.mock('./settings-store', () => ({
   useSettingsStore: { getState: vi.fn(() => ({ settings: { language: 'en', calendar: { googleCalendarSync: true } } })) },
@@ -38,9 +38,9 @@ vi.mock('./google-calendar', () => ({
   fetchGoogleEvents: calendarMocks.fetchGoogleEvents,
   findGoogleEventByThreadmapItemId: calendarMocks.findGoogleEventByThreadmapItemId,
   getGoogleEvent: calendarMocks.getGoogleEvent,
-  googleEventIdForOrbitItem: calendarMocks.googleEventIdForOrbitItem,
+  googleEventIdForThreadmapItem: calendarMocks.googleEventIdForThreadmapItem,
   hasCalendarPermission: calendarMocks.hasCalendarPermission,
-  googleToOrbitEvent: calendarMocks.googleToOrbitEvent,
+  googleToThreadmapEvent: calendarMocks.googleToThreadmapEvent,
   syncEventToGoogle: calendarMocks.syncEventToGoogle,
 }));
 
@@ -54,7 +54,7 @@ import {
   syncGoogleCalendar,
 } from './google-calendar-sync';
 
-function event(overrides: Partial<OrbitItem> = {}): OrbitItem {
+function event(overrides: Partial<ThreadmapItem> = {}): ThreadmapItem {
   return {
     id: overrides.id || 'event-1',
     type: 'event',
@@ -132,7 +132,7 @@ describe('Google Calendar outbound queue', () => {
       end: { date: '2026-08-07' },
       status: 'confirmed',
     }]);
-    calendarMocks.googleToOrbitEvent.mockReturnValue({
+    calendarMocks.googleToThreadmapEvent.mockReturnValue({
       title: 'Imported event',
       content: '',
       startDate: '2026-08-06',
@@ -160,7 +160,7 @@ describe('Google Calendar outbound queue', () => {
       status: 'confirmed',
       extendedProperties: { private: { threadmapItemId: 'source-event' } },
     }]);
-    calendarMocks.googleToOrbitEvent.mockReturnValue({
+    calendarMocks.googleToThreadmapEvent.mockReturnValue({
       title: 'Cross-device event',
       startDate: '2026-08-06',
     });

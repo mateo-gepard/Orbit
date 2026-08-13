@@ -1,6 +1,6 @@
 # Threadmap production readiness
 
-**Reviewed:** 12 August 2026
+**Reviewed:** 13 August 2026
 
 This checklist is repository-specific. It complements `AUDIT.md` and is based on OWASP ASVS, the Firebase security and launch checklists, the Next.js and Vercel production checklists, GitHub supply-chain guidance, and EU GDPR transparency and data-subject-rights requirements.
 
@@ -36,19 +36,22 @@ This checklist is repository-specific. It complements `AUDIT.md` and is based on
 - GitHub has secret scanning, push protection, extended pattern and validity checks, Dependabot security updates, CodeQL, read-only workflow permissions, branch protection, and four required checks.
 - Production and staging have no user-managed service-account keys. The production IAM audit found one human owner and only expected Google service agents/editors.
 - CI, CodeQL, application tests, Firebase Rules tests, Functions tests, type checking, lint, and production builds pass.
+- Root-domain forwarding and the authenticated `auth.threadmap.app` Resend sending domain are configured. SPF, DKIM, and DMARC checks pass, and the branded passwordless sign-in function is deployed.
+- Google OAuth branding is verified and published as Threadmap. The Calendar `calendar.events.owned` data-access request, scope rationale, and demo video were submitted for Google review.
+- A complete production gate passed on 13 August 2026: environment preflight, production dependency audits, license and EU-region policies, lint, type checking, 461 application tests, 19 Firestore/Storage Rules tests, 49 Functions/MCP tests, and the Next.js production build. Production deployment evidence remains in Vercel rather than embedding a deployment ID that becomes stale after every release; `threadmap.app` is live.
 
 ## Release blockers requiring owner action
 
-- [ ] **Provide the legal identity.** Set `LEGAL_ENTITY_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_POSTAL_ADDRESS`, and `SECURITY_CONTACT_EMAIL`. `threadmap.app` currently has no MX records, so the advertised privacy and security inboxes cannot receive mail. Have qualified counsel validate the policies, legal bases, age threshold, liability wording, retention, and required translations.
+- [ ] **Replace the pre-release legal identity.** All four legal environment variables are configured across Vercel environments, but `LEGAL_ENTITY_NAME` and `LEGAL_POSTAL_ADDRESS` deliberately contain pre-release pending values. Replace them with the real controller/operator identity and address. Forwarding and authenticated sending are operational. Have qualified counsel validate the policies, legal bases, age threshold, liability wording, retention, and required translations.
 - [ ] **Secure provider-owner accounts.** Confirm phishing-resistant MFA and recovery codes for Google Cloud/Firebase, GitHub, Vercel, and the domain registrar. Add a second recovery-capable owner; the cloud project currently has one human owner.
-- [ ] **Finish provider-facing identity setup.** Review the Google OAuth consent screen, production redirect URIs, scopes, branding, and verification status. Customize and test Firebase password-reset and email-link templates on a second device.
+- [ ] **Close provider-facing identity review.** Google branding is published and Calendar verification is submitted; monitor `support@threadmap.app` and the developer mailbox and respond to Google until approval. Run one final second-device passwordless sign-in and recovery-email drill before public launch.
 - [ ] **Run the remaining human release drill.** Verify cross-account isolation with two real test users, offline/reconnect conflict handling, files, Calendar connect/disconnect, MCP connect/revoke, mobile install, notification delivery, rollback ownership, and alert delivery to a human.
 - [ ] **Choose client error reporting.** Select a privacy-reviewed provider and retention period before adding browser error telemetry. Server/runtime, uptime, CI, and cloud alerts are already active.
 - [ ] **Decide ownership of legacy Google API keys.** `OrbitApiKey` and `API-Schlüssel 2` are unrestricted and were not found in Vercel production or tracked source. Confirm external consumers before restricting or deleting them. `EduVids` appears unrelated and was left untouched.
 - [ ] **Observe before blocking at the WAF.** Review the monitoring-only API burst rule after representative traffic, then choose a blocking threshold. This is deliberately not enforced blindly.
-- [ ] **Decide whether to upgrade Vercel.** Skew Protection is unavailable on the current plan; preview SSO, fork protection, security headers, App Check, and WAF monitoring are active without it.
-- [ ] **Resolve the upstream development advisory.** The only open Dependabot alert is moderate and development-only: Firebase CLI uses `gaxios` 6, which uses `uuid` 9. The current Firebase CLI has no compatible patched dependency path, so a forced major override was not applied.
-- [ ] **Complete the production preflight.** `npm run release:check` now runs correctly and fails only for the four missing legal values above.
+- [ ] **Upgrade Vercel to a paid organizational plan.** The adopted Revision 3 gate prohibits Hobby for real services/data. Skew Protection and historical WAF rule metrics are also unavailable on the current plan.
+- [ ] **Track the upstream development advisory.** Production dependency audits pass with zero findings. The current Firebase CLI development graph uses `@google-cloud/pubsub` 5.x and `@opentelemetry/core` 1.30.1, which is affected by moderate advisory `GHSA-8988-4f7v-96qf`. The patched chain requires Pub/Sub 6.x while Firebase CLI declares 5.x, so no unsafe forced major override was applied.
+- [x] **Complete the technical production preflight.** `npm run release:check` and the complete technical gate pass with explicit pre-release legal values. This does not replace the real legal identity or owner approvals above.
 
 ## Important follow-ups
 

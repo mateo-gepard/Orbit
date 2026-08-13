@@ -1,4 +1,4 @@
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 import { calculateStreak } from './habits';
 
 // ═══════════════════════════════════════════════════════════
@@ -150,7 +150,7 @@ const CATEGORY_META: Record<string, { label: string; icon: string }> = {
 
 // ─── Compute current values ────────────────────────────────
 
-function getCategoryValue(category: string, items: OrbitItem[]): number {
+function getCategoryValue(category: string, items: ThreadmapItem[]): number {
   switch (category) {
     case 'streak': {
       const habits = items.filter((i) => i.type === 'habit' && i.status === 'active');
@@ -187,7 +187,7 @@ function getCategoryValue(category: string, items: OrbitItem[]): number {
 
 // ─── Public API ────────────────────────────────────────────
 
-export function computeBadges(items: OrbitItem[]): BadgeCategory[] {
+export function computeBadges(items: ThreadmapItem[]): BadgeCategory[] {
   const categoryOrder = ['streak', 'tasks', 'projects', 'goals', 'habits', 'notes', 'links'];
 
   return categoryOrder.map((catId) => {

@@ -25,7 +25,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import {
   ProjectRoadmapNode,
   MilestoneRoadmapNode,
@@ -61,8 +61,8 @@ function graphAriaLabels(translate: Translate): Partial<AriaLabelConfig> {
 interface ProjectRoadmapProps {
   open: boolean;
   onClose: () => void;
-  project: OrbitItem;
-  allItems: OrbitItem[];
+  project: ThreadmapItem;
+  allItems: ThreadmapItem[];
   onNavigate: (itemId: string) => void;
 }
 
@@ -93,7 +93,7 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
-      const data = node.data as { item?: OrbitItem };
+      const data = node.data as { item?: ThreadmapItem };
       if (data.item) {
         onNavigate(data.item.id);
         onClose();

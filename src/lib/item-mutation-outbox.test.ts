@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 import {
   enqueueItemMutation,
   blockingItemMutationIds,
@@ -23,7 +23,7 @@ function memoryStorage(): Storage {
   };
 }
 
-function item(overrides: Partial<OrbitItem> = {}): OrbitItem {
+function item(overrides: Partial<ThreadmapItem> = {}): ThreadmapItem {
   return {
     id: 'item-1',
     userId: 'user-a',

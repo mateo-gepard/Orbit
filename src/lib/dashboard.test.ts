@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { eventOccursOnDate, getProjectTaskProgress } from './dashboard';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
-function item(overrides: Partial<OrbitItem>): OrbitItem {
+function item(overrides: Partial<ThreadmapItem>): ThreadmapItem {
   return {
     id: 'item',
     type: 'task',

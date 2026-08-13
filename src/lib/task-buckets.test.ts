@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { getTaskBuckets } from './task-buckets';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
-function task(overrides: Partial<OrbitItem>): OrbitItem {
+function task(overrides: Partial<ThreadmapItem>): ThreadmapItem {
   return {
     id: overrides.id ?? crypto.randomUUID(),
     type: 'task',

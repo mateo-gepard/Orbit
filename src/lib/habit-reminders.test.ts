@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { formatHabitTime, getDueHabitReminders, parseHabitTime } from './habit-reminders';
-import type { ItemStatus, OrbitItem } from './types';
+import type { ItemStatus, ThreadmapItem } from './types';
 
-function habit(overrides: Partial<OrbitItem> = {}): OrbitItem {
+function habit(overrides: Partial<ThreadmapItem> = {}): ThreadmapItem {
   return {
     id: 'h1',
     title: 'Read',

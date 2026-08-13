@@ -1,4 +1,4 @@
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 export type SortKey = 'dueDate' | 'priority' | 'createdAt' | 'title';
 
@@ -14,7 +14,7 @@ const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
  * with everything unscheduled — and the `createdAt` comparator had to be
  * written backwards, which made the direction arrow disagree with the list.
  */
-export function sortTasks(tasks: OrbitItem[], sortKey: SortKey, ascending: boolean): OrbitItem[] {
+export function sortTasks(tasks: ThreadmapItem[], sortKey: SortKey, ascending: boolean): ThreadmapItem[] {
   const direction = ascending ? 1 : -1;
   return [...tasks].sort((a, b) => {
     switch (sortKey) {

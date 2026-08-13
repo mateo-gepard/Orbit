@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { getAutoArchiveTaskIds } from './auto-archive';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 const NOW = Date.UTC(2026, 7, 6, 12);
 const DAY = 24 * 60 * 60 * 1000;
 
-function item(overrides: Partial<OrbitItem>): OrbitItem {
+function item(overrides: Partial<ThreadmapItem>): ThreadmapItem {
   return {
     id: 'item',
     type: 'task',

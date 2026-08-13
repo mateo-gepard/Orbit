@@ -26,6 +26,12 @@ import {
   mfaRecoveryDigest,
   normalizeMfaRecoveryCode,
 } from './mfa-recovery';
+import {
+  authEmailRateDigest,
+  brandedThreadmapSignInUrl,
+  normalizeSignInEmail,
+  type AuthEmailRateScope,
+} from './auth-email';
 
 initializeApp();
 
@@ -45,6 +51,8 @@ const vapidPublicKey = defineSecret('VAPID_PUBLIC_KEY');
 const vapidPrivateKey = defineSecret('VAPID_PRIVATE_KEY');
 const scrapeRateLimitSharedSecret = defineSecret('SCRAPE_RATE_LIMIT_SHARED_SECRET');
 const mfaRecoveryHmacKey = defineSecret('MFA_RECOVERY_HMAC_KEY');
+const resendApiKey = defineSecret('RESEND_API_KEY');
+const authEmailHmacKey = defineSecret('AUTH_EMAIL_HMAC_KEY');
 const VAPID_SUBJECT = 'mailto:notifications@threadmap.app';
 const PAGE_SIZE = 100;
 const MAX_DUE_PER_RUN = 500;
@@ -65,6 +73,11 @@ const MAX_UPLOAD_INTENTS_PER_WINDOW = 20;
 const MFA_RECOVERY_LIFETIME_MS = 365 * 24 * 60 * 60_000;
 const MFA_RECOVERY_RATE_WINDOW_MS = 15 * 60_000;
 const MFA_RECOVERY_RATE_LIMIT = 8;
+const AUTH_EMAIL_RATE_WINDOW_MS = 15 * 60_000;
+const AUTH_EMAIL_ADDRESS_LIMIT = 5;
+const AUTH_EMAIL_IP_LIMIT = 25;
+const THREADMAP_APP_URL = 'https://threadmap.app/';
+const THREADMAP_AUTH_EMAIL_FROM = 'Threadmap <sign-in@auth.threadmap.app>';
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -761,6 +774,171 @@ async function enforceMfaRecoveryRateLimit(request: unknown, secret: string): Pr
     throw new HttpsError('resource-exhausted', 'Too many recovery attempts. Try again later.');
   }
 }
+
+function authEmailRateRef(scope: AuthEmailRateScope, value: string, secret: string) {
+  const digest = authEmailRateDigest(scope, value, secret);
+  return db.doc(`authEmailRateLimits/${scope}_${digest}`);
+}
+
+async function consumeAuthEmailRateLimit(
+  email: string,
+  sourceIp: string,
+  secret: string,
+): Promise<void> {
+  const now = Date.now();
+  const quotas = [
+    { ref: authEmailRateRef('address', email, secret), limit: AUTH_EMAIL_ADDRESS_LIMIT },
+    ...(sourceIp === 'unknown'
+      ? []
+      : [{ ref: authEmailRateRef('ip', sourceIp, secret), limit: AUTH_EMAIL_IP_LIMIT }]),
+  ];
+
+  await db.runTransaction(async (transaction) => {
+    const snapshots = [];
+    for (const quota of quotas) snapshots.push(await transaction.get(quota.ref));
+
+    const updates = snapshots.map((snapshot, index) => {
+      const current = snapshot.data() || {};
+      const storedWindowStart = Number(current.windowStart || 0);
+      const windowStart = now - storedWindowStart < AUTH_EMAIL_RATE_WINDOW_MS
+        ? storedWindowStart
+        : now;
+      const attempts = windowStart === storedWindowStart ? Number(current.attempts || 0) : 0;
+      if (attempts >= quotas[index].limit) {
+        throw new HttpsError('resource-exhausted', 'Too many sign-in emails. Try again later.');
+      }
+      return { ref: quotas[index].ref, windowStart, attempts: attempts + 1 };
+    });
+
+    for (const update of updates) {
+      transaction.set(update.ref, {
+        windowStart: update.windowStart,
+        attempts: update.attempts,
+        updatedAt: now,
+        expireAt: Timestamp.fromMillis(update.windowStart + (2 * AUTH_EMAIL_RATE_WINDOW_MS)),
+      });
+    }
+  });
+}
+
+function escapeEmailHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+async function sendThreadmapSignInEmail(email: string, signInLink: string): Promise<void> {
+  const apiKey = resendApiKey.value().trim();
+  if (!apiKey) throw new Error('RESEND_API_KEY is not configured.');
+  const safeLink = escapeEmailHtml(signInLink);
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `orbit-sign-in-${createHash('sha256').update(signInLink).digest('hex').slice(0, 32)}`,
+    },
+    body: JSON.stringify({
+      from: THREADMAP_AUTH_EMAIL_FROM,
+      to: [email],
+      subject: 'Your secure Threadmap sign-in link',
+      html: `<!doctype html>
+<html lang="en">
+  <body style="margin:0;background:#f4f1ec;color:#1f2426;font-family:Arial,Helvetica,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Use this one-time link to sign in to Threadmap.</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ec;padding:32px 16px;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e6e0d8;border-radius:20px;overflow:hidden;">
+          <tr><td style="padding:32px 36px 16px;">
+            <div style="display:inline-block;width:42px;height:42px;line-height:42px;text-align:center;border-radius:13px;background:#1f2426;color:#ffffff;font-size:24px;font-weight:800;">T</div>
+            <div style="margin-top:18px;color:#6b625b;font-size:13px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;">Threadmap account security</div>
+            <h1 style="margin:10px 0 12px;font-size:30px;line-height:1.2;letter-spacing:-0.6px;">Sign in to Threadmap</h1>
+            <p style="margin:0;color:#625b55;font-size:16px;line-height:1.65;">You requested a secure sign-in link for your Threadmap account. This link can be used once and expires soon.</p>
+          </td></tr>
+          <tr><td style="padding:18px 36px 24px;">
+            <a href="${safeLink}" style="display:inline-block;background:#df643f;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;padding:14px 22px;border-radius:12px;">Continue to Threadmap</a>
+          </td></tr>
+          <tr><td style="padding:0 36px 32px;">
+            <p style="margin:0 0 12px;color:#625b55;font-size:14px;line-height:1.6;">The button opens <strong>threadmap.app</strong>. Threadmap will never ask you to reply with a password or recovery code.</p>
+            <p style="margin:0;color:#8a8179;font-size:13px;line-height:1.55;">If you did not request this email, you can safely ignore it. No account access is granted unless the link is opened.</p>
+          </td></tr>
+          <tr><td style="border-top:1px solid #eee8e1;padding:18px 36px;color:#928980;font-size:12px;line-height:1.5;">Threadmap is the productivity workspace available at threadmap.app.</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`,
+      text: [
+        'Sign in to Threadmap',
+        '',
+        'You requested a secure sign-in link for your Threadmap account.',
+        'This one-time link expires soon:',
+        signInLink,
+        '',
+        'The link opens threadmap.app. Threadmap will never ask you to reply with a password or recovery code.',
+        'If you did not request this email, you can safely ignore it.',
+      ].join('\n'),
+      tags: [{ name: 'category', value: 'authentication' }],
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Resend rejected the authentication email with status ${response.status}.`);
+  }
+}
+
+export const sendThreadmapSignInLink = onCall(
+  {
+    region: FUNCTION_REGION,
+    enforceAppCheck: ENFORCE_APP_CHECK,
+    secrets: [resendApiKey, authEmailHmacKey],
+    timeoutSeconds: 30,
+    maxInstances: 10,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['email'])) {
+      throw new HttpsError('invalid-argument', 'The sign-in request contains unsupported fields.');
+    }
+    const email = normalizeSignInEmail(data.email);
+    if (!email) throw new HttpsError('invalid-argument', 'Enter a valid email address.');
+    const forwarded = request.rawRequest.headers['x-forwarded-for'];
+    const sourceIp = request.rawRequest.ip
+      || (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '')
+      || 'unknown';
+    const quotaSecret = authEmailHmacKey.value().trim();
+    if (quotaSecret.length < 32) {
+      console.error(JSON.stringify({ component: 'auth-email', event: 'invalid-hmac-secret' }));
+      throw new HttpsError('unavailable', 'Threadmap sign-in is temporarily unavailable.');
+    }
+    await consumeAuthEmailRateLimit(email, sourceIp, quotaSecret);
+
+    try {
+      const generatedLink = await auth.generateSignInWithEmailLink(email, {
+        url: THREADMAP_APP_URL,
+        handleCodeInApp: true,
+      });
+      const signInLink = brandedThreadmapSignInUrl(generatedLink);
+      await sendThreadmapSignInEmail(email, signInLink);
+      console.info(JSON.stringify({
+        component: 'auth-email',
+        event: 'sign-in-link-sent',
+        addressHash: createHash('sha256').update(email).digest('hex').slice(0, 12),
+      }));
+      return { sent: true };
+    } catch (error) {
+      console.error(JSON.stringify({
+        component: 'auth-email',
+        event: 'sign-in-link-failed',
+        error: error instanceof Error ? error.message : 'unknown',
+      }));
+      throw new HttpsError('unavailable', 'Threadmap could not send the sign-in email. Please try again.');
+    }
+  },
+);
 
 export const getMfaRecoveryCodeStatus = onCall(
   {

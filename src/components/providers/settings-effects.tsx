@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useTheme } from 'next-themes';
 import { useSettingsStore } from '@/lib/settings-store';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
 import { getAutoArchiveTaskIds } from '@/lib/auto-archive';
 import { readableForeground } from '@/lib/utils';
@@ -80,7 +80,7 @@ export function SettingsEffects() {
   ]);
 
   // ── Auto-archive completed items ─────────────────────────
-  const items = useOrbitStore((s) => s.items);
+  const items = useThreadmapStore((s) => s.items);
   const autoArchiveDays = settings.autoArchiveDays;
 
   useEffect(() => {

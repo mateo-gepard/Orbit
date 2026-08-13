@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { computeBadges } from './badges';
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
-function item(id: string, linkedIds: string[] = []): OrbitItem {
+function item(id: string, linkedIds: string[] = []): ThreadmapItem {
   const now = Date.now();
   return {
     id,

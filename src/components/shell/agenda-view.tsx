@@ -8,10 +8,10 @@ import { eventOccursOnDate } from '@/lib/dashboard';
 import { formatHabitTime } from '@/lib/habit-reminders';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 
 interface AgendaViewProps {
-  items: OrbitItem[];
+  items: ThreadmapItem[];
   start: Date;
   /** How many days forward to list. */
   days: number;

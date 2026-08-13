@@ -1,4 +1,4 @@
-import type { OrbitItem } from './types';
+import type { ThreadmapItem } from './types';
 
 /**
  * One definition of "matches this search".
@@ -23,7 +23,7 @@ function fold(value: string, language: string): string {
 }
 
 export function matchesSearch(
-  item: OrbitItem,
+  item: ThreadmapItem,
   query: string,
   language: string,
   options: ItemSearchOptions = {}
@@ -42,10 +42,10 @@ export function matchesSearch(
 }
 
 export function searchItems(
-  items: readonly OrbitItem[],
+  items: readonly ThreadmapItem[],
   query: string,
   language: string,
   options: ItemSearchOptions = {}
-): OrbitItem[] {
+): ThreadmapItem[] {
   return items.filter((item) => matchesSearch(item, query, language, options));
 }
