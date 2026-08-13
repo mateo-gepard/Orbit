@@ -33,7 +33,7 @@ export type LifeAreaTag = typeof LIFE_AREA_TAGS[number];
 // The Universal Item
 // ═══════════════════════════════════════════════════════════
 
-export interface OrbitItem {
+export interface ThreadmapItem {
   id: string;
   type: ItemType;
   status: ItemStatus;
@@ -112,6 +112,12 @@ export interface OrbitItem {
   // User
   userId: string;
 }
+
+/**
+ * @deprecated Use `ThreadmapItem`. Kept temporarily so partially migrated
+ * modules remain compatible while the product rename lands incrementally.
+ */
+export type OrbitItem = ThreadmapItem;
 
 export interface ChecklistItem {
   id: string;
