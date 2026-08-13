@@ -14,6 +14,7 @@ vi.mock('./verified-storage', () => ({
 
 import {
   MAX_WISHLIST_ITEMS,
+  mergeWishlistCloudData,
   pickDuelPair,
   useWishlistStore,
   type VaultItem,
@@ -35,6 +36,36 @@ function item(index: number): VaultItem {
 beforeEach(() => {
   useWishlistStore.getState()._setSyncUserId(null);
   useWishlistStore.setState({ items: [], duels: [], cloudDirty: false });
+});
+
+describe('Wishlist cross-device reconciliation', () => {
+  it('keeps additions made independently on two devices', () => {
+    const merged = mergeWishlistCloudData(
+      { items: [{ ...item(0), updatedAt: 10 }], duels: [] },
+      { items: [{ ...item(1), updatedAt: 20 }], duels: [] },
+    );
+
+    expect(merged.items.map((entry) => entry.id)).toEqual(['item-0', 'item-1']);
+  });
+
+  it('keeps the newest edit when both devices changed the same wish', () => {
+    const merged = mergeWishlistCloudData(
+      { items: [{ ...item(0), name: 'Local edit', updatedAt: 30 }], duels: [] },
+      { items: [{ ...item(0), name: 'Cloud edit', updatedAt: 20 }], duels: [] },
+    );
+
+    expect(merged.items[0].name).toBe('Local edit');
+  });
+
+  it('does not resurrect an item deleted on another device', () => {
+    const merged = mergeWishlistCloudData(
+      { items: [{ ...item(0), updatedAt: 10 }], duels: [] },
+      { items: [], duels: [], deletedItems: { 'item-0': 20 } },
+    );
+
+    expect(merged.items).toEqual([]);
+    expect(merged.deletedItems['item-0']).toBe(20);
+  });
 });
 
 describe('Wishlist capacity and auction safety', () => {

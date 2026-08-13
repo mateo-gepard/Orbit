@@ -8,7 +8,9 @@
 :root {
   --visual-viewport-height: 100vh;
   --visual-viewport-offset-top: 0px;
+  --visual-viewport-bottom: 0px;
   --keyboard-inset: 0px;
+  --keyboard-safe-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
   --safe-area-max-bottom: env(safe-area-max-inset-bottom, 36px);
   color-scheme: light;
   -webkit-text-size-adjust: 100%;
@@ -125,13 +127,13 @@ select,
   top: var(--visual-viewport-offset-top);
   bottom: auto;
   height: var(--visual-viewport-height);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--keyboard-safe-bottom);
 }
 
 [data-slot="sheet-content"][data-side="bottom"] {
-  bottom: calc(var(--keyboard-inset) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--visual-viewport-bottom) + var(--keyboard-safe-bottom));
   max-height: calc(
-    var(--visual-viewport-height) - max(0.75rem, env(safe-area-inset-top, 0px))
+    var(--visual-viewport-height) - max(0.75rem, var(--safe-top))
   );
   overflow-y: auto;
 }
@@ -158,7 +160,7 @@ select,
   [data-slot="popover-content"],
   [data-slot="dropdown-menu-content"],
   [data-slot="select-content"] {
-    max-width: calc(100vw - max(1.5rem, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px)));
+    max-width: calc(100vw - max(1.5rem, var(--safe-left) + var(--safe-right)));
     max-height: calc(var(--visual-viewport-height) - 1.5rem);
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -168,15 +170,15 @@ select,
 @media (max-width: 767px), (max-height: 620px) and (pointer: coarse) {
   [data-slot="dialog-content"] {
     top: auto !important;
-    right: max(0.75rem, env(safe-area-inset-right, 0px)) !important;
-    bottom: calc(var(--keyboard-inset) + max(0.5rem, env(safe-area-inset-bottom, 0px))) !important;
-    left: max(0.75rem, env(safe-area-inset-left, 0px)) !important;
+    right: max(0.75rem, var(--safe-right)) !important;
+    bottom: calc(var(--visual-viewport-bottom) + max(0.5rem, var(--keyboard-safe-bottom))) !important;
+    left: max(0.75rem, var(--safe-left)) !important;
     width: auto !important;
     max-width: none !important;
     max-height: calc(
       var(--visual-viewport-height) -
-      max(1rem, env(safe-area-inset-top, 0px)) -
-      max(1rem, env(safe-area-inset-bottom, 0px))
+      max(1rem, var(--safe-top)) -
+      max(1rem, var(--keyboard-safe-bottom))
     ) !important;
     margin: 0 !important;
     padding: 1.25rem !important;
@@ -203,6 +205,35 @@ select,
     min-height: 44px;
     place-items: center;
   }
+
+  [data-slot="dialog-content"][data-command-bar] {
+    right: 0 !important;
+    bottom: var(--visual-viewport-bottom) !important;
+    left: 0 !important;
+    max-height: calc(var(--visual-viewport-height) - max(0.5rem, var(--safe-top))) !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border-radius: 0 !important;
+  }
+
+  [data-slot="dialog-content"][data-command-bar] > .surface-float {
+    display: flex;
+    width: 100%;
+    max-height: inherit;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  [data-slot="dialog-content"][data-command-bar] [data-command-scroll] {
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+html.keyboard-open #mobile-nav,
+html.keyboard-open #mobile-create-button {
+  pointer-events: none;
+  visibility: hidden;
 }
 
 @media (display-mode: standalone) {

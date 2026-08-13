@@ -28,7 +28,7 @@ import {
 import { scopeThreadmapStore, useThreadmapStore } from '@/lib/store';
 import { scopeAbiturStore, useAbiturStore } from '@/lib/abitur-store';
 import { scopeToolboxStore, useToolboxStore } from '@/lib/toolbox-store';
-import { scopeWishlistStore, useWishlistStore } from '@/lib/wishlist-store';
+import { scopeWishlistStore, useWishlistStore, type WishlistCloudData } from '@/lib/wishlist-store';
 import { scopeSettingsStore, useSettingsStore } from '@/lib/settings-store';
 import { setFlightStorageOwner, subscribeToFlightLogs } from '@/lib/flight';
 import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
@@ -247,19 +247,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       ));
 
-      subscriptions.push(subscribeToToolData<{ items: unknown[]; duels: unknown[] }>(
+      subscriptions.push(subscribeToToolData<WishlistCloudData>(
         accountId,
         'wishlist',
         (data) => {
           if (!isCurrent()) return;
-          if (data) useWishlistStore.getState()._setFromCloud(data as { items: never[]; duels: never[] });
+          if (data) useWishlistStore.getState()._setFromCloud(data);
         },
         {
           getInitialData: () => ({
             items: useWishlistStore.getState().items,
             duels: useWishlistStore.getState().duels,
+            deletedItems: useWishlistStore.getState().deletedItems,
           }),
-          hasPendingLocalChanges: () => useWishlistStore.getState().cloudDirty,
         }
       ));
 

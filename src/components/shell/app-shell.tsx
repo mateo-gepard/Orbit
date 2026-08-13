@@ -69,7 +69,7 @@ function ShellLoadingFrame({ german }: { german: boolean }) {
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <header
             className="flex shrink-0 items-center gap-3 border-b border-border/40 px-4 lg:hidden"
-            style={{ minHeight: '48px', paddingTop: 'env(safe-area-inset-top, 0px)' }}
+            style={{ height: 'calc(48px + var(--safe-top))', paddingTop: 'var(--safe-top)' }}
           >
             <div className="h-8 w-8 rounded-xl bg-foreground/[0.06]" />
             <ThreadmapMark className="h-7 w-7 text-foreground" />
@@ -85,8 +85,8 @@ function ShellLoadingFrame({ german }: { german: boolean }) {
         </div>
 
         <div
-          className="fixed inset-x-0 bottom-0 h-[var(--bottom-nav-height)] border-t border-border/40 bg-background lg:hidden"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          className="fixed inset-x-0 bottom-0 border-t border-border/40 bg-background lg:hidden"
+          style={{ height: 'calc(var(--bottom-nav-height) + var(--safe-bottom))', paddingBottom: 'var(--safe-bottom)' }}
         />
       </div>
     </div>
@@ -189,8 +189,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <header
             className="flex shrink-0 items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4 lg:hidden"
             style={{
-              minHeight: '48px',
-              paddingTop: 'env(safe-area-inset-top, 0px)',
+              height: 'calc(48px + var(--safe-top))',
+              paddingTop: 'var(--safe-top)',
             }}
           >
             <Button
@@ -251,7 +251,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   against the *nearest* scrolling ancestor, so every sticky
                   header in the app was pinned to a box that never moves. The
                   <main> above already clips the x axis. */}
-              <div className="pb-[calc(48px+env(safe-area-inset-bottom,0px)+16px)] lg:pb-0">
+              <div className="pb-[var(--mobile-content-bottom)] lg:pb-0">
                 {children}
               </div>
             </main>

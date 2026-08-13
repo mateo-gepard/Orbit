@@ -49,6 +49,7 @@ export interface VaultItem {
   duelsPlayed: number;
   duelsWon: number;
   addedAt: number; // timestamp
+  updatedAt?: number; // timestamp used for cross-device reconciliation
   acquiredAt?: number; // timestamp — moved to acquired shelf
   removedAt?: number; // timestamp — removed/deaccessioned
 }
@@ -208,13 +209,18 @@ export function formatPrice(amount: number | undefined, currency: string): strin
 let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 let _localRevision = 0;
-let _syncedRevision = 0;
-let _cloudSnapshotReceived = false;
 let _scopeGeneration = 0;
 
-interface WishlistCloudData {
+export interface WishlistCloudData {
   items: VaultItem[];
   duels: AuctionDuel[];
+  deletedItems?: Record<string, number>;
+}
+
+interface NormalizedWishlistCloudData {
+  items: VaultItem[];
+  duels: AuctionDuel[];
+  deletedItems: Record<string, number>;
 }
 
 /** Strip `undefined` values from objects — Firestore rejects them */
@@ -270,6 +276,11 @@ function sanitizeVaultItem(value: unknown): VaultItem | null {
     duelsPlayed: Math.round(finiteNumber(item.duelsPlayed, 0, 0, 1_000_000)),
     duelsWon: Math.round(finiteNumber(item.duelsWon, 0, 0, 1_000_000)),
     addedAt: optionalTimestamp(item.addedAt) || Date.now(),
+    updatedAt: optionalTimestamp(item.updatedAt)
+      || optionalTimestamp(item.removedAt)
+      || optionalTimestamp(item.acquiredAt)
+      || optionalTimestamp(item.addedAt)
+      || Date.now(),
     ...(optionalTimestamp(item.acquiredAt) ? { acquiredAt: optionalTimestamp(item.acquiredAt) } : {}),
     ...(optionalTimestamp(item.removedAt) ? { removedAt: optionalTimestamp(item.removedAt) } : {}),
   };
@@ -341,7 +352,75 @@ function cleanItems(items: unknown[]): VaultItem[] {
   return items.map(sanitizeVaultItem).filter((item): item is VaultItem => item !== null);
 }
 
-function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
+const MAX_DELETION_TOMBSTONES = 1_000;
+
+function sanitizeDeletedItems(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([id, deletedAt]) => id.length > 0
+        && id.length <= 160
+        && typeof deletedAt === 'number'
+        && Number.isFinite(deletedAt)
+        && deletedAt > 0)
+      .sort((left, right) => Number(right[1]) - Number(left[1]))
+      .slice(0, MAX_DELETION_TOMBSTONES)
+  );
+}
+
+function normalizeWishlistCloudData(data: WishlistCloudData): NormalizedWishlistCloudData {
+  const items = cleanItems(Array.isArray(data.items) ? data.items : []).slice(0, MAX_WISHLIST_ITEMS);
+  return {
+    items,
+    duels: sanitizeDuels(data.duels, new Set(items.map((item) => item.id))),
+    deletedItems: sanitizeDeletedItems(data.deletedItems),
+  };
+}
+
+function itemVersion(item: VaultItem): number {
+  return item.updatedAt || item.removedAt || item.acquiredAt || item.addedAt;
+}
+
+/** Merge independently edited Wishlist documents without dropping either device's additions. */
+export function mergeWishlistCloudData(
+  localData: WishlistCloudData,
+  cloudData: WishlistCloudData,
+): NormalizedWishlistCloudData {
+  const local = normalizeWishlistCloudData(localData);
+  const cloud = normalizeWishlistCloudData(cloudData);
+  const deletedItems = sanitizeDeletedItems({ ...cloud.deletedItems, ...local.deletedItems });
+  for (const [id, deletedAt] of Object.entries(cloud.deletedItems)) {
+    deletedItems[id] = Math.max(deletedItems[id] || 0, deletedAt);
+  }
+
+  const order = [...local.items.map((item) => item.id)];
+  for (const item of cloud.items) {
+    if (!order.includes(item.id)) order.push(item.id);
+  }
+
+  const itemsById = new Map(cloud.items.map((item) => [item.id, item]));
+  for (const localItem of local.items) {
+    const cloudItem = itemsById.get(localItem.id);
+    if (!cloudItem || itemVersion(localItem) >= itemVersion(cloudItem)) {
+      itemsById.set(localItem.id, localItem);
+    }
+  }
+
+  const items = order
+    .map((id) => itemsById.get(id))
+    .filter((item): item is VaultItem => Boolean(item))
+    .filter((item) => (deletedItems[item.id] || 0) < itemVersion(item))
+    .slice(0, MAX_WISHLIST_ITEMS);
+  const itemIds = new Set(items.map((item) => item.id));
+
+  return {
+    items,
+    duels: sanitizeDuels([...cloud.duels, ...local.duels], itemIds),
+    deletedItems,
+  };
+}
+
+function scheduleSave(items: VaultItem[], duels: AuctionDuel[], deletedItems: Record<string, number>) {
   if (!_syncUserId) {
     useWishlistStore.setState({ cloudDirty: false });
     return;
@@ -354,13 +433,12 @@ function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
     if (_syncUserId !== scheduledUserId
         || _scopeGeneration !== scheduledGeneration
         || revision < _localRevision) return;
-    const clean = sanitizeForFirestore({ items, duels } satisfies WishlistCloudData);
+    const clean = sanitizeForFirestore({ items, duels, deletedItems } satisfies WishlistCloudData);
     try {
       await saveToolData(scheduledUserId, 'wishlist', clean);
       if (_syncUserId !== scheduledUserId
           || _scopeGeneration !== scheduledGeneration
           || revision !== _localRevision) return;
-      _syncedRevision = Math.max(_syncedRevision, revision);
       useWishlistStore.setState({ cloudDirty: false });
     } catch (error) {
       if (_syncUserId !== scheduledUserId
@@ -384,6 +462,7 @@ function scheduleSave(items: VaultItem[], duels: AuctionDuel[]) {
 interface WishlistState {
   items: VaultItem[];
   duels: AuctionDuel[];
+  deletedItems: Record<string, number>;
   cloudDirty: boolean;
 
   // CRUD
@@ -413,64 +492,68 @@ export const useWishlistStore = create<WishlistState>()(
     (set, get) => ({
       items: [],
       duels: [],
+      deletedItems: {},
       cloudDirty: false,
 
       addItem: (itemData) => {
         if (get().items.length >= MAX_WISHLIST_ITEMS) {
           return false;
         }
+        const now = Date.now();
         const item: VaultItem = cleanItem({
           ...itemData,
           id: crypto.randomUUID(),
           elo: ELO_DEFAULT,
           duelsPlayed: 0,
           duelsWon: 0,
-          addedAt: Date.now(),
+          addedAt: now,
+          updatedAt: now,
         });
         const items = [...get().items, item];
         set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels);
+        scheduleSave(items, get().duels, get().deletedItems);
         return true;
       },
 
       updateItem: (id, updates) => {
         const items = get().items.map((item) => {
           if (item.id !== id) return item;
-          return sanitizeVaultItem({ ...item, ...updates, id: item.id }) || item;
+          return sanitizeVaultItem({ ...item, ...updates, id: item.id, updatedAt: Date.now() }) || item;
         });
         set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels);
+        scheduleSave(items, get().duels, get().deletedItems);
       },
 
       acquireItem: (id) => {
         const items = get().items.map((i) =>
-          i.id === id ? { ...i, acquiredAt: Date.now() } : i
+          i.id === id ? { ...i, acquiredAt: Date.now(), updatedAt: Date.now() } : i
         );
         set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels);
+        scheduleSave(items, get().duels, get().deletedItems);
       },
 
       removeItem: (id) => {
         const items = get().items.map((i) =>
-          i.id === id ? { ...i, removedAt: Date.now() } : i
+          i.id === id ? { ...i, removedAt: Date.now(), updatedAt: Date.now() } : i
         );
         set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels);
+        scheduleSave(items, get().duels, get().deletedItems);
       },
 
       restoreItem: (id) => {
         const items = get().items.map((i) =>
-          i.id === id ? { ...i, acquiredAt: undefined, removedAt: undefined } : i
+          i.id === id ? { ...i, acquiredAt: undefined, removedAt: undefined, updatedAt: Date.now() } : i
         );
         set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels);
+        scheduleSave(items, get().duels, get().deletedItems);
       },
 
       deleteItem: (id) => {
         const items = get().items.filter((i) => i.id !== id);
         const duels = get().duels.filter((d) => d.itemA !== id && d.itemB !== id);
-        set({ items, duels, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, duels);
+        const deletedItems = sanitizeDeletedItems({ ...get().deletedItems, [id]: Date.now() });
+        set({ items, duels, deletedItems, cloudDirty: Boolean(_syncUserId) });
+        scheduleSave(items, duels, deletedItems);
       },
 
       recordDuel: (winnerId, loserId) => {
@@ -481,12 +564,13 @@ export const useWishlistStore = create<WishlistState>()(
 
         const { newWinnerElo, newLoserElo } = calculateElo(winner.elo, loser.elo);
 
+        const now = Date.now();
         const updatedItems = items.map((i) => {
           if (i.id === winnerId) {
-            return { ...i, elo: newWinnerElo, duelsPlayed: i.duelsPlayed + 1, duelsWon: i.duelsWon + 1 };
+            return { ...i, elo: newWinnerElo, duelsPlayed: i.duelsPlayed + 1, duelsWon: i.duelsWon + 1, updatedAt: now };
           }
           if (i.id === loserId) {
-            return { ...i, elo: newLoserElo, duelsPlayed: i.duelsPlayed + 1 };
+            return { ...i, elo: newLoserElo, duelsPlayed: i.duelsPlayed + 1, updatedAt: now };
           }
           return i;
         });
@@ -496,12 +580,12 @@ export const useWishlistStore = create<WishlistState>()(
           itemA: winnerId,
           itemB: loserId,
           winnerId,
-          timestamp: Date.now(),
+          timestamp: now,
         };
 
         const duels = [...get().duels, duel].slice(-MAX_DUEL_HISTORY);
         set({ items: updatedItems, duels, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(updatedItems, duels);
+        scheduleSave(updatedItems, duels, get().deletedItems);
       },
 
       getActiveItems: () => get().items.filter((i) => !i.acquiredAt && !i.removedAt),
@@ -514,31 +598,26 @@ export const useWishlistStore = create<WishlistState>()(
 
       _setFromCloud: (data) => {
         try {
-          const firstSnapshot = !_cloudSnapshotReceived;
-          _cloudSnapshotReceived = true;
-          const rawItems = Array.isArray(data.items) ? data.items : [];
-          const items = cleanItems(rawItems).slice(0, MAX_WISHLIST_ITEMS);
-          const duels = sanitizeDuels(data.duels, new Set(items.map((item) => item.id)));
+          const cloud = normalizeWishlistCloudData(data);
           const local = get();
-          if (local.cloudDirty && _localRevision === 0) {
-            if (JSON.stringify(items) === JSON.stringify(cleanItems(local.items))
-                && JSON.stringify(duels) === JSON.stringify(local.duels)) {
-              set({ items, duels, cloudDirty: false });
-            } else if (firstSnapshot) {
-              scheduleSave(local.items, local.duels);
+          if (local.cloudDirty) {
+            const merged = mergeWishlistCloudData(local, cloud);
+            if (JSON.stringify(merged) === JSON.stringify(cloud)) {
+              set({ ...cloud, cloudDirty: false });
+            } else {
+              set({ ...merged, cloudDirty: true });
+              scheduleSave(merged.items, merged.duels, merged.deletedItems);
             }
             return;
           }
-          if (local.cloudDirty) {
-            if (firstSnapshot) scheduleSave(local.items, local.duels);
-            return;
-          }
-          // Ignore cloud echoes while a newer local revision remains unsynced.
-          if (_syncedRevision < _localRevision) return;
-          set({ items, duels, cloudDirty: false });
-          // If entity-cleaning changed any names, write back
-          if (JSON.stringify(items) !== JSON.stringify(rawItems.slice(0, MAX_WISHLIST_ITEMS))) {
-            scheduleSave(items, duels);
+          set({ ...cloud, cloudDirty: false });
+          if (JSON.stringify(cloud) !== JSON.stringify({
+            items: Array.isArray(data.items) ? data.items : [],
+            duels: Array.isArray(data.duels) ? data.duels : [],
+            deletedItems: data.deletedItems || {},
+          })) {
+            set({ cloudDirty: true });
+            scheduleSave(cloud.items, cloud.duels, cloud.deletedItems);
           }
         } catch {
         }
@@ -554,8 +633,6 @@ export const useWishlistStore = create<WishlistState>()(
         }
         _syncUserId = userId;
         _localRevision = 0;
-        _syncedRevision = 0;
-        _cloudSnapshotReceived = false;
         if (!userId) {
           return;
         }
@@ -563,10 +640,16 @@ export const useWishlistStore = create<WishlistState>()(
     }),
     {
       name: 'orbit-wishlist',
-      partialize: (state) => ({ items: state.items, duels: state.duels, cloudDirty: state.cloudDirty }),
+      partialize: (state) => ({
+        items: state.items,
+        duels: state.duels,
+        deletedItems: state.deletedItems,
+        cloudDirty: state.cloudDirty,
+      }),
       merge: (persisted, current) => ({
         ...current,
         ...(persisted as Partial<WishlistState> | undefined),
+        deletedItems: sanitizeDeletedItems((persisted as Partial<WishlistState> | undefined)?.deletedItems),
         cloudDirty: (persisted as { cloudDirty?: unknown } | undefined)?.cloudDirty === true,
       }),
       skipHydration: true,
@@ -591,6 +674,6 @@ export async function scopeWishlistStore(userId: string | null): Promise<void> {
   useWishlistStore.getState()._setSyncUserId(null);
   const target = prepareScopedStorage(WISHLIST_STORAGE_KEY, userId);
   useWishlistStore.persist.setOptions({ name: target.key });
-  if (!target.hasPersistedState) useWishlistStore.setState({ items: [], duels: [], cloudDirty: false });
+  if (!target.hasPersistedState) useWishlistStore.setState({ items: [], duels: [], deletedItems: {}, cloudDirty: false });
   await useWishlistStore.persist.rehydrate();
 }

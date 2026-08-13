@@ -416,6 +416,7 @@ export function CommandBar() {
       }}
     >
       <DialogContent
+        data-command-bar="true"
         showCloseButton={false}
         aria-describedby={undefined}
         aria-busy={submitting}
@@ -442,7 +443,7 @@ export function CommandBar() {
         <DialogTitle className="sr-only">
           {language === 'de' ? 'Suchen oder erstellen' : 'Search or create'}
         </DialogTitle>
-        <div className="surface-float overflow-hidden rounded-t-[28px] rounded-b-none border-b-0 lg:rounded-2xl lg:border-b">
+        <div className="surface-float min-h-0 overflow-hidden rounded-t-[28px] rounded-b-none border-b-0 lg:rounded-2xl lg:border-b">
           <div className="flex h-6 items-center justify-center lg:hidden" aria-hidden="true">
             <span className="h-1 w-9 rounded-full bg-foreground/15" />
           </div>
@@ -546,8 +547,8 @@ export function CommandBar() {
               submitting && 'pointer-events-none opacity-60',
             )}
             style={{
-              maxHeight: 'min(62dvh, calc(var(--app-height) - max(var(--safe-top), 8px) - 96px))',
-              paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)',
+              maxHeight: 'min(62dvh, calc(var(--visual-viewport-height) - 88px))',
+              paddingBottom: 'max(var(--keyboard-safe-bottom), 8px)',
             }}
           >
             {/* Tag suggestions */}
