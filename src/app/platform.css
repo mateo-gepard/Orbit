@@ -8,10 +8,6 @@
 :root {
   --visual-viewport-height: 100vh;
   --visual-viewport-offset-top: 0px;
-  --visual-viewport-bottom: 0px;
-  --keyboard-inset: 0px;
-  --keyboard-safe-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
-  --safe-area-max-bottom: env(safe-area-max-inset-bottom, 36px);
   color-scheme: light;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
