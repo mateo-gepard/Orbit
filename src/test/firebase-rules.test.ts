@@ -312,7 +312,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
 });
 
 rulesDescribe('Storage ownership and content limits', () => {
-  it('allows safe owner uploads and rejects SVG and cross-account reads', async () => {
+  it('allows owner reads of server-written files and rejects every raw client upload', async () => {
     const intentId = 'intent-1';
     const path = `users/${OWNER_ID}/projects/project-1/${intentId}/file.txt`;
     await environment.withSecurityRulesDisabled(async (context) => {
@@ -326,14 +326,14 @@ rulesDescribe('Storage ownership and content limits', () => {
         type: 'text/plain',
         expiresAt: Timestamp.fromMillis(Date.now() + 60_000),
       });
+      await uploadBytes(ref(context.storage(), path), new Blob(['safe']), {
+        contentType: 'text/plain',
+        customMetadata: { threadmapUploadId: intentId },
+      });
     });
     const ownerStorage = environment.authenticatedContext(OWNER_ID).storage();
     const otherStorage = environment.authenticatedContext(OTHER_ID).storage();
 
-    await assertSucceeds(uploadBytes(ref(ownerStorage, path), new Blob(['safe']), {
-      contentType: 'text/plain',
-      customMetadata: { threadmapUploadId: intentId },
-    }));
     await assertSucceeds(getBytes(ref(ownerStorage, path)));
     await assertFails(getBytes(ref(otherStorage, path)));
     await assertFails(uploadBytes(ref(ownerStorage, path), new Blob(['replacement']), {
