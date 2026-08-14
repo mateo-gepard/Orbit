@@ -189,7 +189,7 @@ export function setupViewportHeight(): () => void {
   const setVH = () => {
     const root = document.documentElement;
     const viewport = window.visualViewport;
-    const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
+    const layoutHeight = window.innerHeight;
     const visualHeight = viewport?.height || layoutHeight;
     const visualOffsetTop = Math.max(0, viewport?.offsetTop || 0);
     const visualBottom = Math.max(0, layoutHeight - visualHeight - visualOffsetTop);
@@ -197,12 +197,13 @@ export function setupViewportHeight(): () => void {
 
     root.style.setProperty('--vh', `${visualHeight * 0.01}px`);
     root.style.setProperty('--real-vh', `${visualHeight}px`);
-    root.style.setProperty('--app-height', `${layoutHeight}px`);
+    // Match the pre-optimization PWA contract: the application shell follows
+    // the actually visible viewport instead of staying behind the keyboard.
+    root.style.setProperty('--app-height', `${visualHeight}px`);
     root.style.setProperty('--visual-viewport-height', `${visualHeight}px`);
     root.style.setProperty('--visual-viewport-offset-top', `${visualOffsetTop}px`);
     root.style.setProperty('--visual-viewport-bottom', `${visualBottom}px`);
     root.style.setProperty('--keyboard-inset', `${visualBottom}px`);
-    root.style.setProperty('--keyboard-accessory-height', `${keyboardOpen && isIOS() ? 48 : 0}px`);
     root.style.setProperty('--keyboard-safe-bottom', `${keyboardOpen ? 0 : safeArea.bottom}px`);
     root.style.setProperty('--safe-top', `${safeArea.top}px`);
     root.style.setProperty('--safe-right', `${safeArea.right}px`);
@@ -260,7 +261,6 @@ export function setupViewportHeight(): () => void {
     if (orientationTimer) clearTimeout(orientationTimer);
     if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
     document.documentElement.classList.remove('keyboard-open');
-    document.documentElement.style.removeProperty('--keyboard-accessory-height');
   };
 }
 

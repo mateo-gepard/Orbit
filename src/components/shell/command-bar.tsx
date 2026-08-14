@@ -436,19 +436,16 @@ export function CommandBar() {
           });
         }}
         className={cn(
-          'left-0 right-0 top-auto bottom-0 z-[100] w-full max-w-none translate-x-0 translate-y-0 gap-0 border-0 bg-transparent p-0 shadow-none',
-          'lg:left-1/2 lg:right-auto lg:top-[18vh] lg:bottom-auto lg:max-w-[520px] lg:-translate-x-1/2'
+          'top-[max(var(--safe-top),8px)] z-[100] max-w-[calc(100%-1.5rem)] translate-y-0 gap-0 border-0 bg-transparent p-0 shadow-none',
+          'lg:top-[18vh] lg:max-w-[520px]'
         )}
       >
         <DialogTitle className="sr-only">
           {language === 'de' ? 'Suchen oder erstellen' : 'Search or create'}
         </DialogTitle>
-        <div className="surface-float min-h-0 overflow-hidden rounded-t-[28px] rounded-b-none border-b-0 lg:rounded-2xl lg:border-b">
-          <div className="flex h-6 items-center justify-center lg:hidden" aria-hidden="true">
-            <span className="h-1 w-9 rounded-full bg-foreground/15" />
-          </div>
+        <div className="surface-float min-h-0 overflow-hidden rounded-2xl">
           {/* Input */}
-          <div className="flex items-center gap-3 px-4 pb-3.5 pt-1.5 lg:py-3">
+          <div className="flex items-center gap-3 px-4 py-3.5 lg:py-3">
             <Search className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
             <input
               ref={inputRef}
@@ -547,8 +544,8 @@ export function CommandBar() {
               submitting && 'pointer-events-none opacity-60',
             )}
             style={{
-              maxHeight: 'min(62dvh, calc(var(--visual-viewport-height) - 88px - var(--keyboard-accessory-height)))',
-              paddingBottom: 'max(var(--keyboard-safe-bottom), 8px)',
+              maxHeight: 'min(56dvh, calc(var(--app-height) - max(var(--safe-top), 8px) - 88px))',
+              paddingBottom: 'max(var(--safe-bottom), 8px)',
             }}
           >
             {/* Tag suggestions */}

@@ -61,6 +61,7 @@ function SheetContent({
       <SheetOverlay className={overlayClassName} />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        data-side={side}
         className={cn(
           "surface-panel data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 transition ease-[var(--ease-emphasized)] data-[state=closed]:duration-200 data-[state=open]:duration-300",
           side === "right" &&
