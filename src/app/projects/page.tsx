@@ -14,12 +14,12 @@ import {
   Layers,
   Archive,
 } from "lucide-react";
-import { useOrbitStore } from "@/lib/store";
+import { useThreadmapStore } from "@/lib/store";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createItem } from "@/lib/firestore";
 import { cn, getLocale, shortDatePattern } from "@/lib/utils";
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
-import type { OrbitItem, ProjectTier } from "@/lib/types";
+import type { ThreadmapItem, ProjectTier } from "@/lib/types";
 import { useSettingsStore } from '@/lib/settings-store';
 import {
   getProjectStats as computeProjectStats,
@@ -46,7 +46,7 @@ function getTimestamp() {
 }
 
 export default function ProjectsPage() {
-  const { items, setSelectedItemId } = useOrbitStore();
+  const { items, setSelectedItemId } = useThreadmapStore();
   const { user } = useAuth();
   const { t, tp, lang } = useTranslation();
   const dateFormat = useSettingsStore((state) => state.settings.dateFormat);
@@ -75,7 +75,7 @@ export default function ProjectsPage() {
   );
 
   const projectsByTier = useMemo(() => {
-    const grouped: Record<number, OrbitItem[]> = { 1: [], 2: [], 3: [] };
+    const grouped: Record<number, ThreadmapItem[]> = { 1: [], 2: [], 3: [] };
     for (const p of projects) {
       const tier = p.tier ?? 3;
       grouped[tier].push(p);
@@ -233,7 +233,7 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier 1 Card — Large & Prominent ═══
-  const renderTier1Card = (project: OrbitItem) => {
+  const renderTier1Card = (project: ThreadmapItem) => {
     const stats = getProjectStats(project.id);
     const milestones = getProjectMilestones(project.id);
 
@@ -307,7 +307,7 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier 2 Card — Standard ═══
-  const renderTier2Card = (project: OrbitItem) => {
+  const renderTier2Card = (project: ThreadmapItem) => {
     const stats = getProjectStats(project.id);
     const milestones = getProjectMilestones(project.id);
 
@@ -376,7 +376,7 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier 3 Row — Compact ═══
-  const renderTier3Row = (project: OrbitItem) => {
+  const renderTier3Row = (project: ThreadmapItem) => {
     const stats = getProjectStats(project.id);
 
     return (
@@ -407,7 +407,7 @@ export default function ProjectsPage() {
   };
 
   // ═══ Kanban Project Section ═══
-  const renderKanbanProject = (project: OrbitItem) => {
+  const renderKanbanProject = (project: ThreadmapItem) => {
     const stats = getProjectStats(project.id);
     const columns = [
       { id: "active", label: t('kanban.inProgress'), tasks: getProjectTasks(project.id, "active") },
@@ -749,7 +749,7 @@ export default function ProjectsPage() {
               aria-pressed={viewMode === "grid"}
               aria-label={t('projects.gridView')}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all",
+                "mobile-touch-target flex min-w-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all lg:min-h-0",
                 viewMode === "grid"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground/60 hover:text-foreground",
@@ -763,7 +763,7 @@ export default function ProjectsPage() {
               aria-pressed={viewMode === "kanban"}
               aria-label={t('projects.boardView')}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all",
+                "mobile-touch-target flex min-w-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all lg:min-h-0",
                 viewMode === "kanban"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground/60 hover:text-foreground",
@@ -775,7 +775,7 @@ export default function ProjectsPage() {
           <button
             type="button"
             onClick={handleStartCreating}
-            className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-2 text-[13px] lg:text-[12px] font-medium text-background transition-all hover:opacity-90 active:scale-[0.98]"
+            className="flex min-h-11 items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-all hover:opacity-90 active:scale-[0.98] lg:min-h-0 lg:rounded-lg lg:text-[12px]"
           >
             <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" /> {t('projects.newProject')}
           </button>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import Link from 'next/link';
+import { X } from 'lucide-react';
 import { useAuth } from './auth-provider';
 
 /**
@@ -24,10 +25,10 @@ import {
   subscribeToToolData,
   subscribeToUserSettings,
 } from '@/lib/firestore';
-import { scopeOrbitStore, useOrbitStore } from '@/lib/store';
+import { scopeThreadmapStore, useThreadmapStore } from '@/lib/store';
 import { scopeAbiturStore, useAbiturStore } from '@/lib/abitur-store';
 import { scopeToolboxStore, useToolboxStore } from '@/lib/toolbox-store';
-import { scopeWishlistStore, useWishlistStore } from '@/lib/wishlist-store';
+import { scopeWishlistStore, useWishlistStore, type WishlistCloudData } from '@/lib/wishlist-store';
 import { scopeSettingsStore, useSettingsStore } from '@/lib/settings-store';
 import { setFlightStorageOwner, subscribeToFlightLogs } from '@/lib/flight';
 import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
@@ -48,6 +49,7 @@ import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
 import type { ToolId } from '@/lib/toolbox-store';
 import type { UserSettings } from '@/lib/settings-store';
+import { ensureAppCheck } from '@/lib/firebase';
 
 const MIN_LOADING_TIME = 500;
 const MAX_LOADING_TIME = 6000;
@@ -89,6 +91,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const generationRef = useRef(0);
   const loadingFocusRef = useRef<HTMLDivElement>(null);
   const accountScopeLoading = isLoading || readyScopeKey !== accountScopeKey;
+  // Signing out still clears account-scoped stores, but that background reset
+  // must never make the public landing page, authentication controls, or legal
+  // links inert. The modal lock only protects a real account transition.
+  const workspaceLoading = Boolean(userId) && accountScopeLoading;
   const language = useSettingsStore((state) => state.settings.language);
 
   const configureAccountServices = useCallback((
@@ -100,7 +106,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     stopBriefingScheduler();
     if (localOnly && settings.notifications.enabled) {
-      startBriefingScheduler(userId, () => useOrbitStore.getState().items);
+      startBriefingScheduler(userId, () => useThreadmapStore.getState().items);
     }
 
     if (localOnly) {
@@ -164,7 +170,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setGoogleCalendarOwner(accountId && !localOnly ? accountId : null);
 
       await Promise.all([
-        scopeOrbitStore(accountId),
+        scopeThreadmapStore(accountId),
         scopeAbiturStore(accountId),
         scopeToolboxStore(accountId),
         scopeWishlistStore(accountId),
@@ -174,7 +180,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setReadyScopeKey(accountScopeKey);
 
       if (!accountId) {
-        useOrbitStore.getState()._setSyncUserId(null);
+        useThreadmapStore.getState()._setSyncUserId(null);
         useAbiturStore.getState()._setSyncUserId(null);
         useToolboxStore.getState()._setSyncUserId(null);
         useWishlistStore.getState()._setSyncUserId(null);
@@ -183,8 +189,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (!localOnly) {
+        await ensureAppCheck();
+        if (!isCurrent()) return;
+      }
+
       const cloudUserId = localOnly ? null : accountId;
-      useOrbitStore.getState()._setSyncUserId(cloudUserId);
+      useThreadmapStore.getState()._setSyncUserId(cloudUserId);
       useAbiturStore.getState()._setSyncUserId(cloudUserId);
       useToolboxStore.getState()._setSyncUserId(cloudUserId);
       useWishlistStore.getState()._setSyncUserId(cloudUserId);
@@ -197,7 +208,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       subscriptions.push(subscribeToUserSettings(accountId, (settings, authoritative) => {
         if (!isCurrent()) return;
-        useOrbitStore.getState().setTagsFromCloud(
+        useThreadmapStore.getState().setTagsFromCloud(
           settings.customTags,
           settings.removedDefaultTags,
           settings.revision,
@@ -206,8 +217,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         );
       }, {
         getInitialData: () => ({
-          customTags: useOrbitStore.getState().customTags,
-          removedDefaultTags: useOrbitStore.getState().removedDefaultTags,
+          customTags: useThreadmapStore.getState().customTags,
+          removedDefaultTags: useThreadmapStore.getState().removedDefaultTags,
         }),
       }));
 
@@ -236,19 +247,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       ));
 
-      subscriptions.push(subscribeToToolData<{ items: unknown[]; duels: unknown[] }>(
+      subscriptions.push(subscribeToToolData<WishlistCloudData>(
         accountId,
         'wishlist',
         (data) => {
           if (!isCurrent()) return;
-          if (data) useWishlistStore.getState()._setFromCloud(data as { items: never[]; duels: never[] });
+          if (data) useWishlistStore.getState()._setFromCloud(data);
         },
         {
           getInitialData: () => ({
             items: useWishlistStore.getState().items,
             duels: useWishlistStore.getState().duels,
+            deletedItems: useWishlistStore.getState().deletedItems,
           }),
-          hasPendingLocalChanges: () => useWishlistStore.getState().cloudDirty,
         }
       ));
 
@@ -272,7 +283,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         accountId,
         (items, source) => {
           if (!isCurrent()) return;
-          useOrbitStore.getState().setItems(items);
+          useThreadmapStore.getState().setItems(items);
           itemsReady = true;
           configureAccountServices(accountId, localOnly, itemsReady);
           if (source === 'cloud' || source === 'local') dismissNotice('warning');
@@ -311,7 +322,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       subscriptions.forEach((unsubscribe) => unsubscribe());
       if (loadingTimer) clearTimeout(loadingTimer);
       if (safetyTimer) clearTimeout(safetyTimer);
-      useOrbitStore.getState()._setSyncUserId(null);
+      useThreadmapStore.getState()._setSyncUserId(null);
       useAbiturStore.getState()._setSyncUserId(null);
       useToolboxStore.getState()._setSyncUserId(null);
       useWishlistStore.getState()._setSyncUserId(null);
@@ -379,7 +390,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <DialogPrimitive.Root open={accountScopeLoading} modal>
+      <DialogPrimitive.Root open={workspaceLoading} modal>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Content
             asChild
@@ -427,7 +438,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
-      {notices.length > 0 && !accountScopeLoading && (
+      {notices.length > 0 && !workspaceLoading && (
         <div className="fixed bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom,0px)+1rem)] left-1/2 z-[35] flex w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 flex-col gap-2 lg:bottom-4">
           {notices.map((notice) => (
             <div
@@ -473,7 +484,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 aria-label={language === 'de' ? 'Meldung schließen' : 'Dismiss message'}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 lg:h-9 lg:w-9"
               >
-                <span aria-hidden="true">×</span>
+                <X aria-hidden="true" className="h-4 w-4" />
               </button>
             </div>
           ))}
@@ -482,9 +493,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       <div
         key={accountScopeKey}
         className="min-h-screen"
-        inert={accountScopeLoading ? true : undefined}
-        aria-hidden={accountScopeLoading ? true : undefined}
-        aria-busy={accountScopeLoading}
+        inert={workspaceLoading ? true : undefined}
+        aria-hidden={workspaceLoading ? true : undefined}
+        aria-busy={workspaceLoading}
       >
         {children}
       </div>

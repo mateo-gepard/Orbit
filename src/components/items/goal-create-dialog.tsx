@@ -69,7 +69,7 @@ export function GoalCreateDialog({ error, open, onOpenChange, onCreate }: GoalCr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden p-0 sm:max-w-[540px]">
         <div className="border-b border-border/60 bg-muted/25 px-6 py-5">
-          <div className="mb-4 flex items-center gap-2" aria-label={`Step ${step} of 2`}>
+          <div className="mb-4 flex items-center gap-2" role="group" aria-label={`Step ${step} of 2`}>
             {[1, 2].map((value) => (
               <span key={value} className={cn('h-1 flex-1 rounded-full', value <= step ? 'bg-foreground' : 'bg-border')} />
             ))}

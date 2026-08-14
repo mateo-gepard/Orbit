@@ -15,7 +15,7 @@ import {
   MapPin,
   ArrowRight,
 } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
@@ -54,7 +54,7 @@ import {
 } from '@/lib/google-calendar-sync';
 import { createItem, updateItem } from '@/lib/firestore';
 import { isMobile } from '@/lib/mobile';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import { eventOccursOnDate } from '@/lib/dashboard';
 import { AgendaView, AGENDA_DAYS } from '@/components/shell/agenda-view';
 import {
@@ -84,7 +84,7 @@ import {
 type ViewMode = 'month' | 'week' | 'day' | 'agenda';
 
 interface CalendarEvent {
-  item: OrbitItem;
+  item: ThreadmapItem;
   startMinute: number;
   endMinute: number;
   isAllDay: boolean;
@@ -162,11 +162,11 @@ function layoutEvents(events: CalendarEvent[]): LayoutSlot[] {
 }
 
 function getMonthMultiDayLayout(
-  events: { item: OrbitItem; startDate: Date; endDate: Date; daysSpan: number }[],
+  events: { item: ThreadmapItem; startDate: Date; endDate: Date; daysSpan: number }[],
   calendarDays: Date[],
   totalRows: number
 ) {
-  const result: { item: OrbitItem; row: number; col: number; span: number; lane: number; isStart: boolean; isEnd: boolean }[] = [];
+  const result: { item: ThreadmapItem; row: number; col: number; span: number; lane: number; isStart: boolean; isEnd: boolean }[] = [];
   const rowLanes: Map<number, number[][]> = new Map();
 
   for (let r = 0; r < totalRows; r++) {
@@ -212,7 +212,7 @@ function getMonthMultiDayLayout(
   return result;
 }
 
-function getEventColor(item: OrbitItem): { bg: string; text: string; border: string; accent: string; dot: string } {
+function getEventColor(item: ThreadmapItem): { bg: string; text: string; border: string; accent: string; dot: string } {
   if (item.type === 'task') return { bg: 'bg-amber-500/10 dark:bg-amber-400/10', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-400/25', accent: 'bg-amber-500', dot: 'bg-amber-400' };
   if (item.calendarSynced) return { bg: 'bg-emerald-500/10 dark:bg-emerald-400/10', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-400/25', accent: 'bg-emerald-500', dot: 'bg-emerald-400' };
   if (item.endDate && item.endDate !== item.startDate) return { bg: 'bg-violet-500/10 dark:bg-violet-400/10', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-400/25', accent: 'bg-violet-500', dot: 'bg-violet-400' };
@@ -268,7 +268,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
     const now = Date.now();
     try {
       if (type === 'event') {
-        const newEvent: Omit<OrbitItem, 'id'> = {
+        const newEvent: Omit<ThreadmapItem, 'id'> = {
           type: 'event',
           title: trimmed,
           status: 'active',
@@ -288,7 +288,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
         // creation or a duplicate retry.
         if (settings.calendar.googleCalendarSync) {
           void flushPendingGoogleCalendarEvents(userId, [
-            { ...newEvent, id: itemId } as OrbitItem,
+            { ...newEvent, id: itemId } as ThreadmapItem,
           ]).then((result) => {
             if (!result.success) {
               toast.warning(t('calendar.eventSavedLocallyGoogleCalendar'));
@@ -489,7 +489,7 @@ interface ActiveDrag {
 function TimeGrid({
   days, items, is24h, locale: loc, onEventClick, onSlotClick, onEventReschedule, showWeekNumbers, t,
 }: {
-  days: Date[]; items: OrbitItem[]; is24h: boolean; locale: Locale; onEventClick: (id: string) => void; onSlotClick: (date: Date, time?: string) => void; onEventReschedule: (id: string, date: Date, startTime: string, endTime: string) => void; showWeekNumbers: boolean; t: Translate;
+  days: Date[]; items: ThreadmapItem[]; is24h: boolean; locale: Locale; onEventClick: (id: string) => void; onSlotClick: (date: Date, time?: string) => void; onEventReschedule: (id: string, date: Date, startTime: string, endTime: string) => void; showWeekNumbers: boolean; t: Translate;
 }) {
   const german = loc.code.startsWith('de');
   const gridRef = useRef<HTMLDivElement>(null);
@@ -930,8 +930,8 @@ function TimeGrid({
 
 export default function CalendarPage() {
   const { user } = useAuth();
-  const items = useOrbitStore((state) => state.items);
-  const setSelectedItemId = useOrbitStore((state) => state.setSelectedItemId);
+  const items = useThreadmapStore((state) => state.items);
+  const setSelectedItemId = useThreadmapStore((state) => state.setSelectedItemId);
   const settings = useSettingsStore((state) => state.settings);
   const { weekStart, language, timeFormat } = settings;
   const { googleCalendarSync, showWeekNumbers } = settings.calendar;
@@ -1019,7 +1019,7 @@ export default function CalendarPage() {
   const totalRows = Math.ceil(calendarDays.length / 7);
 
   const multiDayEvents = useMemo(() => {
-    const events: { item: OrbitItem; startDate: Date; endDate: Date; daysSpan: number }[] = [];
+    const events: { item: ThreadmapItem; startDate: Date; endDate: Date; daysSpan: number }[] = [];
     items.filter((i) => i.type === 'event' && i.status !== 'archived' && i.startDate).forEach((item) => {
       const rawStart = parseISO(item.startDate + 'T12:00:00');
       const rawEnd = item.endDate ? parseISO(item.endDate + 'T12:00:00') : rawStart;
@@ -1160,12 +1160,13 @@ export default function CalendarPage() {
             <button type="button" onClick={goPrev} aria-label={previousViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 sm:h-8 sm:w-8">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button type="button" onClick={goToday} aria-label={t('calendar.goToToday')} className="hidden min-w-0 sm:block">
-              <h1 className="truncate text-[17px] font-bold tracking-tight transition-colors hover:text-foreground/80 lg:text-[19px]">
-                {headerLabel}
-              </h1>
-            </button>
-            <h1 className="min-w-0 flex-1 truncate text-center text-[17px] font-bold tracking-tight sm:hidden">{headerLabel}</h1>
+            <h1 className="min-w-0 flex-1 truncate text-center text-[17px] font-bold tracking-tight sm:flex-none lg:text-[19px]">
+              {mobile ? headerLabel : (
+                <button type="button" onClick={goToday} aria-label={t('calendar.goToToday')} className="min-w-0 truncate transition-colors hover:text-foreground/80">
+                  {headerLabel}
+                </button>
+              )}
+            </h1>
             <button type="button" onClick={goNext} aria-label={nextViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 sm:h-8 sm:w-8">
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -1200,7 +1201,7 @@ export default function CalendarPage() {
 
           {/* Google Import */}
           <button type="button" onClick={handleImportFromGoogle} disabled={importing} aria-label={importing ? t('calendar.importing') : t('calendar.importFromGoogle')} className={cn(
-            'flex h-8 w-8 lg:w-auto lg:px-3 items-center justify-center gap-1.5 rounded-xl text-[11px] font-medium transition-all',
+            'flex h-11 w-11 items-center justify-center gap-1.5 rounded-xl text-[11px] font-medium transition-all lg:h-8 lg:w-auto lg:px-3',
             'text-muted-foreground/50 hover:text-foreground hover:bg-muted/40',
             importing && 'opacity-40 pointer-events-none'
           )}>
@@ -1213,7 +1214,7 @@ export default function CalendarPage() {
             type="button"
             onClick={() => setQuickAdd({ date: currentDate })}
             aria-label={t('calendar.createCalendarItem')}
-            className="h-8 w-8 lg:h-8 lg:w-auto lg:px-3.5 rounded-xl bg-foreground text-background flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-95 transition-all shadow-sm"
+            className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-xl bg-foreground text-background shadow-sm transition-all hover:opacity-90 active:scale-95 lg:h-8 lg:w-auto lg:px-3.5"
           >
             <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" />
             <span className="hidden lg:inline text-[11px] font-semibold">{t('common.create')}</span>
@@ -1247,7 +1248,7 @@ export default function CalendarPage() {
       {viewMode === 'month' && (
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 lg:gap-0">
           {/* Calendar grid card */}
-          <div className={cn('flex-1 min-h-0 rounded-2xl border border-border/40 overflow-hidden bg-card shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex flex-col', mobile && selectedMobileDay && 'max-h-[55vh]')}>
+          <div className={cn('flex min-h-[310px] flex-1 flex-col overflow-hidden rounded-2xl border border-border/40 bg-card shadow-[0_1px_3px_rgba(0,0,0,0.04)] lg:min-h-0', mobile && selectedMobileDay && 'max-h-[55vh]')}>
             {/* Day names header */}
             <div className={cn('grid border-b border-border/25 flex-shrink-0', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')}>
               {showWeekNumbers && (
@@ -1265,8 +1266,8 @@ export default function CalendarPage() {
             </div>
 
             {/* Calendar grid */}
-            <div className="relative flex-1 min-h-0">
-              <div className={cn('grid h-full', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')} style={{ gridTemplateRows: `repeat(${totalRows}, 1fr)` }}>
+            <div className="relative min-h-[270px] flex-1 lg:min-h-0">
+              <div className={cn('grid h-full min-h-[270px] lg:min-h-0', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')} style={{ gridTemplateRows: `repeat(${totalRows}, 1fr)` }}>
                 {calendarDays.map((day, idx) => {
                   const row = Math.floor(idx / 7);
                   const col = idx % 7;
@@ -1291,7 +1292,7 @@ export default function CalendarPage() {
                         className={cn(
                           'relative border-b border-r border-border/[0.08] p-1 lg:p-1.5 transition-all text-left group overflow-hidden',
                           'hover:bg-foreground/[0.02] active:bg-foreground/[0.04]',
-                          !isCurrentMonth && 'opacity-30',
+                          !isCurrentMonth && 'bg-muted/15',
                           isTodayDate && 'bg-blue-500/[0.04]',
                           isMobileSelected && 'bg-foreground/[0.06] ring-1 ring-foreground/10 ring-inset'
                         )}
@@ -1308,7 +1309,9 @@ export default function CalendarPage() {
                         {/* Date number */}
                         <div className={cn(
                           'inline-flex h-6 w-6 lg:h-7 lg:w-7 items-center justify-center rounded-full text-[11px] lg:text-[12px] font-semibold tabular-nums transition-all',
-                          isTodayDate ? 'bg-foreground text-background' : 'text-muted-foreground/40 group-hover:text-foreground/70',
+                          isTodayDate
+                            ? 'bg-foreground text-background'
+                            : cn('text-muted-foreground group-hover:text-foreground', !isCurrentMonth && 'font-normal'),
                         )}>
                           {format(day, 'd')}
                         </div>

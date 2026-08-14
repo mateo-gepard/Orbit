@@ -1,14 +1,14 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { OrbitItem, ItemType, ItemStatus } from '@/lib/types';
+import type { ThreadmapItem, ItemType, ItemStatus } from '@/lib/types';
 import { LIFE_AREA_TAGS } from '@/lib/types';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
 
-interface OrbitStore {
+interface ThreadmapStore {
   // Items
-  items: OrbitItem[];
-  setItems: (items: OrbitItem[]) => void;
+  items: ThreadmapItem[];
+  setItems: (items: ThreadmapItem[]) => void;
 
   // Custom Tags (cloud-synced per user)
   customTags: string[];
@@ -56,11 +56,11 @@ interface OrbitStore {
   setActiveTag: (tag: string | null) => void;
 
   // Computed selectors (safe — never throw)
-  getItemById: (id: string) => OrbitItem | undefined;
-  getItemsByType: (type: ItemType) => OrbitItem[];
-  getItemsByStatus: (status: ItemStatus) => OrbitItem[];
-  getChildItems: (parentId: string) => OrbitItem[];
-  getLinkedItems: (itemId: string) => OrbitItem[];
+  getItemById: (id: string) => ThreadmapItem | undefined;
+  getItemsByType: (type: ItemType) => ThreadmapItem[];
+  getItemsByStatus: (status: ItemStatus) => ThreadmapItem[];
+  getChildItems: (parentId: string) => ThreadmapItem[];
+  getLinkedItems: (itemId: string) => ThreadmapItem[];
 }
 
 /**
@@ -130,7 +130,7 @@ function migrateLegacyTagStorage() {
 
 migrateLegacyTagStorage();
 
-function debouncedSyncTags(get: () => OrbitStore, affectedItemIds: string[] = []) {
+function debouncedSyncTags(get: () => ThreadmapStore, affectedItemIds: string[] = []) {
   const scheduledUserId = get()._syncUserId;
   const scheduledGeneration = tagSyncGeneration;
   const syncKey = `${scheduledUserId}:${scheduledGeneration}`;
@@ -179,7 +179,7 @@ function debouncedSyncTags(get: () => OrbitStore, affectedItemIds: string[] = []
         return;
       }
       if (get()._syncUserId !== scheduledUserId || tagSyncGeneration !== scheduledGeneration) return;
-      useOrbitStore.setState({
+      useThreadmapStore.setState({
         _tagsBaseRevision: outcome.saved.revision,
         _tagsBaseUpdatedAt: outcome.saved.updatedAt,
       });
@@ -226,7 +226,7 @@ function debouncedSyncTags(get: () => OrbitStore, affectedItemIds: string[] = []
 }
 
 function setStoreTagSyncState(pendingEdits: Record<string, string[]>, hasNewerMutation: boolean): void {
-  useOrbitStore.setState({
+  useThreadmapStore.setState({
     _pendingTagEdits: pendingEdits,
     _tagsCloudDirty: hasNewerMutation || Object.keys(pendingEdits).length > 0,
   });
@@ -234,7 +234,7 @@ function setStoreTagSyncState(pendingEdits: Record<string, string[]>, hasNewerMu
 
 /** Check if we should ignore an incoming cloud update (echo suppression) */
 export function shouldIgnoreCloudTags(): boolean {
-  const activeUserId = useOrbitStore.getState()._syncUserId;
+  const activeUserId = useThreadmapStore.getState()._syncUserId;
   return Boolean(
     activeUserId
       && cloudEchoSuppression?.userId === activeUserId
@@ -243,7 +243,7 @@ export function shouldIgnoreCloudTags(): boolean {
   );
 }
 
-export const useOrbitStore = create<OrbitStore>()(
+export const useThreadmapStore = create<ThreadmapStore>()(
   persist(
     (set, get) => ({
       items: [],
@@ -493,7 +493,7 @@ export const useOrbitStore = create<OrbitStore>()(
       }),
       merge: (persisted, current) => {
         const state = persisted as
-          | Partial<Pick<OrbitStore, 'customTags' | 'removedDefaultTags' | '_tagsCloudDirty' | '_tagsBaseRevision' | '_tagsBaseUpdatedAt' | '_pendingTagEdits'>>
+          | Partial<Pick<ThreadmapStore, 'customTags' | 'removedDefaultTags' | '_tagsCloudDirty' | '_tagsBaseRevision' | '_tagsBaseUpdatedAt' | '_pendingTagEdits'>>
           | undefined;
         return {
           ...current,
@@ -515,12 +515,18 @@ export const useOrbitStore = create<OrbitStore>()(
   )
 );
 
-export async function scopeOrbitStore(userId: string | null): Promise<void> {
-  useOrbitStore.getState()._setSyncUserId(null);
+/**
+ * @deprecated Use `useThreadmapStore`. Kept as a compatibility export while
+ * callers are migrated to the Threadmap product name.
+ */
+export const useOrbitStore = useThreadmapStore;
+
+export async function scopeThreadmapStore(userId: string | null): Promise<void> {
+  useThreadmapStore.getState()._setSyncUserId(null);
   const target = prepareScopedStorage(TAGS_STORAGE_KEY, userId);
-  useOrbitStore.persist.setOptions({ name: target.key });
+  useThreadmapStore.persist.setOptions({ name: target.key });
   if (!target.hasPersistedState) {
-    useOrbitStore.setState({
+    useThreadmapStore.setState({
       items: [],
       customTags: [],
       removedDefaultTags: [],
@@ -533,9 +539,9 @@ export async function scopeOrbitStore(userId: string | null): Promise<void> {
       activeTag: null,
     });
   }
-  await useOrbitStore.persist.rehydrate();
+  await useThreadmapStore.persist.rehydrate();
   if (target.hasPersistedState) {
-    useOrbitStore.setState({
+    useThreadmapStore.setState({
       items: [],
       selectedItemId: null,
       detailPanelOpen: false,
@@ -543,3 +549,9 @@ export async function scopeOrbitStore(userId: string | null): Promise<void> {
     });
   }
 }
+
+/**
+ * @deprecated Use `scopeThreadmapStore`. Kept as a compatibility export while
+ * callers are migrated to the Threadmap product name.
+ */
+export const scopeOrbitStore = scopeThreadmapStore;

@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 export interface SegmentedOption<T extends string> {
   value: T;
   label: ReactNode;
-  icon?: ComponentType<{ className?: string }>;
+  icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
   /** Shown after the label, e.g. a count. */
   badge?: ReactNode;
   /** Hide the label below `lg`, keeping only the icon. */
@@ -61,6 +61,7 @@ export function SegmentedControl<T extends string>({
             type="button"
             onClick={() => onChange(option.value)}
             aria-pressed={active}
+            aria-label={option.labelOnDesktopOnly && typeof option.label === 'string' ? option.label : undefined}
             className={cn(
               'mobile-touch-target flex shrink-0 items-center gap-1.5 text-[12px] font-medium transition-all active:scale-95 lg:min-h-0',
               variant === 'segmented'
@@ -78,7 +79,7 @@ export function SegmentedControl<T extends string>({
                   )
             )}
           >
-            {Icon && <Icon className="h-3.5 w-3.5" />}
+            {Icon && <Icon aria-hidden={true} className="h-3.5 w-3.5" />}
             <span className={cn(option.labelOnDesktopOnly && 'hidden lg:inline')}>{option.label}</span>
             {option.badge !== undefined && (
               <span

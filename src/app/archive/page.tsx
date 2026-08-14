@@ -3,11 +3,11 @@
 import { useMemo, useState } from 'react';
 import type React from 'react';
 import { Archive as ArchiveIcon, RotateCcw, Search, CheckCircle2, Circle, X, ListChecks, Trash2 } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { deleteItem, updateItem } from '@/lib/firestore';
 import { useBulkSelection } from '@/lib/hooks/use-bulk-selection';
 import { BulkActionBar, type BulkAction } from '@/components/items/bulk-action-bar';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
 import { ItemRow } from '@/components/items/item-row';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
@@ -23,7 +23,7 @@ function getTimestamp() {
 }
 
 export default function ArchivePage() {
-  const items = useOrbitStore((state) => state.items);
+  const items = useThreadmapStore((state) => state.items);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<ViewTab>('completed');
   const { t, lang } = useTranslation();
@@ -102,7 +102,7 @@ export default function ArchivePage() {
     },
   ];
 
-  const renderRow = (item: OrbitItem, actions: React.ReactNode) => (
+  const renderRow = (item: ThreadmapItem, actions: React.ReactNode) => (
     selection.selecting ? (
       <div className="flex items-center gap-2 pl-1">
         <input
@@ -231,7 +231,7 @@ export default function ArchivePage() {
                   <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                     <CheckCircle2 className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
                   </div>
-                  <h3 className="text-[15px] font-medium">{t('archive.noCompleted')}</h3>
+                  <h2 className="text-[15px] font-medium">{t('archive.noCompleted')}</h2>
                   <p className="text-[12px] text-muted-foreground/50 mt-1">
                     {search ? t('archive.tryDifferentSearch') : t('archive.noCompletedDesc')}
                   </p>
@@ -277,7 +277,7 @@ export default function ArchivePage() {
                   <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                     <ArchiveIcon className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
                   </div>
-                  <h3 className="text-[15px] font-medium">{t('archive.archiveEmpty')}</h3>
+                  <h2 className="text-[15px] font-medium">{t('archive.archiveEmpty')}</h2>
                   <p className="text-[12px] text-muted-foreground/50 mt-1">
                     {search ? t('archive.tryDifferentSearch') : t('archive.archiveEmptyDesc')}
                   </p>

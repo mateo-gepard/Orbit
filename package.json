@@ -56,6 +56,9 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "postcss": "8.5.26"
+    "postcss": "8.5.26",
+    "gaxios@6.7.1": {
+      "uuid": "11.1.1"
+    }
   }
 }

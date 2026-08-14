@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { FileText, Plus, Search, X } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
 import { cn, getLocale } from '@/lib/utils';
@@ -40,7 +40,7 @@ const SUBTYPE_OPTIONS: { labelKey: TranslationKey; value: NoteSubtype }[] = [
 ];
 
 export default function NotesPage() {
-	const items = useOrbitStore((state) => state.items);
+	const items = useThreadmapStore((state) => state.items);
 	const { user } = useAuth();
 		const { t, tp, lang } = useTranslation();
 	const [filter, setFilter] = useState<NoteSubtype | 'all'>('all');
@@ -398,7 +398,7 @@ export default function NotesPage() {
 					<div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
 						<FileText className="h-5 w-5 text-muted-foreground/30" />
 					</div>
-						<h3 className="text-[15px] font-medium">{searchQuery ? t('notes.noMatch') : t('notes.noNotes')}</h3>
+						<h2 className="text-[15px] font-medium">{searchQuery ? t('notes.noMatch') : t('notes.noNotes')}</h2>
 					<p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
 						{t('notes.noNotesDesc')}
 					</p>

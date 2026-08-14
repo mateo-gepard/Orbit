@@ -29,13 +29,18 @@ import {
   type IdTokenResult,
   type MultiFactorResolver,
 } from 'firebase/auth';
-import { MfaChallengeDialog } from '@/components/auth/mfa-challenge-dialog';
-import { auth, googleProvider } from '@/lib/firebase';
+import dynamic from 'next/dynamic';
+import { auth, ensureAppCheck, googleProvider } from '@/lib/firebase';
 import { stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { clearGoogleAccessToken } from '@/lib/google-calendar';
 import { deleteAccountData } from '@/lib/account-data';
 import { unregisterFCMToken } from '@/lib/fcm';
-import { findTotpFactor, normalizeTotpCode } from '@/lib/mfa';
+import { findTotpFactor, normalizeTotpCode, recoverMfaWithCode } from '@/lib/mfa';
+
+const MfaChallengeDialog = dynamic(
+  () => import('@/components/auth/mfa-challenge-dialog').then((module) => module.MfaChallengeDialog),
+  { ssr: false },
+);
 
 /**
  * How long to wait for Firebase to report an auth state before falling back to
@@ -46,6 +51,7 @@ import { findTotpFactor, normalizeTotpCode } from '@/lib/mfa';
 const AUTH_STATE_TIMEOUT_MS = 8_000;
 
 const EMAIL_LINK_KEY = 'orbitEmailForSignIn';
+const GOOGLE_REDIRECT_PENDING_KEY = 'threadmapGoogleRedirectPending';
 const LOCAL_MODE_KEY = 'orbitLocalMode';
 const FIREBASE_NOT_CONFIGURED_MESSAGE =
   'Firebase is not configured. Local mode is available on this device.';
@@ -193,16 +199,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const timer = window.setTimeout(() => void continueAsDemo(), 0);
       return () => window.clearTimeout(timer);
     }
+    const firebaseAuth = auth;
+
+    // Local-only sessions never need the App Check or reCAPTCHA runtimes.
+    // Cloud sessions warm them in parallel so the first deliberate auth or
+    // data request is attested without blocking the initial interface.
+    const redirectPending = window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === '1';
+    const appCheckReady = !isLocalModeEnabled() && (redirectPending || Boolean(auth.currentUser))
+      ? ensureAppCheck()
+      : Promise.resolve(null);
 
     let cancelled = false;
     let settled = false;
 
     // Complete a redirect started because the popup was blocked.
-    void getRedirectResult(auth).catch((error) => {
-      if (!beginMfaChallenge(error)) {
-        console.error('[THREADMAP Auth] Redirect sign-in result failed:', error);
-      }
-    });
+    void appCheckReady.then(() => getRedirectResult(firebaseAuth))
+      .then(() => {
+        window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+      })
+      .catch((error) => {
+        window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+        if (!beginMfaChallenge(error)) {
+          console.error('[THREADMAP Auth] Redirect sign-in result failed:', error);
+        }
+      });
 
     /**
      * `onAuthStateChanged` has an error callback but no timeout. If it never
@@ -227,7 +247,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, AUTH_STATE_TIMEOUT_MS);
 
     const unsubscribe = onAuthStateChanged(
-      auth,
+      firebaseAuth,
       (firebaseUser) => {
         if (cancelled) return;
         settled = true;
@@ -274,7 +294,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     try {
-      await unregisterCurrentDevice();
+      // Do not await here: the popup must open within the original pointer
+      // gesture on Safari and installed PWAs. Google account selection gives
+      // App Check time to finish before Firebase exchanges the credential.
+      void ensureAppCheck();
+      // Opening a popup must remain in the original tap task. Even awaiting a
+      // resolved cleanup promise first can make Safari and installed PWAs treat
+      // the popup as unsolicited and block it.
+      if (auth.currentUser) await unregisterCurrentDevice();
       await signInWithPopup(auth, googleProvider);
     } catch (error: unknown) {
       if (beginMfaChallenge(error)) return;
@@ -289,9 +316,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           || code === 'auth/operation-not-supported-in-this-environment'
           || code === 'auth/web-storage-unsupported') {
         try {
+          window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, '1');
           await signInWithRedirect(auth, googleProvider);
           return;
         } catch (redirectError) {
+          window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
           console.error('[THREADMAP Auth] Redirect sign-in failed:', redirectError);
           throw new Error('Google sign-in popup was blocked and the redirect fallback failed. Enable popups or use local mode.');
         }
@@ -310,6 +339,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
+    await ensureAppCheck();
     await unregisterCurrentDevice();
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -323,6 +353,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
+    await ensureAppCheck();
     await unregisterCurrentDevice();
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     if (displayName && cred.user) {
@@ -332,6 +363,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sendEmailLinkFn = useCallback(async (email: string) => {
     if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
+    await ensureAppCheck();
     const actionCodeSettings = {
       url: window.location.origin,
       handleCodeInApp: true,
@@ -342,6 +374,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = useCallback(async (email: string) => {
     if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
+    await ensureAppCheck();
     await sendPasswordResetEmail(auth, email);
   }, []);
 
@@ -352,6 +385,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmailLinkState('signing-in');
     setEmailLinkError(null);
     try {
+      await ensureAppCheck();
       await unregisterCurrentDevice();
       await signInWithEmailLink(auth, email.trim(), href);
       window.localStorage.removeItem(EMAIL_LINK_KEY);
@@ -438,6 +472,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [mfaResolver]);
 
   const cancelMfaChallenge = useCallback(() => {
+    setMfaResolver(null);
+  }, []);
+
+  const recoverMfaChallenge = useCallback(async (code: string) => {
+    await recoverMfaWithCode(code);
     setMfaResolver(null);
   }, []);
 
@@ -542,11 +581,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
-      <MfaChallengeDialog
-        resolver={mfaResolver}
-        onCancel={cancelMfaChallenge}
-        onResolve={resolveMfaChallenge}
-      />
+      {mfaResolver && (
+        <MfaChallengeDialog
+          resolver={mfaResolver}
+          onCancel={cancelMfaChallenge}
+          onRecover={recoverMfaChallenge}
+          onResolve={resolveMfaChallenge}
+        />
+      )}
     </AuthContext.Provider>
   );
 }

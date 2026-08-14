@@ -24,15 +24,18 @@ const TABS: { href: string; icon: typeof LayoutDashboard; labelKey: TranslationK
 export function MobileNav() {
   const pathname = usePathname();
   const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
+  const commandBarOpen = useOrbitStore((state) => state.commandBarOpen);
   const sidebarOpen = useOrbitStore((state) => state.sidebarOpen);
   const { t } = useTranslation();
+  const navigationSuppressed = sidebarOpen || commandBarOpen;
 
   return (
     <>
       <button
+        id="mobile-create-button"
         type="button"
         disabled={sidebarOpen}
-        aria-hidden={sidebarOpen ? true : undefined}
+        aria-hidden={navigationSuppressed ? true : undefined}
         onClick={() => {
           if (sidebarOpen) return;
           haptic('medium');
@@ -41,15 +44,18 @@ export function MobileNav() {
         aria-label={t('common.create')}
         className={cn(
           'lg:hidden disabled:pointer-events-none disabled:invisible',
+          commandBarOpen && 'pointer-events-none invisible',
+          pathname.startsWith('/settings') && 'hidden',
           'flex h-14 w-14 items-center justify-center',
           'rounded-full bg-foreground text-background',
           'shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]',
           'active:scale-95 transition-transform duration-150 motion-reduce:active:scale-100 motion-reduce:transition-none',
         )}
         style={{
+          display: pathname.startsWith('/settings') ? 'none' : undefined,
           position: 'fixed',
           right: '16px',
-          bottom: 'calc(44px + env(safe-area-inset-bottom, 0px) + 12px)',
+          bottom: 'calc(var(--bottom-nav-height) + var(--safe-bottom) + 12px)',
           zIndex: 30,
         }}
       >
@@ -58,11 +64,11 @@ export function MobileNav() {
 
       <nav
         id="mobile-nav"
-        inert={sidebarOpen ? true : undefined}
-        aria-hidden={sidebarOpen ? true : undefined}
+        inert={navigationSuppressed ? true : undefined}
+        aria-hidden={navigationSuppressed ? true : undefined}
         className={cn(
           'lg:hidden border-t border-border/40 bg-background/80 backdrop-blur-xl backdrop-saturate-150',
-          sidebarOpen && 'pointer-events-none invisible',
+          navigationSuppressed && 'pointer-events-none invisible',
         )}
         style={{
           position: 'fixed',
@@ -70,7 +76,7 @@ export function MobileNav() {
           left: '0px',
           right: '0px',
           zIndex: 30,
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          paddingBottom: 'var(--safe-bottom)',
         }}
       >
         <div

@@ -20,6 +20,12 @@ import {
 import { createMcpRouter, runMcpRouterOnNode, type McpRouter } from './mcp/http';
 import { createThreadmapOAuthService } from './mcp/oauth';
 import { ThreadmapDal } from './mcp/dal';
+import {
+  createMfaRecoveryCodeSet,
+  MFA_RECOVERY_CODE_COUNT,
+  mfaRecoveryDigest,
+  normalizeMfaRecoveryCode,
+} from './mfa-recovery';
 
 initializeApp();
 
@@ -38,6 +44,7 @@ const storage = getStorage();
 const vapidPublicKey = defineSecret('VAPID_PUBLIC_KEY');
 const vapidPrivateKey = defineSecret('VAPID_PRIVATE_KEY');
 const scrapeRateLimitSharedSecret = defineSecret('SCRAPE_RATE_LIMIT_SHARED_SECRET');
+const mfaRecoveryHmacKey = defineSecret('MFA_RECOVERY_HMAC_KEY');
 const VAPID_SUBJECT = 'mailto:notifications@threadmap.app';
 const PAGE_SIZE = 100;
 const MAX_DUE_PER_RUN = 500;
@@ -55,6 +62,9 @@ const UPLOAD_INTENT_WINDOW_MS = 10 * 60_000;
 const MAX_ACTIVE_UPLOAD_INTENTS = 10;
 const MAX_RESERVED_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_UPLOAD_INTENTS_PER_WINDOW = 20;
+const MFA_RECOVERY_LIFETIME_MS = 365 * 24 * 60 * 60_000;
+const MFA_RECOVERY_RATE_WINDOW_MS = 15 * 60_000;
+const MFA_RECOVERY_RATE_LIMIT = 8;
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -711,6 +721,200 @@ function requireExpectedUid(
   return uid;
 }
 
+function mfaRecoverySecret(): string {
+  const secret = mfaRecoveryHmacKey.value();
+  if (Buffer.byteLength(secret, 'utf8') < 32) {
+    throw new HttpsError('internal', 'Account recovery is temporarily unavailable.');
+  }
+  return secret;
+}
+
+async function enforceMfaRecoveryRateLimit(request: unknown, secret: string): Promise<void> {
+  const rawRequest = (request as {
+    rawRequest?: { ip?: string; socket?: { remoteAddress?: string } };
+  }).rawRequest;
+  const address = rawRequest?.ip || rawRequest?.socket?.remoteAddress;
+  if (!address) return;
+
+  const addressDigest = createHash('sha256').update(`mfa-recovery-ip:${secret}:${address}`).digest('hex');
+  const ref = db.doc(`mfaRecoveryRateLimits/${addressDigest}`);
+  const now = Date.now();
+  const windowStart = Math.floor(now / MFA_RECOVERY_RATE_WINDOW_MS) * MFA_RECOVERY_RATE_WINDOW_MS;
+  let limited = false;
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const current = snapshot.data() || {};
+    const sameWindow = Number(current.windowStart || 0) === windowStart;
+    const attempts = sameWindow ? Number(current.attempts || 0) : 0;
+    if (attempts >= MFA_RECOVERY_RATE_LIMIT) {
+      limited = true;
+      return;
+    }
+    transaction.set(ref, {
+      windowStart,
+      attempts: attempts + 1,
+      updatedAt: now,
+      expireAt: Timestamp.fromMillis(windowStart + (2 * MFA_RECOVERY_RATE_WINDOW_MS)),
+    });
+  });
+  if (limited) {
+    throw new HttpsError('resource-exhausted', 'Too many recovery attempts. Try again later.');
+  }
+}
+
+export const getMfaRecoveryCodeStatus = onCall(
+  {
+    region: FUNCTION_REGION,
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, [])) {
+      throw new HttpsError('invalid-argument', 'The recovery status request contains unsupported fields.');
+    }
+    const uid = requireUid(request);
+    const snapshot = await db.doc(`mfaRecoverySets/${uid}`).get();
+    const status = snapshot.data() || {};
+    return {
+      generatedAt: Number(status.generatedAt || 0) || null,
+      expiresAt: Number(status.expiresAt || 0) || null,
+      remaining: Math.max(0, Number(status.remaining || 0)),
+    };
+  }
+);
+
+export const generateMfaRecoveryCodes = onCall(
+  {
+    region: FUNCTION_REGION,
+    enforceAppCheck: ENFORCE_APP_CHECK,
+    secrets: [mfaRecoveryHmacKey],
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, [])) {
+      throw new HttpsError('invalid-argument', 'The recovery-code request contains unsupported fields.');
+    }
+    const uid = requireRecentUid(request);
+    const user = await auth.getUser(uid);
+    if (!user.multiFactor?.enrolledFactors.length) {
+      throw new HttpsError('failed-precondition', 'Add an authenticator before creating recovery codes.');
+    }
+
+    const secret = mfaRecoverySecret();
+    const codes = createMfaRecoveryCodeSet();
+    const now = Date.now();
+    const expiresAt = now + MFA_RECOVERY_LIFETIME_MS;
+    const generationId = randomUUID();
+    const previous = await db.collection('mfaRecoveryCodes').where('uid', '==', uid).limit(100).get();
+    const batch = db.batch();
+    for (const snapshot of previous.docs) batch.delete(snapshot.ref);
+    for (const code of codes) {
+      const digest = mfaRecoveryDigest(code, secret);
+      batch.set(db.doc(`mfaRecoveryCodes/${digest}`), {
+        uid,
+        generationId,
+        createdAt: now,
+        expiresAt,
+        status: 'active',
+        expireAt: Timestamp.fromMillis(expiresAt),
+      });
+    }
+    batch.set(db.doc(`mfaRecoverySets/${uid}`), {
+      uid,
+      generationId,
+      generatedAt: now,
+      expiresAt,
+      remaining: MFA_RECOVERY_CODE_COUNT,
+      updatedAt: now,
+    });
+    await batch.commit();
+    console.info(JSON.stringify({ component: 'mfa-recovery', event: 'codes-generated', uid }));
+    return { codes, generatedAt: now, expiresAt };
+  }
+);
+
+export const recoverMfaWithCode = onCall(
+  {
+    region: FUNCTION_REGION,
+    enforceAppCheck: ENFORCE_APP_CHECK,
+    secrets: [mfaRecoveryHmacKey],
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['code'])) {
+      throw new HttpsError('invalid-argument', 'The recovery request contains unsupported fields.');
+    }
+    const normalized = normalizeMfaRecoveryCode(data.code);
+    if (!normalized) {
+      throw new HttpsError('invalid-argument', 'That recovery code is invalid or no longer available.');
+    }
+    const secret = mfaRecoverySecret();
+    await enforceMfaRecoveryRateLimit(request, secret);
+
+    const digest = mfaRecoveryDigest(normalized, secret);
+    const codeRef = db.doc(`mfaRecoveryCodes/${digest}`);
+    const claimId = randomUUID();
+    const now = Date.now();
+    const claimedUid = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(codeRef);
+      const code = snapshot.data() || {};
+      const available = snapshot.exists
+        && code.status === 'active'
+        && Number(code.expiresAt || 0) > now
+        && typeof code.uid === 'string';
+      if (!available) return null;
+      transaction.update(codeRef, {
+        status: 'consuming',
+        claimId,
+        claimedAt: now,
+      });
+      return code.uid as string;
+    });
+    if (!claimedUid) {
+      throw new HttpsError('invalid-argument', 'That recovery code is invalid or no longer available.');
+    }
+
+    try {
+      const user = await auth.getUser(claimedUid);
+      if (user.multiFactor?.enrolledFactors.length) {
+        await auth.updateUser(claimedUid, { multiFactor: { enrolledFactors: [] } });
+      }
+      await auth.revokeRefreshTokens(claimedUid);
+
+      const allCodes = await db.collection('mfaRecoveryCodes').where('uid', '==', claimedUid).limit(100).get();
+      const batch = db.batch();
+      for (const snapshot of allCodes.docs) batch.delete(snapshot.ref);
+      batch.set(db.doc(`mfaRecoverySets/${claimedUid}`), {
+        uid: claimedUid,
+        remaining: 0,
+        recoveredAt: now,
+        updatedAt: now,
+      }, { merge: true });
+      batch.set(db.collection('mfaRecoveryAudits').doc(), {
+        uid: claimedUid,
+        event: 'mfa-recovered',
+        createdAt: now,
+      });
+      await batch.commit();
+      console.warn(JSON.stringify({ component: 'mfa-recovery', event: 'mfa-recovered', uid: claimedUid }));
+      return { success: true };
+    } catch (error) {
+      await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(codeRef);
+        if (snapshot.data()?.claimId === claimId) {
+          transaction.update(codeRef, {
+            status: 'active',
+            claimId: FieldValue.delete(),
+            claimedAt: FieldValue.delete(),
+          });
+        }
+      }).catch(() => undefined);
+      console.error('[THREADMAP] MFA recovery failed after code claim:', error);
+      throw new HttpsError('internal', 'Account recovery could not be completed. Try again.');
+    }
+  }
+);
+
 async function loadPushRegistryIds(
   transaction: FirebaseFirestore.Transaction,
   uid: string
@@ -1136,7 +1340,7 @@ export const repairThreadmapHierarchyEu = onDocumentUpdated(
 );
 
 async function ownedDocuments(uid: string) {
-  const [items, toolData, legacyFlightLogs, analytics, flightLogs, tokens, connections, nudgesFrom, nudgesTo, deletionJobs, uploadIntents, uploadRegistries] =
+  const [items, toolData, legacyFlightLogs, analytics, flightLogs, tokens, connections, nudgesFrom, nudgesTo, deletionJobs, uploadIntents, uploadRegistries, recoveryCodes, recoveryAudits] =
     await Promise.all([
       queryAll(db.collection('items').where('userId', '==', uid)),
       queryAll(db.collection('toolData').where('userId', '==', uid)),
@@ -1150,6 +1354,8 @@ async function ownedDocuments(uid: string) {
       queryAll(db.collection('deletionJobs').where('userId', '==', uid)),
       queryAll(db.collection('attachmentUploadIntents').where('userId', '==', uid)),
       queryAll(db.collection('attachmentUploadRegistries').where('userId', '==', uid)),
+      queryAll(db.collection('mfaRecoveryCodes').where('uid', '==', uid)),
+      queryAll(db.collection('mfaRecoveryAudits').where('uid', '==', uid)),
     ]);
   const allToolData: FirebaseFirestore.DocumentSnapshot[] = [...toolData];
   if (legacyFlightLogs.exists && !allToolData.some((entry) => entry.id === legacyFlightLogs.id)) {
@@ -1167,6 +1373,8 @@ async function ownedDocuments(uid: string) {
     deletionJobs,
     uploadIntents,
     uploadRegistries,
+    recoveryCodes,
+    recoveryAudits,
   };
 }
 
@@ -1807,11 +2015,12 @@ export const exportThreadmapAccount = onCall(
       throw new HttpsError('invalid-argument', 'The export request contains unsupported fields.');
     }
     const uid = requireExpectedUid(request, data);
-    const [documents, authUser, profile, settings] = await Promise.all([
+    const [documents, authUser, profile, settings, recoverySet] = await Promise.all([
       ownedDocuments(uid),
       auth.getUser(uid),
       db.doc(`users/${uid}`).get(),
       db.doc(`userSettings/${uid}`).get(),
+      db.doc(`mfaRecoverySets/${uid}`).get(),
     ]);
 
     const fileMetadata: Array<Record<string, unknown> & { itemId: string }> = documents.items.flatMap((item) => {
@@ -1865,6 +2074,14 @@ export const exportThreadmapAccount = onCall(
           userAgent: data.userAgent || null,
         };
       }),
+      security: {
+        mfaEnrolled: Boolean(authUser.multiFactor?.enrolledFactors.length),
+        recoveryCodes: recoverySet.exists ? {
+          generatedAt: Number(recoverySet.data()?.generatedAt || 0) || null,
+          expiresAt: Number(recoverySet.data()?.expiresAt || 0) || null,
+          remaining: Math.max(0, Number(recoverySet.data()?.remaining || 0)),
+        } : null,
+      },
     };
   }
 );
@@ -1923,6 +2140,7 @@ async function processAccountDeletion(
   refs.set(`userSettings/${uid}`, db.doc(`userSettings/${uid}`));
   refs.set(`users/${uid}`, db.doc(`users/${uid}`));
   refs.set(`pushDeviceRegistries/${uid}`, pushRegistryRef(uid));
+  refs.set(`mfaRecoverySets/${uid}`, db.doc(`mfaRecoverySets/${uid}`));
   const scrapeQuotaRef = db.doc(
     `scrapeRateLimits/uid_${createHash('sha256').update(uid).digest('hex')}`
   );

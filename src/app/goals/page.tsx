@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { Target, Plus } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
 import { computeBadges } from '@/lib/badges';
@@ -19,7 +19,7 @@ const TIMEFRAME_KEYS: Record<GoalTimeframe, TranslationKey> = {
 };
 
 export default function GoalsPage() {
-  const { items, setSelectedItemId } = useOrbitStore();
+  const { items, setSelectedItemId } = useThreadmapStore();
   const { user } = useAuth();
   const { t, tp, lang } = useTranslation();
   const createInFlightRef = useRef(false);
@@ -112,7 +112,7 @@ export default function GoalsPage() {
           onClick={() => { setCreateError(null); setCreateDialogOpen(true); }}
           disabled={creatingGoal}
           aria-busy={creatingGoal}
-          className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform disabled:cursor-wait disabled:opacity-70"
+          className="flex min-h-11 items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform disabled:cursor-wait disabled:opacity-70 lg:min-h-0 lg:rounded-lg lg:py-1.5 lg:text-[12px]"
         >
           <Plus aria-hidden="true" className="h-3.5 w-3.5" />
           {creatingGoal
@@ -207,7 +207,7 @@ export default function GoalsPage() {
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
             <Target className="h-5 w-5 text-muted-foreground/30" />
           </div>
-          <h3 className="text-[15px] font-medium">{t('goals.noGoals')}</h3>
+          <h2 className="text-[15px] font-medium">{t('goals.noGoals')}</h2>
           <p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
             {t('goals.noGoalsDesc')}
           </p>

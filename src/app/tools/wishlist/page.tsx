@@ -572,7 +572,7 @@ export default function WishlistPage() {
             {formImageUrl && (
               <div className="mt-3 rounded-lg border border-border overflow-hidden h-40 bg-muted/30">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={formImageUrl} alt="" className="w-full h-full object-contain p-3"
+                <img src={formImageUrl} alt="" decoding="async" className="w-full h-full object-contain p-3"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               </div>
             )}
@@ -721,7 +721,7 @@ export default function WishlistPage() {
                     {item.imageUrl ? (
                       <div className="flex-1 min-h-0 overflow-hidden bg-muted/20">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt={item.name}
+                        <img src={item.imageUrl} alt={item.name} decoding="async"
                           className={cn('w-full h-full object-contain p-3 lg:p-6 transition-transform duration-500', !duelResult && 'group-hover:scale-105')} />
                       </div>
                     ) : (
@@ -824,7 +824,12 @@ export default function WishlistPage() {
                     {/* Rank */}
                     <div className={cn('w-7 text-center shrink-0 font-mono',
                       idx === 0 ? 'text-lg font-bold' : 'text-base font-semibold')}>
-                      {idx === 0 ? '👑' : idx + 1}
+                      {idx === 0 ? (
+                        <>
+                          <Crown aria-hidden="true" className="mx-auto h-4 w-4" />
+                          <span className="sr-only">{copy.rank.replace('{rank}', '1')}</span>
+                        </>
+                      ) : idx + 1}
                     </div>
 
                     {/* Thumb */}
@@ -832,7 +837,7 @@ export default function WishlistPage() {
                       <div className={cn('rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20',
                         idx === 0 ? 'h-14 w-14' : 'h-11 w-11')}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain p-0.5" />
                       </div>
                     ) : (
                       <div className={cn('rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50',
@@ -887,7 +892,7 @@ export default function WishlistPage() {
                     {item.imageUrl ? (
                       <div className="h-8 w-8 rounded overflow-hidden shrink-0 border border-border/40 bg-muted/20">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt="" className="w-full h-full object-contain" />
+                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain" />
                       </div>
                     ) : (
                       <div className="h-8 w-8 rounded flex items-center justify-center shrink-0 bg-muted/20">
@@ -967,7 +972,7 @@ export default function WishlistPage() {
                 {item.imageUrl ? (
                   <div className="h-11 w-11 rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.imageUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                    <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain p-0.5" />
                   </div>
                 ) : (
                   <div className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50">
@@ -1036,7 +1041,7 @@ export default function WishlistPage() {
       <div className="px-4 lg:px-8 py-4 border-b border-border/50">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-lg font-semibold tracking-tight">{copy.vault}</span>
+            <h1 className="inline text-lg font-semibold tracking-tight">{copy.vault}</h1>
             <span className="text-[11px] text-muted-foreground/40 ml-2 hidden sm:inline tabular-nums">
               {interpolate(copy.itemCount, { count: stats.totalItems, item: language === 'de' ? 'Stück' : stats.totalItems === 1 ? 'piece' : 'pieces' })}
               {activeValueTotals.length > 0 && <> · {formatCurrencyTotals(activeValueTotals)}</>}
@@ -1103,7 +1108,7 @@ export default function WishlistPage() {
                       {heroItem.imageUrl ? (
                         <div className="w-full sm:w-1/2 aspect-square sm:aspect-auto sm:h-64 lg:h-80 flex items-center justify-center p-6 lg:p-12 vault-spotlight">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={heroItem.imageUrl} alt={heroItem.name}
+                          <img src={heroItem.imageUrl} alt={heroItem.name} loading="eager" fetchPriority="high" decoding="async"
                             className="max-w-full max-h-full object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-transform duration-700 group-hover:scale-[1.03]" />
                         </div>
                       ) : (
@@ -1192,7 +1197,7 @@ export default function WishlistPage() {
                                 {hasImage ? (
                                   <>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={item.imageUrl} alt={item.name}
+                                    <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async"
                                       className="max-w-[80%] max-h-[80%] object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-transform duration-500 group-hover:scale-[1.04]" />
                                   </>
                                 ) : (
@@ -1277,7 +1282,7 @@ export default function WishlistPage() {
                 {item.imageUrl ? (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.imageUrl} alt={item.name}
+                    <img src={item.imageUrl} alt={item.name} decoding="async"
                       className="max-w-full max-h-[40vh] object-contain drop-shadow-[0_12px_32px_rgba(0,0,0,0.15)]" />
                   </>
                 ) : (
@@ -1414,7 +1419,7 @@ export default function WishlistPage() {
                 {quickImageUrl && (
                   <div className="rounded-lg border border-border overflow-hidden h-32 bg-muted/10">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={quickImageUrl} alt="" className="w-full h-full object-contain p-2"
+                    <img src={quickImageUrl} alt="" decoding="async" className="w-full h-full object-contain p-2"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   </div>
                 )}
