@@ -28,7 +28,12 @@ import {
 import { scopeThreadmapStore, useThreadmapStore } from '@/lib/store';
 import { scopeAbiturStore, useAbiturStore } from '@/lib/abitur-store';
 import { scopeToolboxStore, useToolboxStore } from '@/lib/toolbox-store';
-import { scopeWishlistStore, useWishlistStore, type WishlistCloudData } from '@/lib/wishlist-store';
+import {
+  mergeWishlistCloudData,
+  scopeWishlistStore,
+  useWishlistStore,
+  type WishlistCloudData,
+} from '@/lib/wishlist-store';
 import { scopeSettingsStore, useSettingsStore } from '@/lib/settings-store';
 import { setFlightStorageOwner, subscribeToFlightLogs } from '@/lib/flight';
 import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
@@ -261,6 +266,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
             deletedItems: useWishlistStore.getState().deletedItems,
           }),
           hasPendingLocalChanges: () => useWishlistStore.getState().cloudDirty,
+          mergeInitialData: (local, remote) => mergeWishlistCloudData(
+            local,
+            remote || { items: [], duels: [], deletedItems: {} },
+          ),
         }
       ));
 

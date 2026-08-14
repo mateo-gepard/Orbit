@@ -210,6 +210,7 @@ let _syncUserId: string | null = null;
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 let _localRevision = 0;
 let _scopeGeneration = 0;
+let _flushGeneration: number | null = null;
 
 export interface WishlistCloudData extends Record<string, unknown> {
   items: VaultItem[];
@@ -222,6 +223,37 @@ interface NormalizedWishlistCloudData extends Record<string, unknown> {
   duels: AuctionDuel[];
   deletedItems: Record<string, number>;
 }
+
+const WISHLIST_MUTABLE_FIELDS = [
+  'name',
+  'price',
+  'priceEstimated',
+  'currency',
+  'url',
+  'imageUrl',
+  'category',
+  'notes',
+  'acquiredAt',
+  'removedAt',
+] as const satisfies ReadonlyArray<keyof VaultItem>;
+
+type WishlistMutableField = typeof WISHLIST_MUTABLE_FIELDS[number];
+
+type WishlistMutation =
+  | { id: string; type: 'add'; at: number; item: VaultItem }
+  | {
+      id: string;
+      type: 'update';
+      at: number;
+      itemId: string;
+      values: Partial<Pick<VaultItem, WishlistMutableField>>;
+      unset: WishlistMutableField[];
+    }
+  | { id: string; type: 'delete'; at: number; itemId: string }
+  | { id: string; type: 'duel'; at: number; duel: AuctionDuel };
+
+const WISHLIST_MUTABLE_FIELD_SET = new Set<string>(WISHLIST_MUTABLE_FIELDS);
+const MAX_PENDING_WISHLIST_MUTATIONS = 5_000;
 
 /** Strip `undefined` values from objects — Firestore rejects them */
 function sanitizeForFirestore<T>(obj: T): T {
@@ -368,17 +400,201 @@ function sanitizeDeletedItems(value: unknown): Record<string, number> {
   );
 }
 
+function validWishlistId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 160;
+}
+
+function sanitizeWishlistMutations(value: unknown): WishlistMutation[] {
+  if (!Array.isArray(value)) return [];
+  const mutations: WishlistMutation[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of value.slice(-MAX_PENDING_WISHLIST_MUTATIONS)) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const raw = candidate as Record<string, unknown>;
+    if (!validWishlistId(raw.id) || seen.has(raw.id)) continue;
+    const at = optionalTimestamp(raw.at);
+    if (!at) continue;
+
+    if (raw.type === 'add') {
+      const item = sanitizeVaultItem(raw.item);
+      if (!item) continue;
+      mutations.push({ id: raw.id, type: 'add', at, item });
+      seen.add(raw.id);
+      continue;
+    }
+
+    if (raw.type === 'update' && validWishlistId(raw.itemId)) {
+      const values = raw.values && typeof raw.values === 'object' && !Array.isArray(raw.values)
+        ? Object.fromEntries(
+            Object.entries(raw.values as Record<string, unknown>)
+              .filter(([key, fieldValue]) => WISHLIST_MUTABLE_FIELD_SET.has(key) && fieldValue !== undefined)
+          ) as Partial<Pick<VaultItem, WishlistMutableField>>
+        : {};
+      const unset = Array.isArray(raw.unset)
+        ? [...new Set(raw.unset.filter(
+            (field): field is WishlistMutableField => typeof field === 'string' && WISHLIST_MUTABLE_FIELD_SET.has(field)
+          ))]
+        : [];
+      if (Object.keys(values).length === 0 && unset.length === 0) continue;
+      mutations.push({ id: raw.id, type: 'update', at, itemId: raw.itemId, values, unset });
+      seen.add(raw.id);
+      continue;
+    }
+
+    if (raw.type === 'delete' && validWishlistId(raw.itemId)) {
+      mutations.push({ id: raw.id, type: 'delete', at, itemId: raw.itemId });
+      seen.add(raw.id);
+      continue;
+    }
+
+    if (raw.type === 'duel' && raw.duel && typeof raw.duel === 'object') {
+      const duel = raw.duel as Partial<AuctionDuel>;
+      if (
+        validWishlistId(duel.id)
+        && validWishlistId(duel.itemA)
+        && validWishlistId(duel.itemB)
+        && duel.itemA !== duel.itemB
+        && (duel.winnerId === duel.itemA || duel.winnerId === duel.itemB)
+      ) {
+        mutations.push({
+          id: raw.id,
+          type: 'duel',
+          at,
+          duel: {
+            id: duel.id,
+            itemA: duel.itemA,
+            itemB: duel.itemB,
+            winnerId: duel.winnerId,
+            timestamp: optionalTimestamp(duel.timestamp) || at,
+          },
+        });
+        seen.add(raw.id);
+      }
+    }
+  }
+
+  return mutations;
+}
+
+function createUpdateMutation(
+  itemId: string,
+  updates: Partial<VaultItem>,
+  at: number,
+): WishlistMutation | null {
+  const values: Partial<Pick<VaultItem, WishlistMutableField>> = {};
+  const unset: WishlistMutableField[] = [];
+  for (const field of WISHLIST_MUTABLE_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(updates, field)) continue;
+    const value = updates[field];
+    if (value === undefined) unset.push(field);
+    else Object.assign(values, { [field]: value });
+  }
+  if (Object.keys(values).length === 0 && unset.length === 0) return null;
+  return { id: crypto.randomUUID(), type: 'update', at, itemId, values, unset };
+}
+
 function normalizeWishlistCloudData(data: WishlistCloudData): NormalizedWishlistCloudData {
-  const items = cleanItems(Array.isArray(data.items) ? data.items : []).slice(0, MAX_WISHLIST_ITEMS);
+  const deletedItems = sanitizeDeletedItems(data.deletedItems);
+  const items = cleanItems(Array.isArray(data.items) ? data.items : [])
+    .filter((item) => !deletedItems[item.id])
+    .slice(0, MAX_WISHLIST_ITEMS);
   return {
     items,
     duels: sanitizeDuels(data.duels, new Set(items.map((item) => item.id))),
-    deletedItems: sanitizeDeletedItems(data.deletedItems),
+    deletedItems,
   };
 }
 
 function itemVersion(item: VaultItem): number {
-  return item.updatedAt || item.removedAt || item.acquiredAt || item.addedAt;
+  return Math.max(item.updatedAt || 0, item.removedAt || 0, item.acquiredAt || 0, item.addedAt);
+}
+
+function applyWishlistMutations(
+  data: WishlistCloudData,
+  pendingMutations: WishlistMutation[],
+): NormalizedWishlistCloudData {
+  let current = normalizeWishlistCloudData(data);
+
+  for (const mutation of pendingMutations) {
+    if (mutation.type === 'add') {
+      if (current.deletedItems[mutation.item.id] || current.items.some((item) => item.id === mutation.item.id)) continue;
+      current = normalizeWishlistCloudData({
+        ...current,
+        items: [...current.items, mutation.item],
+      });
+      continue;
+    }
+
+    if (mutation.type === 'update') {
+      const itemIndex = current.items.findIndex((item) => item.id === mutation.itemId);
+      if (itemIndex < 0 || current.deletedItems[mutation.itemId]) continue;
+      const existing = current.items[itemIndex];
+      const candidate = { ...existing, ...mutation.values } as VaultItem;
+      for (const field of mutation.unset) delete candidate[field];
+      candidate.id = existing.id;
+      candidate.addedAt = existing.addedAt;
+      candidate.updatedAt = Math.max(itemVersion(existing), mutation.at);
+      const updated = sanitizeVaultItem(candidate);
+      if (!updated) continue;
+      const items = [...current.items];
+      items[itemIndex] = updated;
+      current = { ...current, items };
+      continue;
+    }
+
+    if (mutation.type === 'delete') {
+      const items = current.items.filter((item) => item.id !== mutation.itemId);
+      const duels = current.duels.filter((duel) => duel.itemA !== mutation.itemId && duel.itemB !== mutation.itemId);
+      current = {
+        items,
+        duels,
+        deletedItems: sanitizeDeletedItems({
+          ...current.deletedItems,
+          [mutation.itemId]: Math.max(current.deletedItems[mutation.itemId] || 0, mutation.at),
+        }),
+      };
+      continue;
+    }
+
+    if (current.duels.some((duel) => duel.id === mutation.duel.id)) continue;
+    const winner = current.items.find((item) => item.id === mutation.duel.winnerId);
+    const loserId = mutation.duel.itemA === mutation.duel.winnerId ? mutation.duel.itemB : mutation.duel.itemA;
+    const loser = current.items.find((item) => item.id === loserId);
+    if (!winner || !loser) continue;
+    const { newWinnerElo, newLoserElo } = calculateElo(winner.elo, loser.elo);
+    const items = current.items.map((item) => {
+      if (item.id === winner.id) {
+        return {
+          ...item,
+          elo: newWinnerElo,
+          duelsPlayed: item.duelsPlayed + 1,
+          duelsWon: item.duelsWon + 1,
+          updatedAt: Math.max(itemVersion(item), mutation.at),
+        };
+      }
+      if (item.id === loser.id) {
+        return {
+          ...item,
+          elo: newLoserElo,
+          duelsPlayed: item.duelsPlayed + 1,
+          updatedAt: Math.max(itemVersion(item), mutation.at),
+        };
+      }
+      return item;
+    });
+    current = normalizeWishlistCloudData({
+      ...current,
+      items,
+      duels: [...current.duels, mutation.duel].slice(-MAX_DUEL_HISTORY),
+    });
+  }
+
+  return current;
+}
+
+function wishlistDataEqual(left: WishlistCloudData, right: WishlistCloudData): boolean {
+  return JSON.stringify(normalizeWishlistCloudData(left)) === JSON.stringify(normalizeWishlistCloudData(right));
 }
 
 /** Merge independently edited Wishlist documents without dropping either device's additions. */
@@ -409,7 +625,9 @@ export function mergeWishlistCloudData(
   const items = order
     .map((id) => itemsById.get(id))
     .filter((item): item is VaultItem => Boolean(item))
-    .filter((item) => (deletedItems[item.id] || 0) < itemVersion(item))
+    // Wishlist IDs are immutable UUIDs and hard deletion has no restore action.
+    // Once an ID has a tombstone, stale or clock-skewed clients must never revive it.
+    .filter((item) => !deletedItems[item.id])
     .slice(0, MAX_WISHLIST_ITEMS);
   const itemIds = new Set(items.map((item) => item.id));
 
@@ -420,44 +638,79 @@ export function mergeWishlistCloudData(
   };
 }
 
-function scheduleSave(items: VaultItem[], duels: AuctionDuel[], deletedItems: Record<string, number>) {
-  if (!_syncUserId) {
-    useWishlistStore.setState({ cloudDirty: false });
-    return;
-  }
+function currentWishlistCloudData(): NormalizedWishlistCloudData {
+  const state = useWishlistStore.getState();
+  return normalizeWishlistCloudData({
+    items: state.items,
+    duels: state.duels,
+    deletedItems: state.deletedItems,
+  });
+}
+
+function scheduleSave() {
+  if (!_syncUserId) return;
   if (_saveTimer) clearTimeout(_saveTimer);
   const scheduledUserId = _syncUserId;
   const scheduledGeneration = _scopeGeneration;
   const revision = ++_localRevision;
   const persist = async () => {
+    _saveTimer = null;
     if (_syncUserId !== scheduledUserId
         || _scopeGeneration !== scheduledGeneration
-        || revision < _localRevision) return;
-    const clean = sanitizeForFirestore({ items, duels, deletedItems } satisfies WishlistCloudData);
+        || revision !== _localRevision) return;
+    if (_flushGeneration === scheduledGeneration) {
+      _saveTimer = setTimeout(() => void persist(), 250);
+      return;
+    }
+    const state = useWishlistStore.getState();
+    if (!state.cloudDirty) return;
+    const pendingMutations = sanitizeWishlistMutations(state.pendingMutations);
+    const acknowledgedIds = new Set(pendingMutations.map((mutation) => mutation.id));
+    const clean = sanitizeForFirestore(currentWishlistCloudData());
+    _flushGeneration = scheduledGeneration;
     try {
       const merged = await mergeToolData(
         scheduledUserId,
         'wishlist',
         clean,
-        (pending, remote) => mergeWishlistCloudData(
-          pending,
-          remote || { items: [], duels: [], deletedItems: {} },
-        ),
+        (pending, remote) => pendingMutations.length > 0
+          ? applyWishlistMutations(
+              remote || { items: [], duels: [], deletedItems: {} },
+              pendingMutations,
+            )
+          : mergeWishlistCloudData(
+              pending,
+              remote || { items: [], duels: [], deletedItems: {} },
+            ),
       );
       if (_syncUserId !== scheduledUserId
-          || _scopeGeneration !== scheduledGeneration
-          || revision !== _localRevision) return;
-      useWishlistStore.setState({ ...merged, cloudDirty: false });
+          || _scopeGeneration !== scheduledGeneration) return;
+      const latest = useWishlistStore.getState();
+      const remainingMutations = sanitizeWishlistMutations(latest.pendingMutations)
+        .filter((mutation) => !acknowledgedIds.has(mutation.id));
+      const optimistic = applyWishlistMutations(merged, remainingMutations);
+      useWishlistStore.setState({
+        ...optimistic,
+        pendingMutations: remainingMutations,
+        cloudDirty: remainingMutations.length > 0,
+      });
     } catch (error) {
       if (_syncUserId !== scheduledUserId
-          || _scopeGeneration !== scheduledGeneration
-          || revision !== _localRevision) return;
+          || _scopeGeneration !== scheduledGeneration) return;
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
           detail: { message: 'Wishlist changes are saved on this device, but cloud sync will retry.' },
         }));
       }
-      _saveTimer = setTimeout(() => void persist(), 5_000);
+      if (revision === _localRevision) _saveTimer = setTimeout(() => void persist(), 5_000);
+    } finally {
+      if (_flushGeneration === scheduledGeneration) _flushGeneration = null;
+      if (_syncUserId === scheduledUserId
+          && _scopeGeneration === scheduledGeneration
+          && useWishlistStore.getState().cloudDirty
+          && !_saveTimer) {
+        scheduleSave();
+      }
     }
   };
   _saveTimer = setTimeout(() => void persist(), 500);
@@ -467,6 +720,7 @@ interface WishlistState {
   items: VaultItem[];
   duels: AuctionDuel[];
   deletedItems: Record<string, number>;
+  pendingMutations: WishlistMutation[];
   cloudDirty: boolean;
 
   // CRUD
@@ -497,6 +751,7 @@ export const useWishlistStore = create<WishlistState>()(
       items: [],
       duels: [],
       deletedItems: {},
+      pendingMutations: [],
       cloudDirty: false,
 
       addItem: (itemData) => {
@@ -513,51 +768,73 @@ export const useWishlistStore = create<WishlistState>()(
           addedAt: now,
           updatedAt: now,
         });
-        const items = [...get().items, item];
-        set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels, get().deletedItems);
+        const mutation: WishlistMutation = { id: crypto.randomUUID(), type: 'add', at: now, item };
+        const next = applyWishlistMutations(currentWishlistCloudData(), [mutation]);
+        const pendingMutations = _syncUserId
+          ? [...get().pendingMutations, mutation].slice(-MAX_PENDING_WISHLIST_MUTATIONS)
+          : get().pendingMutations;
+        set({ ...next, pendingMutations, cloudDirty: Boolean(_syncUserId) });
+        scheduleSave();
         return true;
       },
 
       updateItem: (id, updates) => {
-        const items = get().items.map((item) => {
-          if (item.id !== id) return item;
-          return sanitizeVaultItem({ ...item, ...updates, id: item.id, updatedAt: Date.now() }) || item;
-        });
-        set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels, get().deletedItems);
+        if (!get().items.some((item) => item.id === id)) return;
+        const mutation = createUpdateMutation(id, updates, Date.now());
+        if (!mutation) return;
+        const next = applyWishlistMutations(currentWishlistCloudData(), [mutation]);
+        const pendingMutations = _syncUserId
+          ? [...get().pendingMutations, mutation].slice(-MAX_PENDING_WISHLIST_MUTATIONS)
+          : get().pendingMutations;
+        set({ ...next, pendingMutations, cloudDirty: Boolean(_syncUserId) });
+        scheduleSave();
       },
 
       acquireItem: (id) => {
-        const items = get().items.map((i) =>
-          i.id === id ? { ...i, acquiredAt: Date.now(), updatedAt: Date.now() } : i
-        );
-        set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels, get().deletedItems);
+        const now = Date.now();
+        const mutation = createUpdateMutation(id, { acquiredAt: now, removedAt: undefined }, now);
+        if (!mutation || !get().items.some((item) => item.id === id)) return;
+        const next = applyWishlistMutations(currentWishlistCloudData(), [mutation]);
+        const pendingMutations = _syncUserId
+          ? [...get().pendingMutations, mutation].slice(-MAX_PENDING_WISHLIST_MUTATIONS)
+          : get().pendingMutations;
+        set({ ...next, pendingMutations, cloudDirty: Boolean(_syncUserId) });
+        scheduleSave();
       },
 
       removeItem: (id) => {
-        const items = get().items.map((i) =>
-          i.id === id ? { ...i, removedAt: Date.now(), updatedAt: Date.now() } : i
-        );
-        set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels, get().deletedItems);
+        const now = Date.now();
+        const mutation = createUpdateMutation(id, { removedAt: now, acquiredAt: undefined }, now);
+        if (!mutation || !get().items.some((item) => item.id === id)) return;
+        const next = applyWishlistMutations(currentWishlistCloudData(), [mutation]);
+        const pendingMutations = _syncUserId
+          ? [...get().pendingMutations, mutation].slice(-MAX_PENDING_WISHLIST_MUTATIONS)
+          : get().pendingMutations;
+        set({ ...next, pendingMutations, cloudDirty: Boolean(_syncUserId) });
+        scheduleSave();
       },
 
       restoreItem: (id) => {
-        const items = get().items.map((i) =>
-          i.id === id ? { ...i, acquiredAt: undefined, removedAt: undefined, updatedAt: Date.now() } : i
-        );
-        set({ items, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, get().duels, get().deletedItems);
+        const mutation = createUpdateMutation(id, { acquiredAt: undefined, removedAt: undefined }, Date.now());
+        if (!mutation || !get().items.some((item) => item.id === id)) return;
+        const next = applyWishlistMutations(currentWishlistCloudData(), [mutation]);
+        const pendingMutations = _syncUserId
+          ? [...get().pendingMutations, mutation].slice(-MAX_PENDING_WISHLIST_MUTATIONS)
+          : get().pendingMutations;
+        set({ ...next, pendingMutations, cloudDirty: Boolean(_syncUserId) });
+        scheduleSave();
       },
 
       deleteItem: (id) => {
-        const items = get().items.filter((i) => i.id !== id);
-        const duels = get().duels.filter((d) => d.itemA !== id && d.itemB !== id);
-        const deletedItems = sanitizeDeletedItems({ ...get().deletedItems, [id]: Date.now() });
-        set({ items, duels, deletedItems, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(items, duels, deletedItems);
+        if (!get().items.some((item) => item.id === id)) return;
+        const now = Date.now();
+        const mutation: WishlistMutation = { id: crypto.randomUUID(), type: 'delete', at: now, itemId: id };
+        const next = applyWishlistMutations(currentWishlistCloudData(), [mutation]);
+        const pendingMutations = _syncUserId
+          ? [...get().pendingMutations, mutation].slice(-MAX_PENDING_WISHLIST_MUTATIONS)
+          : get().pendingMutations;
+        set({ ...next, pendingMutations, cloudDirty: Boolean(_syncUserId) });
+        scheduleSave();
       },
 
       recordDuel: (winnerId, loserId) => {
@@ -566,19 +843,7 @@ export const useWishlistStore = create<WishlistState>()(
         const loser = items.find((i) => i.id === loserId);
         if (!winner || !loser) return;
 
-        const { newWinnerElo, newLoserElo } = calculateElo(winner.elo, loser.elo);
-
         const now = Date.now();
-        const updatedItems = items.map((i) => {
-          if (i.id === winnerId) {
-            return { ...i, elo: newWinnerElo, duelsPlayed: i.duelsPlayed + 1, duelsWon: i.duelsWon + 1, updatedAt: now };
-          }
-          if (i.id === loserId) {
-            return { ...i, elo: newLoserElo, duelsPlayed: i.duelsPlayed + 1, updatedAt: now };
-          }
-          return i;
-        });
-
         const duel: AuctionDuel = {
           id: crypto.randomUUID(),
           itemA: winnerId,
@@ -586,10 +851,13 @@ export const useWishlistStore = create<WishlistState>()(
           winnerId,
           timestamp: now,
         };
-
-        const duels = [...get().duels, duel].slice(-MAX_DUEL_HISTORY);
-        set({ items: updatedItems, duels, cloudDirty: Boolean(_syncUserId) });
-        scheduleSave(updatedItems, duels, get().deletedItems);
+        const mutation: WishlistMutation = { id: crypto.randomUUID(), type: 'duel', at: now, duel };
+        const next = applyWishlistMutations(currentWishlistCloudData(), [mutation]);
+        const pendingMutations = _syncUserId
+          ? [...get().pendingMutations, mutation].slice(-MAX_PENDING_WISHLIST_MUTATIONS)
+          : get().pendingMutations;
+        set({ ...next, pendingMutations, cloudDirty: Boolean(_syncUserId) });
+        scheduleSave();
       },
 
       getActiveItems: () => get().items.filter((i) => !i.acquiredAt && !i.removedAt),
@@ -604,29 +872,26 @@ export const useWishlistStore = create<WishlistState>()(
         try {
           const cloud = normalizeWishlistCloudData(data);
           const local = get();
+          const pendingMutations = sanitizeWishlistMutations(local.pendingMutations);
+          if (pendingMutations.length > 0) {
+            const optimistic = applyWishlistMutations(cloud, pendingMutations);
+            set({ ...optimistic, pendingMutations, cloudDirty: true });
+            return;
+          }
           if (local.cloudDirty) {
             const merged = mergeWishlistCloudData({
               items: local.items,
               duels: local.duels,
               deletedItems: local.deletedItems,
             }, cloud);
-            if (JSON.stringify(merged) === JSON.stringify(cloud)) {
+            if (wishlistDataEqual(merged, cloud)) {
               set({ ...cloud, cloudDirty: false });
             } else {
               set({ ...merged, cloudDirty: true });
-              scheduleSave(merged.items, merged.duels, merged.deletedItems);
             }
             return;
           }
           set({ ...cloud, cloudDirty: false });
-          if (JSON.stringify(cloud) !== JSON.stringify({
-            items: Array.isArray(data.items) ? data.items : [],
-            duels: Array.isArray(data.duels) ? data.duels : [],
-            deletedItems: data.deletedItems || {},
-          })) {
-            set({ cloudDirty: true });
-            scheduleSave(cloud.items, cloud.duels, cloud.deletedItems);
-          }
         } catch {
         }
       },
@@ -638,12 +903,11 @@ export const useWishlistStore = create<WishlistState>()(
             clearTimeout(_saveTimer);
             _saveTimer = null;
           }
+          _flushGeneration = null;
         }
         _syncUserId = userId;
         _localRevision = 0;
-        if (!userId) {
-          return;
-        }
+        if (userId && get().cloudDirty) scheduleSave();
       },
     }),
     {
@@ -652,24 +916,33 @@ export const useWishlistStore = create<WishlistState>()(
         items: state.items,
         duels: state.duels,
         deletedItems: state.deletedItems,
+        pendingMutations: state.pendingMutations,
         cloudDirty: state.cloudDirty,
       }),
-      merge: (persisted, current) => ({
-        ...current,
-        ...(persisted as Partial<WishlistState> | undefined),
-        deletedItems: sanitizeDeletedItems((persisted as Partial<WishlistState> | undefined)?.deletedItems),
-        cloudDirty: (persisted as { cloudDirty?: unknown } | undefined)?.cloudDirty === true,
-      }),
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<WishlistState> | undefined;
+        const deletedItems = sanitizeDeletedItems(saved?.deletedItems);
+        const items = cleanItems(Array.isArray(saved?.items) ? saved.items : [])
+          .filter((item) => !deletedItems[item.id])
+          .slice(0, MAX_WISHLIST_ITEMS);
+        return {
+          ...current,
+          items,
+          duels: sanitizeDuels(saved?.duels, new Set(items.map((item) => item.id))),
+          deletedItems,
+          pendingMutations: sanitizeWishlistMutations(saved?.pendingMutations),
+          cloudDirty: saved?.cloudDirty === true,
+        };
+      },
       skipHydration: true,
       storage: createJSONStorage(() => verifiedLocalStateStorage),
       onRehydrateStorage: () => (state) => {
         // Clean HTML entities from any previously saved items
-        if (state && state.items.length > 0) {
+        if (state) {
           const cleaned = cleanItems(state.items).slice(0, MAX_WISHLIST_ITEMS);
-          if (JSON.stringify(cleaned) !== JSON.stringify(state.items.slice(0, MAX_WISHLIST_ITEMS))) {
-            state.items = cleaned;
-          }
+          state.items = cleaned.filter((item) => !state.deletedItems[item.id]);
           state.duels = sanitizeDuels(state.duels, new Set(cleaned.map((item) => item.id)));
+          state.pendingMutations = sanitizeWishlistMutations(state.pendingMutations);
         }
       },
     }
@@ -682,6 +955,8 @@ export async function scopeWishlistStore(userId: string | null): Promise<void> {
   useWishlistStore.getState()._setSyncUserId(null);
   const target = prepareScopedStorage(WISHLIST_STORAGE_KEY, userId);
   useWishlistStore.persist.setOptions({ name: target.key });
-  if (!target.hasPersistedState) useWishlistStore.setState({ items: [], duels: [], deletedItems: {}, cloudDirty: false });
+  if (!target.hasPersistedState) {
+    useWishlistStore.setState({ items: [], duels: [], deletedItems: {}, pendingMutations: [], cloudDirty: false });
+  }
   await useWishlistStore.persist.rehydrate();
 }

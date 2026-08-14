@@ -2189,6 +2189,8 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
     getInitialData?: () => T | null;
     /** Keep the revision that the current dirty local payload was based on. */
     hasPendingLocalChanges?: () => boolean;
+    /** Resolve a first-cloud race without replacing a document another device just created. */
+    mergeInitialData?: (local: T, remote: T | null) => T;
   } = {}
 ): () => void {
   assertActiveAccount(userId);
@@ -2256,7 +2258,11 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
         callback(initialData);
         if (!snapshot.metadata.fromCache && initialData && !seedAttempted) {
           seedAttempted = true;
-          void saveToolData(userId, toolId, initialData).catch((error) => {
+          const seed = options.mergeInitialData
+            ? mergeToolData(userId, toolId, initialData, options.mergeInitialData)
+            : saveToolData(userId, toolId, initialData);
+          void seed.catch((error) => {
+            seedAttempted = false;
             console.error(`[THREADMAP] Failed to seed tool data (${toolId}):`, error);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
