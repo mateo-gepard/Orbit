@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-13T15:53:19Z",
+  "generatedAt": "2026-08-14T07:11:45.915Z",
   "title": "Design System: Threadmap",
   "extensions": {
     "colorMeta": {
@@ -10,11 +10,35 @@
         "canonical": "oklch(0.988 0.002 80)",
         "tonalRamp": ["oklch(0.15 0.002 80)", "oklch(0.27 0.002 80)", "oklch(0.39 0.002 80)", "oklch(0.51 0.002 80)", "oklch(0.63 0.002 80)", "oklch(0.75 0.002 80)", "oklch(0.87 0.002 80)", "oklch(0.988 0.002 80)"]
       },
+      "paper-raised": {
+        "role": "neutral",
+        "displayName": "Raised Paper",
+        "canonical": "oklch(0.998 0.001 80)",
+        "tonalRamp": ["oklch(0.15 0.001 80)", "oklch(0.27 0.001 80)", "oklch(0.39 0.001 80)", "oklch(0.51 0.001 80)", "oklch(0.63 0.001 80)", "oklch(0.75 0.001 80)", "oklch(0.87 0.001 80)", "oklch(0.998 0.001 80)"]
+      },
       "ink": {
         "role": "primary",
         "displayName": "Working Ink",
         "canonical": "oklch(0.16 0.01 60)",
         "tonalRamp": ["oklch(0.15 0.01 60)", "oklch(0.27 0.01 60)", "oklch(0.39 0.01 60)", "oklch(0.51 0.01 60)", "oklch(0.63 0.01 60)", "oklch(0.75 0.01 60)", "oklch(0.87 0.01 60)", "oklch(0.95 0.01 60)"]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "oklch(0.38 0.01 60)",
+        "tonalRamp": ["oklch(0.15 0.01 60)", "oklch(0.27 0.01 60)", "oklch(0.38 0.01 60)", "oklch(0.51 0.01 60)", "oklch(0.63 0.01 60)", "oklch(0.75 0.01 60)", "oklch(0.87 0.01 60)", "oklch(0.95 0.01 60)"]
+      },
+      "ink-tertiary": {
+        "role": "neutral",
+        "displayName": "Tertiary Ink",
+        "canonical": "oklch(0.44 0.01 60)",
+        "tonalRamp": ["oklch(0.15 0.01 60)", "oklch(0.27 0.01 60)", "oklch(0.39 0.01 60)", "oklch(0.44 0.01 60)", "oklch(0.63 0.01 60)", "oklch(0.75 0.01 60)", "oklch(0.87 0.01 60)", "oklch(0.95 0.01 60)"]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Structural Rule",
+        "canonical": "oklch(0.91 0.005 75)",
+        "tonalRamp": ["oklch(0.15 0.005 75)", "oklch(0.27 0.005 75)", "oklch(0.39 0.005 75)", "oklch(0.51 0.005 75)", "oklch(0.63 0.005 75)", "oklch(0.75 0.005 75)", "oklch(0.87 0.005 75)", "oklch(0.95 0.005 75)"]
       },
       "charcoal": {
         "role": "neutral",
@@ -22,18 +46,45 @@
         "canonical": "oklch(0.14 0.008 60)",
         "tonalRamp": ["oklch(0.14 0.008 60)", "oklch(0.26 0.008 60)", "oklch(0.38 0.008 60)", "oklch(0.50 0.008 60)", "oklch(0.62 0.008 60)", "oklch(0.74 0.008 60)", "oklch(0.86 0.008 60)", "oklch(0.95 0.008 60)"]
       },
+      "charcoal-raised": {
+        "role": "neutral",
+        "displayName": "Raised Charcoal",
+        "canonical": "oklch(0.19 0.008 60)",
+        "tonalRamp": ["oklch(0.15 0.008 60)", "oklch(0.19 0.008 60)", "oklch(0.39 0.008 60)", "oklch(0.51 0.008 60)", "oklch(0.63 0.008 60)", "oklch(0.75 0.008 60)", "oklch(0.87 0.008 60)", "oklch(0.95 0.008 60)"]
+      },
+      "chalk": {
+        "role": "primary",
+        "displayName": "Working Chalk",
+        "canonical": "oklch(0.93 0.005 80)",
+        "tonalRamp": ["oklch(0.15 0.005 80)", "oklch(0.27 0.005 80)", "oklch(0.39 0.005 80)", "oklch(0.51 0.005 80)", "oklch(0.63 0.005 80)", "oklch(0.75 0.005 80)", "oklch(0.87 0.005 80)", "oklch(0.95 0.005 80)"]
+      },
+      "chalk-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Chalk",
+        "canonical": "oklch(0.78 0.01 60)",
+        "tonalRamp": ["oklch(0.15 0.01 60)", "oklch(0.27 0.01 60)", "oklch(0.39 0.01 60)", "oklch(0.51 0.01 60)", "oklch(0.63 0.01 60)", "oklch(0.78 0.01 60)", "oklch(0.87 0.01 60)", "oklch(0.95 0.01 60)"]
+      },
       "user-accent-default": {
         "role": "secondary",
         "displayName": "User Accent",
         "canonical": "#6366f1",
         "tonalRamp": ["oklch(0.18 0.08 278)", "oklch(0.29 0.12 278)", "oklch(0.40 0.16 278)", "oklch(0.51 0.19 278)", "oklch(0.62 0.20 278)", "oklch(0.73 0.16 278)", "oklch(0.84 0.10 278)", "oklch(0.95 0.04 278)"]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Destructive Signal",
+        "canonical": "oklch(0.55 0.22 25)",
+        "tonalRamp": ["oklch(0.15 0.08 25)", "oklch(0.27 0.12 25)", "oklch(0.39 0.17 25)", "oklch(0.51 0.21 25)", "oklch(0.63 0.20 25)", "oklch(0.75 0.16 25)", "oklch(0.87 0.10 25)", "oklch(0.95 0.04 25)"]
       }
     },
     "typographyMeta": {
       "display": { "displayName": "Display", "purpose": "Authentication and rare focal headings." },
+      "editorial-display": { "displayName": "Editorial Display", "purpose": "The standalone About narrative only." },
+      "micro-fine": { "displayName": "Fine Micro Data", "purpose": "Exceptionally constrained measurement and annotation only." },
       "micro": { "displayName": "Micro Data", "purpose": "Space-constrained calendar and chart annotations only." },
       "caption": { "displayName": "Caption", "purpose": "Compact supporting metadata." },
       "compact": { "displayName": "Compact Interface", "purpose": "Dense navigation and control labels." },
+      "ui": { "displayName": "Interface", "purpose": "Primary controls and standard interactive copy." },
       "title": { "displayName": "Page Title", "purpose": "The single descriptive heading for a route." },
       "body": { "displayName": "Body", "purpose": "Primary interface and explanatory copy." },
       "body-large": { "displayName": "Body Large", "purpose": "Phone inputs and emphasized explanatory copy." },
@@ -105,7 +156,7 @@
   ],
   "narrative": {
     "northStar": "The Connected Field Desk",
-    "overview": "Threadmap feels like a calm working surface where plans, records, and decisions remain connected without becoming visually loud. Warm paper and deep charcoal establish the environment; precise rules, compact typography, and small tonal shifts organize dense operational information. The interface is restrained rather than austere. Controls feel tactile through short state changes and shallow depth, while the user-selected accent appears sparingly in focus, selection, and small identifying marks.",
+    "overview": "Threadmap feels like a calm working surface where plans, records, and decisions remain connected without becoming visually loud. Warm paper and deep charcoal establish the environment; precise rules, compact typography, and small tonal shifts organize dense operational information. The interface is restrained rather than austere. Controls feel tactile through short state changes and shallow depth, while the user-selected accent appears sparingly in focus, selection, and small identifying marks. The system favors legibility, continuity, and honest status over decorative spectacle.",
     "keyCharacteristics": [
       "Warm, near-neutral light and dark work surfaces.",
       "Compact but readable hierarchy with tabular numerals for dates, counts, and measurements.",
@@ -124,14 +175,17 @@
       "Do use semantic opaque copy tones for every readable label, including compact dates and metadata.",
       "Do keep phone controls at least 44 by 44 pixels and preserve safe-area spacing.",
       "Do use mono or tabular numerals only for code, dates, time, price, rank, and measurement.",
-      "Do preserve short opacity and color feedback in reduced-motion mode."
+      "Do preserve short opacity and color feedback in reduced-motion mode.",
+      "Do reserve final shell geometry while authentication or route data resolves.",
+      "Do lazy-load security and media dependencies that a local-only session does not need."
     ],
     "donts": [
       "Don't use the configurable accent as unchecked small text.",
       "Don't stack opacity onto muted text to create hierarchy.",
       "Don't add decorative grain, gradient text, generic glass cards, or bounce easing.",
       "Don't make essential actions hover-only or icon-only without an accessible name.",
-      "Don't introduce a new card, radius, or motion language for one route when a shared primitive already owns it."
+      "Don't introduce a new card, radius, or motion language for one route when a shared primitive already owns it.",
+      "Don't preload every remote image or initialize reCAPTCHA before cloud functionality is requested."
     ]
   }
 }
