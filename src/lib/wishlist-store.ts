@@ -211,7 +211,7 @@ let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 let _localRevision = 0;
 let _scopeGeneration = 0;
 
-export interface WishlistCloudData {
+export interface WishlistCloudData extends Record<string, unknown> {
   items: VaultItem[];
   duels: AuctionDuel[];
   deletedItems?: Record<string, number>;
