@@ -1759,6 +1759,19 @@ export const beginThreadmapUpload = onCall(
     const intentRef = db.doc(`attachmentUploadIntents/${fileId}`);
     const registryId = uploadRegistryId(uid, itemId);
     const registryRef = db.doc(`attachmentUploadRegistries/${registryId}`);
+    const uploadJobData = {
+      kind: 'upload-intent',
+      userId: uid,
+      itemId,
+      storagePaths: [storagePath],
+      uploadIntentId: fileId,
+      uploadRegistryId: registryId,
+      file,
+      createdAt: uploadedAt,
+      expiresAt,
+      attempts: 0,
+      nextAttemptAt: expiresAt,
+    } satisfies DeletionJobData;
     await db.runTransaction(async (transaction) => {
       const [freshItem, existingJob, existingIntent, registrySnapshot] = await Promise.all([
         transaction.get(itemRef),
@@ -1797,19 +1810,7 @@ export const beginThreadmapUpload = onCall(
         expiresAt: Timestamp.fromMillis(expiresAt),
         createdAt: uploadedAt,
       });
-      transaction.create(uploadJob, {
-      kind: 'upload-intent',
-      userId: uid,
-      itemId,
-      storagePaths: [storagePath],
-      uploadIntentId: fileId,
-      uploadRegistryId: registryId,
-      file,
-      createdAt: uploadedAt,
-      expiresAt,
-      attempts: 0,
-      nextAttemptAt: expiresAt,
-      } satisfies DeletionJobData);
+      transaction.create(uploadJob, uploadJobData);
       transaction.set(registryRef, {
         userId: uid,
         itemId,
@@ -1821,7 +1822,19 @@ export const beginThreadmapUpload = onCall(
         updatedAt: uploadedAt,
       });
     });
-    return { file, expiresAt };
+    try {
+      const [uploadUrl] = await storage.bucket().file(storagePath).createResumableUpload({
+        metadata: {
+          contentType: type,
+          metadata: { threadmapUploadId: fileId },
+        },
+        preconditionOpts: { ifGenerationMatch: 0 },
+      });
+      return { file, expiresAt, uploadUrl };
+    } catch {
+      await cleanupDeletionJob(uploadJob, uploadJobData, true).catch(() => false);
+      throw new HttpsError('unavailable', 'Cloud upload preparation failed. Please retry.');
+    }
   },
 );
 

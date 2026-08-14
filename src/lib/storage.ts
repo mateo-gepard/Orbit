@@ -5,9 +5,7 @@
 import {
   getStorage,
   ref,
-  uploadBytesResumable,
   getBlob,
-  type UploadTask,
 } from 'firebase/storage';
 import { app, isFirebaseStorageConfigured } from './firebase';
 import { cloudFunctions, db } from './firebase';
@@ -84,6 +82,58 @@ export interface UploadProgress {
   totalBytes: number;
 }
 
+function validateResumableUploadUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Cloud upload preparation returned an invalid transfer URL.');
+  }
+  if (url.protocol !== 'https:' || !url.hostname.endsWith('.googleapis.com')) {
+    throw new Error('Cloud upload preparation returned an untrusted transfer URL.');
+  }
+  return url.toString();
+}
+
+function uploadThroughResumableSession(
+  uploadUrl: string,
+  file: File,
+  contentType: string,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', uploadUrl, true);
+    request.timeout = 5 * 60_000;
+    request.setRequestHeader('Content-Type', contentType);
+    request.setRequestHeader(
+      'Content-Range',
+      file.size === 0 ? 'bytes */0' : `bytes 0-${file.size - 1}/${file.size}`,
+    );
+    request.upload.addEventListener('progress', (event) => {
+      const totalBytes = event.lengthComputable ? event.total : file.size;
+      const bytesTransferred = Math.min(event.loaded, totalBytes);
+      onProgress?.({
+        progress: totalBytes > 0 ? (bytesTransferred / totalBytes) * 100 : 100,
+        bytesTransferred,
+        totalBytes,
+      });
+    });
+    request.addEventListener('load', () => {
+      if (request.status >= 200 && request.status < 300) {
+        onProgress?.({ progress: 100, bytesTransferred: file.size, totalBytes: file.size });
+        resolve();
+        return;
+      }
+      reject(new Error(`Cloud storage rejected the transfer (${request.status}).`));
+    });
+    request.addEventListener('error', () => reject(new Error('The cloud transfer could not reach storage.')));
+    request.addEventListener('timeout', () => reject(new Error('The cloud transfer timed out.')));
+    request.addEventListener('abort', () => reject(new Error('The cloud transfer was cancelled.')));
+    request.send(file);
+  });
+}
+
 /**
  * Upload a file to Firebase Storage for a specific Threadmap item.
  * The historical `/projects/` namespace is retained for existing objects.
@@ -111,42 +161,23 @@ export async function uploadProjectFile(
   if (!cloudFunctions) throw new Error('Cloud upload preparation is unavailable.');
   const begin = httpsCallable<
     { itemId: string; name: string; size: number; type: string },
-    { file: ProjectFile; expiresAt: number }
+    { file: ProjectFile; expiresAt: number; uploadUrl: string }
   >(cloudFunctions, 'beginThreadmapUpload');
   const intent = await begin({ itemId: projectId, name: file.name, size: file.size, type: contentType });
   const projectFile = intent.data.file;
   assertAttachmentOwner(projectId, userId, projectFile);
+  const uploadUrl = validateResumableUploadUrl(intent.data.uploadUrl);
 
-  // Create storage reference
-  const storageRef = ref(storage, projectFile.storagePath);
-
-  // Upload file
-  const uploadTask: UploadTask = uploadBytesResumable(storageRef, file, {
-    contentType,
-    customMetadata: { threadmapUploadId: projectFile.id },
-  });
-
-  return new Promise((resolve, reject) => {
-    uploadTask.on(
-      'state_changed',
-      (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        onProgress?.({
-          progress,
-          bytesTransferred: snapshot.bytesTransferred,
-          totalBytes: snapshot.totalBytes,
-        });
-      },
-      (error) => {
-        console.error('[Storage] Upload failed:', error);
-        void cleanupUnattachedUpload(projectId, projectFile.storagePath).catch((cleanupError) => {
-          console.warn('[Storage] Failed upload cleanup remains queued:', cleanupError);
-        });
-        reject(new Error('Upload failed: ' + error.message));
-      },
-      () => resolve(projectFile),
-    );
-  });
+  try {
+    await uploadThroughResumableSession(uploadUrl, file, contentType, onProgress);
+    return projectFile;
+  } catch (error) {
+    console.error('[Storage] Upload failed:', error);
+    void cleanupUnattachedUpload(projectId, projectFile.storagePath).catch((cleanupError) => {
+      console.warn('[Storage] Failed upload cleanup remains queued:', cleanupError);
+    });
+    throw new Error('Upload failed: ' + (error instanceof Error ? error.message : 'Unknown transfer error.'));
+  }
 }
 
 async function cleanupUnattachedUpload(
