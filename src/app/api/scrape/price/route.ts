@@ -1,17 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  acquireConcurrency,
+  checkDistributedScrapeRateLimit,
+  checkRateLimit,
+} from '@/lib/server/rate-limit';
+import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
+import { readResponseText } from '@/lib/server/url-safety';
+import { AMOUNT_PATTERN, normalizePrice } from '@/lib/server/scrape-parsing';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Google Price Search Fallback
+// Threadmap — Google Price Search Fallback
 // For items where the scraper couldn't find a price (SPA sites
 // like LEGO.com), we search Google Shopping and extract prices
 // from the search results. No API key needed.
 // ═══════════════════════════════════════════════════════════
 
 export async function GET(request: NextRequest) {
+  const preAuthLimited = checkRateLimit(request, {
+    name: 'scrape-auth', max: 30, windowMs: 60_000,
+  });
+  if (preAuthLimited) return preAuthLimited;
+
+  let user;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    user = await requireFirebaseUser(request);
+  } catch (error) {
+    return authErrorResponse(error) || NextResponse.json({ error: 'Authentication failed.' }, { status: 500 });
+  }
+  const rateLimited = checkRateLimit(request, {
+    name: 'scrape-price', max: 10, windowMs: 60_000, identity: user.uid,
+  });
+  if (rateLimited) return rateLimited;
+
   const query = request.nextUrl.searchParams.get('q');
 
   if (!query) {
     return NextResponse.json({ error: 'Missing q parameter' }, { status: 400 });
+  }
+  if (query.length > 160) {
+    return NextResponse.json({ error: 'Query too long' }, { status: 400 });
+  }
+
+  const sharedRateLimited = await checkDistributedScrapeRateLimit(request, user.uid);
+  if (sharedRateLimited) return sharedRateLimited;
+
+  const release = acquireConcurrency('scrape', user.uid, 2);
+  if (!release) {
+    return NextResponse.json(
+      { code: 'SCRAPE_BUSY', error: 'Too many product imports are already running.' },
+      { status: 429, headers: { 'Retry-After': '5', 'Cache-Control': 'no-store' } }
+    );
   }
 
   try {
@@ -19,7 +58,7 @@ export async function GET(request: NextRequest) {
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query + ' preis')}&hl=de&gl=de`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    timeout = setTimeout(() => controller.abort(), 6000);
 
     const response = await fetch(searchUrl, {
       signal: controller.signal,
@@ -30,43 +69,45 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       return NextResponse.json({ error: `Google returned ${response.status}` }, { status: 502 });
     }
 
-    const html = await response.text();
+    const html = await readResponseText(response, 600_000);
 
     // Google embeds prices in various formats in search results
     const prices: { value: number; currency: string; source?: string }[] = [];
 
-    // Pattern 1: Euro prices like "199,99 €" or "€199.99" or "EUR 199,99"
-    const euroPrices = html.matchAll(/(\d{1,6}[.,]\d{2})\s*€|€\s*(\d{1,6}[.,]\d{2})|EUR\s*(\d{1,6}[.,]\d{2})/gi);
+    // Pattern 1: Euro prices like "199,99 €" or "€199.99" or "EUR 1.234,56"
+    const euroPrices = html.matchAll(
+      new RegExp(`(${AMOUNT_PATTERN})\\s*€|€\\s*(${AMOUNT_PATTERN})|EUR\\s*(${AMOUNT_PATTERN})`, 'gi')
+    );
     for (const m of euroPrices) {
-      const raw = (m[1] || m[2] || m[3]).replace(',', '.');
-      const value = parseFloat(raw);
-      if (value > 0 && value < 100000) {
+      const value = parseFloat(normalizePrice(m[1] || m[2] || m[3]) ?? '');
+      if (Number.isFinite(value) && value > 0 && value < 100000) {
         prices.push({ value, currency: 'EUR' });
       }
     }
 
-    // Pattern 2: Dollar prices like "$199.99" or "199.99 USD"
-    const dollarPrices = html.matchAll(/\$\s*(\d{1,6}[.,]\d{2})|(\d{1,6}[.,]\d{2})\s*(?:USD|\$)/gi);
+    // Pattern 2: Dollar prices like "$199.99" or "1,299.99 USD"
+    const dollarPrices = html.matchAll(
+      new RegExp(`\\$\\s*(${AMOUNT_PATTERN})|(${AMOUNT_PATTERN})\\s*(?:USD|\\$)`, 'gi')
+    );
     for (const m of dollarPrices) {
-      const raw = (m[1] || m[2]).replace(',', '.');
-      const value = parseFloat(raw);
-      if (value > 0 && value < 100000) {
+      const value = parseFloat(normalizePrice(m[1] || m[2]) ?? '');
+      if (Number.isFinite(value) && value > 0 && value < 100000) {
         prices.push({ value, currency: 'USD' });
       }
     }
 
     // Pattern 3: Pound prices
-    const poundPrices = html.matchAll(/£\s*(\d{1,6}[.,]\d{2})|(\d{1,6}[.,]\d{2})\s*(?:GBP|£)/gi);
+    const poundPrices = html.matchAll(
+      new RegExp(`£\\s*(${AMOUNT_PATTERN})|(${AMOUNT_PATTERN})\\s*(?:GBP|£)`, 'gi')
+    );
     for (const m of poundPrices) {
-      const raw = (m[1] || m[2]).replace(',', '.');
-      const value = parseFloat(raw);
-      if (value > 0 && value < 100000) {
+      const value = parseFloat(normalizePrice(m[1] || m[2]) ?? '');
+      if (Number.isFinite(value) && value > 0 && value < 100000) {
         prices.push({ value, currency: 'GBP' });
       }
     }
@@ -93,11 +134,17 @@ export async function GET(request: NextRequest) {
         currency: bestCurrency,
         allPrices: prices.slice(0, 10),
       },
-      { headers: { 'Cache-Control': 'public, max-age=3600' } } // cache for 1 hour
+      { headers: { 'Cache-Control': 'private, no-store' } }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[ORBIT] Price search error:', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[THREADMAP] Price search error:', message);
+    if ((err as { name?: string })?.name === 'AbortError') {
+      return NextResponse.json({ error: 'Price lookup timed out.' }, { status: 504 });
+    }
+    return NextResponse.json({ error: 'Price lookup failed.' }, { status: 502 });
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    release();
   }
 }

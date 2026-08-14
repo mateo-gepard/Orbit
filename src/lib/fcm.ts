@@ -1,51 +1,42 @@
 'use client';
 
-// ═══════════════════════════════════════════════════════════
-// ORBIT — Push Notification Registration (FCM + Web Push)
-//
-// Two strategies:
-//  1. FCM (Firebase Cloud Messaging) — works on Chrome, Edge, Firefox
-//  2. Native Web Push API — works on iOS 16.4+ PWAs and Safari
-//
-// The Cloud Function reads Firestore docs from `pushTokens` and
-// dispatches via FCM (for `token` docs) or web-push (for
-// `subscription` docs).
-// ═══════════════════════════════════════════════════════════
-
-import { app, db } from './firebase';
-import { doc, setDoc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { app, cloudFunctions, db } from './firebase';
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+} from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { useSettingsStore } from './settings-store';
+import { scopedStorageKey } from './account-storage';
+import { removeLocalStorageVerified, writeLocalStorageVerified } from './verified-storage';
 
 const PUSH_TOKEN_COLLECTION = 'fcmTokens';
 const PUSH_TOKEN_LOCAL_KEY = 'orbit-fcm-token';
 const PUSH_SUB_LOCAL_KEY = 'orbit-push-subscription';
 
-function pushTokenKey(userId: string): string {
-  return `${PUSH_TOKEN_LOCAL_KEY}:${encodeURIComponent(userId)}`;
+let fcmMessaging: import('firebase/messaging').Messaging | null = null;
+let foregroundUnsubscribe: (() => void) | null = null;
+
+function tokenKey(userId: string): string {
+  return scopedStorageKey(PUSH_TOKEN_LOCAL_KEY, userId);
 }
 
-function pushSubscriptionKey(userId: string): string {
-  return `${PUSH_SUB_LOCAL_KEY}:${encodeURIComponent(userId)}`;
+function subscriptionKey(userId: string): string {
+  return scopedStorageKey(PUSH_SUB_LOCAL_KEY, userId);
 }
-
-// ── Platform detection ────────────────────────────────────
 
 function isIOSorSafari(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
-  // iOS (iPhone/iPad/iPod) or macOS Safari (not Chrome/Firefox on Mac)
   return /iPad|iPhone|iPod/.test(ua) ||
     (ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Firefox'));
 }
 
 function shouldUseNativeWebPush(): boolean {
-  // On iOS/Safari, Firebase messaging doesn't work — use native Web Push
   return isIOSorSafari();
 }
-
-// ── FCM (non-Safari) ─────────────────────────────────────
-
-let fcmMessaging: import('firebase/messaging').Messaging | null = null;
 
 async function getMessagingInstance() {
   if (fcmMessaging) return fcmMessaging;
@@ -54,369 +45,289 @@ async function getMessagingInstance() {
     const { getMessaging } = await import('firebase/messaging');
     fcmMessaging = getMessaging(app);
     return fcmMessaging;
-  } catch (err) {
-    console.warn('[ORBIT] FCM: getMessaging failed:', err);
+  } catch {
     return null;
   }
 }
 
-// ── Token/Subscription Registration ──────────────────────
+export async function tokenFingerprint(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 32);
+}
 
-/**
- * Register for push notifications.
- * Uses native Web Push on iOS/Safari, FCM elsewhere.
- * Returns a truthy string identifier on success.
- */
+function scheduleFields() {
+  const notifications = useSettingsStore.getState().settings.notifications;
+  const morningEnabled = notifications.enabled && notifications.dailyBriefing;
+  const eveningEnabled = notifications.enabled && notifications.eveningBriefing;
+  return {
+    morningEnabled,
+    morningTime: notifications.dailyBriefingTime,
+    eveningEnabled,
+    eveningTime: notifications.eveningBriefingTime,
+    timezoneOffset: new Date().getTimezoneOffset(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  };
+}
+
 export async function registerFCMToken(userId: string): Promise<string | null> {
-  try {
-    const { notifications } = useSettingsStore.getState().settings;
-    if (!notifications.enabled || (!notifications.dailyBriefing && !notifications.eveningBriefing)) {
-      return null;
-    }
-    // Ensure notification permission
-    if (Notification.permission !== 'granted') {
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') {
-        console.warn('[ORBIT] Push: permission denied');
-        return null;
-      }
-    }
+  if (!userId || userId === 'demo-user') throw new Error('Sign in to enable push notifications.');
+  if (!isFCMAvailable()) throw new Error('Push notifications are unavailable on this device.');
 
-    const swRegistration = await navigator.serviceWorker.ready;
-
-    if (shouldUseNativeWebPush()) {
-      // Native Web Push uses the web push VAPID key (for iOS/Safari)
-      const vapidKey = process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY || process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
-      if (!vapidKey) {
-        console.warn('[ORBIT] Push: no VAPID key configured');
-        return null;
-      }
-      return await registerNativeWebPush(userId, vapidKey, swRegistration);
-    } else {
-      // FCM uses the Firebase VAPID key
-      const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
-      if (!vapidKey) {
-        console.warn('[ORBIT] Push: Firebase VAPID key not set');
-        return null;
-      }
-      return await registerFCM(userId, vapidKey, swRegistration);
-    }
-  } catch (err) {
-    console.error('[ORBIT] Push: registration failed:', err);
-    return null;
+  if (Notification.permission !== 'granted') {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return null;
   }
+
+  const registration = await navigator.serviceWorker.ready;
+  const vapidKey = shouldUseNativeWebPush()
+    ? process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY || process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
+    : process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+  if (!vapidKey) throw new Error('Push notification keys are not configured.');
+
+  return shouldUseNativeWebPush()
+    ? registerNativeWebPush(userId, vapidKey, registration)
+    : registerFCM(userId, vapidKey, registration);
 }
 
-/** FCM registration (Chrome, Edge, Firefox on desktop/Android) */
 async function registerFCM(
   userId: string,
   vapidKey: string,
-  swRegistration: ServiceWorkerRegistration
+  registration: ServiceWorkerRegistration
 ): Promise<string | null> {
-  const msg = await getMessagingInstance();
-  if (!msg) {
-    console.warn('[ORBIT] FCM: messaging not available, falling back to native Web Push');
-    return registerNativeWebPush(userId, vapidKey, swRegistration);
-  }
-
+  const messaging = await getMessagingInstance();
+  if (!messaging) return registerNativeWebPush(userId, vapidKey, registration);
+  const { getToken } = await import('firebase/messaging');
+  const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+  if (!token) return null;
+  const previousDocId = await currentDeviceId(userId);
+  const fingerprint = await tokenFingerprint(token);
   try {
-    const { getToken } = await import('firebase/messaging');
-    const token = await getToken(msg, {
-      vapidKey,
-      serviceWorkerRegistration: swRegistration,
+    await persistDevice(userId, fingerprint, { type: 'fcm', token }, previousDocId);
+    writeLocalStorageVerified(tokenKey(userId), token);
+    removeLocalStorageVerified(subscriptionKey(userId));
+  } catch (error) {
+    await compensateRegistration(userId, fingerprint, async () => {
+      const { deleteToken } = await import('firebase/messaging');
+      await deleteToken(messaging);
     });
-
-    if (!token) {
-      console.warn('[ORBIT] FCM: no token returned');
-      return null;
-    }
-
-    localStorage.setItem(pushTokenKey(userId), token);
-    localStorage.removeItem(pushSubscriptionKey(userId));
-
-    await saveTokenToFirestore(userId, token);
-    console.log('[ORBIT] FCM token registered');
-    return token;
-  } catch (err) {
-    console.error('[ORBIT] FCM: getToken failed, falling back to native Web Push:', err);
-    return registerNativeWebPush(userId, vapidKey, swRegistration);
+    throw error;
   }
+  return fingerprint;
 }
 
-/** Native Web Push registration (iOS 16.4+ PWA, Safari) */
 async function registerNativeWebPush(
   userId: string,
   vapidKey: string,
-  swRegistration: ServiceWorkerRegistration
+  registration: ServiceWorkerRegistration
 ): Promise<string | null> {
+  const previousDocId = await currentDeviceId(userId);
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
+  });
+  const subscriptionJson = subscription.toJSON();
+  const serialized = JSON.stringify(subscriptionJson);
+  const fingerprint = await tokenFingerprint(subscriptionJson.endpoint || serialized);
   try {
-    // Convert VAPID key from base64url to Uint8Array
-    const keyArray = urlBase64ToUint8Array(vapidKey);
+    await persistDevice(
+      userId,
+      fingerprint,
+      { type: 'webpush', subscription: subscriptionJson },
+      previousDocId
+    );
+    writeLocalStorageVerified(subscriptionKey(userId), serialized);
+    removeLocalStorageVerified(tokenKey(userId));
+  } catch (error) {
+    await compensateRegistration(userId, fingerprint, () => subscription.unsubscribe());
+    throw error;
+  }
+  return fingerprint;
+}
 
-    const subscription = await swRegistration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: keyArray.buffer as ArrayBuffer,
-    });
-
-    const subJson = JSON.stringify(subscription.toJSON());
-    localStorage.setItem(pushSubscriptionKey(userId), subJson);
-    localStorage.removeItem(pushTokenKey(userId));
-
-    await saveSubscriptionToFirestore(userId, subscription);
-    console.log('[ORBIT] Native Web Push subscription registered');
-    return subJson;
-  } catch (err) {
-    console.error('[ORBIT] Native Web Push: subscribe failed:', err);
-    return null;
+function clearLocalCredentialsBestEffort(userId: string): void {
+  for (const key of [tokenKey(userId), subscriptionKey(userId)]) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // External registration invalidation is the privacy boundary. Browser
+      // storage may be unavailable, and inaccessible values cannot be reused.
+    }
   }
 }
 
-/**
- * Unregister push token (on sign-out).
- */
-export async function unregisterFCMToken(userId: string): Promise<void> {
-  if (!db) return;
-
-  try {
-    // Try FCM token first
-    const token = localStorage.getItem(pushTokenKey(userId));
-    if (token) {
-      const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${await tokenFingerprint(token)}`);
-      await deleteDoc(docRef);
-      localStorage.removeItem(pushTokenKey(userId));
-      console.log('[ORBIT] FCM token unregistered');
-      return;
-    }
-
-    // Try Web Push subscription
-    const subJson = localStorage.getItem(pushSubscriptionKey(userId));
-    if (subJson) {
-      const sub = JSON.parse(subJson);
-      const subId = await tokenFingerprint(sub.endpoint || subJson);
-      const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${subId}`);
-      await deleteDoc(docRef);
-      localStorage.removeItem(pushSubscriptionKey(userId));
-
-      // Also unsubscribe from PushManager
-      const swReg = await navigator.serviceWorker?.ready;
-      const existingSub = await swReg?.pushManager?.getSubscription();
-      if (existingSub) await existingSub.unsubscribe();
-
-      console.log('[ORBIT] Web Push subscription unregistered');
-    }
-  } catch (err) {
-    console.error('[ORBIT] Push: unregister failed:', err);
-  }
-}
-
-// ── Firestore persistence ─────────────────────────────────
-
-/** Save an FCM token to Firestore */
-async function saveTokenToFirestore(userId: string, token: string): Promise<void> {
-  if (!db) return;
-
-  const { settings } = useSettingsStore.getState();
-  const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${await tokenFingerprint(token)}`);
-
-  await setDoc(docRef, {
-    userId,
-    type: 'fcm',
-    token,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    morningEnabled: settings.notifications.enabled && settings.notifications.dailyBriefing,
-    morningTime: settings.notifications.dailyBriefingTime,
-    eveningEnabled: settings.notifications.enabled && settings.notifications.eveningBriefing,
-    eveningTime: settings.notifications.eveningBriefingTime,
-    timezoneOffset: new Date().getTimezoneOffset(),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    userAgent: navigator.userAgent,
-  }, { merge: true });
-}
-
-/** Save a Web Push subscription to Firestore */
-async function saveSubscriptionToFirestore(
+async function compensateRegistration(
   userId: string,
-  subscription: PushSubscription
+  fingerprint: string,
+  invalidateBrowserRegistration: () => Promise<unknown>
 ): Promise<void> {
-  if (!db) return;
-
-  const { settings } = useSettingsStore.getState();
-  const subJson = subscription.toJSON();
-  const subId = await tokenFingerprint(subJson.endpoint || JSON.stringify(subJson));
-  const docRef = doc(db, PUSH_TOKEN_COLLECTION, `${userId}_${subId}`);
-
-  await setDoc(docRef, {
-    userId,
-    type: 'webpush',
-    subscription: subJson,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    morningEnabled: settings.notifications.enabled && settings.notifications.dailyBriefing,
-    morningTime: settings.notifications.dailyBriefingTime,
-    eveningEnabled: settings.notifications.enabled && settings.notifications.eveningBriefing,
-    eveningTime: settings.notifications.eveningBriefingTime,
-    timezoneOffset: new Date().getTimezoneOffset(),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    userAgent: navigator.userAgent,
-  }, { merge: true });
+  const cleanups: Promise<unknown>[] = [invalidateBrowserRegistration()];
+  cleanups.push(deleteRemoteDevice(userId, `${userId}_${fingerprint}`));
+  await Promise.allSettled(cleanups);
+  clearLocalCredentialsBestEffort(userId);
 }
 
-/**
- * Update the briefing schedule in the push token doc.
- * Called whenever the user changes notification settings.
- */
-export async function updateFCMSchedule(userId: string): Promise<void> {
-  if (!db) return;
-
-  // Find the right doc ID
-  const token = localStorage.getItem(pushTokenKey(userId));
-  const subJson = localStorage.getItem(pushSubscriptionKey(userId));
-  if (!token && !subJson) return;
-
-  let docId: string;
-  if (token) {
-    docId = `${userId}_${await tokenFingerprint(token)}`;
-  } else {
-    const sub = JSON.parse(subJson!);
-    docId = `${userId}_${await tokenFingerprint(sub.endpoint || subJson!)}`;
+async function persistDevice(
+  userId: string,
+  fingerprint: string,
+  credentials: { type: 'fcm'; token: string } | { type: 'webpush'; subscription: PushSubscriptionJSON },
+  replaceDeviceId: string | null
+): Promise<void> {
+  if (!cloudFunctions) throw new Error('Push registration is unavailable.');
+  const callable = httpsCallable<
+    {
+      userId: string;
+      fingerprint: string;
+      credentials: typeof credentials;
+      schedule: ReturnType<typeof scheduleFields>;
+      userAgent: string;
+      replaceDeviceId: string | null;
+    },
+    { success: boolean; docId: string }
+  >(cloudFunctions, 'upsertThreadmapPushDevice');
+  const result = await callable({
+    userId,
+    fingerprint,
+    credentials,
+    schedule: scheduleFields(),
+    userAgent: navigator.userAgent.slice(0, 512),
+    replaceDeviceId,
+  });
+  if (!result.data.success || result.data.docId !== `${userId}_${fingerprint}`) {
+    throw new Error('Push registration could not be verified.');
   }
+}
 
-  const { settings } = useSettingsStore.getState();
-  const docRef = doc(db, PUSH_TOKEN_COLLECTION, docId);
+async function deleteRemoteDevice(userId: string, docId: string): Promise<void> {
+  if (!cloudFunctions) throw new Error('Push device removal is unavailable.');
+  const callable = httpsCallable<
+    { userId: string; docId: string },
+    { success: boolean }
+  >(cloudFunctions, 'deleteThreadmapPushDevice');
+  const result = await callable({ userId, docId });
+  if (!result.data.success) throw new Error('Push device removal did not complete.');
+}
+
+async function currentDeviceId(userId: string): Promise<string | null> {
+  const token = localStorage.getItem(tokenKey(userId));
+  if (token) return `${userId}_${await tokenFingerprint(token)}`;
+  const serialized = localStorage.getItem(subscriptionKey(userId));
+  if (!serialized) return null;
+  try {
+    const subscription = JSON.parse(serialized) as PushSubscriptionJSON;
+    return `${userId}_${await tokenFingerprint(subscription.endpoint || serialized)}`;
+  } catch {
+    return `${userId}_${await tokenFingerprint(serialized)}`;
+  }
+}
+
+export function hasFCMToken(userId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(
+      localStorage.getItem(tokenKey(userId)) ||
+      localStorage.getItem(subscriptionKey(userId))
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function unregisterFCMToken(userId: string): Promise<void> {
+  let cleanupError: unknown;
+  let docId: string | null = null;
+  try {
+    docId = await currentDeviceId(userId);
+  } catch (error) {
+    cleanupError = error;
+  }
 
   try {
-    await setDoc(docRef, {
-      updatedAt: Date.now(),
-      morningEnabled: settings.notifications.enabled && settings.notifications.dailyBriefing,
-      morningTime: settings.notifications.dailyBriefingTime,
-      eveningEnabled: settings.notifications.enabled && settings.notifications.eveningBriefing,
-      eveningTime: settings.notifications.eveningBriefingTime,
-      timezoneOffset: new Date().getTimezoneOffset(),
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    }, { merge: true });
-    console.log('[ORBIT] Push schedule updated in Firestore');
-  } catch (err) {
-    console.error('[ORBIT] Push: schedule update failed:', err);
+    if (docId) await deleteRemoteDevice(userId, docId);
+  } catch (error) {
+    cleanupError ??= error;
+  }
+
+  // Invalidate both possible browser-side transports even when the remote
+  // Firestore record could not be removed. This prevents an orphaned FCM
+  // record from continuing to deliver private notifications after sign-out.
+  try {
+    const messaging = await getMessagingInstance();
+    if (messaging) {
+      const { deleteToken } = await import('firebase/messaging');
+      await deleteToken(messaging);
+    }
+  } catch (error) {
+    cleanupError ??= error;
+  }
+
+  try {
+    const registration = 'serviceWorker' in navigator
+      ? await navigator.serviceWorker.getRegistration()
+      : undefined;
+    const subscription = await registration?.pushManager.getSubscription();
+    await subscription?.unsubscribe();
+  } catch (error) {
+    cleanupError ??= error;
+  }
+
+  // Never let one failed removal skip the rest of the local cleanup.
+  clearLocalCredentialsBestEffort(userId);
+  cleanupForegroundMessageHandler();
+
+  if (cleanupError) throw cleanupError;
+}
+
+export async function updateFCMSchedule(userId: string): Promise<void> {
+  const docId = await currentDeviceId(userId);
+  if (!docId) return;
+  if (!cloudFunctions) throw new Error('Push scheduling is unavailable.');
+  const callable = httpsCallable<
+    { userId: string; docId: string; schedule: ReturnType<typeof scheduleFields> },
+    { success: boolean }
+  >(cloudFunctions, 'updateThreadmapPushSchedule');
+  const result = await callable({ userId, docId, schedule: scheduleFields() });
+  if (!result.data.success) throw new Error('Push schedule update did not complete.');
+}
+
+export async function refreshPushSubscription(userId: string): Promise<void> {
+  if (!isFCMAvailable() || Notification.permission !== 'granted' || !hasFCMToken(userId)) return;
+  if (!useSettingsStore.getState().settings.notifications.enabled) return;
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  if (subscription || !shouldUseNativeWebPush()) {
+    await updateFCMSchedule(userId);
+  } else {
+    await registerFCMToken(userId);
   }
 }
 
-// ── Foreground message handler ────────────────────────────
-
-/**
- * Listen for FCM messages when the app is in the foreground.
- * Only works with FCM (non-Safari). Web Push messages always
- * go through the SW push event handler.
- */
 export function setupForegroundMessageHandler(): void {
-  if (shouldUseNativeWebPush()) {
-    // On iOS/Safari, foreground messages come through SW push event
-    // which already calls showNotification. Nothing extra needed.
-    console.log('[ORBIT] Push: foreground handler skipped (native Web Push — handled by SW)');
-    return;
-  }
-
-  getMessagingInstance().then((msg) => {
-    if (!msg) return;
-    import('firebase/messaging').then(({ onMessage }) => {
-      onMessage(msg, (payload) => {
-        const title = payload.notification?.title || 'ORBIT';
-        const body = payload.notification?.body || '';
-
-        navigator.serviceWorker?.ready.then((reg) => {
-          reg.showNotification(title, {
-            body,
-            icon: '/icons/icon-192.png',
-            badge: '/icons/icon-192.png',
-            tag: (payload.data?.tag as string) || 'orbit-push',
-            data: { url: (payload.data?.url as string) || '/today' },
-          });
-        }).catch(() => {
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification(title, { body, icon: '/icons/icon-192.png' });
-          }
-        });
-      });
+  if (foregroundUnsubscribe || shouldUseNativeWebPush()) return;
+  void getMessagingInstance().then(async (messaging) => {
+    if (!messaging || foregroundUnsubscribe) return;
+    const { onMessage } = await import('firebase/messaging');
+    foregroundUnsubscribe = onMessage(messaging, (payload) => {
+      const title = payload.notification?.title || 'Threadmap';
+      const body = payload.notification?.body || '';
+      void navigator.serviceWorker?.ready.then((registration) => registration.showNotification(title, {
+        body,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: String(payload.data?.tag || 'threadmap-push'),
+        data: { url: String(payload.data?.url || '/') },
+      }));
     });
   });
 }
 
-// ── Helpers ────────────────────────────────────────────────
-
-/** Stable, non-reversible identifier for token document IDs. */
-async function tokenFingerprint(token: string): Promise<string> {
-  const bytes = new TextEncoder().encode(token);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest).slice(0, 12))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
+export function cleanupForegroundMessageHandler(): void {
+  foregroundUnsubscribe?.();
+  foregroundUnsubscribe = null;
 }
-
-/** Convert a base64url VAPID key to Uint8Array for pushManager.subscribe() */
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; i++) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
-
-/** Check if push notifications are available (FCM or native Web Push) */
-export function isFCMAvailable(): boolean {
-  return !!(
-    typeof window !== 'undefined' &&
-    'serviceWorker' in navigator &&
-    'PushManager' in window &&
-    'Notification' in window &&
-    (process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY)
-  );
-}
-
-/** Check if user has a push token/subscription registered */
-export function hasFCMToken(userId: string): boolean {
-  return !!(
-    localStorage.getItem(pushTokenKey(userId)) ||
-    localStorage.getItem(pushSubscriptionKey(userId))
-  );
-}
-
-/**
- * Re-check push subscription on app launch.
- * On iOS, the OS can terminate the PWA and its SW, losing the push subscription.
- * This silently re-subscribes if needed (only if permission was already granted).
- */
-export async function refreshPushSubscription(userId: string): Promise<void> {
-  if (!isFCMAvailable()) return;
-  const { notifications } = useSettingsStore.getState().settings;
-  if (!notifications.enabled || (!notifications.dailyBriefing && !notifications.eveningBriefing)) {
-    await unregisterFCMToken(userId);
-    return;
-  }
-  if (Notification.permission !== 'granted') return;
-  if (!hasFCMToken(userId)) return; // User never registered — don't auto-register
-
-  try {
-    const swReg = await navigator.serviceWorker.ready;
-    const existingSub = await swReg.pushManager.getSubscription();
-
-    if (existingSub) {
-      // Subscription still alive — just update the Firestore doc timestamp
-      await updateFCMSchedule(userId);
-      return;
-    }
-
-    // Subscription was lost (iOS killed it) — re-register silently
-    console.log('[ORBIT] Push subscription lost, re-registering...');
-    await registerFCMToken(userId);
-  } catch (err) {
-    console.warn('[ORBIT] Push: refresh check failed:', err);
-  }
-}
-
-// ── Device Management ─────────────────────────────────────
 
 export interface RegisteredDevice {
   docId: string;
@@ -426,97 +337,78 @@ export interface RegisteredDevice {
   isCurrentDevice: boolean;
 }
 
-function parseDeviceName(ua: string): string {
-  if (!ua) return 'Unknown device';
-  if (/iPhone/.test(ua)) return 'iPhone';
-  if (/iPad/.test(ua)) return 'iPad';
-  if (/Android/.test(ua)) {
-    const match = ua.match(/Android[^;]*;\s*([^)]+)/);
-    return match ? match[1].trim() : 'Android';
+export async function getRegisteredDevices(userId: string): Promise<RegisteredDevice[]> {
+  if (!db) return [];
+  const snapshot = await getDocs(query(
+    collection(db, PUSH_TOKEN_COLLECTION),
+    where('userId', '==', userId)
+  ));
+  const currentId = await currentDeviceId(userId);
+  return snapshot.docs
+    .filter((device) => device.id.startsWith(`${userId}_`) && device.data().userId === userId)
+    .map((device) => {
+    const data = device.data();
+    return {
+      docId: device.id,
+      type: data.type === 'webpush' ? 'webpush' : 'fcm',
+      userAgent: String(data.userAgent || ''),
+      updatedAt: Number(data.updatedAt || data.createdAt || 0),
+      isCurrentDevice: device.id === currentId,
+    };
+    });
+}
+
+export async function removeDevice(userId: string, docId: string): Promise<void> {
+  if (!docId.startsWith(`${userId}_`)) throw new Error('Device does not belong to this account.');
+  const currentId = await currentDeviceId(userId);
+  if (docId === currentId) {
+    await unregisterFCMToken(userId);
+    return;
   }
-  if (/Macintosh/.test(ua)) return 'Mac';
-  if (/Windows/.test(ua)) return 'Windows PC';
-  if (/Linux/.test(ua)) return 'Linux';
+  await deleteRemoteDevice(userId, docId);
+}
+
+function parseDeviceName(userAgent: string): string {
+  if (!userAgent) return 'Unknown device';
+  if (/iPhone/.test(userAgent)) return 'iPhone';
+  if (/iPad/.test(userAgent)) return 'iPad';
+  if (/Android/.test(userAgent)) return 'Android';
+  if (/Macintosh/.test(userAgent)) return 'Mac';
+  if (/Windows/.test(userAgent)) return 'Windows PC';
+  if (/Linux/.test(userAgent)) return 'Linux';
   return 'Browser';
 }
 
-function parseBrowserName(ua: string): string {
-  if (!ua) return '';
-  if (/Edg\//.test(ua)) return 'Edge';
-  if (/OPR\/|Opera/.test(ua)) return 'Opera';
-  if (/Firefox\//.test(ua)) return 'Firefox';
-  if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) return 'Chrome';
-  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return 'Safari';
+function parseBrowserName(userAgent: string): string {
+  if (/Edg\//.test(userAgent)) return 'Edge';
+  if (/Firefox\//.test(userAgent)) return 'Firefox';
+  if (/Chrome\//.test(userAgent) && !/Edg\//.test(userAgent)) return 'Chrome';
+  if (/Safari\//.test(userAgent) && !/Chrome\//.test(userAgent)) return 'Safari';
   return '';
 }
 
-export function getDeviceLabel(ua: string): string {
-  const device = parseDeviceName(ua);
-  const browser = parseBrowserName(ua);
+export function getDeviceLabel(userAgent: string): string {
+  const device = parseDeviceName(userAgent);
+  const browser = parseBrowserName(userAgent);
   return browser ? `${device} · ${browser}` : device;
 }
 
-/** List all registered push devices for a user */
-export async function getRegisteredDevices(userId: string): Promise<RegisteredDevice[]> {
-  if (!db) return [];
-  try {
-    const q = query(collection(db, PUSH_TOKEN_COLLECTION), where('userId', '==', userId));
-    const snapshot = await getDocs(q);
-    const currentToken = localStorage.getItem(pushTokenKey(userId));
-    const currentSub = localStorage.getItem(pushSubscriptionKey(userId));
-
-    return snapshot.docs.map((d) => {
-      const data = d.data();
-      let isCurrent = false;
-      if (data.type === 'fcm' && currentToken && data.token === currentToken) isCurrent = true;
-      if (data.type === 'webpush' && currentSub) {
-        try {
-          const subEndpoint = JSON.parse(currentSub).endpoint;
-          const docEndpoint = data.subscription?.endpoint;
-          if (subEndpoint && docEndpoint && subEndpoint === docEndpoint) isCurrent = true;
-        } catch {}
-      }
-      return {
-        docId: d.id,
-        type: data.type || 'fcm',
-        userAgent: data.userAgent || '',
-        updatedAt: data.updatedAt || data.createdAt || 0,
-        isCurrentDevice: isCurrent,
-      };
-    });
-  } catch (err) {
-    console.error('[ORBIT] Failed to list devices:', err);
-    return [];
-  }
+function urlBase64ToUint8Array(value: string): Uint8Array {
+  const padding = '='.repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
 }
 
-/** Remove a specific registered device */
-export async function removeDevice(userId: string, docId: string): Promise<void> {
-  if (!db) return;
-  if (!docId.startsWith(`${userId}_`)) {
-    throw new Error('Cannot remove a device owned by another account');
-  }
-  try {
-    await deleteDoc(doc(db, PUSH_TOKEN_COLLECTION, docId));
-    // If this is the current device, clear local tokens too
-    const currentToken = localStorage.getItem(pushTokenKey(userId));
-    const currentSub = localStorage.getItem(pushSubscriptionKey(userId));
-    if (currentToken && docId === `${userId}_${await tokenFingerprint(currentToken)}`) {
-      localStorage.removeItem(pushTokenKey(userId));
-    }
-    if (currentSub) {
-      try {
-        const sub = JSON.parse(currentSub);
-        if (docId === `${userId}_${await tokenFingerprint(sub.endpoint || currentSub)}`) {
-          localStorage.removeItem(pushSubscriptionKey(userId));
-          const swReg = await navigator.serviceWorker?.ready;
-          const existingSub = await swReg?.pushManager?.getSubscription();
-          if (existingSub) await existingSub.unsubscribe();
-        }
-      } catch {}
-    }
-    console.log('[ORBIT] Push device removed');
-  } catch (err) {
-    console.error('[ORBIT] Failed to remove device:', err);
-  }
+export function isFCMAvailable(): boolean {
+  const configuredKey = shouldUseNativeWebPush()
+    ? process.env.NEXT_PUBLIC_WEBPUSH_VAPID_KEY || process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
+    : process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+  return Boolean(
+    typeof window !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    'Notification' in window &&
+    configuredKey
+  );
 }

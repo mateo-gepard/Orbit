@@ -1,4 +1,4 @@
-import { format, subDays, startOfWeek, addDays, isToday } from 'date-fns';
+import { format, subDays, startOfWeek, addDays, differenceInCalendarDays, startOfDay } from 'date-fns';
 import type { OrbitItem } from './types';
 
 /**
@@ -7,9 +7,10 @@ import type { OrbitItem } from './types';
 export function isHabitScheduledForDate(habit: OrbitItem, date: Date): boolean {
   if (habit.frequency === 'daily') return true;
   if (habit.frequency === 'weekly') {
-    // Default to Monday if no custom days
     const dayOfWeek = (date.getDay() + 6) % 7; // Convert to Mon=0, Sun=6
-    return dayOfWeek === 0; // Monday
+    // Weekly habits persist one explicit scheduled day. Legacy habits without
+    // one retain the historical Monday behavior until edited.
+    return dayOfWeek === (habit.customDays?.[0] ?? 0);
   }
   if (habit.frequency === 'custom' && habit.customDays) {
     const dayOfWeek = (date.getDay() + 6) % 7; // Mon=0, Sun=6
@@ -58,36 +59,19 @@ export function calculateStreak(habit: OrbitItem): number {
 }
 
 /**
- * Get the week grid data for a habit (Mon-Sun)
- */
-export function getWeekGrid(habit: OrbitItem, weekStart?: Date) {
-  const start = weekStart || startOfWeek(new Date(), { weekStartsOn: 1 });
-  const days = [];
-
-  for (let i = 0; i < 7; i++) {
-    const date = addDays(start, i);
-    days.push({
-      date,
-      dateKey: format(date, 'yyyy-MM-dd'),
-      scheduled: isHabitScheduledForDate(habit, date),
-      completed: isHabitCompletedForDate(habit, date),
-      isToday: isToday(date),
-    });
-  }
-
-  return days;
-}
-
-/**
  * Get week completion rate for all habits
  */
-export function getWeekCompletionRate(habits: OrbitItem[], weekStart?: Date): number {
+export function getWeekCompletionRate(habits: OrbitItem[], weekStart?: Date): number | null {
   const start = weekStart || startOfWeek(new Date(), { weekStartsOn: 1 });
+  const today = startOfDay(new Date());
+  const daysThroughToday = differenceInCalendarDays(today, startOfDay(start));
+  if (daysThroughToday < 0) return null;
+  const finalDayIndex = Math.min(6, daysThroughToday);
   let scheduled = 0;
   let completed = 0;
 
   for (const habit of habits) {
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i <= finalDayIndex; i++) {
       const date = addDays(start, i);
       if (isHabitScheduledForDate(habit, date)) {
         scheduled++;

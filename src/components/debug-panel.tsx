@@ -1,13 +1,27 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Bug, RefreshCw } from 'lucide-react';
+import { auth } from '@/lib/firebase';
 
 interface DebugEntry {
   time: string;
   category: 'sw' | 'cache' | 'auth' | 'data' | 'nav' | 'env' | 'error';
   message: string;
 }
+
+type OrbitDebugWindow = Window & {
+  __orbitDebug?: typeof addDebug;
+  __NEXT_DATA__?: {
+    buildId?: string;
+    page?: string;
+    runtimeConfig?: unknown;
+  };
+};
+
+type NavigatorWithStandalone = Navigator & {
+  standalone?: boolean;
+};
 
 // Global log that persists across renders
 const debugLog: DebugEntry[] = [];
@@ -23,7 +37,7 @@ function addDebug(category: DebugEntry['category'], message: string) {
 
 // Expose globally so other modules can log
 if (typeof window !== 'undefined') {
-  (window as any).__orbitDebug = addDebug;
+  (window as OrbitDebugWindow).__orbitDebug = addDebug;
 }
 
 export function DebugPanel() {
@@ -47,20 +61,15 @@ export function DebugPanel() {
     }
   }, [entries, open]);
 
-  // Run diagnostics on mount
-  useEffect(() => {
-    runDiagnostics();
-  }, []);
-
-  async function runDiagnostics() {
-    addDebug('env', `🔧 ORBIT Debug Panel initialized`);
+  const runDiagnostics = useCallback(async () => {
+    addDebug('env', `🔧 Threadmap Debug Panel initialized`);
     addDebug('env', `URL: ${window.location.href}`);
     addDebug('env', `UA: ${navigator.userAgent.slice(0, 80)}...`);
     addDebug('env', `Viewport: ${window.innerWidth}x${window.innerHeight}`);
     
     // PWA / Standalone detection
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    const iosStandalone = (navigator as any).standalone === true;
+    const iosStandalone = (navigator as NavigatorWithStandalone).standalone === true;
     addDebug('env', `Standalone (media query): ${isStandalone}`);
     addDebug('env', `Standalone (navigator): ${iosStandalone}`);
     addDebug('env', `Mode: ${isStandalone || iosStandalone ? '📱 PWA' : '🌐 Browser'}`);
@@ -120,7 +129,7 @@ export function DebugPanel() {
     }
 
     // Try to detect the build ID from __NEXT_DATA__
-    const nextData = (window as any).__NEXT_DATA__;
+    const nextData = (window as OrbitDebugWindow).__NEXT_DATA__;
     if (nextData) {
       setBuildId(nextData.buildId || 'unknown');
       addDebug('cache', `Next.js buildId: ${nextData.buildId || 'unknown'}`);
@@ -169,7 +178,7 @@ export function DebugPanel() {
     try {
       const lsKeys = Object.keys(localStorage);
       const relevantKeys = lsKeys.filter(k => k.includes('orbit') || k.includes('firebase') || k.includes('zustand'));
-      addDebug('cache', `LocalStorage keys: ${lsKeys.length} total, ${relevantKeys.length} orbit-related`);
+      addDebug('cache', `LocalStorage keys: ${lsKeys.length} total, ${relevantKeys.length} app-related`);
       for (const key of relevantKeys.slice(0, 10)) {
         const val = localStorage.getItem(key);
         addDebug('cache', `  LS "${key}": ${val ? `${val.length} chars` : 'empty'}`);
@@ -183,14 +192,21 @@ export function DebugPanel() {
     // This will be filled in by the auth listener below
 
     addDebug('env', `✅ Diagnostics complete`);
-  }
+  }, []);
+
+  // Run diagnostics on mount
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      runDiagnostics();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [runDiagnostics]);
 
   // Monitor auth state changes
   useEffect(() => {
     const interval = setInterval(() => {
       // Check if firebase auth is initialized
       try {
-        const { auth } = require('@/lib/firebase');
         if (auth?.currentUser) {
           addDebug('auth', `🔑 User: ${auth.currentUser.email} (${auth.currentUser.uid.slice(0, 8)}...)`);
         } else {
@@ -274,7 +290,7 @@ export function DebugPanel() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
         <div className="flex items-center gap-2">
           <Bug className="h-4 w-4 text-red-400" />
-          <span className="text-[12px] font-bold tracking-wider">ORBIT DEBUG</span>
+          <span className="text-[12px] font-bold tracking-wider">THREADMAP DEBUG</span>
           {buildId && (
             <span className="text-[9px] text-white/30 font-mono">build: {buildId.slice(0, 12)}</span>
           )}

@@ -1,6 +1,10 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Universal Item Types
+// Threadmap — Universal Item Types
 // ═══════════════════════════════════════════════════════════
+
+import type { RecurrenceRule } from './recurrence';
+
+export type { RecurrenceRule };
 
 export type ItemType = 'task' | 'project' | 'habit' | 'event' | 'goal' | 'note';
 
@@ -29,20 +33,34 @@ export type LifeAreaTag = typeof LIFE_AREA_TAGS[number];
 // The Universal Item
 // ═══════════════════════════════════════════════════════════
 
-export interface OrbitItem {
+export interface ThreadmapItem {
   id: string;
   type: ItemType;
   status: ItemStatus;
   title: string;
-  content?: string; // Rich text (HTML from Tiptap)
+  /**
+   * Plain text. The note editor is a `<textarea>`; this said "Rich text
+   * (HTML from Tiptap)" while holding nothing of the kind, and the MCP
+   * layer's `htmlToPlainText` was written against that false claim and
+   * silently destroyed content because of it.
+   */
+  content?: string;
   createdAt: number; // timestamp
   updatedAt: number;
+  /** Monotonic cloud revision used to reject stale cross-device writes. */
+  revision?: number;
   completedAt?: number;
+  /**
+   * When the user last pulled this item back out of the Archive. The
+   * auto-archive retention clock measures from here when it is newer than
+   * `completedAt`, so restoring gives the item a fresh window instead of
+   * putting it straight back where it came from on the next render.
+   */
+  restoredAt?: number;
 
   // Task fields
   dueDate?: string; // ISO date string YYYY-MM-DD
   priority?: Priority;
-  assignee?: string;
   checklist?: ChecklistItem[];
 
   // Project fields
@@ -62,6 +80,13 @@ export interface OrbitItem {
   startTime?: string; // HH:mm
   endTime?: string;
   googleCalendarId?: string;
+  /**
+   * A repeating event is one item carrying its rule, expanded by the views
+   * that draw it — not one item per occurrence.
+   */
+  recurrence?: RecurrenceRule;
+  /** Google's series id, when this item came from a recurring Google event. */
+  googleRecurringEventId?: string;
 
   // Goal fields
   timeframe?: GoalTimeframe;
@@ -88,6 +113,12 @@ export interface OrbitItem {
   userId: string;
 }
 
+/**
+ * @deprecated Use `ThreadmapItem`. Kept temporarily so partially migrated
+ * modules remain compatible while the product rename lands incrementally.
+ */
+export type OrbitItem = ThreadmapItem;
+
 export interface ChecklistItem {
   id: string;
   text: string;
@@ -99,8 +130,11 @@ export interface ProjectFile {
   name: string;
   size: number; // bytes
   type: string; // MIME type
-  url: string; // Firebase Storage download URL
+  /** Legacy long-lived download URL. New uploads resolve through the authenticated SDK. */
+  url?: string;
   storagePath: string; // Firebase Storage path for deletion
+  /** Retained until an idempotent legacy-path migration deletes the old object. */
+  legacyStoragePath?: string;
   uploadedAt: number; // timestamp
   uploadedBy: string; // userId
 }
@@ -122,44 +156,3 @@ export interface ParsedCommand {
 // ═══════════════════════════════════════════════════════════
 // Analytics Events
 // ═══════════════════════════════════════════════════════════
-
-export type AnalyticsAction =
-  | 'item_created'
-  | 'item_completed'
-  | 'item_uncompleted'
-  | 'item_archived'
-  | 'item_unarchived'
-  | 'item_updated'
-  | 'item_deleted'
-  | 'habit_checked'
-  | 'habit_unchecked'
-  | 'session_start'
-  | 'session_end';
-
-export interface AnalyticsEvent {
-  id: string;
-  userId: string;
-  action: AnalyticsAction;
-  timestamp: number;        // Date.now()
-  date: string;             // YYYY-MM-DD (for easy daily queries)
-  hour: number;             // 0–23 (for time-of-day patterns)
-
-  // Item context (what was acted on)
-  itemId?: string;
-  itemType?: ItemType;
-  itemTitle?: string;       // Snapshot — useful for timeline display
-
-  // Relationships
-  parentId?: string;        // Project or goal this belongs to
-  tags?: string[];
-
-  // Task-specific
-  priority?: Priority;
-  dueDate?: string;
-
-  // Duration context
-  durationMs?: number;      // Time from creation to completion (task cycle time)
-
-  // Session context
-  sessionId?: string;       // Groups events in one app open
-}

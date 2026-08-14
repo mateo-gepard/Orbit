@@ -1,128 +1,236 @@
-<div align="center"># ORBIT**Personal Productivity OS**One system. One dashboard. Everything connected.[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://typescriptlang.org)[![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss)](https://tailwindcss.com)[![Firebase](https://img.shields.io/badge/Firebase-Firestore+Auth-FFCA28?logo=firebase)](https://firebase.google.com)</div>---ORBIT is a personal productivity system that unifies tasks, projects, habits, events, goals, and notes into a single, opinionated web application. It works offline out of the box (localStorage) and syncs across devices when signed in with Firebase.## ✦ Core Features### Universal Item SystemEverything in ORBIT is an **OrbitItem** — a single entity with a `type` field (`task`, `project`, `habit`, `event`, `goal`, `note`). One data model, one CRUD layer, one search, one command bar.### Command Bar (`⌘K`)Natural language quick capture. Type `Groceries #home tomorrow` to create a task tagged "home" due tomorrow. Supports `/project`, `/event`, `/habit`, `/goal`, `/note` prefixes, date parsing, priority flags, and tags.### Deep Linking & Knowledge GraphBidirectional links between any items. Parent-child hierarchies for projects. Visual force-directed link graph. Everything connects to everything.### DashboardDaily overview: today's tasks, active habits, upcoming events, project progress, and goals — all on one screen.### HabitsWeekly grid tracker with real streak calculation that respects scheduled days (e.g., Mon/Wed/Fri). Streak badges and completion animations.### CalendarMonth view with events, task due dates, and Google Calendar two-way sync.### Inbox → Process → ArchiveGTD-inspired flow. Items land in Inbox, get processed (activate, schedule, delegate), and eventually archive. Swipe gestures on mobile.### Files & AttachmentsUpload files to projects. PDF, images, documents — stored in Firebase Storage with per-user isolation.### Badges & AchievementsTiered achievement system (Bronze → Diamond) across categories: tasks completed, streaks maintained, projects finished, focus hours logged.### SettingsFull settings page: theme, language (EN/DE), date/time formats, notification preferences, accessibility options, focus session defaults, and privacy controls. All cloud-synced.### i18nEnglish and German with a fun "Hockey Mode" easter egg that turns the entire UI into sports commentary + medical terminology.### Push NotificationsMorning and evening briefings via browser notifications. Smart, context-aware summaries of your day — what's ahead and what you accomplished.### PWAInstallable as a Progressive Web App with offline support, app manifest, and service worker.---## ✦ ToolboxSelf-contained tools that live alongside the core system. Each tool has its own Zustand store, Firestore sync, and dedicated page.| Tool | Description ||------|-------------|| **✈️ Cleared for Takeoff** | Deep-work focus sessions modeled as flights. Routes, boarding passes, turbulence events, a logbook, and a cockpit UI with real-time phase tracking. || **🗺️ Dispatch** | Day planner that turns tasks + calendar events into a realistic route. Schedule focus flights and re-route when plans change. || **📊 Briefing** | Day and week briefs. Start with priorities, end with reflection. Weekly overviews for the bigger picture. || **🎓 Abitur Tracker** | Full Bavarian G9 Abitur calculator. Semester grades, exam scores, Block I/II points, deficit warnings, projected final grade. || **💎 The Vault** | Wishlist as a private gallery. Add pieces via URL (auto-scrapes title, image, price), run Elo-rated head-to-head auctions, track acquisitions. Category wings, rarity badges, ranking confidence. |---## ✦ Tech Stack| Layer | Technology ||-------|------------|| Framework | [Next.js 16](https://nextjs.org) (App Router, Turbopack) || UI | [React 19](https://react.dev) · [TypeScript 5](https://typescriptlang.org) || Styling | [Tailwind CSS v4](https://tailwindcss.com) · [shadcn/ui](https://ui.shadcn.com) || State | [Zustand 5](https://zustand.docs.pmnd.rs) with `persist` middleware || Backend | [Firebase](https://firebase.google.com) (Firestore, Auth, Storage) || Dates | [date-fns](https://date-fns.org) || Icons | [Lucide React](https://lucide.dev) || Fonts | Geist Sans + Geist Mono via `next/font/google` || Rich Text | [Tiptap](https://tiptap.dev) (notes editor) || Graphs | [React Flow](https://reactflow.dev) (link graph visualization) |---## ✦ Architecture```Browser  │  ├── UI Layer ──────── Next.js App Router pages (src/app/)  │                     shadcn/ui components (src/components/ui/)  │                     Shell: Sidebar, CommandBar, DetailPanel  │  ├── State Layer ───── Zustand stores (src/lib/store.ts, *-store.ts)  │                     persist middleware → localStorage  │                     Cloud sync via scheduleSave / _setFromCloud  │  ├── Data Layer ────── firestore.ts: CRUD, subscriptions, retry logic  │                     Dual-mode: Firebase when auth'd, localStorage in demo  │                     Optimistic updates with rollback  │  └── Providers ─────── AuthProvider → DataProvider → ThemeProvider                        Wires Firestore subscriptions                        Rehydrates persisted stores on sign-in```
+# Threadmap
 
-### Key Paths
+Threadmap is a local-first personal productivity system for turning connected intent into action.
 
-```
-src/
-├── app/
-│   ├── page.tsx                    # Dashboard
-│   ├── today/                      # Today view
-│   ├── inbox/                      # Inbox processing
-│   ├── tasks/ projects/ habits/    # Type views
-│   ├── goals/ notes/ calendar/     # More views
-│   ├── archive/                    # Archive
-│   ├── files/                      # File manager
-│   ├── settings/                   # Settings page
-│   ├── toolbox/                    # Tool launcher
-│   ├── tools/
-│   │   ├── flight/                 # Focus sessions
-│   │   ├── dispatch/               # Day planner
-│   │   ├── briefing/               # Day/week briefs
-│   │   ├── abitur/                 # Grade calculator
-│   │   └── wishlist/               # The Vault
-│   └── api/
-│       └── scrape/                 # URL metadata + image/price search
-├── components/
-│   ├── providers/                  # Auth, Data, Theme, PWA, Settings
-│   ├── shell/                      # App shell (sidebar, command bar, detail panel)
-│   ├── items/                      # Reusable item components, link graph
-│   ├── notes/                      # Tiptap note editor
-│   ├── files/                      # File upload/viewer
-│   ├── mobile/                     # Pull-to-refresh, swipeable rows
-│   └── ui/                         # shadcn/ui primitives
-└── lib/
-    ├── types.ts                    # OrbitItem, ItemType, etc.
-    ├── store.ts                    # Main Zustand store
-    ├── firestore.ts                # All Firestore CRUD + subscriptions
-    ├── firebase.ts                 # Firebase client init
-    ├── command-parser.ts           # Natural language parser
-    ├── habits.ts                   # Streak calculation
-    ├── links.ts                    # Bidirectional linking utilities
-    ├── badges.ts                   # Achievement system
-    ├── flight.ts                   # Focus session engine
-    ├── i18n.ts                     # Translations (EN/DE + Hockey Mode)
-    ├── settings-store.ts           # Settings Zustand store
-    ├── toolbox-store.ts            # Tool registry + enabled state
-    ├── wishlist-store.ts           # The Vault store (Elo, auctions)
-    ├── abitur-store.ts             # Abitur calculator store
-    ├── storage.ts                  # Firebase Storage (file uploads)
-    ├── google-calendar.ts          # Google Calendar API
-    ├── briefing-notifications.ts   # Push notification briefings
-    ├── mobile.ts                   # Mobile detection utilities
-    ├── pwa.ts                      # PWA / service worker
-    └── utils.ts                    # cn(), date helpers, etc.
-```
+It brings tasks, projects, habits, goals, notes, calendar work, files, and focused tools into one shared item graph instead of treating them as separate apps. A task can belong to a project, reference a note, support a goal, appear on the calendar, and stay available from the same command surface.
 
----
+The app can run in an explicit local/demo profile without a backend. Signed-in profiles use Firebase for cross-device sync, file storage, push notifications, and account workflows.
 
-## ✦ Getting Started
+## What It Does
 
-### 1. Install
+- Captures tasks, projects, habits, events, goals, and notes through one unified item model.
+- Links items together with parent-child relationships, peer links, reverse links, and a visual graph.
+- Provides dashboard, task, project, habit, goal, note, calendar, file, archive, and toolbox views.
+- Supports natural-language command capture for fast entry.
+- Works as an installable PWA with iOS-friendly mobile navigation and safe-area handling.
+- Runs in local mode with browser storage when Firebase is not configured.
+- Enables cloud mode with Firebase Auth, Firestore, Storage, Messaging, and Functions.
+- Includes optional Google Calendar sync and web scraping helpers for selected tools.
+
+## Core Concepts
+
+### Unified Items
+
+Most of Threadmap revolves around a single `OrbitItem` shape. Different item types share the same base lifecycle and can be linked together:
+
+- `task`
+- `project`
+- `habit`
+- `event`
+- `goal`
+- `note`
+
+This keeps workflows composable. A project can contain tasks and goals, a note can reference a project, and a task can carry due dates, tags, priority, checklist data, and relationships without switching systems.
+
+### Local-First Runtime
+
+Threadmap can be used immediately in local mode. Local mode stores data in the browser and is meant for zero-config development, demos, and personal use on one device.
+
+Authenticated users get realtime cloud sync. The repository includes public web identifiers for its default Firebase project, while production deployments should set every `NEXT_PUBLIC_FIREBASE_*` value explicitly for the intended project. Local/demo mode remains available when cloud services are unavailable or not wanted.
+
+### Connected Workflow
+
+Threadmap is built around the idea that productivity data should not be isolated. Relationships are first-class:
+
+- Parent-child hierarchy for projects, goals, and tasks.
+- Peer links between related items.
+- Reverse links so relationships are discoverable from both sides.
+- Link graph view for exploring connected work.
+- Command capture that can create, tag, prioritize, schedule, and link items.
+
+## Tech Stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Tailwind CSS v4
+- Zustand
+- Radix UI primitives
+- Firebase Auth, Firestore, Storage, Messaging, and Functions
+- Vitest
+- ESLint
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 22 (see `.nvmrc`)
+- npm
+
+### Install
 
 ```bash
-git clone https://github.com/mateo-gepard/Orbit.git
-cd Orbit
 npm install
 ```
 
-### 2. Run
+### Run Locally
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). ORBIT runs immediately in **demo mode** using localStorage — no backend required.
+Open `http://localhost:3000`.
 
-### 3. Enable Cloud Sync (Optional)
+To use the app without backend setup, choose local mode on the sign-in screen.
 
-For multi-device sync and authentication:
+## Environment Setup
 
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable **Authentication** (Google Sign-In)
-3. Enable **Firestore Database**
-4. Enable **Storage** (for file uploads)
-5. Copy your Firebase config:
+Copy the example environment file when you want cloud features:
 
 ```bash
 cp .env.local.example .env.local
-# Fill in your Firebase credentials
 ```
 
-6. Deploy Firestore security rules:
+For production, set the full Firebase web configuration explicitly even though the repository has public defaults for its development project. Users can still choose the isolated local/demo profile.
 
-```bash
-npm run deploy:rules
+### Required For Cloud Auth And Sync
+
+```text
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
 ```
 
-See [`BACKEND_SETUP.md`](./BACKEND_SETUP.md) for detailed instructions.
+### Required For File Uploads
 
----
+```text
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+```
 
-## ✦ Command Bar Syntax
+### Required For Push Notifications
 
-| Input | Result |
-|-------|--------|
-| `Groceries #home tomorrow` | Task, tag: home, due: tomorrow |
-| `Meeting with Alex 15.03 14:00` | Event on March 15 at 2pm |
-| `/project Vulcano Rover #tech` | New project |
-| `/habit Jogging` | New habit |
-| `/goal Cambridge #career` | New goal |
-| `/note #idea App concept` | Note with idea subtype |
+```text
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_VAPID_KEY=
+NEXT_PUBLIC_WEBPUSH_VAPID_KEY=
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+SCRAPE_RATE_LIMIT_SHARED_SECRET=
+```
 
----
+### Optional Integrations
 
-## ✦ Deployment
+```text
+NEXT_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID=
+GOOGLE_SEARCH_API_KEY=
+GOOGLE_SEARCH_CX=
+```
 
-Deploy to Vercel:
+For the full backend checklist, see [BACKEND_SETUP.md](./BACKEND_SETUP.md) and [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md).
+
+## Scripts
 
 ```bash
+npm run dev              # Start the Next.js development server
+npm run build            # Build the production app
+npm run start            # Start the production server after build
+npm run lint             # Run ESLint
+npm run typecheck        # Run TypeScript without emitting files
+npm test                 # Run unit tests with Vitest
+npm run test:watch       # Run Vitest in watch mode
+npm run test:rules       # Run Firestore and Storage rules tests in emulators
+npm run deploy:rules     # Deploy Firestore rules/indexes and Storage rules
+npm run deploy:functions # Deploy Firebase Cloud Functions
+```
+
+Cloud Functions have their own package:
+
+```bash
+cd functions
+npm install
+npm run build
+```
+
+## Project Structure
+
+```text
+src/app                 App Router pages, layouts, and API routes
+src/components          Shared UI, shell, item, mobile, file, and tool components
+src/lib                 Store, data access, Firebase, parsing, links, settings, utilities
+src/lib/hooks           Reusable React hooks
+functions               Firebase Cloud Functions
+public                  PWA manifest, service worker, icons, and static assets
+firestore.rules         Firestore security rules
+storage.rules           Firebase Storage security rules
+```
+
+## Important Documents
+
+Start here:
+
+- [DOCUMENTATION.md](./DOCUMENTATION.md): how the system is built — data model, sync, routes, MCP, testing, deployment.
+- [AUDIT.md](./AUDIT.md): the 70-finding codebase audit, with what is fixed and what is open.
+- [HANDOFF.md](./HANDOFF.md): current state, recent changes, and what to pick up next.
+
+Reference:
+
+- [MCP_SETUP.md](./MCP_SETUP.md): operating the MCP server and its OAuth endpoints.
+- [ARCHITECTURE.md](./ARCHITECTURE.md): system architecture and local/cloud data flow.
+- [LINKING_SYSTEM.md](./LINKING_SYSTEM.md): item relationships, graph utilities, and link APIs.
+- [BACKEND_SETUP.md](./BACKEND_SETUP.md): Firebase, Storage, Functions, push, and deployment setup.
+- [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md): production launch checklist.
+- [STORAGE_CORS_SETUP.md](./STORAGE_CORS_SETUP.md): Storage CORS configuration.
+
+## Firebase Deployment
+
+Deploy rules after reviewing the project and environment:
+
+```bash
+firebase deploy --only firestore:rules,storage --project YOUR_PROJECT_ID
+```
+
+Set VAPID secrets before deploying functions:
+
+```bash
+firebase functions:secrets:set VAPID_PUBLIC_KEY --project YOUR_PROJECT_ID
+firebase functions:secrets:set VAPID_PRIVATE_KEY --project YOUR_PROJECT_ID
+firebase functions:secrets:set SCRAPE_RATE_LIMIT_SHARED_SECRET --project YOUR_PROJECT_ID
+firebase deploy --only functions --project YOUR_PROJECT_ID
+```
+
+## App Deployment
+
+Vercel is the production host for the Next.js application. Firebase provides Auth, Firestore, Storage, Messaging, and Functions; it is not configured as a static host. The repository targets Node.js 22 in local development, CI, Vercel, and Cloud Functions.
+
+```bash
+npm run build
 npx vercel
 ```
 
-Set environment variables (`NEXT_PUBLIC_FIREBASE_*`) in the Vercel dashboard.
+After deployment, verify `GET /api/health` returns `status: "ok"`, then exercise sign-in, sync, uploads, push, and Google Calendar from the production origin.
 
----
+## Quality Checks
 
-## ✦ License
+Run these before pushing application changes:
+
+```bash
+npm test
+npm run lint
+npm run typecheck
+npm run test:rules
+npm run build
+```
+
+## Design Principles
+
+- Local-first: usable without setup or external services.
+- Connected: tasks, notes, projects, goals, habits, and events are part of one graph.
+- Fast capture: command entry should make adding and linking work feel immediate.
+- Graceful fallback: missing Firebase configuration should not break the app.
+- Mobile-native: the PWA should feel comfortable on iOS, including safe areas and bottom navigation.
+- Quiet interface: the UI should stay focused, calm, and useful rather than decorative.
+
+## License
 
 Private project.

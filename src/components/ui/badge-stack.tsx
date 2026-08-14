@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
 import {
   Flame,
   CheckSquare,
@@ -12,8 +11,22 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { BadgeCategory, EarnedBadge, BadgeTier } from '@/lib/badges';
+import type { BadgeCategory, EarnedBadge } from '@/lib/badges';
 import { TIER_STYLES } from '@/lib/badges';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  useTranslation,
+  type Translate,
+  type TranslatePlural,
+  type TranslationKey,
+} from '@/lib/i18n';
 
 // ─── Icon mapping ──────────────────────────────────────────
 
@@ -27,54 +40,112 @@ const ICON_MAP: Record<string, typeof Flame> = {
   Link,
 };
 
+const CATEGORY_KEYS: Record<string, TranslationKey> = {
+  streak: 'badges.category.streak',
+  tasks: 'badges.category.tasks',
+  projects: 'badges.category.projects',
+  goals: 'badges.category.goals',
+  habits: 'badges.category.habits',
+  notes: 'badges.category.notes',
+  links: 'badges.category.links',
+};
+
+const TIER_KEYS: Record<EarnedBadge['tier'], TranslationKey> = {
+  bronze: 'badges.tier.bronze',
+  silver: 'badges.tier.silver',
+  gold: 'badges.tier.gold',
+  platinum: 'badges.tier.platinum',
+  diamond: 'badges.tier.diamond',
+};
+
+const BADGE_NAME_KEYS: Record<string, TranslationKey> = {
+  'streak-1': 'badges.name.streak1',
+  'streak-2': 'badges.name.streak2',
+  'streak-3': 'badges.name.streak3',
+  'streak-4': 'badges.name.streak4',
+  'streak-5': 'badges.name.streak5',
+  'tasks-1': 'badges.name.tasks1',
+  'tasks-2': 'badges.name.tasks2',
+  'tasks-3': 'badges.name.tasks3',
+  'tasks-4': 'badges.name.tasks4',
+  'tasks-5': 'badges.name.tasks5',
+  'projects-1': 'badges.name.projects1',
+  'projects-2': 'badges.name.projects2',
+  'projects-3': 'badges.name.projects3',
+  'projects-4': 'badges.name.projects4',
+  'projects-5': 'badges.name.projects5',
+  'goals-1': 'badges.name.goals1',
+  'goals-2': 'badges.name.goals2',
+  'goals-3': 'badges.name.goals3',
+  'goals-4': 'badges.name.goals4',
+  'goals-5': 'badges.name.goals5',
+  'habits-1': 'badges.name.habits1',
+  'habits-2': 'badges.name.habits2',
+  'habits-3': 'badges.name.habits3',
+  'habits-4': 'badges.name.habits4',
+  'habits-5': 'badges.name.habits5',
+  'notes-1': 'badges.name.notes1',
+  'notes-2': 'badges.name.notes2',
+  'notes-3': 'badges.name.notes3',
+  'notes-4': 'badges.name.notes4',
+  'notes-5': 'badges.name.notes5',
+  'links-1': 'badges.name.links1',
+  'links-2': 'badges.name.links2',
+  'links-3': 'badges.name.links3',
+  'links-4': 'badges.name.links4',
+  'links-5': 'badges.name.links5',
+};
+
+function categoryLabel(category: BadgeCategory, translate: Translate): string {
+  const key = CATEGORY_KEYS[category.id];
+  return key ? translate(key) : category.label;
+}
+
+function badgeName(badge: EarnedBadge, translate: Translate): string {
+  const key = BADGE_NAME_KEYS[badge.id];
+  return key ? translate(key) : badge.name;
+}
+
+function badgeDescription(badge: EarnedBadge, translate: Translate, translatePlural: TranslatePlural): string {
+  switch (badge.category) {
+    case 'streak':
+      return translate('badges.description.streak', { count: badge.threshold });
+    case 'tasks':
+      return translatePlural('badges.description.tasks.one', 'badges.description.tasks.other', badge.threshold);
+    case 'projects':
+      return translatePlural('badges.description.projects.one', 'badges.description.projects.other', badge.threshold);
+    case 'goals':
+      return translatePlural('badges.description.goals.one', 'badges.description.goals.other', badge.threshold);
+    case 'habits':
+      return translatePlural('badges.description.habits.one', 'badges.description.habits.other', badge.threshold);
+    case 'notes':
+      return translatePlural('badges.description.notes.one', 'badges.description.notes.other', badge.threshold);
+    case 'links':
+      return translatePlural('badges.description.links.one', 'badges.description.links.other', badge.threshold);
+    default:
+      return badge.description;
+  }
+}
+
 // ─── Badge Stack (collapsed → click-to-expand) ────────────
 
 export function BadgeStack({ category }: { category: BadgeCategory }) {
-  const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false); // true once enter animation should start
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  const { t } = useTranslation();
   const { highestEarned, badges } = category;
   const Icon = ICON_MAP[category.icon] || Target;
   const earnedBadges = badges.filter((b) => b.earned);
   const hasAny = earnedBadges.length > 0;
   const topStyle = highestEarned ? TIER_STYLES[highestEarned.tier] : null;
-
-  // When `open` becomes true, trigger enter animation on next frame
-  useEffect(() => {
-    if (open) {
-      // Double rAF so the DOM mounts with opacity-0, then transitions to opacity-100
-      requestAnimationFrame(() => requestAnimationFrame(() => setMounted(true)));
-    } else {
-      setMounted(false);
-    }
-  }, [open]);
-
-  // Cleanup
-  useEffect(() => () => {
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-  }, []);
-
-  const handleClose = () => {
-    setMounted(false); // start exit animation
-    closeTimerRef.current = setTimeout(() => setOpen(false), 200);
-  };
-
-  // Escape to close
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
+  const localizedCategory = categoryLabel(category, t);
 
   return (
-    <>
-      {/* Collapsed card — click to open */}
-      <div
-        onClick={() => { if (!open) setOpen(true); }}
-        className="relative cursor-pointer group"
-      >
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('badges.viewCategory', { category: localizedCategory })}
+          className="relative block w-full cursor-pointer rounded-xl text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
         {/* Stacked card layers */}
         {hasAny && earnedBadges.length > 1 && (
           <>
@@ -122,91 +193,65 @@ export function BadgeStack({ category }: { category: BadgeCategory }) {
           )}
 
           <div className={cn('flex items-center justify-center h-9 w-9 mb-2', hasAny && topStyle ? topStyle.text : 'text-muted-foreground/20')}>
-            <Icon className="h-5 w-5" strokeWidth={1.5} />
+            <Icon className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
           </div>
 
           <span className={cn('text-[11px] font-semibold text-center leading-tight', hasAny ? 'text-foreground' : 'text-muted-foreground/30')}>
-            {hasAny && highestEarned ? highestEarned.name : category.label}
+            {hasAny && highestEarned ? badgeName(highestEarned, t) : localizedCategory}
           </span>
 
           <span className={cn('text-[9px] font-medium mt-0.5', hasAny && topStyle ? topStyle.text : 'text-muted-foreground/20')}>
-            {hasAny && highestEarned ? TIER_STYLES[highestEarned.tier].label : 'Locked'}
+            {hasAny && highestEarned ? t(TIER_KEYS[highestEarned.tier]) : t('badges.locked')}
           </span>
 
           <span className="text-[8px] text-muted-foreground/40 mt-1 font-medium uppercase tracking-wider">
-            {category.label}
+            {localizedCategory}
           </span>
         </div>
-      </div>
+        </button>
+      </DialogTrigger>
 
-      {/* Modal overlay — click to open, click backdrop / X / Escape to close */}
-      {open && (
-        <>
-          {/* Backdrop */}
-          <div
-            className={cn(
-              'fixed inset-0 z-[60] bg-background/60 backdrop-blur-sm',
-              'transition-opacity duration-200 ease-out',
-              mounted ? 'opacity-100' : 'opacity-0'
-            )}
-            onClick={handleClose}
-          />
-
-          {/* Panel */}
-          <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none p-6">
-            <div
-              className={cn(
-                'pointer-events-auto relative',
-                'rounded-2xl border border-border/60 bg-card/95 backdrop-blur-xl',
-                'shadow-2xl shadow-black/10 dark:shadow-black/30',
-                'p-5 w-full max-w-[320px]',
-                'transition-all duration-200 ease-out',
-                mounted
-                  ? 'opacity-100 scale-100 translate-y-0'
-                  : 'opacity-0 scale-95 translate-y-2'
-              )}
-            >
-              {/* Close button */}
-              <button
-                onClick={handleClose}
-                className="absolute top-3 right-3 p-1 rounded-lg transition-colors text-muted-foreground/40 hover:text-foreground hover:bg-foreground/5"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-
-              {/* Header */}
-              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border/40">
-                <div className={cn(
-                  'flex items-center justify-center h-8 w-8 rounded-lg',
-                  hasAny && topStyle ? cn(topStyle.bg, topStyle.text) : 'bg-foreground/[0.04] text-muted-foreground/40'
-                )}>
-                  <Icon className="h-4 w-4" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <h3 className="text-[13px] font-semibold">{category.label}</h3>
-                  <p className="text-[10px] text-muted-foreground/50">
-                    {earnedBadges.length}/{badges.length} unlocked
-                  </p>
-                </div>
-              </div>
-
-              {/* Tiers */}
-              <div className="flex flex-col gap-2">
-                {badges.map((badge) => (
-                  <BadgeTierRow key={badge.id} badge={badge} />
-                ))}
-              </div>
-            </div>
+      <DialogContent
+        showCloseButton={false}
+        className="w-full max-w-[320px] gap-0 border-border/60 bg-card/95 p-5 backdrop-blur-xl"
+      >
+        <DialogClose
+          aria-label={t('common.close')}
+          className="absolute right-3 top-3 rounded-lg p-1.5 text-muted-foreground/55 transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </DialogClose>
+        <div className="flex items-center gap-2 mb-4 pb-3 pr-7 border-b border-border/40">
+          <div className={cn(
+            'flex items-center justify-center h-8 w-8 rounded-lg',
+            hasAny && topStyle ? cn(topStyle.bg, topStyle.text) : 'bg-foreground/[0.04] text-muted-foreground/40'
+          )}>
+            <Icon className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
           </div>
-        </>
-      )}
-    </>
+          <div>
+            <DialogTitle className="text-[13px] font-semibold">
+              {localizedCategory}
+            </DialogTitle>
+            <DialogDescription className="text-[10px] text-muted-foreground/50">
+              {t('badges.unlocked', { earned: earnedBadges.length, total: badges.length })}
+            </DialogDescription>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {badges.map((badge) => (
+            <BadgeTierRow key={badge.id} badge={badge} />
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 // ─── Badge Tier Row (in expanded view) ─────────────────────
 
 function BadgeTierRow({ badge }: { badge: EarnedBadge }) {
+  const { t, tp } = useTranslation();
   const Icon = ICON_MAP[badge.icon] || Target;
   const style = TIER_STYLES[badge.tier];
   const progress = Math.min((badge.current / badge.threshold) * 100, 100);
@@ -227,7 +272,7 @@ function BadgeTierRow({ badge }: { badge: EarnedBadge }) {
           badge.earned ? style.text : 'text-muted-foreground/15'
         )}
       >
-        <Icon className="h-4 w-4" strokeWidth={1.5} />
+        <Icon className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
       </div>
 
       {/* Info */}
@@ -239,7 +284,7 @@ function BadgeTierRow({ badge }: { badge: EarnedBadge }) {
               badge.earned ? 'text-foreground' : 'text-muted-foreground/25'
             )}
           >
-            {badge.name}
+            {badgeName(badge, t)}
           </span>
           <span
             className={cn(
@@ -249,7 +294,7 @@ function BadgeTierRow({ badge }: { badge: EarnedBadge }) {
                 : 'bg-foreground/[0.03] text-muted-foreground/20'
             )}
           >
-            {style.label}
+            {t(TIER_KEYS[badge.tier])}
           </span>
         </div>
         <p
@@ -258,13 +303,24 @@ function BadgeTierRow({ badge }: { badge: EarnedBadge }) {
             badge.earned ? 'text-muted-foreground/50' : 'text-muted-foreground/20'
           )}
         >
-          {badge.description}
+          {badgeDescription(badge, t, tp)}
         </p>
 
         {/* Progress bar for unearned */}
         {!badge.earned && (
           <div className="flex items-center gap-2 mt-1.5">
-            <div className="flex-1 h-1 rounded-full bg-foreground/[0.04] overflow-hidden">
+            <div
+              className="flex-1 h-1 rounded-full bg-foreground/[0.04] overflow-hidden"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={badge.threshold}
+              aria-valuenow={Math.min(badge.current, badge.threshold)}
+              aria-label={t('badges.progress', {
+                name: badgeName(badge, t),
+                current: badge.current,
+                threshold: badge.threshold,
+              })}
+            >
               <div
                 className="h-full rounded-full bg-foreground/10 transition-all"
                 style={{ width: `${progress}%` }}
@@ -280,7 +336,7 @@ function BadgeTierRow({ badge }: { badge: EarnedBadge }) {
       {/* Checkmark for earned */}
       {badge.earned && (
         <div className={cn('shrink-0', style.text)}>
-          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none">
+          <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 16 16" fill="none">
             <path
               d="M4 8.5L6.5 11L12 5"
               stroke="currentColor"
@@ -298,6 +354,7 @@ function BadgeTierRow({ badge }: { badge: EarnedBadge }) {
 // ─── Badges Grid (main component for goals page) ───────────
 
 export function BadgesSection({ categories }: { categories: BadgeCategory[] }) {
+  const { t } = useTranslation();
   const totalEarned = categories.reduce(
     (sum, cat) => sum + cat.badges.filter((b) => b.earned).length,
     0
@@ -310,13 +367,13 @@ export function BadgesSection({ categories }: { categories: BadgeCategory[] }) {
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2">
           <div className="flex items-center justify-center h-5 w-5">
-            <svg className="h-3.5 w-3.5 text-muted-foreground/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden="true" className="h-3.5 w-3.5 text-muted-foreground/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 9 7 12 7s5-3 7.5-3a2.5 2.5 0 0 1 0 5H18" />
               <path d="M18 9v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9" />
               <path d="M12 3v4" />
             </svg>
           </div>
-          <span className="text-[13px] font-semibold">Achievements</span>
+          <span className="text-[13px] font-semibold">{t('badges.achievements')}</span>
           <span className="text-[11px] text-muted-foreground/40 tabular-nums">
             {totalEarned}/{totalBadges}
           </span>

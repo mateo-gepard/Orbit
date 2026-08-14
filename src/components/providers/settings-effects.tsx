@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useTheme } from 'next-themes';
 import { useSettingsStore } from '@/lib/settings-store';
 import { useOrbitStore } from '@/lib/store';
 import { updateItem } from '@/lib/firestore';
+import { getAutoArchiveTaskIds } from '@/lib/auto-archive';
+import { readableForeground } from '@/lib/utils';
 
 /**
  * Applies user settings as global CSS classes / variables on the document.
@@ -15,6 +18,13 @@ import { updateItem } from '@/lib/firestore';
  */
 export function SettingsEffects() {
   const settings = useSettingsStore((s) => s.settings);
+  const { setTheme } = useTheme();
+  const pendingArchiveIds = useRef(new Set<string>());
+
+  // Account-scoped settings are authoritative across hydration and switches.
+  useEffect(() => {
+    setTheme(settings.theme);
+  }, [setTheme, settings.theme]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -27,6 +37,9 @@ export function SettingsEffects() {
     // Set a CSS variable that components can reference
     if (settings.accentColor) {
       root.style.setProperty('--accent-color', settings.accentColor);
+      // Buttons and CTAs take the accent as `--primary`, so they need a
+      // foreground that stays legible against whatever the user picked.
+      root.style.setProperty('--accent-contrast', readableForeground(settings.accentColor));
     }
 
     // ── Compact mode / density ─────────────────────────────
@@ -51,6 +64,7 @@ export function SettingsEffects() {
 
     return () => {
       root.style.removeProperty('--accent-color');
+      root.style.removeProperty('--accent-contrast');
       body.removeAttribute('data-density');
       root.classList.remove('reduce-motion', 'high-contrast');
       root.removeAttribute('data-font-size');
@@ -70,19 +84,31 @@ export function SettingsEffects() {
   const autoArchiveDays = settings.autoArchiveDays;
 
   useEffect(() => {
-    if (!autoArchiveDays || autoArchiveDays <= 0) return;
+    const ids = getAutoArchiveTaskIds(items, autoArchiveDays)
+      .filter((id) => !pendingArchiveIds.current.has(id));
+    if (ids.length === 0) return;
 
-    const cutoff = Date.now() - autoArchiveDays * 24 * 60 * 60 * 1000;
-    const toArchive = items.filter(
-      (item) =>
-        item.status === 'done' &&
-        item.updatedAt &&
-        item.updatedAt < cutoff
-    );
+    ids.forEach((id) => pendingArchiveIds.current.add(id));
 
-    for (const item of toArchive) {
-      updateItem(item.id, { status: 'archived' });
-    }
+    const archive = async () => {
+      const results = await Promise.allSettled(
+        ids.map((id) => updateItem(id, { status: 'archived' }))
+      );
+      const failed = results.filter((result) => result.status === 'rejected');
+
+      ids.forEach((id) => pendingArchiveIds.current.delete(id));
+      if (failed.length > 0) {
+        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
+          detail: {
+            message: failed.length === 1
+              ? 'A completed task could not be auto-archived. It is still safe in your task list.'
+              : `${failed.length} completed tasks could not be auto-archived. They are still safe in your task list.`,
+          },
+        }));
+      }
+    };
+
+    void archive();
   }, [items, autoArchiveDays]);
 
   return null;

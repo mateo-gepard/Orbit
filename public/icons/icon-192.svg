@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="40" fill="#1c1917"/>
-  <text x="96" y="120" font-family="system-ui,-apple-system,sans-serif" font-weight="700" font-size="100" fill="#faf9f7" text-anchor="middle">O</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="threadmap-app-icon-title">
+  <title id="threadmap-app-icon-title">Threadmap</title>
+  <rect width="64" height="64" fill="#faf9f7"/>
+  <path d="M12 18H52M32 18V50" fill="none" stroke="#202427" stroke-width="5.5" stroke-linecap="round"/>
+  <circle cx="12" cy="18" r="5.5" fill="#202427"/>
+  <circle cx="32" cy="18" r="5.5" fill="#202427"/>
+  <circle cx="32" cy="50" r="5.5" fill="#202427"/>
+  <circle cx="52" cy="18" r="6" fill="#e36a3d"/>
 </svg>

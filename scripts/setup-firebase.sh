@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # ═══════════════════════════════════════════════════════════
-# ORBIT — Firebase Setup Script
+# Threadmap — Firebase Setup Script
 # ═══════════════════════════════════════════════════════════
 
-echo "🚀 ORBIT Firebase Setup"
+echo "🚀 Threadmap Firebase Setup"
 echo ""
 
 # Check if .env.local exists
@@ -31,16 +31,16 @@ echo ""
 
 # Collect Firebase config
 read -p "Firebase API Key: " api_key
-read -p "Auth Domain (z.B. orbit-xyz.firebaseapp.com): " auth_domain
+read -p "Auth Domain (z.B. threadmap-xyz.firebaseapp.com): " auth_domain
 read -p "Project ID: " project_id
-read -p "Storage Bucket (z.B. orbit-xyz.appspot.com): " storage_bucket
+read -p "Storage Bucket (z.B. threadmap-xyz.appspot.com): " storage_bucket
 read -p "Messaging Sender ID: " sender_id
 read -p "App ID: " app_id
 
 # Create .env.local
 cat > .env.local << EOF
 # ═══════════════════════════════════════════════════════════
-# ORBIT — Firebase Configuration
+# Threadmap — Firebase Configuration
 # ═══════════════════════════════════════════════════════════
 # Generated: $(date)
 
@@ -65,4 +65,4 @@ echo "4. Dev Server neu starten: npm run dev"
 echo ""
 echo "─────────────────────────────────────────────────────────"
 echo ""
-echo "🎯 Fertig! Viel Erfolg mit ORBIT!"
+echo "🎯 Fertig! Viel Erfolg mit Threadmap!"

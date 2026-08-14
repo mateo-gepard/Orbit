@@ -1,6 +1,6 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-# ORBIT — Personal Productivity OS
+# Threadmap — Personal Productivity OS
 
 Next.js 16 App Router · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui · Firebase (Firestore + Auth) · Zustand 5
 
@@ -35,7 +35,7 @@ Next.js 16 App Router · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui 
 - **Icons**: Lucide React only (`lucide-react`).
 - **Fonts**: Geist Sans + Geist Mono via `next/font/google`.
 - **Styling**: Tailwind v4 with CSS variables for theming (`--background`, `--foreground`, `--muted`, `--border`, etc. defined in `globals.css`). Neutral/monochrome palette — avoid loud colors. Use `bg-foreground text-background` for primary buttons.
-- **Error handling**: Wrap all async ops in try/catch. Firebase errors fall back to demo mode. Console logs prefixed with `[ORBIT]`.
+- **Error handling**: Wrap all async ops in try/catch. Firebase errors fall back to demo mode. Console logs prefixed with `[THREADMAP]`.
 - **New tool pattern**: Create store in `src/lib/{tool}-store.ts` → register in `TOOLS` array → add `subscribeToToolData` call in `data-provider.tsx` → create page at `src/app/tools/{tool}/page.tsx`.
 
 ## Don'ts

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Abitur Engine (Bavarian G9)
+// Threadmap — Abitur Engine (Bavarian G9)
 // Complete calculation engine for the Qualifikationsphase
 // ═══════════════════════════════════════════════════════════
 
@@ -350,7 +350,6 @@ export function calcSemesterStats(semester: Semester, profile: AbiturProfile): S
     einbringungCount: eingebrachte.length,
   };
 }
-
 // ─── Block I ───────────────────────────────────────────────
 
 export interface BlockIResult {
@@ -841,19 +840,130 @@ export const EXCLUSIVE_GROUPS: string[][] = [
   ['kun', 'mus'],           // Kunst / Musik — musisches Pflichtfach, pick one
 ];
 
+export interface ExclusiveSelectionResult {
+  subjects: string[];
+  blockedBy: string | null;
+}
+
+/**
+ * Apply an exclusive subject choice without ever evicting a protected subject.
+ * Callers can use `blockedBy` to explain why the requested choice was rejected.
+ */
+export function selectSubjectWithExclusivity(
+  subjects: string[],
+  adding: string,
+  protectedSubjects: Iterable<string> = [],
+): ExclusiveSelectionResult {
+  const uniqueSubjects = [...new Set(subjects.filter(Boolean))];
+  const group = EXCLUSIVE_GROUPS.find((candidate) => candidate.includes(adding));
+  if (!group) return { subjects: uniqueSubjects, blockedBy: null };
+
+  const protectedIds = new Set(protectedSubjects);
+  const blockedBy = group.find((id) => (
+    id !== adding && uniqueSubjects.includes(id) && protectedIds.has(id)
+  ));
+  if (blockedBy) {
+    return {
+      subjects: uniqueSubjects.filter((id) => id !== adding),
+      blockedBy,
+    };
+  }
+
+  return {
+    subjects: uniqueSubjects.filter((id) => !group.includes(id) || id === adding),
+    blockedBy: null,
+  };
+}
+
 /** When selecting a subject in an exclusive group, remove the conflicting ones */
 export function applyExclusivity(subjects: string[], adding: string): string[] {
-  for (const group of EXCLUSIVE_GROUPS) {
-    if (group.includes(adding)) {
-      subjects = subjects.filter((id) => !group.includes(id) || id === adding);
-    }
-  }
-  return subjects;
+  return selectSubjectWithExclusivity(subjects, adding).subjects;
 }
 
 /** Get the exclusive group a subject belongs to, or null */
 export function getExclusiveGroup(subjectId: string): string[] | null {
   return EXCLUSIVE_GROUPS.find((g) => g.includes(subjectId)) ?? null;
+}
+
+export function subjectsConflict(firstId: string, secondId: string): boolean {
+  if (!firstId || !secondId || firstId === secondId) return false;
+  return EXCLUSIVE_GROUPS.some((group) => group.includes(firstId) && group.includes(secondId));
+}
+
+/** The subject identities whose removal would invalidate the current profile. */
+export function getProtectedSubjectIds(profile: AbiturProfile): Set<string> {
+  return new Set([
+    'deu',
+    'mat',
+    'wsem',
+    'psem',
+    profile.leistungsfach,
+    ...(profile.examSubjects ?? []),
+  ].filter(Boolean));
+}
+
+/**
+ * Reconcile a requested subject list while retaining every required/exam subject.
+ * When an exclusive group contains a protected subject, any opposing unprotected
+ * request is discarded. Otherwise the last requested member wins.
+ */
+export function reconcileSubjectSelection(
+  profile: AbiturProfile,
+  requestedSubjects: string[],
+): string[] {
+  const validIds = new Set(ALL_SUBJECTS.map((subject) => subject.id));
+  const protectedIds = getProtectedSubjectIds(profile);
+  let result = [...new Set(requestedSubjects.filter((id) => validIds.has(id)))];
+
+  for (const protectedId of protectedIds) {
+    if (validIds.has(protectedId) && !result.includes(protectedId)) result.push(protectedId);
+  }
+
+  for (const group of EXCLUSIVE_GROUPS) {
+    const selected = result.filter((id) => group.includes(id));
+    if (selected.length <= 1) continue;
+
+    const protectedSelected = selected.filter((id) => protectedIds.has(id));
+    if (protectedSelected.length > 0) {
+      result = result.filter((id) => !group.includes(id) || protectedIds.has(id));
+      continue;
+    }
+
+    const winner = selected[selected.length - 1];
+    result = result.filter((id) => !group.includes(id) || id === winner);
+  }
+
+  return result;
+}
+
+/**
+ * Keep the five exam slots canonical. A slot retains points only while its
+ * subject identity is unchanged; changing a subject always starts with no
+ * result so points can never silently move between subjects.
+ */
+export function reconcileExamSlots(profile: AbiturProfile): AbiturProfile {
+  const sourceSubjects = Array.isArray(profile.examSubjects) ? profile.examSubjects : [];
+  const examSubjects = [
+    'deu',
+    'mat',
+    profile.leistungsfach || '',
+    sourceSubjects[3] || '',
+    sourceSubjects[4] || '',
+  ];
+  const sourceExams = Array.isArray(profile.exams) ? profile.exams : [];
+  const exams: ExamResult[] = examSubjects.map((subjectId, index) => {
+    const previous = sourceExams[index];
+    const unchanged = previous?.subjectId === subjectId;
+    return {
+      subjectId,
+      examType: index < 3 ? 'written' : 'colloquium',
+      points: unchanged && typeof previous.points === 'number' && Number.isFinite(previous.points)
+        ? Math.round(Math.max(0, Math.min(15, previous.points)))
+        : null,
+    };
+  });
+
+  return { ...profile, examSubjects, exams };
 }
 
 // ─── Exam Validation ───────────────────────────────────────
@@ -983,11 +1093,12 @@ export function validateExamCombination(
     if (vLF.valid && vLF.reason) warnings.push(`Leistungsfach: ${vLF.reason}`);
   }
 
-  // Check exclusive subjects used as both oral exams
-  if (exam4 && exam5) {
-    for (const group of EXCLUSIVE_GROUPS) {
-      if (group.includes(exam4) && group.includes(exam5)) {
-        errors.push(`${getSubject(exam4)?.name} und ${getSubject(exam5)?.name} schließen sich gegenseitig aus`);
+  // Exclusive schedule choices cannot coexist in any of the configurable slots.
+  const configurableExams = [leistungsfach, exam4, exam5].filter(Boolean);
+  for (let first = 0; first < configurableExams.length; first++) {
+    for (let second = first + 1; second < configurableExams.length; second++) {
+      if (subjectsConflict(configurableExams[first], configurableExams[second])) {
+        errors.push(`${getSubject(configurableExams[first])?.name} und ${getSubject(configurableExams[second])?.name} schließen sich gegenseitig aus`);
       }
     }
   }
@@ -1184,7 +1295,15 @@ export function getKolloquiumOptions(
     .map((id) => {
       const subject = getSubject(id);
       if (!subject) return null;
-      const validation = canSubjectBeOralExam(id);
+      const oralValidation = canSubjectBeOralExam(id);
+      const conflictingExam = [profile.leistungsfach, otherExam]
+        .find((examId) => subjectsConflict(id, examId));
+      const validation = conflictingExam
+        ? {
+            valid: false,
+            reason: `${subject.name} und ${getSubject(conflictingExam)?.name} schließen sich gegenseitig aus`,
+          }
+        : oralValidation;
 
       // Check what field coverage would look like with this choice
       const hypothetical = ['deu', 'mat', profile.leistungsfach, otherExam, id].filter(Boolean);

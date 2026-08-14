@@ -4,34 +4,48 @@ import { Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useSettingsStore } from '@/lib/settings-store';
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme } = useTheme();
+  const language = useSettingsStore((state) => state.settings.language);
+  const updateSettings = useSettingsStore((state) => state.update);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   if (!mounted) {
     return (
-      <button className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/50">
+      <button
+        type="button"
+        aria-label={language === 'de' ? 'Design umschalten' : 'Toggle theme'}
+        disabled
+        className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground/50 lg:h-8 lg:w-8"
+      >
         <div className="h-4 w-4" />
       </button>
     );
   }
 
-  const isDark = theme === 'dark';
+  const isDark = resolvedTheme === 'dark';
+  const label = isDark
+    ? (language === 'de' ? 'Helles Design verwenden' : 'Switch to light mode')
+    : (language === 'de' ? 'Dunkles Design verwenden' : 'Switch to dark mode');
 
   return (
     <button
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      type="button"
+      onClick={() => updateSettings({ theme: isDark ? 'light' : 'dark' })}
       className={cn(
-        'flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200',
+        'flex h-11 w-11 items-center justify-center rounded-lg transition-all duration-200 lg:h-8 lg:w-8',
         'hover:bg-foreground/[0.05] active:scale-95',
         'text-muted-foreground/60 hover:text-foreground'
       )}
-      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label={label}
+      title={label}
     >
       <div className="relative h-4 w-4">
         {/* Moon icon (dark mode) */}

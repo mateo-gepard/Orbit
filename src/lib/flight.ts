@@ -1,8 +1,30 @@
-import type { OrbitItem } from './types';
-import { saveToolData, subscribeToToolData } from './firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocFromServer,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+import { db } from './firebase';
+import { DEMO_USER_ID, migrateLegacyStorageToDemo, scopedStorageKey } from './account-storage';
+import {
+  boundFlightHistory,
+  isRetainableFlightHistoryEntry,
+  MAX_FLIGHT_LOGS,
+} from './flight-retention';
+import { writeLocalStorageVerified } from './verified-storage';
+
+export { MAX_FLIGHT_LOGS } from './flight-retention';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Flight Engine
+// Threadmap — Flight Engine
 // Focus sessions modeled as flights with phases, routes,
 // boarding passes, and a logbook.
 // ═══════════════════════════════════════════════════════════
@@ -643,9 +665,58 @@ export const TURBULENCE_TYPES: { type: TurbulenceLog['type']; label: string; ico
 // ─── Flight Log Persistence (Firestore + localStorage) ────
 
 const FLIGHT_LOGS_KEY = 'orbit-flight-logs';
+const FLIGHT_PENDING_KEY = 'orbit-flight-pending';
+const FLIGHT_SAVE_WAIT_MS = 5_000;
+const MAX_PRUNE_BATCH_SIZE = 400;
+let activeFlightOwnerId: string | null = null;
+const flightWritesInFlight = new Map<string, { payload: string; promise: Promise<void> }>();
+const legacyMigrationsInFlight = new Map<string, Promise<void>>();
 
 function flightLogsKey(userId: string): string {
-  return `${FLIGHT_LOGS_KEY}:${encodeURIComponent(userId)}`;
+  return scopedStorageKey(FLIGHT_LOGS_KEY, userId);
+}
+
+function pendingLogsKey(userId: string): string {
+  return scopedStorageKey(FLIGHT_PENDING_KEY, userId);
+}
+
+function loadPendingLogIds(userId: string): Set<string> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(pendingLogsKey(userId)) || '[]');
+    return new Set(Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === 'string').slice(0, MAX_FLIGHT_LOGS)
+      : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function savePendingLogIds(userId: string, ids: Set<string>): void {
+  writeLocalStorageVerified(
+    pendingLogsKey(userId),
+    JSON.stringify([...ids].slice(-MAX_FLIGHT_LOGS))
+  );
+}
+
+function clearPendingLogIds(userId: string, committedIds: Iterable<string>): void {
+  const pending = loadPendingLogIds(userId);
+  let changed = false;
+  for (const id of committedIds) changed = pending.delete(id) || changed;
+  if (changed) savePendingLogIds(userId, pending);
+}
+
+export function setFlightStorageOwner(userId: string | null): void {
+  activeFlightOwnerId = userId;
+  migrateLegacyStorageToDemo(FLIGHT_LOGS_KEY, userId);
+  if (userId && typeof localStorage !== 'undefined') {
+    try {
+      const logs = loadFlightLogsLocal(userId);
+      writeLocalStorageVerified(flightLogsKey(userId), JSON.stringify(logs));
+      retainPendingLogIds(userId, logs);
+    } catch {
+      // Existing data remains available if storage compaction is unavailable.
+    }
+  }
 }
 
 /** Sanitise a flight log so it only contains Firestore-safe plain values. */
@@ -653,41 +724,208 @@ function sanitiseLog(log: FlightLog): FlightLog {
   return JSON.parse(JSON.stringify(log)) as FlightLog;
 }
 
-/** Save a completed flight — writes to both localStorage (instant) and Firestore (synced) */
-export function saveFlightLog(log: FlightLog, userId?: string): void {
-  const uid = userId || log.userId || 'demo-user';
-  // 1. Instant local update
-  try {
-    const existing = loadFlightLogsLocal(uid);
-    existing.unshift(log);
-    const trimmed = existing.slice(0, 100);
-    localStorage.setItem(flightLogsKey(uid), JSON.stringify(trimmed));
-  } catch (e) {
-    console.warn('[ORBIT] Flight log localStorage save failed:', e);
+/** Apply the product's explicit latest-100 retention policy deterministically. */
+export function boundFlightLogHistory(value: unknown): FlightLog[] {
+  return boundFlightHistory<FlightLog>(value).map((entry) => sanitiseLog(entry));
+}
+
+function retainPendingLogIds(userId: string, logs: FlightLog[]): void {
+  const retainedIds = new Set(logs.map((log) => log.id));
+  const pending = new Set(
+    [...loadPendingLogIds(userId)].filter((id) => retainedIds.has(id))
+  );
+  savePendingLogIds(userId, pending);
+}
+
+function samePlainValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left)
+      && Array.isArray(right)
+      && left.length === right.length
+      && left.every((value, index) => samePlainValue(value, right[index]));
+  }
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).sort();
+  const rightKeys = Object.keys(rightRecord).sort();
+  return leftKeys.length === rightKeys.length
+      && leftKeys.every((key, index) =>
+        key === rightKeys[index] && samePlainValue(leftRecord[key], rightRecord[key])
+      );
+}
+
+async function persistFlightLog(log: FlightLog, userId: string): Promise<void> {
+  if (!db) throw new Error('Cloud sync is unavailable.');
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await setDoc(doc(db, 'flightLogs', `${userId}_${log.id}`), sanitiseLog({ ...log, userId }));
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = String((error as { code?: unknown })?.code || '').replace(/^[^/]+\//, '');
+      if (!['aborted', 'deadline-exceeded', 'internal', 'resource-exhausted', 'unavailable'].includes(code)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** attempt)));
+    }
+  }
+  throw lastError;
+}
+
+async function pruneCloudFlightLogs(userId: string): Promise<void> {
+  if (!db) throw new Error('Cloud sync is unavailable.');
+  if (activeFlightOwnerId !== userId) {
+    throw new Error('The active account changed before flight history could be pruned.');
   }
 
-  // 2. Sync to Firestore if we have a real user
-  if (uid && uid !== 'local' && uid !== 'demo-user') {
-    const allLogs = loadFlightLogsLocal(uid);
-    // Sanitise logs to ensure only plain JSON values (no undefined, functions, etc.)
-    const safeLogs = allLogs.map(sanitiseLog);
-    saveToolData(uid, 'flightLogs', { logs: safeLogs }).catch((err) => {
-      console.error('[ORBIT] Flight log Firestore save failed:', err);
+  const snapshot = await getDocs(query(
+    collection(db, 'flightLogs'),
+    where('userId', '==', userId),
+  ));
+  const prefix = `${userId}_`;
+  const owned = snapshot.docs
+    .filter((entry) => entry.id.startsWith(prefix) && entry.data().userId === userId)
+    .sort((left, right) => {
+      const leftStartedAt = Number(left.data().startedAt || 0);
+      const rightStartedAt = Number(right.data().startedAt || 0);
+      return rightStartedAt - leftStartedAt || right.id.localeCompare(left.id);
     });
+  const excess = owned.slice(MAX_FLIGHT_LOGS);
+
+  for (let offset = 0; offset < excess.length; offset += MAX_PRUNE_BATCH_SIZE) {
+    if (activeFlightOwnerId !== userId) {
+      throw new Error('The active account changed before flight history could be pruned.');
+    }
+    const batch = writeBatch(db);
+    for (const entry of excess.slice(offset, offset + MAX_PRUNE_BATCH_SIZE)) {
+      batch.delete(entry.ref);
+    }
+    await batch.commit();
   }
 }
 
-/** Load flight logs from localStorage (synchronous, for initial render) */
-export function loadFlightLogsLocal(userId = 'demo-user'): FlightLog[] {
-  try {
-    const key = flightLogsKey(userId);
-    if (userId === 'demo-user' && !localStorage.getItem(key)) {
-      const legacy = localStorage.getItem(FLIGHT_LOGS_KEY);
-      if (legacy) localStorage.setItem(key, legacy);
+function queueFlightLogSync(log: FlightLog, userId: string): Promise<void> {
+  const key = `${userId}_${log.id}`;
+  const existing = flightWritesInFlight.get(key);
+  const payload = JSON.stringify(sanitiseLog(log));
+  if (existing?.payload === payload) return existing.promise;
+  const predecessor = existing?.promise.catch(() => undefined) || Promise.resolve();
+  const entry = { payload, promise: Promise.resolve() };
+  entry.promise = predecessor
+    .then(() => persistFlightLog(log, userId))
+    // Retention is destructive, so it runs only after setDoc confirms that the
+    // replacement/newest record is durably committed for this owner.
+    .then(() => pruneCloudFlightLogs(userId))
+    .then(() => clearPendingLogIds(userId, [log.id]))
+    .finally(() => {
+      if (flightWritesInFlight.get(key) === entry) flightWritesInFlight.delete(key);
+    });
+  flightWritesInFlight.set(key, entry);
+  return entry.promise;
+}
+
+async function runLegacyFlightMigration(userId: string): Promise<void> {
+  if (!db || activeFlightOwnerId !== userId) return;
+  const legacyRef = doc(db, 'toolData', `${userId}_flightLogs`);
+  const legacy = await getDocFromServer(legacyRef);
+  if (!legacy.exists()) return;
+
+  const rawLogs = legacy.data().logs;
+  if (!Array.isArray(rawLogs)) return;
+  const allEntriesValid = rawLogs.every(isRetainableFlightHistoryEntry);
+  const uniqueIds = new Set(rawLogs.map((entry) => (entry as FlightLog).id));
+  if (!allEntriesValid || uniqueIds.size !== rawLogs.length) {
+    throw new Error('Legacy flight history is malformed and was preserved for recovery.');
+  }
+
+  // Histories were always intended to be bounded. If a legacy client exceeded
+  // that limit, migrate the deterministic latest 100 and retire older entries.
+  const logs = boundFlightLogHistory(rawLogs)
+    .map((entry) => sanitiseLog({ ...entry, userId }));
+  for (const log of logs) {
+    if (activeFlightOwnerId !== userId) {
+      throw new Error('The active account changed during flight history migration.');
     }
-    const stored = localStorage.getItem(key);
+    await persistFlightLog(log, userId);
+  }
+
+  const verified = await Promise.all(logs.map(async (log) => {
+    const snapshot = await getDocFromServer(doc(db!, 'flightLogs', `${userId}_${log.id}`));
+    return snapshot.exists() && samePlainValue(snapshot.data(), log);
+  }));
+  if (!verified.every(Boolean)) {
+    throw new Error('Legacy flight history verification failed; the source was preserved.');
+  }
+  if (activeFlightOwnerId !== userId) {
+    throw new Error('The active account changed during flight history migration.');
+  }
+
+  await pruneCloudFlightLogs(userId);
+  // Deletion is deliberately last: every migrated document was read back from
+  // the server and retention completed before the only legacy copy is cleared.
+  await deleteDoc(legacyRef);
+  clearPendingLogIds(userId, logs.map((log) => log.id));
+}
+
+export function migrateLegacyFlightLogs(userId: string): Promise<void> {
+  const existing = legacyMigrationsInFlight.get(userId);
+  if (existing) return existing;
+  const migration = runLegacyFlightMigration(userId)
+    .finally(() => legacyMigrationsInFlight.delete(userId));
+  legacyMigrationsInFlight.set(userId, migration);
+  return migration;
+}
+
+export interface FlightLogSaveResult {
+  /** The log is durably stored in account-scoped browser storage. */
+  savedLocally: true;
+  /** False means the deterministic cloud write is still pending/retryable. */
+  synced: boolean;
+}
+
+/** Save a completed flight durably before the UI clears its debrief state. */
+export async function saveFlightLog(log: FlightLog, userId?: string): Promise<FlightLogSaveResult> {
+  const uid = userId || log.userId || activeFlightOwnerId;
+  if (!uid || uid !== activeFlightOwnerId) {
+    throw new Error('The active account changed before the flight log was saved.');
+  }
+  const safeLog = sanitiseLog({ ...log, userId: uid });
+  const existing = loadFlightLogsLocal(uid).filter((entry) => entry.id !== log.id);
+  const retained = boundFlightLogHistory([safeLog, ...existing]);
+  writeLocalStorageVerified(flightLogsKey(uid), JSON.stringify(retained));
+  retainPendingLogIds(uid, retained);
+
+  if (!db || uid === 'local' || uid === DEMO_USER_ID) {
+    return { savedLocally: true, synced: false };
+  }
+
+  const pending = loadPendingLogIds(uid);
+  pending.add(log.id);
+  savePendingLogIds(uid, pending);
+  const cloudWrite = queueFlightLogSync(safeLog, uid).then(() => {
+    return true;
+  });
+  // Keep the idempotent write alive after the bounded UI wait. The local copy
+  // plus pending ID is the durable fallback if the browser goes offline.
+  void cloudWrite.catch((error) => {
+    console.error('[THREADMAP] Flight log cloud sync is pending:', error);
+  });
+  const synced = await Promise.race([
+    cloudWrite,
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), FLIGHT_SAVE_WAIT_MS)),
+  ]);
+  return { savedLocally: true, synced };
+}
+
+/** Load flight logs from localStorage (synchronous, for initial render) */
+export function loadFlightLogsLocal(userId = activeFlightOwnerId || DEMO_USER_ID): FlightLog[] {
+  try {
+    const stored = localStorage.getItem(flightLogsKey(userId));
     if (!stored) return [];
-    return JSON.parse(stored) as FlightLog[];
+    return boundFlightLogHistory(JSON.parse(stored));
   } catch {
     return [];
   }
@@ -701,23 +939,75 @@ export function subscribeToFlightLogs(
   userId: string,
   callback: (logs: FlightLog[]) => void
 ): () => void {
-  return subscribeToToolData<{ logs: FlightLog[] }>(
-    userId,
-    'flightLogs',
-    (data) => {
-      if (data?.logs && Array.isArray(data.logs)) {
-        const cloudLogs = [...data.logs]
-          .sort((a, b) => b.startedAt - a.startedAt)
-          .slice(0, 100);
-        try {
-          localStorage.setItem(flightLogsKey(userId), JSON.stringify(cloudLogs));
-        } catch { /* ignore */ }
-        callback(cloudLogs);
-      } else {
-        callback(loadFlightLogsLocal(userId));
-      }
+  if (userId !== activeFlightOwnerId) {
+    throw new Error('Flight logs were requested for an inactive account.');
+  }
+  const key = flightLogsKey(userId);
+  if (!db || userId === DEMO_USER_ID || userId === 'local') {
+    callback(loadFlightLogsLocal(userId));
+    const handler = (event: StorageEvent) => {
+      if (event.key === key) callback(loadFlightLogsLocal(userId));
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }
+
+  // Deterministic IDs make migration idempotent. The source is removed only
+  // after every destination is read back successfully from the server.
+  void migrateLegacyFlightLogs(userId).catch((error) => {
+    console.warn('[THREADMAP] Legacy flight log migration was deferred:', error);
+  });
+
+  const retryPendingLogs = () => {
+    if (activeFlightOwnerId !== userId) return;
+    void migrateLegacyFlightLogs(userId).catch((error) => {
+      console.warn('[THREADMAP] Legacy flight log migration was deferred:', error);
+    });
+    const pendingIds = loadPendingLogIds(userId);
+    for (const log of loadFlightLogsLocal(userId)) {
+      if (!pendingIds.has(log.id)) continue;
+      void queueFlightLogSync(log, userId).catch((error) => {
+        console.warn('[THREADMAP] Pending flight log retry was deferred:', error);
+      });
     }
+  };
+
+  const logsQuery = query(
+    collection(db, 'flightLogs'),
+    where('userId', '==', userId),
+    orderBy('startedAt', 'desc'),
+    limit(MAX_FLIGHT_LOGS)
   );
+  const unsubscribe = onSnapshot(logsQuery, (snapshot) => {
+    const cloudLogs = snapshot.docs
+      .filter((entry) => entry.id.startsWith(`${userId}_`) && entry.data().userId === userId)
+      .map((entry) => entry.data() as FlightLog);
+    const cloudIds = new Set(cloudLogs.map((log) => log.id));
+    clearPendingLogIds(userId, cloudIds);
+    const pendingIds = loadPendingLogIds(userId);
+    const merged = new Map(cloudLogs.map((log) => [log.id, log]));
+    for (const localLog of loadFlightLogsLocal(userId)) {
+      if (pendingIds.has(localLog.id)) merged.set(localLog.id, localLog);
+    }
+    retryPendingLogs();
+    const logs = boundFlightLogHistory([...merged.values()]);
+    try {
+      localStorage.setItem(key, JSON.stringify(logs));
+      retainPendingLogIds(userId, logs);
+    } catch {
+      // The cloud snapshot remains authoritative if the browser cache is full.
+    }
+    callback(logs);
+  }, (error) => {
+    console.error('[THREADMAP] Flight log subscription failed:', error);
+    callback(loadFlightLogsLocal(userId));
+  });
+  window.addEventListener('online', retryPendingLogs);
+  retryPendingLogs();
+  return () => {
+    window.removeEventListener('online', retryPendingLogs);
+    unsubscribe();
+  };
 }
 
 /** Get total focus stats from all flights */
@@ -738,12 +1028,17 @@ export function getFlightStats(logs: FlightLog[]): {
     : 0;
 
   // Calculate longest daily streak
-  const dates = [...new Set(logs.map((l) => new Date(l.startedAt).toISOString().slice(0, 10)))].sort();
+  const dates = [...new Set(logs.map((log) => {
+    const date = new Date(log.startedAt);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }))].sort();
   let longestStreak = 0;
   let currentStreak = 1;
   for (let i = 1; i < dates.length; i++) {
-    const prev = new Date(dates[i - 1]);
-    const curr = new Date(dates[i]);
+    const [prevYear, prevMonth, prevDay] = dates[i - 1].split('-').map(Number);
+    const [year, month, day] = dates[i].split('-').map(Number);
+    const prev = new Date(Date.UTC(prevYear, prevMonth - 1, prevDay));
+    const curr = new Date(Date.UTC(year, month - 1, day));
     const diff = (curr.getTime() - prev.getTime()) / 86400000;
     if (diff === 1) {
       currentStreak++;

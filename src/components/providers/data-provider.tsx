@@ -1,296 +1,504 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Dialog as DialogPrimitive } from 'radix-ui';
+import Link from 'next/link';
+import { X } from 'lucide-react';
 import { useAuth } from './auth-provider';
-import { subscribeToItems, subscribeToUserSettings, subscribeToToolData } from '@/lib/firestore';
-import { useOrbitStore } from '@/lib/store';
-import { useAbiturStore } from '@/lib/abitur-store';
-import { useToolboxStore } from '@/lib/toolbox-store';
-import { useWishlistStore } from '@/lib/wishlist-store';
-import { useCirclesStore } from '@/lib/circles-store';
-import { useSettingsStore } from '@/lib/settings-store';
-import { subscribeToFlightLogs } from '@/lib/flight';
+
+/**
+ * Sync notices, one per kind. Two warnings of different kinds can be true at
+ * the same time; only one message slot meant the later one erased the earlier.
+ */
+type SyncNoticeKind = 'offline' | 'warning' | 'conflict' | 'loading';
+
+interface SyncNotice {
+  kind: SyncNoticeKind;
+  message: string;
+}
+
+import {
+  isFirestoreDataContextCurrent,
+  retryQueuedItemMutations,
+  setFirestoreDataContext,
+  subscribeToItems,
+  subscribeToToolData,
+  subscribeToUserSettings,
+} from '@/lib/firestore';
+import { scopeThreadmapStore, useThreadmapStore } from '@/lib/store';
+import { scopeAbiturStore, useAbiturStore } from '@/lib/abitur-store';
+import { scopeToolboxStore, useToolboxStore } from '@/lib/toolbox-store';
+import { scopeWishlistStore, useWishlistStore, type WishlistCloudData } from '@/lib/wishlist-store';
+import { scopeSettingsStore, useSettingsStore } from '@/lib/settings-store';
+import { setFlightStorageOwner, subscribeToFlightLogs } from '@/lib/flight';
 import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
-import { registerFCMToken, unregisterFCMToken, setupForegroundMessageHandler, isFCMAvailable, refreshPushSubscription } from '@/lib/fcm';
+import {
+  cleanupForegroundMessageHandler,
+  hasFCMToken,
+  refreshPushSubscription,
+  setupForegroundMessageHandler,
+  unregisterFCMToken,
+} from '@/lib/fcm';
+import {
+  clearGoogleAccessToken,
+  hasCalendarPermission,
+  setGoogleCalendarOwner,
+} from '@/lib/google-calendar';
+import { startGoogleCalendarSync, stopGoogleCalendarSync } from '@/lib/google-calendar-sync';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import type { AbiturProfile } from '@/lib/abitur';
 import type { ToolId } from '@/lib/toolbox-store';
 import type { UserSettings } from '@/lib/settings-store';
+import { ensureAppCheck } from '@/lib/firebase';
 
-const RECONNECT_DELAY_MS = 3000;
-const MAX_RECONNECT_ATTEMPTS = 5;
-const MIN_LOADING_TIME = 800;
+const MIN_LOADING_TIME = 500;
 const MAX_LOADING_TIME = 6000;
 
-export function DataProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
-  const setItems = useOrbitStore((s) => s.setItems);
-  const setTagsFromCloud = useOrbitStore((s) => s.setTagsFromCloud);
-  const setSyncUserId = useOrbitStore((s) => s._setSyncUserId);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const reconnectAttempt = useRef(0);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const unsubSettingsRef = useRef<(() => void) | null>(null);
-  const unsubToolDataRefs = useRef<(() => void)[]>([]);
-  const loadingStartTime = useRef(Date.now());
-  const prevUserIdRef = useRef<string | null>(null);
+function dataMessage(english: string, german: string): string {
+  return useSettingsStore.getState().settings.language === 'de' ? german : english;
+}
 
-  const connect = useCallback(() => {
-    if (!user) {
-      // Unregister FCM token on sign-out
-      if (prevUserIdRef.current) {
-        unregisterFCMToken(prevUserIdRef.current).catch(() => {});
-        prevUserIdRef.current = null;
+export function DataProvider({ children }: { children: ReactNode }) {
+  const { user, isDemo } = useAuth();
+  const userId = user?.uid || null;
+  const localOnly = Boolean(userId && (isDemo || userId === 'demo-user'));
+  // ── F-54 ──
+  // A single `error` string meant concurrent warnings overwrote each other and
+  // only the last survived — and being offline (which clears itself) got the
+  // same banner and the same two buttons as a cloud conflict (which cannot be
+  // resolved from a banner at all). Notices are now kept per kind, and each
+  // kind offers the action that actually applies to it.
+  const [notices, setNotices] = useState<SyncNotice[]>([]);
+
+  const pushNotice = useCallback((kind: SyncNoticeKind, message: string) => {
+    setNotices((current) => {
+      const rest = current.filter((notice) => notice.kind !== kind);
+      return [...rest, { kind, message }];
+    });
+  }, []);
+
+  const dismissNotice = useCallback((kind: SyncNoticeKind) => {
+    setNotices((current) => current.filter((notice) => notice.kind !== kind));
+  }, []);
+
+  const clearNotices = useCallback(() => setNotices([]), []);
+  const [isLoading, setIsLoading] = useState(true);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
+  const accountScopeKey = userId
+    ? `${localOnly ? 'local' : 'cloud'}:${userId}`
+    : 'signed-out';
+  const [readyScopeKey, setReadyScopeKey] = useState<string | null>(null);
+  const generationRef = useRef(0);
+  const loadingFocusRef = useRef<HTMLDivElement>(null);
+  const accountScopeLoading = isLoading || readyScopeKey !== accountScopeKey;
+  // Signing out still clears account-scoped stores, but that background reset
+  // must never make the public landing page, authentication controls, or legal
+  // links inert. The modal lock only protects a real account transition.
+  const workspaceLoading = Boolean(userId) && accountScopeLoading;
+  const language = useSettingsStore((state) => state.settings.language);
+
+  const configureAccountServices = useCallback((
+    userId: string,
+    localOnly: boolean,
+    itemsReady: boolean,
+  ) => {
+    const settings = useSettingsStore.getState().settings;
+
+    stopBriefingScheduler();
+    if (localOnly && settings.notifications.enabled) {
+      startBriefingScheduler(userId, () => useThreadmapStore.getState().items);
+    }
+
+    if (localOnly) {
+      stopGoogleCalendarSync();
+      cleanupForegroundMessageHandler();
+      return;
+    }
+
+    if (itemsReady && settings.calendar.googleCalendarSync && hasCalendarPermission()) {
+      startGoogleCalendarSync(userId);
+    } else {
+      stopGoogleCalendarSync();
+      if (!settings.calendar.googleCalendarSync) clearGoogleAccessToken();
+    }
+
+    if (settings.notifications.enabled && hasFCMToken(userId)) {
+      setupForegroundMessageHandler();
+      void refreshPushSubscription(userId).catch((cause) => {
+        console.warn('[THREADMAP] Existing push subscription could not be refreshed:', cause);
+      });
+    } else {
+      cleanupForegroundMessageHandler();
+      if (!settings.notifications.enabled && hasFCMToken(userId)) {
+        void unregisterFCMToken(userId).catch((cause) => {
+          console.warn('[THREADMAP] Disabled push subscription could not be removed:', cause);
+        });
       }
-      setItems([]);
-      setSyncUserId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    const generation = ++generationRef.current;
+    const accountId = userId;
+    const subscriptions: Array<() => void> = [];
+    const loadingStartedAt = Date.now();
+    let cancelled = false;
+    let loadingTimer: ReturnType<typeof setTimeout> | null = null;
+    let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+    let itemsReady = false;
+
+    const isCurrent = () => !cancelled && generationRef.current === generation;
+    const finishLoading = () => {
+      const remaining = Math.max(0, MIN_LOADING_TIME - (Date.now() - loadingStartedAt));
+      loadingTimer = setTimeout(() => {
+        if (isCurrent()) {
+          if (safetyTimer) clearTimeout(safetyTimer);
+          setIsLoading(false);
+        }
+      }, remaining);
+    };
+
+    const setup = async () => {
+      setIsLoading(true);
+      clearNotices();
+      stopGoogleCalendarSync();
+      stopBriefingScheduler();
+      cleanupForegroundMessageHandler();
+
+      setFirestoreDataContext(accountId, accountId ? (localOnly ? 'local' : 'cloud') : 'signed-out');
+      setFlightStorageOwner(accountId);
+      setGoogleCalendarOwner(accountId && !localOnly ? accountId : null);
+
+      await Promise.all([
+        scopeThreadmapStore(accountId),
+        scopeAbiturStore(accountId),
+        scopeToolboxStore(accountId),
+        scopeWishlistStore(accountId),
+        scopeSettingsStore(accountId),
+      ]);
+      if (!isCurrent()) return;
+      setReadyScopeKey(accountScopeKey);
+
+      if (!accountId) {
+        useThreadmapStore.getState()._setSyncUserId(null);
+        useAbiturStore.getState()._setSyncUserId(null);
+        useToolboxStore.getState()._setSyncUserId(null);
+        useWishlistStore.getState()._setSyncUserId(null);
+        useSettingsStore.getState()._setSyncUserId(null);
+        finishLoading();
+        return;
+      }
+
+      if (!localOnly) {
+        await ensureAppCheck();
+        if (!isCurrent()) return;
+      }
+
+      const cloudUserId = localOnly ? null : accountId;
+      useThreadmapStore.getState()._setSyncUserId(cloudUserId);
+      useAbiturStore.getState()._setSyncUserId(cloudUserId);
+      useToolboxStore.getState()._setSyncUserId(cloudUserId);
+      useWishlistStore.getState()._setSyncUserId(cloudUserId);
+      useSettingsStore.getState()._setSyncUserId(cloudUserId);
+
+      subscriptions.push(useSettingsStore.subscribe(() => {
+        if (isCurrent()) configureAccountServices(accountId, localOnly, itemsReady);
+      }));
+      configureAccountServices(accountId, localOnly, itemsReady);
+
+      subscriptions.push(subscribeToUserSettings(accountId, (settings, authoritative) => {
+        if (!isCurrent()) return;
+        useThreadmapStore.getState().setTagsFromCloud(
+          settings.customTags,
+          settings.removedDefaultTags,
+          settings.revision,
+          settings.updatedAt,
+          authoritative,
+        );
+      }, {
+        getInitialData: () => ({
+          customTags: useThreadmapStore.getState().customTags,
+          removedDefaultTags: useThreadmapStore.getState().removedDefaultTags,
+        }),
+      }));
+
+      subscriptions.push(subscribeToToolData<{ profile: AbiturProfile }>(
+        accountId,
+        'abitur',
+        (data) => {
+          if (!isCurrent()) return;
+          if (data?.profile) useAbiturStore.getState()._setProfileFromCloud(data.profile);
+        },
+        {
+          getInitialData: () => ({ profile: useAbiturStore.getState().profile }),
+          hasPendingLocalChanges: () => useAbiturStore.getState().cloudDirty,
+        }
+      ));
+
+      subscriptions.push(subscribeToToolData<{ enabledTools: ToolId[] }>(
+        accountId,
+        'toolbox',
+        (data) => {
+          if (isCurrent() && data?.enabledTools) useToolboxStore.getState()._setFromCloud(data.enabledTools);
+        },
+        {
+          getInitialData: () => ({ enabledTools: useToolboxStore.getState().enabledTools }),
+          hasPendingLocalChanges: () => useToolboxStore.getState().cloudDirty,
+        }
+      ));
+
+      subscriptions.push(subscribeToToolData<WishlistCloudData>(
+        accountId,
+        'wishlist',
+        (data) => {
+          if (!isCurrent()) return;
+          if (data) useWishlistStore.getState()._setFromCloud(data);
+        },
+        {
+          getInitialData: () => ({
+            items: useWishlistStore.getState().items,
+            duels: useWishlistStore.getState().duels,
+            deletedItems: useWishlistStore.getState().deletedItems,
+          }),
+        }
+      ));
+
+      subscriptions.push(subscribeToToolData<{ settings: UserSettings }>(
+        accountId,
+        'settings',
+        (data) => {
+          if (isCurrent() && data?.settings) useSettingsStore.getState()._setFromCloud(data.settings);
+        },
+        {
+          getInitialData: () => ({ settings: useSettingsStore.getState().settings }),
+          hasPendingLocalChanges: () => useSettingsStore.getState().cloudDirty,
+        }
+      ));
+
+      if (!localOnly) {
+        subscriptions.push(subscribeToFlightLogs(accountId, () => {}));
+      }
+
+      subscriptions.push(subscribeToItems(
+        accountId,
+        (items, source) => {
+          if (!isCurrent()) return;
+          useThreadmapStore.getState().setItems(items);
+          itemsReady = true;
+          configureAccountServices(accountId, localOnly, itemsReady);
+          if (source === 'cloud' || source === 'local') dismissNotice('warning');
+          finishLoading();
+        },
+        () => {
+          if (isCurrent()) pushNotice('warning', dataMessage(
+            'Cloud sync is unavailable. Showing this account’s local cache.',
+            'Die Cloud-Synchronisierung ist nicht verfügbar. Der lokale Cache dieses Kontos wird angezeigt.',
+          ));
+        }
+      ));
+    };
+
+    void setup().catch((cause) => {
+      if (!isCurrent()) return;
+      console.error('[THREADMAP] Account data setup failed:', cause);
+      pushNotice('warning', dataMessage(
+        'Your account data could not be loaded. No cross-account fallback was used.',
+        'Deine Kontodaten konnten nicht geladen werden. Es wurden keine Daten eines anderen Kontos verwendet.',
+      ));
+      finishLoading();
+    });
+
+    safetyTimer = setTimeout(() => {
+      if (!isCurrent()) return;
+      pushNotice('loading', dataMessage(
+        'Loading is taking longer than expected.',
+        'Das Laden dauert länger als erwartet.',
+      ));
+      setIsLoading(false);
+    }, MAX_LOADING_TIME);
+
+    return () => {
+      cancelled = true;
+      subscriptions.forEach((unsubscribe) => unsubscribe());
+      if (loadingTimer) clearTimeout(loadingTimer);
+      if (safetyTimer) clearTimeout(safetyTimer);
+      useThreadmapStore.getState()._setSyncUserId(null);
       useAbiturStore.getState()._setSyncUserId(null);
       useToolboxStore.getState()._setSyncUserId(null);
       useWishlistStore.getState()._setSyncUserId(null);
       useSettingsStore.getState()._setSyncUserId(null);
-      useCirclesStore.getState()._setSyncUserId(null);
-      // Rehydrate persisted stores from localStorage even in demo mode
-      useToolboxStore.persist.rehydrate();
-      useAbiturStore.persist.rehydrate();
-      useWishlistStore.persist.rehydrate();
-      useSettingsStore.persist.rehydrate();
-      // Start briefing scheduler for demo mode too
-      startBriefingScheduler(() => useOrbitStore.getState().items);
-      // No user → nothing to load, dismiss loading screen immediately
-      setDataLoaded(true);
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      // ── Rehydrate persisted stores ──
-      // Provides instant UI from localStorage while Firestore loads.
-      // Cloud snapshots always overwrite this — cloud is the source of truth.
-      useToolboxStore.persist.rehydrate();
-      useAbiturStore.persist.rehydrate();
-      useWishlistStore.persist.rehydrate();
-      useSettingsStore.persist.rehydrate();
-
-      // Set sync user ID for tag cloud sync
-      setSyncUserId(user.uid);
-      prevUserIdRef.current = user.uid;
-
-      // Set sync user IDs for tool stores
-      useAbiturStore.getState()._setSyncUserId(user.uid);
-      useToolboxStore.getState()._setSyncUserId(user.uid);
-      useWishlistStore.getState()._setSyncUserId(user.uid);
-      useCirclesStore.getState()._setSyncUserId(user.uid, {
-        displayName: user.displayName || 'Orbit User',
-        email: user.email || '',
-        photoURL: user.photoURL || null,
-      });
-      useSettingsStore.getState()._setSyncUserId(user.uid);
-
-      // Cleanup previous subscriptions
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
-      }
-      if (unsubSettingsRef.current) {
-        unsubSettingsRef.current();
-        unsubSettingsRef.current = null;
-      }
-      for (const unsub of unsubToolDataRefs.current) {
-        unsub();
-      }
-      unsubToolDataRefs.current = [];
-
-      // Subscribe to user settings (tags/areas)
-      const unsubSettings = subscribeToUserSettings(user.uid, (settings) => {
-        setTagsFromCloud(settings.customTags, settings.removedDefaultTags);
-      });
-      unsubSettingsRef.current = unsubSettings;
-
-      // Subscribe to Abitur tool data
-      const unsubAbitur = subscribeToToolData<{ profile: AbiturProfile }>(
-        user.uid,
-        'abitur',
-        (data) => {
-          if (data?.profile) {
-            useAbiturStore.getState()._setProfileFromCloud(data.profile);
-          }
-        },
-        () => {
-          const profile = useAbiturStore.getState().profile;
-          return profile.onboardingComplete ? { profile } : null;
-        }
-      );
-      unsubToolDataRefs.current.push(unsubAbitur);
-
-      // Subscribe to Toolbox tool data
-      const unsubToolbox = subscribeToToolData<{ enabledTools: ToolId[] }>(
-        user.uid,
-        'toolbox',
-        (data) => {
-          if (data?.enabledTools) {
-            useToolboxStore.getState()._setFromCloud(data.enabledTools);
-          }
-        },
-        () => {
-          const enabled = useToolboxStore.getState().enabledTools;
-          return enabled.length > 0 ? { enabledTools: enabled } : null;
-        }
-      );
-      unsubToolDataRefs.current.push(unsubToolbox);
-
-      // Subscribe to Wishlist tool data
-      const unsubWishlist = subscribeToToolData<{ items: unknown[]; duels: unknown[] }>(
-        user.uid,
-        'wishlist',
-        (data) => {
-          console.log('[ORBIT] Wishlist callback fired, data:', data ? `items=${(data as Record<string, unknown>).items ? (data.items as unknown[]).length : 'missing'}, keys=${Object.keys(data).join(',')}` : 'null');
-          if (data) {
-            useWishlistStore.getState()._setFromCloud(data as { items: never[]; duels: never[] });
-          }
-        },
-        () => {
-          const { items, duels } = useWishlistStore.getState();
-          // JSON round-trip strips undefined values (Firestore rejects them)
-          return items.length > 0 ? JSON.parse(JSON.stringify({ items, duels })) : null;
-        }
-      );
-      unsubToolDataRefs.current.push(unsubWishlist);
-
-      // Subscribe to Flight Logs — ensures cloud sync even when flight page isn't open
-      const unsubFlightLogs = subscribeToFlightLogs(user.uid, () => {
-        // Data is persisted to localStorage by subscribeToFlightLogs itself;
-        // the flight page reads from there. No extra state needed here.
-      });
-      unsubToolDataRefs.current.push(unsubFlightLogs);
-
-      // Subscribe to Settings
-      const unsubSettings2 = subscribeToToolData<{ settings: UserSettings }>(
-        user.uid,
-        'settings',
-        (data) => {
-          if (data?.settings) {
-            useSettingsStore.getState()._setFromCloud(data.settings);
-          }
-        },
-        () => {
-          const { settings } = useSettingsStore.getState();
-          return settings.updatedAt !== 0 ? { settings } : null;
-        }
-      );
-      unsubToolDataRefs.current.push(unsubSettings2);
-
-      // Start briefing notification scheduler
-      startBriefingScheduler(() => useOrbitStore.getState().items);
-
-      // Register FCM for background push notifications
-      if (isFCMAvailable()) {
-        // First, silently refresh if subscription was lost (e.g. iOS killed it)
-        refreshPushSubscription(user.uid).catch(() => {});
-
-        registerFCMToken(user.uid).then((token) => {
-          if (token) {
-            setupForegroundMessageHandler();
-            console.log('[ORBIT] FCM registered for background briefings');
-          }
-        }).catch((err) => {
-          console.warn('[ORBIT] FCM registration skipped:', err);
-        });
-      }
-
-      const unsubscribe = subscribeToItems(user.uid, (items) => {
-        setItems(items);
-        setError(null);
-        reconnectAttempt.current = 0; // Reset on successful data
-        
-        // Mark data as loaded
-        if (!dataLoaded) {
-          const elapsed = Date.now() - loadingStartTime.current;
-          const remaining = Math.max(0, MIN_LOADING_TIME - elapsed);
-          
-          setTimeout(() => {
-            setDataLoaded(true);
-            setIsLoading(false);
-          }, remaining);
-        }
-      });
-
-      unsubscribeRef.current = unsubscribe;
-    } catch (err) {
-      console.error('[ORBIT] DataProvider subscription error:', err);
-
-      if (reconnectAttempt.current < MAX_RECONNECT_ATTEMPTS) {
-        reconnectAttempt.current++;
-        const delay = RECONNECT_DELAY_MS * Math.pow(1.5, reconnectAttempt.current);
-        console.warn(`[ORBIT] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt.current})`);
-        setTimeout(connect, delay);
-      } else {
-        setError('Unable to connect. Your data is saved locally.');
-      }
-    }
-  }, [user, setItems, setTagsFromCloud, setSyncUserId]);
-
-  useEffect(() => {
-    connect();
-
-    // Safety timeout — never stay on loading screen forever
-    const safetyTimer = setTimeout(() => {
-      if (isLoading) {
-        console.warn('[ORBIT] Loading safety timeout reached — dismissing loading screen');
-        setDataLoaded(true);
-        setIsLoading(false);
-      }
-    }, MAX_LOADING_TIME);
-
-    return () => {
-      clearTimeout(safetyTimer);
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
-      }
-      if (unsubSettingsRef.current) {
-        unsubSettingsRef.current();
-        unsubSettingsRef.current = null;
-      }
-      for (const unsub of unsubToolDataRefs.current) {
-        unsub();
-      }
-      unsubToolDataRefs.current = [];
+      stopGoogleCalendarSync();
       stopBriefingScheduler();
+      cleanupForegroundMessageHandler();
     };
-  }, [connect]);
+  }, [accountScopeKey, clearNotices, configureAccountServices, dismissNotice, localOnly, pushNotice, reconnectNonce, userId]);
 
-  // Listen for online/offline events for reconnection
   useEffect(() => {
-    const handleOnline = () => {
-      console.info('[ORBIT] Network back online — reconnecting');
-      reconnectAttempt.current = 0;
-      connect();
+    const reconnect = () => {
+      dismissNotice('offline');
+      if (userId && !localOnly) {
+        void retryQueuedItemMutations(userId, { includeRejected: true });
+      }
     };
-
-    const handleOffline = () => {
-      console.warn('[ORBIT] Network offline — using local data');
+    const offline = () => pushNotice('offline', language === 'de'
+      ? 'Offline. Elementänderungen bleiben in diesem Browser vorgemerkt; Löschen, Google-Sync und Werkzeug-Cloud-Sync benötigen eine Verbindung.'
+      : 'Offline. Item edits remain queued in this browser; deletion, Google sync, and tool cloud sync need a connection.');
+    const syncWarning = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        message?: unknown;
+        userId?: string;
+        generation?: number;
+      }>).detail;
+      if (detail?.userId && detail.userId !== userId) return;
+      if (detail?.userId
+          && typeof detail.generation === 'number'
+          && !isFirestoreDataContextCurrent(detail.userId, detail.generation)) return;
+      const message = detail?.message;
+      if (typeof message === 'string') pushNotice('warning', message);
     };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
+    window.addEventListener('online', reconnect);
+    window.addEventListener('offline', offline);
+    window.addEventListener('threadmap:sync-warning', syncWarning);
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', reconnect);
+      window.removeEventListener('offline', offline);
+      window.removeEventListener('threadmap:sync-warning', syncWarning);
     };
-  }, [connect]);
+  }, [dismissNotice, language, localOnly, pushNotice, userId]);
+
+  useEffect(() => {
+    const handleConflict = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        userId?: string;
+        generation?: number;
+        toolId?: string;
+        message?: string;
+        acceptedData?: Record<string, unknown> | null;
+      }>).detail;
+      if (!detail?.userId
+          || typeof detail.generation !== 'number'
+          || detail.userId !== userId
+          || !isFirestoreDataContextCurrent(detail.userId, detail.generation)) return;
+      pushNotice('conflict', detail?.message || dataMessage(
+        'A cloud edit conflict needs your attention.',
+        'Ein Cloud-Bearbeitungskonflikt benötigt deine Aufmerksamkeit.',
+      ));
+    };
+    window.addEventListener('threadmap:sync-conflict', handleConflict);
+    return () => window.removeEventListener('threadmap:sync-conflict', handleConflict);
+  }, [pushNotice, userId]);
 
   return (
     <>
-      {isLoading && <LoadingScreen />}
-      {error && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 rounded-lg border border-border/60 bg-card px-4 py-2.5 shadow-lg">
-          <p className="text-[12px] text-muted-foreground">{error}</p>
+      <DialogPrimitive.Root open={workspaceLoading} modal>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Content
+            asChild
+            onEscapeKeyDown={(event) => event.preventDefault()}
+            onPointerDownOutside={(event) => event.preventDefault()}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              loadingFocusRef.current?.focus({ preventScroll: true });
+            }}
+          >
+            <div ref={loadingFocusRef} tabIndex={-1} className="outline-none">
+              <DialogPrimitive.Title className="sr-only">
+                {language === 'de' ? 'Arbeitsbereich wird geladen' : 'Loading workspace'}
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Description className="sr-only">
+                {language === 'de'
+                  ? 'Die Daten dieses Kontos werden sicher geladen.'
+                  : 'This account’s data is loading securely.'}
+              </DialogPrimitive.Description>
+              <LoadingScreen />
+              {notices.length > 0 && (
+                <div
+                  role="alert"
+                  className="fixed bottom-[max(env(safe-area-inset-bottom,0px),1rem)] left-1/2 z-[10000] flex w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 flex-col gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-xl sm:flex-row sm:items-center"
+                >
+                  <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted-foreground/80">
+                    {notices[0].message}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearNotices();
+                      if (userId && !localOnly) {
+                        void retryQueuedItemMutations(userId, { includeRejected: true });
+                      }
+                      setReconnectNonce((value) => value + 1);
+                    }}
+                    className="min-h-11 shrink-0 rounded-lg bg-foreground px-3 text-[12px] font-medium text-background hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    {language === 'de' ? 'Erneut versuchen' : 'Retry'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+      {notices.length > 0 && !workspaceLoading && (
+        <div className="fixed bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom,0px)+1rem)] left-1/2 z-[35] flex w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 flex-col gap-2 lg:bottom-4">
+          {notices.map((notice) => (
+            <div
+              key={notice.kind}
+              role="alert"
+              aria-live={notice.kind === 'offline' ? 'polite' : 'assertive'}
+              className="flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-lg"
+            >
+              <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted-foreground/80">{notice.message}</p>
+
+              {/* Offline resolves itself when the connection returns, so it
+                  offers no retry. A conflict cannot be resolved from a banner
+                  at all — it links to the screen that can. */}
+              {notice.kind === 'conflict' && (
+                <Link
+                  href="/settings?section=data"
+                  onClick={() => dismissNotice('conflict')}
+                  className="min-h-11 shrink-0 rounded-lg px-2.5 text-[11px] font-medium leading-[44px] text-foreground hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-9 lg:leading-9"
+                >
+                  {language === 'de' ? 'Ansehen' : 'Review'}
+                </Link>
+              )}
+
+              {(notice.kind === 'warning' || notice.kind === 'loading') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissNotice(notice.kind);
+                    if (userId && !localOnly) {
+                      void retryQueuedItemMutations(userId, { includeRejected: true });
+                    }
+                    setReconnectNonce((value) => value + 1);
+                  }}
+                  className="min-h-11 shrink-0 rounded-lg px-2.5 text-[11px] font-medium text-foreground hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-9"
+                >
+                  {language === 'de' ? 'Erneut versuchen' : 'Retry'}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => dismissNotice(notice.kind)}
+                aria-label={language === 'de' ? 'Meldung schließen' : 'Dismiss message'}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 lg:h-9 lg:w-9"
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
-      {children}
+      <div
+        key={accountScopeKey}
+        className="min-h-screen"
+        inert={workspaceLoading ? true : undefined}
+        aria-hidden={workspaceLoading ? true : undefined}
+        aria-busy={workspaceLoading}
+      >
+        {children}
+      </div>
     </>
   );
 }

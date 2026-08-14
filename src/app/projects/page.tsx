@@ -1,13 +1,11 @@
 "use client";
-import { useEffect, useMemo, useState, useRef } from "react";
-import { format, isValid, parseISO } from "date-fns";
+import { useMemo, useState, useRef } from "react";
 import {
   FolderKanban,
   Plus,
   LayoutGrid,
   LayoutList,
   Circle,
-  CheckCircle2,
   Clock,
   Target,
   ChevronRight,
@@ -16,39 +14,68 @@ import {
   Layers,
   Archive,
 } from "lucide-react";
-import { useOrbitStore } from "@/lib/store";
+import { useThreadmapStore } from "@/lib/store";
 import { useAuth } from "@/components/providers/auth-provider";
-import { createItem, updateItem } from "@/lib/firestore";
-import { cn } from "@/lib/utils";
-import { useTranslation } from '@/lib/i18n';
-import type { OrbitItem, ProjectTier } from "@/lib/types";
+import { createItem } from "@/lib/firestore";
+import { cn, getLocale, shortDatePattern } from "@/lib/utils";
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
+import type { ThreadmapItem, ProjectTier } from "@/lib/types";
+import { useSettingsStore } from '@/lib/settings-store';
+import {
+  getProjectStats as computeProjectStats,
+  getProjectTasks as collectProjectTasks,
+} from '@/lib/progress';
+import { format, isValid, parseISO } from 'date-fns';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 type ViewMode = "grid" | "kanban";
 
 const TIER_CONFIG = {
-  1: { label: "Focus", description: "Top priority projects", icon: Star },
-  2: { label: "Active", description: "Ongoing projects", icon: Layers },
-  3: { label: "Backlog", description: "Lower priority", icon: Archive },
-} as const;
+  1: { labelKey: 'projects.tier.focus', icon: Star },
+  2: { labelKey: 'projects.tier.active', icon: Layers },
+  3: { labelKey: 'projects.tier.backlog', icon: Archive },
+} as const satisfies Record<ProjectTier, { labelKey: TranslationKey; icon: typeof Star }>;
+
+function getTimestamp() {
+  return Date.now();
+}
 
 export default function ProjectsPage() {
-  const { items, setSelectedItemId } = useOrbitStore();
+  const { items, setSelectedItemId } = useThreadmapStore();
   const { user } = useAuth();
-  const { t } = useTranslation();
+  const { t, tp, lang } = useTranslation();
+  const dateFormat = useSettingsStore((state) => state.settings.dateFormat);
+  const locale = getLocale(lang);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [collapsedTiers, setCollapsedTiers] = useState<Set<number>>(new Set());
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const createInFlightRef = useRef(false);
+  const [projectSubmitting, setProjectSubmitting] = useState(false);
+  const [projectCreateError, setProjectCreateError] = useState<string | null>(null);
+  const [discardProjectDraftOpen, setDiscardProjectDraftOpen] = useState(false);
+  const taskCreateInFlightRef = useRef(false);
+  const [creatingTaskKey, setCreatingTaskKey] = useState<string | null>(null);
+  const [taskCreateError, setTaskCreateError] = useState<{
+    projectId: string;
+    status: 'active' | 'waiting' | 'done';
+    message: string;
+  } | null>(null);
 
   const projects = useMemo(
-    () => items.filter((i) => i.type === "project" && i.status !== "archived" && i.status !== "done"),
+    () => items.filter((i) => i.type === "project" && i.status !== "archived"),
     [items],
   );
 
   const projectsByTier = useMemo(() => {
-    const grouped: Record<number, OrbitItem[]> = { 1: [], 2: [], 3: [] };
+    const grouped: Record<number, ThreadmapItem[]> = { 1: [], 2: [], 3: [] };
     for (const p of projects) {
       const tier = p.tier ?? 3;
       grouped[tier].push(p);
@@ -66,90 +93,131 @@ export default function ProjectsPage() {
   };
 
   const getProjectMilestones = (projectId: string) => {
-    return items.filter((i) => i.parentId === projectId && i.type === "goal");
+    return items.filter((i) => i.parentId === projectId && i.type === "goal" && i.status !== "archived");
   };
 
-  // Collect all tasks: direct children + tasks under milestones
-  const getAllProjectTasks = (projectId: string) => {
-    const direct = items.filter((i) => i.parentId === projectId && i.type === "task");
-    const milestoneIds = new Set(getProjectMilestones(projectId).map((m) => m.id));
-    const nested = milestoneIds.size > 0
-      ? items.filter((i) => i.type === "task" && milestoneIds.has(i.parentId!))
-      : [];
-    return [...direct, ...nested];
-  };
+  // Direct children plus tasks under milestones. Shared with the dashboard so
+  // the two views cannot drift apart.
+  const getAllProjectTasks = (projectId: string) => collectProjectTasks(items, projectId);
 
-  const getProjectStats = (projectId: string) => {
-    const tasks = getAllProjectTasks(projectId);
-    const total = tasks.length;
-    const done = tasks.filter((i) => i.status === "done").length;
-    const inProgress = tasks.filter((i) => i.status === "active").length;
-    const waiting = tasks.filter((i) => i.status === "waiting").length;
-    const progress = total > 0 ? Math.round((done / total) * 100) : 0;
-    return { total, done, inProgress, waiting, progress };
-  };
+  const getProjectStats = (projectId: string) => computeProjectStats(items, projectId);
 
   const handleNewProject = async (tier: ProjectTier = 3) => {
-    if (!user || !newTitle.trim()) return;
-    const id = await createItem({
-      type: "project",
-      status: "active",
-      title: newTitle.trim(),
-      content: newDescription.trim() || undefined,
-      emoji: "\ud83d\ude80",
-      color: "#6366f1",
-      tier,
-      tags: [],
-      userId: user.uid,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    setIsCreating(false);
-    setNewTitle('');
-    setNewDescription('');
-    setSelectedItemId(id);
+    if (createInFlightRef.current) return;
+    if (!user) {
+      setProjectCreateError(lang === 'de'
+        ? 'Deine Sitzung ist nicht mehr aktiv. Melde dich erneut an und versuche es noch einmal.'
+        : 'Your session is no longer active. Sign in again and retry.');
+      return;
+    }
+
+    createInFlightRef.current = true;
+    setProjectSubmitting(true);
+    setProjectCreateError(null);
+    const now = getTimestamp();
+    const title = newTitle.trim() || t('projects.untitledProject');
+    const content = newDescription.trim() || undefined;
+
+    try {
+      const id = await createItem({
+        type: "project",
+        status: "active",
+        title,
+        content,
+        emoji: "\ud83d\ude80",
+        color: "#6366f1",
+        tier,
+        tags: [],
+        userId: user.uid,
+        createdAt: now,
+        updatedAt: now,
+      });
+      setIsCreating(false);
+      setDiscardProjectDraftOpen(false);
+      setNewTitle('');
+      setNewDescription('');
+      setSelectedItemId(id);
+    } catch (cause) {
+      console.error('[THREADMAP] Project creation failed:', cause);
+      setProjectCreateError(lang === 'de'
+        ? 'Das Projekt konnte nicht erstellt werden. Dein Entwurf wurde beibehalten. Versuche es erneut.'
+        : 'The project could not be created. Your draft is still here. Please retry.');
+    } finally {
+      createInFlightRef.current = false;
+      setProjectSubmitting(false);
+    }
   };
 
   const handleStartCreating = () => {
+    setProjectCreateError(null);
     setIsCreating(true);
-    setTimeout(() => titleInputRef.current?.focus(), 50);
+  };
+
+  const closeProjectCreator = () => {
+    if (createInFlightRef.current) return;
+    setIsCreating(false);
+    setDiscardProjectDraftOpen(false);
+    setNewTitle('');
+    setNewDescription('');
+    setProjectCreateError(null);
   };
 
   const handleCancelCreating = () => {
-    setIsCreating(false);
-    setNewTitle('');
-    setNewDescription('');
+    if (createInFlightRef.current) return;
+    if (newTitle.trim() || newDescription.trim()) {
+      setDiscardProjectDraftOpen(true);
+      return;
+    }
+    closeProjectCreator();
   };
-
-  useEffect(() => {
-    if (!isCreating) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setIsCreating(false);
-      setNewTitle("");
-      setNewDescription("");
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isCreating]);
 
   const handleNewTask = async (
     projectId: string,
     status: "active" | "waiting" | "done" = "active",
   ) => {
-    if (!user) return;
-    const id = await createItem({
-      type: "task",
-      status,
-      title: "New Task",
-      parentId: projectId,
-      tags: [],
-      userId: user.uid,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      ...(status === "done" ? { completedAt: Date.now() } : {}),
-    });
-    setSelectedItemId(id);
+    if (taskCreateInFlightRef.current) return;
+    const taskKey = `${projectId}:${status}`;
+    if (!user) {
+      setTaskCreateError({
+        projectId,
+        status,
+        message: lang === 'de'
+          ? 'Deine Sitzung ist nicht mehr aktiv. Melde dich erneut an und versuche es noch einmal.'
+          : 'Your session is no longer active. Sign in again and retry.',
+      });
+      return;
+    }
+
+    taskCreateInFlightRef.current = true;
+    setCreatingTaskKey(taskKey);
+    setTaskCreateError(null);
+    const now = getTimestamp();
+    try {
+      const id = await createItem({
+        type: "task",
+        status,
+        ...(status === 'done' ? { completedAt: now } : {}),
+        title: t('projects.newTaskTitle'),
+        parentId: projectId,
+        tags: [],
+        userId: user.uid,
+        createdAt: now,
+        updatedAt: now,
+      });
+      setSelectedItemId(id);
+    } catch (cause) {
+      console.error('[THREADMAP] Project task creation failed:', cause);
+      setTaskCreateError({
+        projectId,
+        status,
+        message: lang === 'de'
+          ? 'Die Aufgabe konnte nicht erstellt werden. Versuche es erneut.'
+          : 'The task could not be created. Please retry.',
+      });
+    } finally {
+      taskCreateInFlightRef.current = false;
+      setCreatingTaskKey(null);
+    }
   };
 
   const getProjectTasks = (projectId: string, status?: string) => {
@@ -157,25 +225,21 @@ export default function ProjectsPage() {
     return status ? all.filter((i) => i.status === status) : all;
   };
 
-  const formatDueDate = (date: string) => {
-    const parsed = parseISO(date);
-    return isValid(parsed) ? format(parsed, "MMM d, yyyy") : "Date unavailable";
-  };
-
-  const handleTaskStatus = async (task: OrbitItem, status: "active" | "waiting" | "done") => {
-    await updateItem(task.id, {
-      status,
-      completedAt: status === "done" ? task.completedAt ?? Date.now() : null,
-    });
+  const formatDueDate = (value: string) => {
+    const date = parseISO(value);
+    return isValid(date)
+      ? format(date, shortDatePattern(dateFormat), { locale })
+      : t('common.dateUnavailable');
   };
 
   // ═══ Tier 1 Card — Large & Prominent ═══
-  const Tier1Card = ({ project }: { project: OrbitItem }) => {
+  const renderTier1Card = (project: ThreadmapItem) => {
     const stats = getProjectStats(project.id);
     const milestones = getProjectMilestones(project.id);
 
     return (
       <button
+        key={project.id}
         onClick={() => setSelectedItemId(project.id)}
         className="w-full text-left rounded-xl lg:rounded-2xl border border-foreground/15 bg-card overflow-hidden hover:border-foreground/25 transition-all hover:shadow-lg group"
       >
@@ -200,7 +264,9 @@ export default function ProjectsPage() {
           {/* Progress */}
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-muted-foreground/60 font-medium">{stats.done}/{stats.total} tasks</span>
+              <span className="text-muted-foreground/60 font-medium">
+                {tp('projects.taskProgress.one', 'projects.taskProgress.other', stats.total, { done: stats.done, total: stats.total })}
+              </span>
               <span className="text-foreground/80 font-bold tabular-nums">{stats.progress}%</span>
             </div>
             <div className="h-2 rounded-full bg-foreground/[0.06] overflow-hidden">
@@ -219,16 +285,19 @@ export default function ProjectsPage() {
           <div className="mt-3 flex items-center gap-4 text-[11px]">
             <div className="flex items-center gap-1 text-muted-foreground/50">
               <Circle className="h-2.5 w-2.5" />
-              <span>{stats.inProgress} active</span>
+              <span>{tp('projects.active.one', 'projects.active.other', stats.inProgress)}</span>
             </div>
             <div className="flex items-center gap-1 text-muted-foreground/50">
               <Clock className="h-2.5 w-2.5" />
-              <span>{stats.waiting} waiting</span>
+              <span>{tp('projects.waiting.one', 'projects.waiting.other', stats.waiting)}</span>
             </div>
             {milestones.length > 0 && (
               <div className="flex items-center gap-1 text-muted-foreground/50">
                 <Target className="h-2.5 w-2.5" />
-                <span>{milestones.filter(m => m.status === 'done').length}/{milestones.length} milestones</span>
+                <span>{tp('projects.milestoneProgress.one', 'projects.milestoneProgress.other', milestones.length, {
+                  done: milestones.filter(m => m.status === 'done').length,
+                  total: milestones.length,
+                })}</span>
               </div>
             )}
           </div>
@@ -238,12 +307,13 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier 2 Card — Standard ═══
-  const Tier2Card = ({ project }: { project: OrbitItem }) => {
+  const renderTier2Card = (project: ThreadmapItem) => {
     const stats = getProjectStats(project.id);
     const milestones = getProjectMilestones(project.id);
 
     return (
       <button
+        key={project.id}
         onClick={() => setSelectedItemId(project.id)}
         className="w-full text-left rounded-xl lg:rounded-2xl border border-border/60 bg-card overflow-hidden hover:border-border/80 transition-all hover:shadow-md group"
       >
@@ -265,7 +335,9 @@ export default function ProjectsPage() {
           {/* Compact progress */}
           <div className="mt-3 space-y-1.5">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-muted-foreground/50">{stats.done}/{stats.total} tasks</span>
+              <span className="text-muted-foreground/50">
+                {tp('projects.taskProgress.one', 'projects.taskProgress.other', stats.total, { done: stats.done, total: stats.total })}
+              </span>
               <span className="text-muted-foreground/50 tabular-nums">{stats.progress}%</span>
             </div>
             <div className="h-1.5 rounded-full bg-foreground/[0.06] overflow-hidden">
@@ -279,11 +351,11 @@ export default function ProjectsPage() {
           <div className="mt-2 flex items-center gap-3 text-[11px]">
             <div className="flex items-center gap-1 text-muted-foreground/50">
               <Circle className="h-2.5 w-2.5" />
-              <span>{stats.inProgress} active</span>
+              <span>{tp('projects.active.one', 'projects.active.other', stats.inProgress)}</span>
             </div>
             <div className="flex items-center gap-1 text-muted-foreground/50">
               <Clock className="h-2.5 w-2.5" />
-              <span>{stats.waiting} waiting</span>
+              <span>{tp('projects.waiting.one', 'projects.waiting.other', stats.waiting)}</span>
             </div>
           </div>
 
@@ -291,7 +363,10 @@ export default function ProjectsPage() {
             <div className="mt-2 pt-2 border-t border-border/30">
               <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
                 <Target className="h-3 w-3" />
-                <span>{milestones.filter(m => m.status === 'done').length}/{milestones.length} milestones</span>
+                <span>{tp('projects.milestoneProgress.one', 'projects.milestoneProgress.other', milestones.length, {
+                  done: milestones.filter(m => m.status === 'done').length,
+                  total: milestones.length,
+                })}</span>
               </div>
             </div>
           )}
@@ -301,11 +376,12 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier 3 Row — Compact ═══
-  const Tier3Row = ({ project }: { project: OrbitItem }) => {
+  const renderTier3Row = (project: ThreadmapItem) => {
     const stats = getProjectStats(project.id);
 
     return (
       <button
+        key={project.id}
         onClick={() => setSelectedItemId(project.id)}
         className="w-full flex items-center gap-3 text-left px-3 py-2.5 rounded-lg border border-border/40 bg-card hover:border-border/60 hover:bg-foreground/[0.01] transition-all group"
       >
@@ -331,16 +407,16 @@ export default function ProjectsPage() {
   };
 
   // ═══ Kanban Project Section ═══
-  const KanbanProject = ({ project }: { project: OrbitItem }) => {
+  const renderKanbanProject = (project: ThreadmapItem) => {
     const stats = getProjectStats(project.id);
     const columns = [
-      { id: "active", label: "In Progress", tasks: getProjectTasks(project.id, "active") },
-      { id: "waiting", label: "Waiting", tasks: getProjectTasks(project.id, "waiting") },
-      { id: "done", label: "Done", tasks: getProjectTasks(project.id, "done") },
+      { id: "active", label: t('kanban.inProgress'), tasks: getProjectTasks(project.id, "active") },
+      { id: "waiting", label: t('kanban.waiting'), tasks: getProjectTasks(project.id, "waiting") },
+      { id: "done", label: t('kanban.done'), tasks: getProjectTasks(project.id, "done") },
     ];
 
     return (
-      <div className="space-y-3">
+      <div key={project.id} className="space-y-3">
         <div className="flex items-center justify-between">
           <button
             onClick={() => setSelectedItemId(project.id)}
@@ -373,44 +449,32 @@ export default function ProjectsPage() {
               </div>
               <div className="p-2 space-y-1.5 min-h-[80px]">
                 {column.tasks.map((task) => (
-                  <div
+                  <button
                     key={task.id}
-                    className="w-full rounded-lg border border-border/30 bg-background px-3 py-2 text-left transition-colors hover:border-border hover:bg-foreground/[0.02] group"
+                    onClick={() => setSelectedItemId(task.id)}
+                    className="w-full text-left px-3 py-2 rounded-lg border border-border/30 bg-background hover:bg-foreground/[0.02] hover:border-border transition-colors group"
                   >
-                    <button
-                      onClick={() => setSelectedItemId(task.id)}
-                      className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="block text-[13px] font-medium text-foreground/80 transition-colors group-hover:text-foreground">
-                        {task.title}
-                      </span>
-                    </button>
+                    <p className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground transition-colors">
+                      {task.title}
+                    </p>
                     {task.dueDate && (
-                      <p className="mt-0.5 text-[11px] text-muted-foreground/60">
-                        Due {formatDueDate(task.dueDate)}
+                      <p className="text-[11px] text-muted-foreground/40 mt-0.5">
+                        {t('projects.due', { date: formatDueDate(task.dueDate) })}
                       </p>
                     )}
-                    <label className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <span>Move to</span>
-                      <select
-                        value={task.status}
-                        onChange={(event) => handleTaskStatus(task, event.target.value as "active" | "waiting" | "done")}
-                        aria-label={`Move ${task.title} to column`}
-                        className="min-h-8 flex-1 rounded-md border border-border bg-background px-2 text-[12px] text-foreground"
-                      >
-                        <option value="active">In Progress</option>
-                        <option value="waiting">Waiting</option>
-                        <option value="done">Done</option>
-                      </select>
-                    </label>
-                  </div>
+                  </button>
                 ))}
                 <button
-                  onClick={() => handleNewTask(project.id, column.id as "active" | "waiting" | "done")}
-                  className="w-full px-3 py-2 rounded-lg border border-dashed border-border/40 hover:border-border hover:bg-foreground/[0.02] transition-colors text-[12px] text-muted-foreground/40 hover:text-muted-foreground flex items-center gap-1.5"
+                  type="button"
+                  onClick={() => void handleNewTask(project.id, column.id as "active" | "waiting" | "done")}
+                  disabled={creatingTaskKey !== null}
+                  aria-busy={creatingTaskKey === `${project.id}:${column.id}`}
+                  className="w-full px-3 py-2 rounded-lg border border-dashed border-border/40 hover:border-border hover:bg-foreground/[0.02] transition-colors text-[12px] text-muted-foreground/40 hover:text-muted-foreground flex items-center gap-1.5 disabled:cursor-wait disabled:opacity-60"
                 >
-                  <Plus className="h-3 w-3" />
-                  Add task
+                  <Plus aria-hidden="true" className="h-3 w-3" />
+                  {creatingTaskKey === `${project.id}:${column.id}`
+                    ? (lang === 'de' ? 'Wird erstellt …' : 'Creating…')
+                    : t('projects.addTask')}
                 </button>
               </div>
             </div>
@@ -421,7 +485,7 @@ export default function ProjectsPage() {
   };
 
   // ═══ Tier Section Renderer ═══
-  const TierSection = ({ tier }: { tier: 1 | 2 | 3 }) => {
+  const renderTierSection = (tier: 1 | 2 | 3) => {
     const config = TIER_CONFIG[tier];
     const Icon = config.icon;
     const tierProjects = projectsByTier[tier];
@@ -434,6 +498,7 @@ export default function ProjectsPage() {
         {/* Tier Header */}
         <button
           onClick={() => toggleTier(tier)}
+          aria-expanded={!isCollapsed}
           className="flex items-center gap-2.5 w-full mb-3 group"
         >
           <ChevronDown
@@ -449,7 +514,7 @@ export default function ProjectsPage() {
             <Icon className={cn("h-3 w-3", tier === 1 ? "" : "text-muted-foreground/60")} />
           </div>
           <span className="text-[13px] font-semibold tracking-tight">
-            {config.label}
+            {t(config.labelKey)}
           </span>
           <span className="text-[11px] text-muted-foreground/40 tabular-nums">
             {tierProjects.length}
@@ -463,7 +528,7 @@ export default function ProjectsPage() {
                 // Tier 3: compact rows
                 <div className="space-y-1.5">
                   {tierProjects.map((project) => (
-                    <Tier3Row key={project.id} project={project} />
+                    renderTier3Row(project)
                   ))}
                 </div>
               ) : (
@@ -476,9 +541,9 @@ export default function ProjectsPage() {
                 )}>
                   {tierProjects.map((project) =>
                     tier === 1 ? (
-                      <Tier1Card key={project.id} project={project} />
+                      renderTier1Card(project)
                     ) : (
-                      <Tier2Card key={project.id} project={project} />
+                      renderTier2Card(project)
                     )
                   )}
                 </div>
@@ -487,7 +552,7 @@ export default function ProjectsPage() {
               // Kanban view
               <div className="space-y-8">
                 {tierProjects.map((project) => (
-                  <KanbanProject key={project.id} project={project} />
+                  renderKanbanProject(project)
                 ))}
               </div>
             )}
@@ -499,66 +564,68 @@ export default function ProjectsPage() {
 
   return (
     <>
-      {/* Floating create dialog */}
-      {isCreating && (
-        <div
-          className="fixed inset-0 z-50 flex items-start bg-background/80 backdrop-blur-sm"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) handleCancelCreating();
+      <Dialog
+        open={isCreating}
+        onOpenChange={(open) => {
+          if (open) {
+            setIsCreating(true);
+            return;
+          }
+          handleCancelCreating();
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          aria-busy={projectSubmitting}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+            handleCancelCreating();
           }}
+          onPointerDownOutside={(event) => {
+            event.preventDefault();
+            handleCancelCreating();
+          }}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            titleInputRef.current?.focus();
+          }}
+          className="fixed left-1/2 top-[max(env(safe-area-inset-top,0px),8px)] w-[calc(100%-1.5rem)] max-w-[520px] translate-x-[-50%] translate-y-0 gap-0 overflow-hidden rounded-2xl border-border/60 bg-popover p-0 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:top-[18vh] lg:rounded-xl lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]"
         >
-          <div
-            className={cn(
-              'relative w-full',
-              'pt-[max(env(safe-area-inset-top,0px),8px)] px-3',
-              'lg:absolute lg:top-[18vh] lg:left-1/2 lg:-translate-x-1/2 lg:pt-0 lg:px-0',
-              'lg:max-w-[520px]',
-              'animate-slide-down-spring lg:animate-scale-in'
-            )}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="new-project-title"
-              className={cn(
-                'overflow-hidden bg-popover',
-                'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.2)] lg:shadow-[0_16px_70px_-12px_rgba(0,0,0,0.25)]',
-                'rounded-2xl lg:rounded-xl',
-                'border border-border/60'
-              )}
-            >
-              <h2 id="new-project-title" className="sr-only">Create a project</h2>
+              <DialogTitle className="sr-only">{t('projects.createDialogTitle')}</DialogTitle>
+              <DialogDescription className="sr-only">
+                {lang === 'de'
+                  ? 'Gib einen Projektnamen und optional eine Beschreibung ein.'
+                  : 'Enter a project name and an optional description.'}
+              </DialogDescription>
               {/* Title Input */}
               <div className="flex items-center gap-3 px-4 py-3 lg:py-3">
                 <FolderKanban className="h-5 w-5 lg:h-4 lg:w-4 shrink-0 text-muted-foreground/50" />
-                <label htmlFor="new-project-name" className="sr-only">Project name</label>
                 <input
-                  id="new-project-name"
+                  id="new-project-title"
+                  aria-label={t('projects.nameLabel')}
                   ref={titleInputRef}
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Escape') handleCancelCreating();
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
                       e.preventDefault();
-                      handleNewProject();
+                      void handleNewProject();
                     }
                   }}
-                  placeholder="Project name..."
+                  placeholder={t('projects.namePlaceholder')}
                   className="flex-1 bg-transparent text-base lg:text-sm outline-none placeholder:text-muted-foreground/40"
-                  autoFocus
                   autoComplete="off"
                   autoCorrect="off"
+                  disabled={projectSubmitting}
                 />
                 <button
+                  type="button"
                   onClick={handleCancelCreating}
-                  className="rounded-md px-2 py-1 text-[12px] font-medium text-muted-foreground/50 hover:text-muted-foreground lg:hidden"
+                  disabled={projectSubmitting}
+                  className="min-h-11 rounded-lg px-2 text-[12px] font-medium text-muted-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 lg:hidden"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
-                <kbd className="hidden lg:inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/60">
-                  esc
-                </kbd>
               </div>
 
               {/* Divider */}
@@ -566,44 +633,102 @@ export default function ProjectsPage() {
 
               {/* Description Input */}
               <div className="px-4 py-3 lg:py-3">
-                <label htmlFor="new-project-description" className="sr-only">Project description</label>
                 <textarea
-                  id="new-project-description"
+                  aria-label={t('projects.descriptionLabel')}
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Escape') handleCancelCreating();
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
                       e.preventDefault();
-                      handleNewProject();
+                      void handleNewProject();
                     }
                   }}
-                  placeholder="Description (optional)..."
+                  placeholder={t('projects.descriptionPlaceholder')}
                   className="w-full bg-transparent text-[14px] lg:text-[13px] text-foreground outline-none placeholder:text-muted-foreground/40 resize-none min-h-[80px] max-h-[30vh] overflow-y-auto leading-relaxed"
                   rows={3}
+                  disabled={projectSubmitting}
                 />
               </div>
 
               {/* Divider */}
               <div className="h-px bg-border" />
 
-              {/* Footer */}
-              <div className="flex items-center justify-between px-4 py-2.5 lg:py-2 bg-muted/30">
-                <p className="text-[10px] lg:text-[9px] text-muted-foreground/50 font-medium">
-                  <kbd className="font-mono">⌘↵</kbd> create · <kbd className="font-mono">esc</kbd> cancel
-                </p>
-                <button
-                  onClick={() => handleNewProject()}
-                  disabled={!newTitle.trim()}
-                  className="rounded-lg px-3 py-1.5 text-[12px] lg:text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+              {projectCreateError && (
+                <div
+                  role="alert"
+                  className="flex flex-wrap items-center justify-between gap-2 border-b border-destructive/15 bg-destructive/[0.06] px-4 py-2.5 text-[12px] leading-relaxed text-destructive"
                 >
-                  Create
+                  <p>{projectCreateError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void handleNewProject()}
+                    disabled={projectSubmitting}
+                    aria-busy={projectSubmitting}
+                    className="min-h-9 rounded-lg bg-destructive/10 px-3 font-medium transition-colors hover:bg-destructive/20 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {t('common.retry')}
+                  </button>
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-2 bg-muted/30 px-4 py-2.5 lg:py-2">
+                <button
+                  type="button"
+                  onClick={handleCancelCreating}
+                  disabled={projectSubmitting}
+                  className="min-h-11 rounded-lg px-3 text-[12px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-9 lg:text-[11px]"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleNewProject()}
+                  disabled={projectSubmitting}
+                  aria-busy={projectSubmitting}
+                  className="orbit-pressable min-h-11 rounded-lg bg-foreground px-3 text-[12px] font-medium text-background hover:bg-foreground/90 disabled:cursor-wait disabled:opacity-70 lg:min-h-9 lg:text-[11px]"
+                >
+                  {projectSubmitting
+                    ? (lang === 'de' ? 'Wird erstellt …' : 'Creating…')
+                    : t('common.create')}
                 </button>
               </div>
-            </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={discardProjectDraftOpen}
+        onOpenChange={(open) => {
+          if (!projectSubmitting) setDiscardProjectDraftOpen(open);
+        }}
+      >
+        <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogTitle>
+            {lang === 'de' ? 'Projektentwurf verwerfen?' : 'Discard project draft?'}
+          </DialogTitle>
+          <DialogDescription>
+            {lang === 'de'
+              ? 'Name und Beschreibung wurden noch nicht gespeichert. Diese Änderungen gehen beim Verwerfen verloren.'
+              : 'The name and description have not been saved. Discarding will permanently remove these changes.'}
+          </DialogDescription>
+          <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setDiscardProjectDraftOpen(false)}
+              className="min-h-11 rounded-lg border border-border/70 px-4 text-[13px] font-medium hover:bg-foreground/[0.04] focus-visible:ring-2 focus-visible:ring-ring/30"
+            >
+              {lang === 'de' ? 'Weiter bearbeiten' : 'Keep editing'}
+            </button>
+            <button
+              type="button"
+              onClick={closeProjectCreator}
+              className="min-h-11 rounded-lg bg-destructive px-4 text-[13px] font-medium text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-2 focus-visible:ring-destructive/30"
+            >
+              {lang === 'de' ? 'Entwurf verwerfen' : 'Discard draft'}
+            </button>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
     <div className="p-4 lg:p-8 space-y-6 max-w-7xl mx-auto" data-slot="page-content">
       <div className="flex items-center justify-between">
@@ -612,54 +737,72 @@ export default function ProjectsPage() {
             {t('nav.projects')}
           </h1>
           <p className="text-[13px] text-muted-foreground/60 mt-1">
-            {projects.length} active project{projects.length !== 1 ? 's' : ''}
+            {tp('projects.count.one', 'projects.count.other', projects.length)}
           </p>
         </div>
         <div className="flex items-center gap-3">
           {/* View mode toggle */}
-          <div className="flex items-center rounded-lg border border-border/50 bg-muted/40 p-1" role="group" aria-label="Project view">
+          <div className="flex items-center rounded-lg border border-border/50 bg-muted/40 p-1" role="group" aria-label={t('projects.projectView')}>
             <button
+              type="button"
               onClick={() => setViewMode("grid")}
               aria-pressed={viewMode === "grid"}
-              aria-label="Grid view"
+              aria-label={t('projects.gridView')}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all",
+                "mobile-touch-target flex min-w-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all lg:min-h-0",
                 viewMode === "grid"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground/60 hover:text-foreground",
               )}
             >
-              <LayoutGrid className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Grid</span>
+              <LayoutGrid className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{t('projects.grid')}</span>
             </button>
             <button
+              type="button"
               onClick={() => setViewMode("kanban")}
               aria-pressed={viewMode === "kanban"}
-              aria-label="Kanban view"
+              aria-label={t('projects.boardView')}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all",
+                "mobile-touch-target flex min-w-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all lg:min-h-0",
                 viewMode === "kanban"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground/60 hover:text-foreground",
               )}
             >
-              <LayoutList className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Kanban</span>
+              <LayoutList className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{t('projects.board')}</span>
             </button>
           </div>
           <button
+            type="button"
             onClick={handleStartCreating}
-            className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-2 text-[13px] lg:text-[12px] font-medium text-background transition-all hover:opacity-90 active:scale-[0.98]"
+            className="flex min-h-11 items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-all hover:opacity-90 active:scale-[0.98] lg:min-h-0 lg:rounded-lg lg:text-[12px]"
           >
             <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" /> {t('projects.newProject')}
           </button>
         </div>
       </div>
 
+      {taskCreateError && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.05] px-3 py-2.5 text-[12px] text-destructive">
+          <p>{taskCreateError.message}</p>
+          <button
+            type="button"
+            onClick={() => void handleNewTask(taskCreateError.projectId, taskCreateError.status)}
+            disabled={creatingTaskKey !== null}
+            aria-busy={creatingTaskKey !== null}
+            className="min-h-9 rounded-lg bg-destructive/10 px-3 font-medium transition-colors hover:bg-destructive/20 disabled:cursor-wait disabled:opacity-60"
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      )}
+
       {/* Tier Sections */}
       {projects.length > 0 ? (
         <div className="space-y-8">
-          <TierSection tier={1} />
-          <TierSection tier={2} />
-          <TierSection tier={3} />
+          {renderTierSection(1)}
+          {renderTierSection(2)}
+          {renderTierSection(3)}
         </div>
       ) : (
         <div className="py-16 text-center">
@@ -667,10 +810,10 @@ export default function ProjectsPage() {
             <FolderKanban className="h-5 w-5 text-muted-foreground/30" />
           </div>
           <p className="text-[13px] text-muted-foreground/50">
-            No projects yet
+            {t('projects.noProjects')}
           </p>
           <p className="text-[12px] text-muted-foreground/30 mt-1">
-            Create one to get started
+            {t('projects.createToStart')}
           </p>
         </div>
       )}

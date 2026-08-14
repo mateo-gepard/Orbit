@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-13T15:53:19Z",
+  "title": "Design System: Threadmap",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "oklch(0.988 0.002 80)",
+        "tonalRamp": ["oklch(0.15 0.002 80)", "oklch(0.27 0.002 80)", "oklch(0.39 0.002 80)", "oklch(0.51 0.002 80)", "oklch(0.63 0.002 80)", "oklch(0.75 0.002 80)", "oklch(0.87 0.002 80)", "oklch(0.988 0.002 80)"]
+      },
+      "ink": {
+        "role": "primary",
+        "displayName": "Working Ink",
+        "canonical": "oklch(0.16 0.01 60)",
+        "tonalRamp": ["oklch(0.15 0.01 60)", "oklch(0.27 0.01 60)", "oklch(0.39 0.01 60)", "oklch(0.51 0.01 60)", "oklch(0.63 0.01 60)", "oklch(0.75 0.01 60)", "oklch(0.87 0.01 60)", "oklch(0.95 0.01 60)"]
+      },
+      "charcoal": {
+        "role": "neutral",
+        "displayName": "Deep Charcoal",
+        "canonical": "oklch(0.14 0.008 60)",
+        "tonalRamp": ["oklch(0.14 0.008 60)", "oklch(0.26 0.008 60)", "oklch(0.38 0.008 60)", "oklch(0.50 0.008 60)", "oklch(0.62 0.008 60)", "oklch(0.74 0.008 60)", "oklch(0.86 0.008 60)", "oklch(0.95 0.008 60)"]
+      },
+      "user-accent-default": {
+        "role": "secondary",
+        "displayName": "User Accent",
+        "canonical": "#6366f1",
+        "tonalRamp": ["oklch(0.18 0.08 278)", "oklch(0.29 0.12 278)", "oklch(0.40 0.16 278)", "oklch(0.51 0.19 278)", "oklch(0.62 0.20 278)", "oklch(0.73 0.16 278)", "oklch(0.84 0.10 278)", "oklch(0.95 0.04 278)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Authentication and rare focal headings." },
+      "micro": { "displayName": "Micro Data", "purpose": "Space-constrained calendar and chart annotations only." },
+      "caption": { "displayName": "Caption", "purpose": "Compact supporting metadata." },
+      "compact": { "displayName": "Compact Interface", "purpose": "Dense navigation and control labels." },
+      "title": { "displayName": "Page Title", "purpose": "The single descriptive heading for a route." },
+      "body": { "displayName": "Body", "purpose": "Primary interface and explanatory copy." },
+      "body-large": { "displayName": "Body Large", "purpose": "Phone inputs and emphasized explanatory copy." },
+      "label": { "displayName": "Label", "purpose": "Navigation, metadata, fields, and compact controls." }
+    },
+    "shadows": [
+      { "name": "soft", "value": "0 1px 2px oklch(0.18 0.012 60 / 0.04), 0 8px 24px -20px oklch(0.18 0.012 60 / 0.35)", "purpose": "Shallow separation for interactive raised surfaces." },
+      { "name": "panel", "value": "0 1px 2px oklch(0.18 0.012 60 / 0.05), 0 18px 44px -32px oklch(0.18 0.012 60 / 0.28)", "purpose": "Raised panels and transient menus." },
+      { "name": "float", "value": "0 12px 36px -24px oklch(0.18 0.012 60 / 0.42)", "purpose": "Dialogs, sheets, and the command bar." }
+    ],
+    "motion": [
+      { "name": "standard", "value": "220ms cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Routine color, border, and depth changes." },
+      { "name": "emphasized", "value": "320ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Bounded panel entrances and continuity." },
+      { "name": "reduced", "value": "100ms color/opacity", "purpose": "Preserve state feedback without spatial travel or loops." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The default action control; touch-sized on phones and compact on desktop.",
+      "html": "<button class=\"ds-btn-primary\">Create item</button>",
+      "css": ".ds-btn-primary { min-height: 44px; padding: 8px 16px; border: 0; border-radius: var(--radius); background: var(--primary); color: var(--primary-foreground); font: 600 14px/1.25 var(--font-geist-sans), sans-serif; box-shadow: var(--shadow-soft); transition: background-color 220ms cubic-bezier(.22,1,.36,1), opacity 140ms cubic-bezier(.22,1,.36,1), box-shadow 220ms cubic-bezier(.22,1,.36,1); } .ds-btn-primary:hover { opacity: .9; box-shadow: var(--shadow-panel); } .ds-btn-primary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A quiet supporting action with structural rather than promotional emphasis.",
+      "html": "<button class=\"ds-btn-secondary\">View details</button>",
+      "css": ".ds-btn-secondary { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); font: 500 14px/1.25 var(--font-geist-sans), sans-serif; transition: background-color 220ms cubic-bezier(.22,1,.36,1), border-color 220ms cubic-bezier(.22,1,.36,1); } .ds-btn-secondary:hover { background: var(--accent); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A raised, readable capture field with an explicit focus state.",
+      "html": "<input class=\"ds-input\" aria-label=\"Item title\" placeholder=\"What needs attention?\">",
+      "css": ".ds-input { box-sizing: border-box; width: 280px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); font: 400 16px/1.5 var(--font-geist-sans), sans-serif; box-shadow: inset 0 0 0 1px var(--border-subtle); transition: border-color 220ms cubic-bezier(.22,1,.36,1), box-shadow 220ms cubic-bezier(.22,1,.36,1); } .ds-input::placeholder { color: var(--muted-foreground); } .ds-input:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 25%, transparent); }"
+    },
+    {
+      "name": "Active Navigation Item",
+      "kind": "nav",
+      "description": "A high-contrast active route with tonal selection and a sparse accent mark.",
+      "html": "<a class=\"ds-nav-active\" href=\"#\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"/></svg><span>Dashboard</span></a>",
+      "css": ".ds-nav-active { display: inline-flex; min-height: 44px; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 12px; background: color-mix(in oklch, var(--foreground) 6.5%, transparent); color: var(--foreground); font: 600 13px/1.25 var(--font-geist-sans), sans-serif; text-decoration: none; box-shadow: inset 0 0 0 1px var(--border-subtle); } .ds-nav-active svg { width: 16px; height: 16px; color: var(--accent-color, currentColor); } .ds-nav-active:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "custom",
+      "description": "A compact group for peer views, with visible pressed state and named icon-only mobile options.",
+      "html": "<div class=\"ds-segmented\" role=\"group\" aria-label=\"Calendar view\"><button aria-pressed=\"true\">Month</button><button aria-pressed=\"false\">Week</button></div>",
+      "css": ".ds-segmented { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); } .ds-segmented button { min-height: 40px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--muted-foreground); font: 500 12px/1.25 var(--font-geist-sans), sans-serif; } .ds-segmented button[aria-pressed=\"true\"] { background: var(--background); color: var(--foreground); box-shadow: var(--shadow-soft); } .ds-segmented button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }"
+    },
+    {
+      "name": "Raised Surface",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A restrained content surface one tonal step above its workspace.",
+      "html": "<section class=\"ds-surface\"><h3>Today</h3><p>Three connected items need attention.</p></section>",
+      "css": ".ds-surface { width: 280px; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-raised); color: var(--foreground); box-shadow: var(--shadow-soft); font-family: var(--font-geist-sans), sans-serif; } .ds-surface h3 { margin: 0 0 6px; font-size: 15px; line-height: 1.3; } .ds-surface p { margin: 0; max-width: 65ch; color: var(--muted-foreground); font-size: 13px; line-height: 1.5; } .ds-surface:focus-within { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Connected Field Desk",
+    "overview": "Threadmap feels like a calm working surface where plans, records, and decisions remain connected without becoming visually loud. Warm paper and deep charcoal establish the environment; precise rules, compact typography, and small tonal shifts organize dense operational information. The interface is restrained rather than austere. Controls feel tactile through short state changes and shallow depth, while the user-selected accent appears sparingly in focus, selection, and small identifying marks.",
+    "keyCharacteristics": [
+      "Warm, near-neutral light and dark work surfaces.",
+      "Compact but readable hierarchy with tabular numerals for dates, counts, and measurements.",
+      "Tonal grouping before elevation; floating depth is reserved for overlays.",
+      "Touch-sized controls on phones and denser controls on precise-pointer layouts.",
+      "One user accent that identifies state without becoming small body copy."
+    ],
+    "rules": [
+      { "name": "The Opaque Copy Rule", "body": "Supporting copy uses an opaque semantic tone with accessible contrast; opacity is reserved for decorative marks and truly disabled states.", "section": "colors" },
+      { "name": "The Sparse Accent Rule", "body": "The user accent identifies state and focus. Foreground text remains ink or chalk unless the chosen accent has been contrast-validated for that exact surface and size.", "section": "colors" },
+      { "name": "The Quiet Hierarchy Rule", "body": "Increase weight before adding color, and increase size before adding ornament.", "section": "typography" },
+      { "name": "The Flat-by-Default Rule", "body": "A surface receives either a structural edge or meaningful elevation; stronger depth is reserved for state and hierarchy.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep primary tasks obvious through weight, position, and state before adding more color.",
+      "Do use semantic opaque copy tones for every readable label, including compact dates and metadata.",
+      "Do keep phone controls at least 44 by 44 pixels and preserve safe-area spacing.",
+      "Do use mono or tabular numerals only for code, dates, time, price, rank, and measurement.",
+      "Do preserve short opacity and color feedback in reduced-motion mode."
+    ],
+    "donts": [
+      "Don't use the configurable accent as unchecked small text.",
+      "Don't stack opacity onto muted text to create hierarchy.",
+      "Don't add decorative grain, gradient text, generic glass cards, or bounce easing.",
+      "Don't make essential actions hover-only or icon-only without an accessible name.",
+      "Don't introduce a new card, radius, or motion language for one route when a shared primitive already owns it."
+    ]
+  }
+}

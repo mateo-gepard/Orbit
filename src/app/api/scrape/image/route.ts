@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  acquireConcurrency,
+  checkDistributedScrapeRateLimit,
+  checkRateLimit,
+} from '@/lib/server/rate-limit';
+import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
+import { readResponseText } from '@/lib/server/url-safety';
+import { AMOUNT_PATTERN, normalizePrice } from '@/lib/server/scrape-parsing';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Product Image & Price Search (Multi-source)
+// Threadmap — Product Image & Price Search (Multi-source)
 //
 // Waterfall: Bing Images → DuckDuckGo → Google Images
 // No API key required — works out of the box.
@@ -29,7 +37,14 @@ const API_KEY = process.env.GOOGLE_SEARCH_API_KEY;
 const CX = process.env.GOOGLE_SEARCH_CX;
 
 function isGoodImage(url: string): boolean {
-  if (!url || !url.startsWith('http')) return false;
+  if (!url || url.length > 2_048) return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (parsed.username || parsed.password) return false;
+  } catch {
+    return false;
+  }
   // Skip search engine / CDN noise
   const blocked = [
     'gstatic.com', 'google.com', 'googleapis.com',
@@ -41,20 +56,20 @@ function isGoodImage(url: string): boolean {
 }
 
 // ── 1. Google Custom Search API (optional) ───────────────
-async function searchGoogleApi(query: string): Promise<{ image?: string; price?: string }> {
+async function searchGoogleApi(query: string, signal: AbortSignal): Promise<{ image?: string; price?: string }> {
   if (!API_KEY || !CX) return {};
   try {
     const params = new URLSearchParams({
       key: API_KEY, cx: CX, q: query, num: '5', gl: 'de', hl: 'de',
     });
     const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`, {
-      signal: AbortSignal.timeout(5000),
+      signal,
     });
     if (!res.ok) {
-      console.error(`[ORBIT] Google API ${res.status}`);
+      console.error(`[THREADMAP] Google API ${res.status}`);
       return {};
     }
-    const data = await res.json();
+    const data = JSON.parse(await readResponseText(res, 1_000_000));
     const result: { image?: string; price?: string } = {};
     for (const item of data.items || []) {
       if (!result.image) {
@@ -70,34 +85,36 @@ async function searchGoogleApi(query: string): Promise<{ image?: string; price?:
           item.pagemap?.offer?.[0]?.price ??
           item.pagemap?.product?.[0]?.price;
         if (price) {
-          result.price = price;
+          result.price = String(price).slice(0, 32);
         } else if (item.snippet) {
-          const m = item.snippet.match(/(\d{1,6}[.,]\d{2})\s*€|€\s*(\d{1,6}[.,]\d{2})/);
-          if (m) result.price = (m[1] || m[2]).replace(',', '.');
+          const m = item.snippet.match(
+            new RegExp(`(${AMOUNT_PATTERN})\\s*€|€\\s*(${AMOUNT_PATTERN})`)
+          );
+          if (m) result.price = normalizePrice(m[1] || m[2]);
         }
       }
       if (result.image && result.price) break;
     }
     return result;
   } catch (e) {
-    console.error('[ORBIT] Google API error:', e);
+    console.error('[THREADMAP] Google API error:', e);
     return {};
   }
 }
 
 // ── 2. Bing Images (primary scraping source) ─────────────
-async function searchBingImages(query: string): Promise<string[]> {
+async function searchBingImages(query: string, signal: AbortSignal): Promise<string[]> {
   try {
     const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&first=1&count=15&qft=+filterui:photo-photo`;
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(6000),
+      signal,
       headers: BROWSER_HEADERS,
     });
     if (!res.ok) {
-      console.error(`[ORBIT] Bing ${res.status}`);
+      console.error(`[THREADMAP] Bing ${res.status}`);
       return [];
     }
-    const html = await res.text();
+    const html = await readResponseText(res, 600_000);
     const images: string[] = [];
 
     // Bing stores full-res URLs in "murl":"..." inside m= JSON attrs
@@ -123,26 +140,26 @@ async function searchBingImages(query: string): Promise<string[]> {
 
     return [...new Set(images)];
   } catch (e) {
-    console.error('[ORBIT] Bing error:', e);
+    console.error('[THREADMAP] Bing error:', e);
     return [];
   }
 }
 
 // ── 3. DuckDuckGo (vqd token → d.js endpoint) ───────────
-async function searchDuckDuckGo(query: string): Promise<string[]> {
+async function searchDuckDuckGo(query: string, signal: AbortSignal): Promise<string[]> {
   try {
     // Step 1: Get vqd token from the search page
     const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`;
     const pageRes = await fetch(searchUrl, {
-      signal: AbortSignal.timeout(5000),
+      signal,
       headers: BROWSER_HEADERS,
     });
     if (!pageRes.ok) return [];
-    const pageHtml = await pageRes.text();
+    const pageHtml = await readResponseText(pageRes, 600_000);
 
     const vqdMatch = pageHtml.match(/vqd=["']([^"']+)["']/i) ?? pageHtml.match(/vqd=([\d-]+)/i);
     if (!vqdMatch) {
-      console.error('[ORBIT] DDG: no vqd token found');
+      console.error('[THREADMAP] DDG: no vqd token found');
       return [];
     }
     const vqd = vqdMatch[1];
@@ -150,14 +167,14 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
     // Step 2: Hit the images JSON endpoint
     const imgUrl = `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}&vqd=${vqd}&f=,,,,,&p=1`;
     const imgRes = await fetch(imgUrl, {
-      signal: AbortSignal.timeout(5000),
+      signal,
       headers: {
         ...BROWSER_HEADERS,
         Referer: 'https://duckduckgo.com/',
       },
     });
     if (!imgRes.ok) return [];
-    const data = await imgRes.json();
+    const data = JSON.parse(await readResponseText(imgRes, 1_000_000));
 
     const images: string[] = [];
     for (const r of data.results || []) {
@@ -166,21 +183,21 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
     }
     return images;
   } catch (e) {
-    console.error('[ORBIT] DDG error:', e);
+    console.error('[THREADMAP] DDG error:', e);
     return [];
   }
 }
 
 // ── 4. Google Images scraping (last resort) ──────────────
-async function searchGoogleImages(query: string): Promise<string[]> {
+async function searchGoogleImages(query: string, signal: AbortSignal): Promise<string[]> {
   try {
     const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=isch&hl=en`;
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(5000),
+      signal,
       headers: BROWSER_HEADERS,
     });
     if (!res.ok) return [];
-    const html = await res.text();
+    const html = await readResponseText(res, 600_000);
     const images: string[] = [];
 
     // Full-res URLs in JS: ["https://...",width,height]
@@ -201,13 +218,13 @@ async function searchGoogleImages(query: string): Promise<string[]> {
 
     return [...new Set(images)];
   } catch (e) {
-    console.error('[ORBIT] Google Images error:', e);
+    console.error('[THREADMAP] Google Images error:', e);
     return [];
   }
 }
 
 // ── 5. Scrape price from search engine snippets ──────────
-async function scrapePrice(query: string): Promise<string | undefined> {
+async function scrapePrice(query: string, signal: AbortSignal): Promise<string | undefined> {
   // Headers that force uncompressed response (critical for Bing)
   const plainHeaders: Record<string, string> = {
     ...BROWSER_HEADERS,
@@ -241,16 +258,16 @@ async function scrapePrice(query: string): Promise<string | undefined> {
   try {
     const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query + ' Preis €')}`;
     const bingRes = await fetch(bingUrl, {
-      signal: AbortSignal.timeout(5000),
+      signal,
       headers: plainHeaders,
     });
     if (bingRes.ok) {
-      const html = await bingRes.text();
+      const html = await readResponseText(bingRes, 600_000);
       extractPrices(html);
-      console.log(`[ORBIT] Bing price: found ${prices.length} candidates`);
+      console.log(`[THREADMAP] Bing price: found ${prices.length} candidates`);
     }
   } catch (e) {
-    console.error('[ORBIT] Bing price error:', e);
+    console.error('[THREADMAP] Bing price error:', e);
   }
 
   // 2. Bing Shopping tab (has structured price data)
@@ -258,16 +275,16 @@ async function scrapePrice(query: string): Promise<string | undefined> {
     try {
       const shopUrl = `https://www.bing.com/shop?q=${encodeURIComponent(query)}&FORM=SHOPTB`;
       const shopRes = await fetch(shopUrl, {
-        signal: AbortSignal.timeout(5000),
+        signal,
         headers: plainHeaders,
       });
       if (shopRes.ok) {
-        const html = await shopRes.text();
+        const html = await readResponseText(shopRes, 600_000);
         extractPrices(html);
-        console.log(`[ORBIT] Bing Shopping: found ${prices.length} candidates`);
+        console.log(`[THREADMAP] Bing Shopping: found ${prices.length} candidates`);
       }
     } catch (e) {
-      console.error('[ORBIT] Bing Shopping error:', e);
+      console.error('[THREADMAP] Bing Shopping error:', e);
     }
   }
 
@@ -276,16 +293,16 @@ async function scrapePrice(query: string): Promise<string | undefined> {
     try {
       const gUrl = `https://www.google.com/search?q=${encodeURIComponent(query + ' Preis €')}&hl=de&gl=de`;
       const gRes = await fetch(gUrl, {
-        signal: AbortSignal.timeout(5000),
+        signal,
         headers: plainHeaders,
       });
       if (gRes.ok) {
-        const html = await gRes.text();
+        const html = await readResponseText(gRes, 600_000);
         extractPrices(html);
-        console.log(`[ORBIT] Google price: found ${prices.length} candidates`);
+        console.log(`[THREADMAP] Google price: found ${prices.length} candidates`);
       }
     } catch (e) {
-      console.error('[ORBIT] Google price error:', e);
+      console.error('[THREADMAP] Google price error:', e);
     }
   }
 
@@ -299,69 +316,80 @@ async function scrapePrice(query: string): Promise<string | undefined> {
 
 // ── Main handler ─────────────────────────────────────────
 export async function GET(request: NextRequest) {
+  const preAuthLimited = checkRateLimit(request, {
+    name: 'scrape-auth', max: 30, windowMs: 60_000,
+  });
+  if (preAuthLimited) return preAuthLimited;
+
+  let user;
+  try {
+    user = await requireFirebaseUser(request);
+  } catch (error) {
+    return authErrorResponse(error) || NextResponse.json({ error: 'Authentication failed.' }, { status: 500 });
+  }
+  const rateLimited = checkRateLimit(request, {
+    name: 'scrape-image', max: 6, windowMs: 60_000, identity: user.uid,
+  });
+  if (rateLimited) return rateLimited;
+
   const query = request.nextUrl.searchParams.get('q');
   if (!query) {
     return NextResponse.json({ error: 'Missing q parameter' }, { status: 400 });
   }
+  if (query.length > 160) {
+    return NextResponse.json({ error: 'Query too long' }, { status: 400 });
+  }
 
-  console.log(`[ORBIT] Image/price search: "${query}"`);
+  const sharedRateLimited = await checkDistributedScrapeRateLimit(request, user.uid);
+  if (sharedRateLimited) return sharedRateLimited;
 
+  const release = acquireConcurrency('scrape', user.uid, 2);
+  if (!release) {
+    return NextResponse.json(
+      { code: 'SCRAPE_BUSY', error: 'Too many product imports are already running.' },
+      { status: 429, headers: { 'Retry-After': '5', 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9_000);
   try {
-    const result: { image?: string; price?: string } = {};
+    // All independent sources share one route-wide deadline. DDG and price
+    // retain their internal dependent steps, but cannot extend total runtime.
+    const [apiResult, bingImages, ddgImages, googleImages, scrapedPrice] = await Promise.all([
+      searchGoogleApi(query, controller.signal),
+      searchBingImages(`${query} product`, controller.signal),
+      searchDuckDuckGo(`${query} product`, controller.signal),
+      searchGoogleImages(`${query} product`, controller.signal),
+      scrapePrice(query, controller.signal),
+    ]);
+    const image = [apiResult.image, bingImages[0], ddgImages[0], googleImages[0]]
+      .find((candidate): candidate is string => Boolean(candidate && isGoodImage(candidate)));
+    const rawPrice = apiResult.price || scrapedPrice;
+    const price = normalizePrice(rawPrice);
+    const result: { image?: string; price?: string } = { image, price };
 
-    // 1. Try Google Custom Search API if configured
-    if (API_KEY && CX) {
-      const apiResult = await searchGoogleApi(query);
-      if (apiResult.image) result.image = apiResult.image;
-      if (apiResult.price) result.price = apiResult.price;
-    }
-
-    // 2. Bing Images (primary — most reliable for scraping)
-    if (!result.image) {
-      console.log('[ORBIT] Trying Bing Images...');
-      const bingImages = await searchBingImages(query + ' product');
-      if (bingImages.length > 0) {
-        result.image = bingImages[0];
-        console.log(`[ORBIT] Bing found ${bingImages.length} images`);
-      }
-    }
-
-    // 3. DuckDuckGo (solid alternative with JSON endpoint)
-    if (!result.image) {
-      console.log('[ORBIT] Trying DuckDuckGo...');
-      const ddgImages = await searchDuckDuckGo(query + ' product');
-      if (ddgImages.length > 0) {
-        result.image = ddgImages[0];
-        console.log(`[ORBIT] DDG found ${ddgImages.length} images`);
-      }
-    }
-
-    // 4. Google Images scraping (last resort)
-    if (!result.image) {
-      console.log('[ORBIT] Trying Google Images scraping...');
-      const googleImages = await searchGoogleImages(query + ' product');
-      if (googleImages.length > 0) {
-        result.image = googleImages[0];
-        console.log(`[ORBIT] Google found ${googleImages.length} images`);
-      }
-    }
-
-    // 5. Price search (parallel-safe, only if still missing)
-    if (!result.price) {
-      result.price = await scrapePrice(query);
+    if (controller.signal.aborted) {
+      return NextResponse.json({ error: 'Product search timed out.' }, { status: 504 });
     }
 
     if (!result.image && !result.price) {
       return NextResponse.json({ error: 'No results found' }, { status: 404 });
     }
 
-    console.log(`[ORBIT] Result: image=${!!result.image}, price=${result.price ?? 'none'}`);
+    console.log(`[THREADMAP] Result: image=${!!result.image}, price=${result.price ?? 'none'}`);
     return NextResponse.json(result, {
-      headers: { 'Cache-Control': 'public, max-age=86400' },
+      headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[ORBIT] Search error:', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[THREADMAP] Search error:', message);
+    if ((err as { name?: string })?.name === 'AbortError') {
+      return NextResponse.json({ error: 'Product search timed out.' }, { status: 504 });
+    }
+    return NextResponse.json({ error: 'Product search failed.' }, { status: 502 });
+  } finally {
+    clearTimeout(timeout);
+    release();
   }
 }

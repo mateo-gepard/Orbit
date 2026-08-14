@@ -1,58 +1,126 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Archive as ArchiveIcon, RotateCcw, Search, CheckCircle2, Circle } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
-import { updateItem } from '@/lib/firestore';
+import type React from 'react';
+import { Archive as ArchiveIcon, RotateCcw, Search, CheckCircle2, Circle, X, ListChecks, Trash2 } from 'lucide-react';
+import { useThreadmapStore } from '@/lib/store';
+import { deleteItem, updateItem } from '@/lib/firestore';
+import { useBulkSelection } from '@/lib/hooks/use-bulk-selection';
+import { BulkActionBar, type BulkAction } from '@/components/items/bulk-action-bar';
+import type { ThreadmapItem } from '@/lib/types';
 import { ItemRow } from '@/components/items/item-row';
 import { SwipeableRow } from '@/components/mobile/swipeable-row';
 import { haptic } from '@/lib/mobile';
-import { cn } from '@/lib/utils';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useTranslation } from '@/lib/i18n';
+import { searchItems } from '@/lib/item-search';
+import { toast } from 'sonner';
 
 type ViewTab = 'completed' | 'archived';
 
+function getTimestamp() {
+  return Date.now();
+}
+
 export default function ArchivePage() {
-  const { items } = useOrbitStore();
+  const items = useThreadmapStore((state) => state.items);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<ViewTab>('completed');
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
 
   const completedItems = useMemo(() => {
     const completed = items.filter((i) => i.status === 'done' && i.type !== 'habit');
-    if (!search) return completed;
-    const q = search.toLowerCase();
-    return completed.filter(
-      (i) =>
-        i.title.toLowerCase().includes(q) ||
-        i.tags?.some((t) => t.includes(q))
-    );
-  }, [items, search]);
+    return searchItems(completed, search, lang, { includeArchived: true });
+  }, [items, search, lang]);
 
   const archivedItems = useMemo(() => {
     const archived = items.filter((i) => i.status === 'archived');
-    if (!search) return archived;
-    const q = search.toLowerCase();
-    return archived.filter(
-      (i) =>
-        i.title.toLowerCase().includes(q) ||
-        i.tags?.some((t) => t.includes(q))
-    );
-  }, [items, search]);
+    return searchItems(archived, search, lang, { includeArchived: true });
+  }, [items, search, lang]);
 
   const handleRestore = async (id: string) => {
     haptic('success');
-    await updateItem(id, { status: 'active' });
+    try {
+      const archivedItem = items.find((item) => item.id === id);
+      await updateItem(id, {
+        status: archivedItem?.completedAt ? 'done' : 'active',
+        ...(!archivedItem?.completedAt ? { completedAt: undefined } : {}),
+        // Restart the auto-archive clock. Without this the item comes back
+        // still older than the retention cutoff and is archived again
+        // immediately — `completedAt` is deliberately left as the truth.
+        restoredAt: getTimestamp(),
+      });
+      toast.success(t('archive.itemRestored'));
+    } catch {
+      toast.error(t('archive.restoreError'));
+    }
   };
 
   const handleUncomplete = async (id: string) => {
     haptic('light');
-    await updateItem(id, { status: 'active', completedAt: undefined });
+    try {
+      await updateItem(id, { status: 'active', completedAt: undefined });
+      toast.success(t('archive.itemActive'));
+    } catch {
+      toast.error(t('archive.updateError'));
+    }
   };
 
+  // Archive could restore but never purge, so removing an archived item meant
+  // opening it in the detail panel, one at a time.
+  const visibleItems = activeTab === 'completed' ? completedItems : archivedItems;
+  const selection = useBulkSelection(useMemo(() => visibleItems.map((item) => item.id), [visibleItems]));
+
+  const runBulk = async (ids: string[], apply: (id: string) => Promise<unknown>) => {
+    const results = await Promise.allSettled(ids.map(apply));
+    const failed = results.filter((result) => result.status === 'rejected').length;
+    if (failed > 0) toast.error(t('bulk.failed', { count: failed }));
+    else toast.success(t('bulk.done', { count: ids.length }));
+  };
+
+  const bulkActions: BulkAction[] = [
+    {
+      key: 'restore',
+      label: t('bulk.restore'),
+      icon: RotateCcw,
+      run: (ids) => runBulk(ids, async (id) => {
+        const target = items.find((item) => item.id === id);
+        await updateItem(id, {
+          status: target?.completedAt ? 'done' : 'active',
+          ...(target?.completedAt ? {} : { completedAt: undefined }),
+          restoredAt: getTimestamp(),
+        });
+      }),
+    },
+    {
+      key: 'delete',
+      label: t('bulk.delete'),
+      icon: Trash2,
+      confirm: t('bulk.deleteConfirm'),
+      destructive: true,
+      run: (ids) => runBulk(ids, (id) => deleteItem(id)),
+    },
+  ];
+
+  const renderRow = (item: ThreadmapItem, actions: React.ReactNode) => (
+    selection.selecting ? (
+      <div className="flex items-center gap-2 pl-1">
+        <input
+          type="checkbox"
+          checked={selection.isSelected(item.id)}
+          onChange={() => selection.toggle(item.id)}
+          aria-label={t('bulk.selectItem', { title: item.title })}
+          className="h-4 w-4 shrink-0 accent-current"
+        />
+        <div className="min-w-0 flex-1">
+          <ItemRow item={item} showType compact enableSwipe={false} />
+        </div>
+      </div>
+    ) : actions
+  );
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       {/* Header */}
       <div className="px-4 lg:px-8 pt-4 lg:pt-8 pb-3 lg:pb-4 border-b border-border/40 bg-background">
         <div className="max-w-3xl mx-auto">
@@ -64,80 +132,82 @@ export default function ArchivePage() {
       </div>
 
       {/* Tabs */}
-      <Tabs 
-        value={activeTab} 
-        onValueChange={(v) => setActiveTab(v as ViewTab)}
-        className="flex-1 flex flex-col overflow-hidden"
-      >
-        {/* Tab Navigation */}
-        <div className="sticky top-0 z-10 bg-background border-b border-border/40">
+      <div className="flex flex-col">
+        {/* Tab navigation and search stick together, so their heights can
+            never disagree — the search bar used to be pinned at a hard-coded
+            49px against a 37px tab bar. */}
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
+        <div className="border-b border-border/40">
           <div className="max-w-3xl mx-auto px-4 lg:px-8">
-            <TabsList className="w-full grid grid-cols-2 bg-transparent h-auto p-0 gap-0">
-              <TabsTrigger 
-                value="completed" 
-                className={cn(
-                  "relative rounded-none border-b-2 border-transparent py-3 text-[13px] font-medium transition-all",
-                  "data-[state=active]:border-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none",
-                  "data-[state=inactive]:text-muted-foreground/60 hover:text-muted-foreground"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>{t('archive.completedTab')}</span>
-                  <span className="text-[11px] text-muted-foreground/40 font-normal">
-                    {completedItems.length}
-                  </span>
-                </div>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="archived"
-                className={cn(
-                  "relative rounded-none border-b-2 border-transparent py-3 text-[13px] font-medium transition-all",
-                  "data-[state=active]:border-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none",
-                  "data-[state=inactive]:text-muted-foreground/60 hover:text-muted-foreground"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <ArchiveIcon className="h-3.5 w-3.5" />
-                  <span>{t('archive.archivedTab')}</span>
-                  <span className="text-[11px] text-muted-foreground/40 font-normal">
-                    {archivedItems.length}
-                  </span>
-                </div>
-              </TabsTrigger>
-            </TabsList>
-          </div>
-        </div>
-
-        {/* Search Bar */}
-        <div className="sticky top-[49px] lg:top-[49px] z-10 bg-background/95 backdrop-blur-sm border-b border-border/40 px-4 lg:px-8 py-3">
-          <div className="max-w-3xl mx-auto relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 lg:h-3.5 lg:w-3.5 -translate-y-1/2 text-muted-foreground/30" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Search ${activeTab}…`}
-              className="w-full rounded-xl lg:rounded-lg border border-border/50 bg-background py-2.5 lg:py-2 pl-10 lg:pl-9 pr-3 text-[14px] lg:text-[13px] outline-none placeholder:text-muted-foreground/30 focus:border-foreground/20 transition-colors"
+            <SegmentedControl
+              label={t('nav.archive')}
+              value={activeTab}
+              onChange={setActiveTab}
+              className="my-2 w-full"
+              options={[
+                { value: 'completed' as ViewTab, label: t('archive.completedTab'), icon: CheckCircle2, badge: completedItems.length },
+                { value: 'archived' as ViewTab, label: t('archive.archivedTab'), icon: ArchiveIcon, badge: archivedItems.length },
+              ]}
             />
           </div>
         </div>
 
+        {/* Search Bar */}
+        <div className="border-b border-border/40 px-4 lg:px-8 py-3">
+          <div className="max-w-3xl mx-auto relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 lg:h-3.5 lg:w-3.5 -translate-y-1/2 text-muted-foreground/30" />
+            <input
+              aria-label={t(activeTab === 'completed' ? 'archive.searchCompleted' : 'archive.searchArchived')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t(activeTab === 'completed' ? 'archive.searchCompletedPlaceholder' : 'archive.searchArchivedPlaceholder')}
+              className="w-full rounded-xl lg:rounded-lg border border-border/50 bg-background py-2.5 lg:py-2 pl-10 lg:pl-9 pr-3 text-[14px] lg:text-[13px] outline-none placeholder:text-muted-foreground/30 focus:border-foreground/20 transition-colors"
+            />
+            {!selection.selecting && visibleItems.length > 0 && (
+              <button
+                type="button"
+                onClick={selection.startSelecting}
+                className="absolute right-10 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+              >
+                <ListChecks className="h-3 w-3" />
+                {t('bulk.select')}
+              </button>
+            )}
+            {search && <button type="button" onClick={() => setSearch('')} aria-label={t('archive.clearSearch')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-muted-foreground/50 hover:bg-foreground/[0.05] hover:text-foreground"><X className="h-4 w-4" /></button>}
+          </div>
+        </div>
+
+        </div>
+
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div>
           <div className="max-w-3xl mx-auto px-4 lg:px-8 py-4">
+            {selection.selecting && (
+              <BulkActionBar
+                count={selection.count}
+                allSelected={selection.allSelected}
+                selectedIds={selection.selectedIds}
+                actions={bulkActions}
+                onSelectAll={selection.selectAll}
+                onClear={selection.clear}
+                onDone={selection.stopSelecting}
+              />
+            )}
             {/* Completed Tab */}
-            <TabsContent value="completed" className="mt-0 space-y-px">
+            {activeTab === 'completed' && (<div className="space-y-px">
               {completedItems.map((item) => (
                 <div key={item.id} className="group">
+                  {renderRow(item, (<>
                   {/* Mobile: swipe to uncomplete */}
-                  <div className="lg:hidden">
-                    <SwipeableRow
+                  <div className="flex items-center gap-1.5 lg:hidden">
+                    <div className="min-w-0 flex-1"><SwipeableRow
                       onSwipeRight={() => handleUncomplete(item.id)}
-                      rightLabel="Uncomplete"
+                      rightLabel={t('archive.uncomplete')}
                       rightIcon={Circle}
                     >
                       <ItemRow item={item} showType compact enableSwipe={false} />
-                    </SwipeableRow>
+                    </SwipeableRow></div>
+                    <button type="button" onClick={() => handleUncomplete(item.id)} aria-label={t('archive.moveActive', { title: item.title })} className="mobile-touch-target shrink-0 rounded-lg p-2 text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-foreground"><Circle className="h-4 w-4" /></button>
                   </div>
                   {/* Desktop: hover button */}
                   <div className="hidden lg:flex items-center gap-1.5">
@@ -145,12 +215,14 @@ export default function ArchivePage() {
                       <ItemRow item={item} showType compact enableSwipe={false} />
                     </div>
                     <button
-                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.05] transition-all shrink-0"
+                      aria-label={t('archive.moveActive', { title: item.title })}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 opacity-70 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.05] focus-visible:opacity-100 transition-all shrink-0"
                       onClick={() => handleUncomplete(item.id)}
                     >
-                      <Circle className="h-3 w-3" /> Uncomplete
+                      <Circle className="h-3 w-3" /> {t('archive.uncomplete')}
                     </button>
                   </div>
+                  </>))}
                 </div>
               ))}
 
@@ -159,27 +231,29 @@ export default function ArchivePage() {
                   <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                     <CheckCircle2 className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
                   </div>
-                  <h3 className="text-[15px] font-medium">No completed items</h3>
+                  <h2 className="text-[15px] font-medium">{t('archive.noCompleted')}</h2>
                   <p className="text-[12px] text-muted-foreground/50 mt-1">
-                    {search ? 'Try a different search term' : 'Completed tasks and goals will appear here'}
+                    {search ? t('archive.tryDifferentSearch') : t('archive.noCompletedDesc')}
                   </p>
                 </div>
               )}
-            </TabsContent>
+            </div>)}
 
             {/* Archived Tab */}
-            <TabsContent value="archived" className="mt-0 space-y-px">
+            {activeTab === 'archived' && (<div className="space-y-px">
               {archivedItems.map((item) => (
                 <div key={item.id} className="group">
+                  {renderRow(item, (<>
                   {/* Mobile: swipe to restore */}
-                  <div className="lg:hidden">
-                    <SwipeableRow
+                  <div className="flex items-center gap-1.5 lg:hidden">
+                    <div className="min-w-0 flex-1"><SwipeableRow
                       onSwipeRight={() => handleRestore(item.id)}
-                      rightLabel="Restore"
+                      rightLabel={t('common.restore')}
                       rightIcon={RotateCcw}
                     >
                       <ItemRow item={item} showType compact enableSwipe={false} />
-                    </SwipeableRow>
+                    </SwipeableRow></div>
+                    <button type="button" onClick={() => handleRestore(item.id)} aria-label={t('archive.restoreItem', { title: item.title })} className="mobile-touch-target shrink-0 rounded-lg p-2 text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-foreground"><RotateCcw className="h-4 w-4" /></button>
                   </div>
                   {/* Desktop: hover button */}
                   <div className="hidden lg:flex items-center gap-1.5">
@@ -187,12 +261,14 @@ export default function ArchivePage() {
                       <ItemRow item={item} showType compact enableSwipe={false} />
                     </div>
                     <button
-                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.05] transition-all shrink-0"
+                      aria-label={t('archive.restoreItem', { title: item.title })}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 opacity-70 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.05] focus-visible:opacity-100 transition-all shrink-0"
                       onClick={() => handleRestore(item.id)}
                     >
-                      <RotateCcw className="h-3 w-3" /> Restore
+                      <RotateCcw className="h-3 w-3" /> {t('common.restore')}
                     </button>
                   </div>
+                  </>))}
                 </div>
               ))}
 
@@ -201,16 +277,16 @@ export default function ArchivePage() {
                   <div className="mb-4 flex h-14 w-14 lg:h-12 lg:w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
                     <ArchiveIcon className="h-6 w-6 lg:h-5 lg:w-5 text-muted-foreground/30" />
                   </div>
-                  <h3 className="text-[15px] font-medium">Archive is empty</h3>
+                  <h2 className="text-[15px] font-medium">{t('archive.archiveEmpty')}</h2>
                   <p className="text-[12px] text-muted-foreground/50 mt-1">
-                    {search ? 'Try a different search term' : 'Archived items will appear here'}
+                    {search ? t('archive.tryDifferentSearch') : t('archive.archiveEmptyDesc')}
                   </p>
                 </div>
               )}
-            </TabsContent>
+            </div>)}
           </div>
         </div>
-      </Tabs>
+      </div>
     </div>
   );
 }

@@ -1,13 +1,15 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { saveToolData } from './firestore';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { saveToolData, ToolDataConflictError } from './firestore';
+import { prepareScopedStorage } from './account-storage';
+import { verifiedLocalStateStorage } from './verified-storage';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Toolbox Store
+// Threadmap — Toolbox Store
 // Tools are high-quality extensions that behave like native tabs.
 // ═══════════════════════════════════════════════════════════
 
-export type ToolId = 'flight' | 'dispatch' | 'briefing' | 'abitur' | 'wishlist' | 'circles';
+export type ToolId = 'flight' | 'dispatch' | 'briefing' | 'abitur' | 'wishlist';
 
 export interface ToolDefinition {
   id: ToolId;
@@ -76,35 +78,69 @@ export const TOOLS: ToolDefinition[] = [
     color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-500/10 dark:bg-amber-400/10',
   },
-  {
-    id: 'circles',
-    name: 'Circles',
-    tagline: 'Your people, drawn closer by gravity.',
-    description:
-      'A relationship gravity map. Add people to your orbit — interactions, shared habits, and nudges pull them closer. The more connected, the closer they orbit.',
-    icon: 'Users',
-    href: '/tools/circles',
-    color: 'text-rose-600 dark:text-rose-400',
-    bgColor: 'bg-rose-500/10 dark:bg-rose-400/10',
-  },
 ];
+
+const VALID_TOOL_IDS = new Set<ToolId>(TOOLS.map((tool) => tool.id));
+
+function sanitizeToolIds(value: unknown): ToolId[] {
+  return Array.isArray(value)
+    ? value.filter((id): id is ToolId => typeof id === 'string' && VALID_TOOL_IDS.has(id as ToolId))
+    : [];
+}
 
 // ═══════════════════════════════════════════════════════════
 // Sync
 // ═══════════════════════════════════════════════════════════
 
 let _syncUserId: string | null = null;
+let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+let _localRevision = 0;
+let _cloudSnapshotReceived = false;
+let _scopeGeneration = 0;
 
 function scheduleSave(enabledTools: ToolId[]) {
-  const userId = _syncUserId;
-  if (!userId) return;
-  saveToolData(userId, 'toolbox', { enabledTools }).catch((err) => {
-    console.error('[ORBIT] Failed to save Toolbox data:', err);
-  });
+  const scheduledUserId = _syncUserId;
+  const scheduledGeneration = _scopeGeneration;
+  if (!scheduledUserId) {
+    useToolboxStore.setState({ cloudDirty: false });
+    return;
+  }
+  if (_saveTimer) clearTimeout(_saveTimer);
+  const revision = ++_localRevision;
+  const persist = async () => {
+    if (_syncUserId !== scheduledUserId
+        || _scopeGeneration !== scheduledGeneration
+        || revision !== _localRevision) return;
+    try {
+      await saveToolData(scheduledUserId, 'toolbox', { enabledTools });
+      if (_syncUserId === scheduledUserId
+          && _scopeGeneration === scheduledGeneration
+          && revision === _localRevision) {
+        useToolboxStore.setState({ cloudDirty: false });
+      }
+    } catch (error) {
+      console.error('[THREADMAP] Failed to save Toolbox data:', error);
+      if (_syncUserId !== scheduledUserId
+          || _scopeGeneration !== scheduledGeneration
+          || revision !== _localRevision) return;
+      if (error instanceof ToolDataConflictError) {
+        useToolboxStore.setState({ cloudDirty: true });
+        return;
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
+          detail: { message: 'Toolbox changes are saved on this device, but cloud sync will retry.' },
+        }));
+      }
+      _saveTimer = setTimeout(() => void persist(), 5_000);
+    }
+  };
+  _saveTimer = setTimeout(() => void persist(), 300);
 }
 
 interface ToolboxStore {
   enabledTools: ToolId[];
+  cloudDirty: boolean;
   enableTool: (id: ToolId) => void;
   disableTool: (id: ToolId) => void;
   isToolEnabled: (id: ToolId) => boolean;
@@ -117,19 +153,20 @@ export const useToolboxStore = create<ToolboxStore>()(
   persist(
     (set, get) => ({
       enabledTools: [],
+      cloudDirty: false,
 
       enableTool: (id) => {
         const current = get().enabledTools;
         if (!current.includes(id)) {
           const next = [...current, id];
-          set({ enabledTools: next });
+          set({ enabledTools: next, cloudDirty: Boolean(_syncUserId) });
           scheduleSave(next);
         }
       },
 
       disableTool: (id) => {
         const next = get().enabledTools.filter((t) => t !== id);
-        set({ enabledTools: next });
+        set({ enabledTools: next, cloudDirty: Boolean(_syncUserId) });
         scheduleSave(next);
       },
 
@@ -140,32 +177,49 @@ export const useToolboxStore = create<ToolboxStore>()(
         return TOOLS.filter((t) => enabled.includes(t.id));
       },
 
-      _setFromCloud: (enabledTools) => set({ enabledTools }),
+      _setFromCloud: (enabledTools) => {
+        const firstSnapshot = !_cloudSnapshotReceived;
+        _cloudSnapshotReceived = true;
+        if (get().cloudDirty) {
+          if (firstSnapshot) scheduleSave(get().enabledTools);
+          return;
+        }
+        set({ enabledTools: sanitizeToolIds(enabledTools), cloudDirty: false });
+      },
 
       _setSyncUserId: (userId) => {
+        if (_syncUserId !== userId) {
+          _scopeGeneration += 1;
+          if (_saveTimer) {
+            clearTimeout(_saveTimer);
+            _saveTimer = null;
+          }
+        }
         _syncUserId = userId;
+        _localRevision = 0;
+        _cloudSnapshotReceived = false;
       },
     }),
     {
       name: 'orbit-toolbox',
-      partialize: (state) => ({ enabledTools: state.enabledTools }),
+      partialize: (state) => ({ enabledTools: state.enabledTools, cloudDirty: state.cloudDirty }),
+      merge: (persisted, current) => ({
+        ...current,
+        enabledTools: sanitizeToolIds((persisted as { enabledTools?: unknown } | undefined)?.enabledTools),
+        cloudDirty: (persisted as { cloudDirty?: unknown } | undefined)?.cloudDirty === true,
+      }),
       skipHydration: true,
+      storage: createJSONStorage(() => verifiedLocalStateStorage),
     }
   )
 );
 
-/** Switch the persisted fallback to an account-specific namespace. */
-export async function scopeToolboxPersistence(userId: string): Promise<void> {
+const TOOLBOX_STORAGE_KEY = 'orbit-toolbox';
+
+export async function scopeToolboxStore(userId: string | null): Promise<void> {
   useToolboxStore.getState()._setSyncUserId(null);
-  const key = `orbit-toolbox:${encodeURIComponent(userId)}`;
-  if (typeof window !== 'undefined' && userId === 'demo-user' && !localStorage.getItem(key)) {
-    const legacy = localStorage.getItem('orbit-toolbox');
-    if (legacy) localStorage.setItem(key, legacy);
-  }
-  useToolboxStore.persist.setOptions({ name: key });
-  if (typeof window !== 'undefined' && localStorage.getItem(key)) {
-    await useToolboxStore.persist.rehydrate();
-  } else {
-    useToolboxStore.setState({ enabledTools: [] });
-  }
+  const target = prepareScopedStorage(TOOLBOX_STORAGE_KEY, userId);
+  useToolboxStore.persist.setOptions({ name: target.key });
+  if (!target.hasPersistedState) useToolboxStore.setState({ enabledTools: [], cloudDirty: false });
+  await useToolboxStore.persist.rehydrate();
 }

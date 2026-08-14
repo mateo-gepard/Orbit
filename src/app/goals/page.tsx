@@ -1,26 +1,31 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Target, Plus } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { createItem } from '@/lib/firestore';
-import { cn } from '@/lib/utils';
 import { computeBadges } from '@/lib/badges';
 import { BadgesSection } from '@/components/ui/badge-stack';
 import type { GoalTimeframe } from '@/lib/types';
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation, type TranslationKey } from '@/lib/i18n';
+import { getGoalStats as computeGoalStats } from '@/lib/progress';
+import { GoalCreateDialog } from '@/components/items/goal-create-dialog';
 
-const TIMEFRAME_KEYS: Record<GoalTimeframe, string> = {
+const TIMEFRAME_KEYS: Record<GoalTimeframe, TranslationKey> = {
   quarterly: 'goals.thisQuarter',
   yearly: 'goals.thisYear',
   longterm: 'goals.longterm',
 };
 
 export default function GoalsPage() {
-  const { items, setSelectedItemId } = useOrbitStore();
+  const { items, setSelectedItemId } = useThreadmapStore();
   const { user } = useAuth();
-  const { t } = useTranslation();
+  const { t, tp, lang } = useTranslation();
+  const createInFlightRef = useRef(false);
+  const [creatingGoal, setCreatingGoal] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const goals = useMemo(
     () => items.filter((i) => i.type === 'goal' && i.status !== 'archived'),
@@ -29,28 +34,51 @@ export default function GoalsPage() {
 
   const badgeCategories = useMemo(() => computeBadges(items), [items]);
 
-  const getGoalProgress = (goalId: string) => {
-    const goal = items.find((i) => i.id === goalId);
-    if (!goal?.linkedIds?.length) return 0;
-    const linked = items.filter((i) => goal.linkedIds!.includes(i.id));
-    if (linked.length === 0) return 0;
-    const done = linked.filter((i) => i.status === 'done').length;
-    return Math.round((done / linked.length) * 100);
-  };
+  const getGoalStats = (goalId: string) => computeGoalStats(items, goalId);
 
-  const handleNewGoal = async () => {
-    if (!user) return;
-    const id = await createItem({
-      type: 'goal',
-      status: 'active',
-      title: 'New Goal',
-      timeframe: 'quarterly',
-      tags: [],
-      userId: user.uid,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    setSelectedItemId(id);
+  // Name-first creation. "New" used to write a real "New goal" item straight
+  // away, so backing out of the panel left debris in the list, the sidebar
+  // badge and the cloud.
+  const handleCreateGoal = async (
+    title: string,
+    timeframe: GoalTimeframe,
+    metric?: string,
+  ): Promise<boolean> => {
+    if (createInFlightRef.current) return false;
+    if (!user) {
+      setCreateError(lang === 'de'
+        ? 'Deine Sitzung ist nicht mehr aktiv. Melde dich erneut an und versuche es noch einmal.'
+        : 'Your session is no longer active. Sign in again and retry.');
+      return false;
+    }
+
+    createInFlightRef.current = true;
+    setCreatingGoal(true);
+    setCreateError(null);
+    try {
+      const id = await createItem({
+        type: 'goal',
+        status: 'active',
+        title,
+        timeframe,
+        metric,
+        tags: [],
+        userId: user.uid,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      setSelectedItemId(id);
+      return true;
+    } catch (cause) {
+      console.error('[THREADMAP] Goal creation failed:', cause);
+      setCreateError(lang === 'de'
+        ? 'Das Ziel konnte nicht erstellt werden. Versuche es erneut.'
+        : 'The goal could not be created. Please retry.');
+      return false;
+    } finally {
+      createInFlightRef.current = false;
+      setCreatingGoal(false);
+    }
   };
 
   const groupedGoals = useMemo(() => {
@@ -66,23 +94,54 @@ export default function GoalsPage() {
     return groups;
   }, [goals]);
 
+  const ongoingCount = goals.filter((goal) => goal.status !== 'done').length;
+  const completedCount = goals.filter((goal) => goal.status === 'done').length;
+
   return (
     <div className="p-4 lg:p-8 space-y-5 lg:space-y-6 max-w-4xl mx-auto" data-slot="page-content">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{t('nav.goals')}</h1>
           <p className="text-[13px] text-muted-foreground/60 mt-0.5">
-            {goals.length} active
+            {tp('goals.ongoing.one', 'goals.ongoing.other', ongoingCount)} ·{' '}
+            {tp('goals.complete.one', 'goals.complete.other', completedCount)}
           </p>
         </div>
         <button
-          onClick={handleNewGoal}
-          className="flex items-center gap-1.5 rounded-xl lg:rounded-lg bg-foreground px-3.5 py-2 lg:py-1.5 text-[13px] lg:text-[12px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform"
+          type="button"
+          onClick={() => { setCreateError(null); setCreateDialogOpen(true); }}
+          disabled={creatingGoal}
+          aria-busy={creatingGoal}
+          className="flex min-h-11 items-center gap-1.5 rounded-xl bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90 active:scale-95 transition-transform disabled:cursor-wait disabled:opacity-70 lg:min-h-0 lg:rounded-lg lg:py-1.5 lg:text-[12px]"
         >
-          <Plus className="h-3.5 w-3.5" />
-          {t('common.new')}
+          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+          {creatingGoal
+            ? (lang === 'de' ? 'Wird erstellt …' : 'Creating…')
+            : t('common.new')}
         </button>
       </div>
+
+      <GoalCreateDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        error={createError}
+        onCreate={handleCreateGoal}
+      />
+
+      {createError && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.05] px-3 py-2.5 text-[12px] text-destructive">
+          <p>{createError}</p>
+          <button
+            type="button"
+            onClick={() => { setCreateError(null); setCreateDialogOpen(true); }}
+            disabled={creatingGoal}
+            aria-busy={creatingGoal}
+            className="min-h-9 rounded-lg bg-destructive/10 px-3 font-medium transition-colors hover:bg-destructive/20 disabled:cursor-wait disabled:opacity-60"
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      )}
 
       {/* ── Achievements ── */}
       <BadgesSection categories={badgeCategories} />
@@ -95,12 +154,11 @@ export default function GoalsPage() {
         return (
           <div key={timeframe}>
             <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40 px-1">
-              {t(TIMEFRAME_KEYS[timeframe] as any)}
+              {t(TIMEFRAME_KEYS[timeframe])}
             </span>
             <div className="grid gap-2.5 sm:grid-cols-2 mt-2">
               {group.map((goal) => {
-                const progress = getGoalProgress(goal.id);
-                const linkedCount = goal.linkedIds?.length || 0;
+                const { progress, relatedCount } = getGoalStats(goal.id);
                 return (
                   <button
                     key={goal.id}
@@ -111,6 +169,11 @@ export default function GoalsPage() {
                       <h3 className="text-[14px] lg:text-[13px] font-semibold group-hover:text-foreground transition-colors">
                         {goal.title}
                       </h3>
+                      {goal.status === 'done' && (
+                        <span className="mt-1 inline-flex rounded-md bg-green-500/10 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400">
+                          {t('goals.completeBadge')}
+                        </span>
+                      )}
                       {goal.metric && (
                         <p className="text-[11px] text-muted-foreground/50 mt-1 italic line-clamp-2 leading-relaxed">
                           {goal.metric}
@@ -126,7 +189,9 @@ export default function GoalsPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-muted-foreground/40 tabular-nums">{progress}%</span>
-                        <span className="text-[10px] text-muted-foreground/30">{linkedCount} linked</span>
+                        <span className="text-[10px] text-muted-foreground/40">
+                          {tp('goals.related.one', 'goals.related.other', relatedCount)}
+                        </span>
                       </div>
                     </div>
                   </button>
@@ -142,7 +207,7 @@ export default function GoalsPage() {
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/[0.04]">
             <Target className="h-5 w-5 text-muted-foreground/30" />
           </div>
-          <h3 className="text-[15px] font-medium">{t('goals.noGoals')}</h3>
+          <h2 className="text-[15px] font-medium">{t('goals.noGoals')}</h2>
           <p className="text-[12px] text-muted-foreground/50 mt-1 max-w-xs">
             {t('goals.noGoalsDesc')}
           </p>

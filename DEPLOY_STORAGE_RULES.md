@@ -57,7 +57,7 @@ firebase storage:rules:get
 
 ## Testing After Deployment
 
-1. Try uploading a file in your ORBIT app
+1. Try uploading a file in your Threadmap app
 2. Check browser console for errors
 3. Verify file appears in Firebase Storage console
 4. Test downloading the file

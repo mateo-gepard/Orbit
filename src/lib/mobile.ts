@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Mobile Haptics & Utilities
+// Threadmap — Mobile Haptics & Utilities
 // ═══════════════════════════════════════════════════════════
 
 /** Trigger haptic feedback if available */
@@ -7,7 +7,7 @@ export function haptic(style: 'light' | 'medium' | 'heavy' | 'success' | 'error'
   if (typeof navigator === 'undefined') return;
   
   // Navigator.vibrate API
-  if ('vibrate' in navigator) {
+  if (typeof navigator.vibrate === 'function') {
     switch (style) {
       case 'light': navigator.vibrate(10); break;
       case 'medium': navigator.vibrate(20); break;

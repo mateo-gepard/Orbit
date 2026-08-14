@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Plus, X, ChevronLeft, Gem, ShoppingBag, ExternalLink,
   Gavel, Trophy, Archive, Undo2, Trash2, Edit3,
@@ -12,12 +11,44 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/providers/auth-provider';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { useSettingsStore } from '@/lib/settings-store';
 import {
-  useWishlistStore, VAULT_CATEGORIES, getItemRarity, getRarityLabel,
-  getRarityColor, getVaultStats, formatPrice, pickDuelPair,
+  useWishlistStore, VAULT_CATEGORIES, getItemRarity,
+  getVaultStats, formatPrice, pickDuelPair,
   recommendedRounds, rankingConfidence,
   type VaultItem, type VaultCategory,
 } from '@/lib/wishlist-store';
+
+const COPY = {
+  en: {
+    edit: 'Edit', new: 'New', piece: 'piece', name: 'Name', whatIsIt: 'What is it?', price: 'Price', currency: 'Currency', category: 'Category', link: 'Link', imageUrl: 'Image URL', notes: 'Notes', whyWant: 'Why do you want this?', saveChanges: 'Save changes', addCollection: 'Add to collection',
+    auction: 'Auction', rankings: 'Rankings', stable: 'Ranking stable', rankingsArrow: 'Rankings →', updated: 'Rankings updated', roundsCompleted: '{rounds} rounds completed · {confidence}% confidence', viewRankings: 'View rankings', keepGoing: 'Keep going', notEnough: 'Not enough pieces', needTwo: 'Add at least two items to start comparing.', addItems: 'Add items', preparing: 'Preparing comparison…', comparison: 'Lot comparison', whichMore: 'Which do you want more?', lot: 'Lot', noPrice: 'No price', selected: 'Selected', skip: 'Skip',
+    confident: '{confidence}% confident', duels: '{count} duels', noRankings: 'No rankings yet', auctionFirst: 'Run some auctions first.', improve: 'Improve rankings ({confidence}%)', continueAuction: 'Continue auction',
+    removed: 'Removed', acquired: 'Acquired', showAcquired: 'Show acquired', showRemoved: 'Show removed', totalSpent: 'Total spent', currenciesSeparate: 'Currencies are shown separately; no exchange-rate assumptions.', itemsAcquired: '{count} items acquired', nothingHere: 'Nothing here yet', restore: 'Restore {name}', deletePermanently: 'Delete {name} permanently', deleteTitle: 'Delete “{name}” permanently?', deleteFallback: 'Delete item permanently?', deleteDescription: 'This removes the item and its auction history from the Vault. This action cannot be undone.', deleteConfirm: 'Delete permanently',
+    vault: 'The Vault', navigation: 'Vault sections', itemCount: '{count} {item}', gallery: 'Gallery', add: 'Add', empty: 'Your vault is empty', emptyDescription: 'Paste a URL or add items to start your collection.', addFirst: 'Add first piece', featured: 'Featured piece', estimated: 'est.', points: 'pts', ranked: '#{rank} ranked', rank: 'Rank #{rank}', source: 'Open source for {name}', viewSource: 'View source', confirmPrice: 'Confirm estimated price', acquiredAction: 'Acquired', remove: 'Remove', closeDetails: 'Close item details',
+    addTitle: 'Add to collection', closeAdd: 'Close add item dialog', productInput: 'Product link or name', paste: 'Paste a link or type a name…', signInFetch: 'Sign in to fetch product details. You can still add the item manually.', productLookup: 'Product lookup failed ({status})', lookupUnavailable: 'Product details could not be fetched. You can still add the item manually.', productDetails: 'Product details from {site}', more: 'More details', less: 'Less', loading: 'Looking up product details', capacity: 'The Vault is full (500 items). Permanently delete an archived item before adding another.',
+    discardTitle: 'Discard unsaved changes?', discardDescription: 'Your draft has not been saved. Discarding it cannot be undone.', keepEditing: 'Keep editing', discard: 'Discard draft',
+    categories: { tech: ['Tech', 'Tech Wing'], fashion: ['Fashion', 'Fashion Gallery'], experience: ['Experiences', 'Experience Hall'], home: ['Home', 'Living Quarters'], creative: ['Creative', 'Atelier'], wellness: ['Wellness', 'Wellness Suite'], education: ['Education', 'Library'], other: ['Other', 'Open Vault'] },
+    rarity: { fresh: 'Fresh arrival', seasoned: 'Seasoned', vintage: 'Vintage', heirloom: 'Heirloom' },
+  },
+  de: {
+    edit: 'Bearbeiten', new: 'Neues', piece: 'Stück', name: 'Name', whatIsIt: 'Worum handelt es sich?', price: 'Preis', currency: 'Währung', category: 'Kategorie', link: 'Link', imageUrl: 'Bild-URL', notes: 'Notizen', whyWant: 'Warum möchtest du das?', saveChanges: 'Änderungen speichern', addCollection: 'Zur Sammlung hinzufügen',
+    auction: 'Auktion', rankings: 'Rangliste', stable: 'Rangliste stabil', rankingsArrow: 'Rangliste →', updated: 'Rangliste aktualisiert', roundsCompleted: '{rounds} Runden abgeschlossen · {confidence}% Sicherheit', viewRankings: 'Rangliste ansehen', keepGoing: 'Weiter', notEnough: 'Nicht genug Stücke', needTwo: 'Füge mindestens zwei Stücke hinzu, um sie zu vergleichen.', addItems: 'Stücke hinzufügen', preparing: 'Vergleich wird vorbereitet…', comparison: 'Losvergleich', whichMore: 'Was möchtest du lieber?', lot: 'Los', noPrice: 'Kein Preis', selected: 'Ausgewählt', skip: 'Überspringen',
+    confident: '{confidence}% sicher', duels: '{count} Duelle', noRankings: 'Noch keine Rangliste', auctionFirst: 'Führe zuerst ein paar Auktionen durch.', improve: 'Rangliste verbessern ({confidence}%)', continueAuction: 'Auktion fortsetzen',
+    removed: 'Entfernt', acquired: 'Angeschafft', showAcquired: 'Angeschaffte zeigen', showRemoved: 'Entfernte zeigen', totalSpent: 'Ausgaben gesamt', currenciesSeparate: 'Währungen werden getrennt angezeigt; es werden keine Wechselkurse angenommen.', itemsAcquired: '{count} Stücke angeschafft', nothingHere: 'Hier ist noch nichts', restore: '{name} wiederherstellen', deletePermanently: '{name} dauerhaft löschen', deleteTitle: '„{name}“ dauerhaft löschen?', deleteFallback: 'Stück dauerhaft löschen?', deleteDescription: 'Dadurch werden das Stück und seine Auktionshistorie aus dem Archiv entfernt. Das kann nicht rückgängig gemacht werden.', deleteConfirm: 'Dauerhaft löschen',
+    vault: 'Das Archiv', navigation: 'Archivbereiche', itemCount: '{count} {item}', gallery: 'Galerie', add: 'Hinzufügen', empty: 'Dein Archiv ist leer', emptyDescription: 'Füge einen Link oder Stücke hinzu, um deine Sammlung zu starten.', addFirst: 'Erstes Stück hinzufügen', featured: 'Ausgewähltes Stück', estimated: 'geschätzt', points: 'Pkt.', ranked: '#{rank} platziert', rank: 'Rang #{rank}', source: 'Quelle für {name} öffnen', viewSource: 'Quelle ansehen', confirmPrice: 'Geschätzten Preis bestätigen', acquiredAction: 'Angeschafft', remove: 'Entfernen', closeDetails: 'Artikeldetails schließen',
+    addTitle: 'Zur Sammlung hinzufügen', closeAdd: 'Dialog zum Hinzufügen schließen', productInput: 'Produktlink oder Name', paste: 'Link einfügen oder Namen eingeben…', signInFetch: 'Melde dich an, um Produktdetails abzurufen. Du kannst das Stück weiterhin manuell hinzufügen.', productLookup: 'Produktabfrage fehlgeschlagen ({status})', lookupUnavailable: 'Produktdetails konnten nicht abgerufen werden. Du kannst das Stück weiterhin manuell hinzufügen.', productDetails: 'Produktdetails von {site}', more: 'Mehr Details', less: 'Weniger', loading: 'Produktdetails werden abgerufen', capacity: 'Das Archiv ist voll (500 Stücke). Lösche ein archiviertes Stück dauerhaft, bevor du ein neues hinzufügst.',
+    discardTitle: 'Ungespeicherte Änderungen verwerfen?', discardDescription: 'Dein Entwurf wurde noch nicht gespeichert. Das Verwerfen kann nicht rückgängig gemacht werden.', keepEditing: 'Weiter bearbeiten', discard: 'Entwurf verwerfen',
+    categories: { tech: ['Technik', 'Technikflügel'], fashion: ['Mode', 'Modegalerie'], experience: ['Erlebnisse', 'Erlebnishalle'], home: ['Wohnen', 'Wohnbereich'], creative: ['Kreatives', 'Atelier'], wellness: ['Wellness', 'Wellnessbereich'], education: ['Bildung', 'Bibliothek'], other: ['Sonstiges', 'Offenes Archiv'] },
+    rarity: { fresh: 'Neu eingetroffen', seasoned: 'Etabliert', vintage: 'Vintage', heirloom: 'Erbstück' },
+  },
+} as const;
+
+function interpolate(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+}
 
 // ─── Category icons ────────────────────────────────────
 const CATEGORY_ICONS: Record<string, typeof Cpu> = {
@@ -35,35 +66,112 @@ function lotNumber(idx: number) {
   return String(idx + 1).padStart(3, '0');
 }
 
+const SUPPORTED_CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'] as const;
+
+function parsePriceInput(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+  const parsed = Number.parseFloat(value.trim().replace(',', '.'));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function totalsByCurrency(items: VaultItem[]): Array<[string, number]> {
+  const totals = new Map<string, number>();
+  for (const item of items) {
+    if (item.price === undefined || !Number.isFinite(item.price)) continue;
+    const currency = item.currency || 'EUR';
+    totals.set(currency, (totals.get(currency) ?? 0) + item.price);
+  }
+  return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+function formatCurrencyTotals(totals: Array<[string, number]>): string {
+  return totals.map(([currency, amount]) => formatPrice(amount, currency)).join(' + ');
+}
+
+interface DraftDiscardDialogProps {
+  open: boolean;
+  title: string;
+  description: string;
+  keepLabel: string;
+  discardLabel: string;
+  onKeep: () => void;
+  onDiscard: () => void;
+}
+
+function DraftDiscardDialog({
+  open,
+  title,
+  description,
+  keepLabel,
+  discardLabel,
+  onKeep,
+  onDiscard,
+}: DraftDiscardDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) onKeep();
+    }}>
+      <DialogContent showCloseButton={false} className="sm:max-w-md">
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
+        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onKeep}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {keepLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onDiscard}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+          >
+            {discardLabel}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ═════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═════════════════════════════════════════════════════════
 
 export default function WishlistPage() {
   const { user } = useAuth();
+  const language = useSettingsStore((state) => state.settings.language);
+  const copy = COPY[language];
   const {
     items, duels, addItem, updateItem, acquireItem, removeItem, restoreItem,
-    deleteItem, recordDuel, getActiveItems, getAcquiredItems, getRemovedItems, getRankedItems,
+    deleteItem, recordDuel,
   } = useWishlistStore();
 
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<VaultView>('gallery');
   const [editingItem, setEditingItem] = useState<VaultItem | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState<VaultItem | null>(null);
 
   // Quick-add state
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [quickExpanded, setQuickExpanded] = useState(false);
   const [quickPrice, setQuickPrice] = useState('');
+  const [quickCurrency, setQuickCurrency] = useState('EUR');
   const [quickPriceEstimated, setQuickPriceEstimated] = useState(false);
   const [quickCategory, setQuickCategory] = useState<VaultCategory>('tech');
   const [quickUrl, setQuickUrl] = useState('');
   const [quickImageUrl, setQuickImageUrl] = useState('');
+  const [quickNotes, setQuickNotes] = useState('');
   const [quickScraping, setQuickScraping] = useState(false);
   const [quickScrapedSite, setQuickScrapedSite] = useState('');
+  const [quickError, setQuickError] = useState('');
   const quickInputRef = useRef<HTMLInputElement>(null);
   const scrapeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrapeAbortRef = useRef<AbortController | null>(null);
+  const scrapeGenerationRef = useRef(0);
 
   // Form state (edit)
   const [formName, setFormName] = useState('');
@@ -73,20 +181,26 @@ export default function WishlistPage() {
   const [formImageUrl, setFormImageUrl] = useState('');
   const [formCategory, setFormCategory] = useState<VaultCategory>('tech');
   const [formNotes, setFormNotes] = useState('');
+  const [formError, setFormError] = useState('');
+  const [discardTarget, setDiscardTarget] = useState<'form' | 'quick' | null>(null);
 
   // Auction state
   const [duelPair, setDuelPair] = useState<[VaultItem, VaultItem] | null>(null);
   const [duelResult, setDuelResult] = useState<{ winnerId: string } | null>(null);
   const [duelCount, setDuelCount] = useState(0);
+  const duelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Card expand (gallery detail overlay)
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
-  useEffect(() => {
-    if (showQuickAdd) setTimeout(() => quickInputRef.current?.focus(), 50);
-  }, [showQuickAdd]);
+  useEffect(() => () => {
+    scrapeGenerationRef.current += 1;
+    scrapeAbortRef.current?.abort();
+    if (scrapeTimeoutRef.current) clearTimeout(scrapeTimeoutRef.current);
+    if (duelTimeoutRef.current) clearTimeout(duelTimeoutRef.current);
+  }, [user?.uid]);
 
   // URL helpers
   const isUrl = useCallback((text: string) => {
@@ -106,19 +220,57 @@ export default function WishlistPage() {
     return 'other';
   }, []);
 
+  const authenticatedScrapeFetch = useCallback(async (
+    input: RequestInfo | URL,
+    init: RequestInit = {}
+  ) => {
+    if (!user || user.uid === 'demo-user') {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const token = await user.getIdToken();
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    return fetch(input, { ...init, headers, cache: 'no-store' });
+  }, [user]);
+
   const scrapeUrl = useCallback(async (url: string) => {
+    if (!user || user.uid === 'demo-user') {
+      setQuickError(copy.signInFetch);
+      setQuickExpanded(true);
+      return;
+    }
+    const generation = ++scrapeGenerationRef.current;
+    scrapeAbortRef.current?.abort();
+    const controller = new AbortController();
+    scrapeAbortRef.current = controller;
+    const isCurrent = () => generation === scrapeGenerationRef.current && !controller.signal.aborted;
     setQuickScraping(true);
     setQuickScrapedSite('');
     setQuickPriceEstimated(false);
+    setQuickError('');
     try {
       let fullUrl = url.trim();
       if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
-      const res = await fetch(`/api/scrape?url=${encodeURIComponent(fullUrl)}`, { cache: 'no-store' });
+      const res = await authenticatedScrapeFetch(
+        `/api/scrape?url=${encodeURIComponent(fullUrl)}`,
+        { signal: controller.signal }
+      );
+      if (!isCurrent()) return;
+      if (res.status === 401) {
+        setQuickError(copy.signInFetch);
+        setQuickExpanded(true);
+        return;
+      }
+      if (!res.ok) throw new Error(interpolate(copy.productLookup, { status: res.status }));
       const data = await res.json();
+      if (!isCurrent()) return;
       // Use whatever fields came back (even from fallback responses)
       const title = (data.title && data.title !== 'Product') ? data.title : '';
       if (title) setQuickName(title);
       if (data.price) setQuickPrice(data.price);
+      if (typeof data.currency === 'string' && /^[A-Z]{3}$/i.test(data.currency)) {
+        setQuickCurrency(data.currency.toUpperCase());
+      }
       if (data.image) setQuickImageUrl(data.image);
       if (data.siteName) setQuickScrapedSite(data.siteName);
       setQuickUrl(fullUrl);
@@ -128,9 +280,14 @@ export default function WishlistPage() {
       // Fire off search fallback for missing image/price
       if (title && (!data.image || !data.price)) {
         try {
-          const searchRes = await fetch(`/api/scrape/image?q=${encodeURIComponent(title)}`);
+          const searchRes = await authenticatedScrapeFetch(
+            `/api/scrape/image?q=${encodeURIComponent(title)}`,
+            { signal: controller.signal }
+          );
+          if (!isCurrent()) return;
           if (searchRes.ok) {
             const searchData = await searchRes.json();
+            if (!isCurrent()) return;
             if (!data.image && searchData.image) setQuickImageUrl(searchData.image);
             if (!data.price && searchData.price) {
               setQuickPrice(searchData.price);
@@ -139,22 +296,37 @@ export default function WishlistPage() {
           }
         } catch { /* search fallback failed silently */ }
       }
-    } catch {
+    } catch (error) {
+      if (!isCurrent() || (error as { name?: string })?.name === 'AbortError') return;
       let fullUrl = url.trim();
       if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
       setQuickUrl(fullUrl);
       setQuickCategory(guessCategory(fullUrl));
       setQuickExpanded(true);
+      setQuickError(error instanceof Error && error.message.startsWith(copy.productLookup.split(' ({status})')[0])
+        ? error.message
+        : copy.lookupUnavailable);
     } finally {
-      setQuickScraping(false);
+      if (isCurrent()) {
+        setQuickScraping(false);
+        scrapeAbortRef.current = null;
+      }
     }
-  }, [guessCategory]);
+  }, [authenticatedScrapeFetch, copy.lookupUnavailable, copy.productLookup, copy.signInFetch, guessCategory, user]);
 
-  const activeItems = useMemo(() => getActiveItems(), [items]);
-  const acquiredItemsList = useMemo(() => getAcquiredItems(), [items]);
-  const removedItems = useMemo(() => getRemovedItems(), [items]);
-  const rankedItems = useMemo(() => getRankedItems(), [items]);
+  const activeItems = useMemo(() => items.filter((item) => !item.acquiredAt && !item.removedAt), [items]);
+  const acquiredItemsList = useMemo(() => items
+    .filter((item) => item.acquiredAt)
+    .sort((a, b) => (b.acquiredAt || 0) - (a.acquiredAt || 0)), [items]);
+  const removedItems = useMemo(() => items
+    .filter((item) => item.removedAt)
+    .sort((a, b) => (b.removedAt || 0) - (a.removedAt || 0)), [items]);
+  const rankedItems = useMemo(() => items
+    .filter((item) => !item.acquiredAt && !item.removedAt)
+    .sort((a, b) => b.elo - a.elo), [items]);
   const stats = useMemo(() => getVaultStats(items, duels), [items, duels]);
+  const activeValueTotals = useMemo(() => totalsByCurrency(activeItems), [activeItems]);
+  const acquiredValueTotals = useMemo(() => totalsByCurrency(acquiredItemsList), [acquiredItemsList]);
   const confidence = useMemo(() => rankingConfidence(items), [items]);
   const itemsByCategory = useMemo(() => {
     const map: Record<VaultCategory, VaultItem[]> = {
@@ -171,35 +343,135 @@ export default function WishlistPage() {
     setDuelResult(null);
   }, [activeItems]);
 
+  useEffect(() => {
+    if (view !== 'auction' || duelResult) return;
+
+    const activeIds = new Set(activeItems.map((item) => item.id));
+    const pairIsUsable = duelPair
+      && activeIds.has(duelPair[0].id)
+      && activeIds.has(duelPair[1].id);
+    if (pairIsUsable) return;
+
+    const nextPair = pickDuelPair(activeItems);
+    if (nextPair !== null || duelPair !== null) setDuelPair(nextPair);
+  }, [activeItems, duelPair, duelResult, view]);
+
   const handleDuelChoice = (winnerId: string) => {
     if (!duelPair) return;
     const loserId = duelPair[0].id === winnerId ? duelPair[1].id : duelPair[0].id;
     recordDuel(winnerId, loserId);
     setDuelResult({ winnerId });
     setDuelCount((c) => c + 1);
-    setTimeout(() => {
+    if (duelTimeoutRef.current) clearTimeout(duelTimeoutRef.current);
+    duelTimeoutRef.current = setTimeout(() => {
       const pair = pickDuelPair(useWishlistStore.getState().getActiveItems());
       setDuelPair(pair);
       setDuelResult(null);
+      duelTimeoutRef.current = null;
     }, 1200);
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormName(''); setFormPrice(''); setFormCurrency('EUR');
     setFormUrl(''); setFormImageUrl(''); setFormCategory('tech');
-    setFormNotes(''); setEditingItem(null);
-  };
+    setFormNotes(''); setFormError(''); setEditingItem(null);
+  }, []);
+
+  const closeQuickAdd = useCallback(() => {
+    scrapeGenerationRef.current += 1;
+    scrapeAbortRef.current?.abort();
+    scrapeAbortRef.current = null;
+    if (scrapeTimeoutRef.current) clearTimeout(scrapeTimeoutRef.current);
+    scrapeTimeoutRef.current = null;
+    setQuickScraping(false);
+    setShowQuickAdd(false);
+    setQuickExpanded(false);
+    setQuickName('');
+    setQuickPrice('');
+    setQuickCurrency('EUR');
+    setQuickPriceEstimated(false);
+    setQuickCategory('tech');
+    setQuickUrl('');
+    setQuickImageUrl('');
+    setQuickNotes('');
+    setQuickScrapedSite('');
+    setQuickError('');
+  }, []);
+
+  const formDraftDirty = editingItem
+    ? formName !== editingItem.name
+      || formPrice !== (editingItem.price?.toString() ?? '')
+      || formCurrency !== (editingItem.currency || 'EUR')
+      || formUrl !== (editingItem.url || '')
+      || formImageUrl !== (editingItem.imageUrl || '')
+      || formCategory !== editingItem.category
+      || formNotes !== (editingItem.notes || '')
+    : formName !== ''
+      || formPrice !== ''
+      || formCurrency !== 'EUR'
+      || formUrl !== ''
+      || formImageUrl !== ''
+      || formCategory !== 'tech'
+      || formNotes !== '';
+
+  const quickDraftDirty = quickName !== ''
+    || quickPrice !== ''
+    || quickCurrency !== 'EUR'
+    || quickCategory !== 'tech'
+    || quickUrl !== ''
+    || quickImageUrl !== ''
+    || quickNotes !== '';
+
+  const closeForm = useCallback(() => {
+    setDiscardTarget(null);
+    resetForm();
+    setView('gallery');
+  }, [resetForm]);
+
+  const requestCloseForm = useCallback(() => {
+    if (formDraftDirty) {
+      setDiscardTarget('form');
+      return;
+    }
+    closeForm();
+  }, [closeForm, formDraftDirty]);
+
+  const requestCloseQuickAdd = useCallback(() => {
+    if (quickDraftDirty) {
+      setDiscardTarget('quick');
+      return;
+    }
+    closeQuickAdd();
+  }, [closeQuickAdd, quickDraftDirty]);
+
+  useEffect(() => {
+    if (view !== 'add' && view !== 'edit') return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || discardTarget !== null) return;
+      event.preventDefault();
+      requestCloseForm();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [discardTarget, requestCloseForm, view]);
 
   const handleQuickAdd = () => {
     if (!quickName.trim()) return;
-    const price = quickPrice ? parseFloat(quickPrice) : undefined;
-    addItem({
-      name: quickName.trim(), price, priceEstimated: quickPriceEstimated && !!price, currency: 'EUR', category: quickCategory,
+    const price = parsePriceInput(quickPrice);
+    const added = addItem({
+      name: quickName.trim(), price, priceEstimated: quickPriceEstimated && price !== undefined, currency: quickCurrency, category: quickCategory,
       url: quickUrl.trim() || undefined, imageUrl: quickImageUrl.trim() || undefined,
+      notes: quickNotes.trim() || undefined,
     });
-    setQuickName(''); setQuickPrice(''); setQuickPriceEstimated(false); setQuickCategory('tech');
-    setQuickExpanded(false); setQuickUrl(''); setQuickImageUrl('');
+    if (!added) {
+      setQuickError(copy.capacity);
+      return;
+    }
+    setQuickName(''); setQuickPrice(''); setQuickCurrency('EUR'); setQuickPriceEstimated(false); setQuickCategory('tech');
+    setQuickExpanded(false); setQuickUrl(''); setQuickImageUrl(''); setQuickNotes('');
     setQuickScrapedSite('');
+    setQuickError('');
     quickInputRef.current?.focus();
   };
 
@@ -207,12 +479,12 @@ export default function WishlistPage() {
     setFormName(item.name); setFormPrice(item.price?.toString() || '');
     setFormCurrency(item.currency); setFormUrl(item.url || '');
     setFormImageUrl(item.imageUrl || ''); setFormCategory(item.category);
-    setFormNotes(item.notes || ''); setEditingItem(item); setView('edit');
+    setFormNotes(item.notes || ''); setFormError(''); setEditingItem(item); setView('edit');
   };
 
   const handleSubmit = () => {
     if (!formName.trim()) return;
-    const price = formPrice ? parseFloat(formPrice) : undefined;
+    const price = parsePriceInput(formPrice);
     if (editingItem) {
       updateItem(editingItem.id, {
         name: formName.trim(), price, currency: formCurrency,
@@ -220,13 +492,17 @@ export default function WishlistPage() {
         category: formCategory, notes: formNotes.trim() || undefined,
       });
     } else {
-      addItem({
+      const added = addItem({
         name: formName.trim(), price, currency: formCurrency,
         url: formUrl.trim() || undefined, imageUrl: formImageUrl.trim() || undefined,
         category: formCategory, notes: formNotes.trim() || undefined,
       });
+      if (!added) {
+        setFormError(copy.capacity);
+        return;
+      }
     }
-    resetForm(); setView('gallery');
+    closeForm();
   };
 
   if (!mounted) return null;
@@ -238,82 +514,97 @@ export default function WishlistPage() {
     return (
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center gap-3">
-          <button onClick={() => { resetForm(); setView('gallery'); }} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button type="button" aria-label={copy.gallery} onClick={requestCloseForm} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-sm font-medium">{editingItem ? 'Edit' : 'New'} Piece</span>
+          <span className="text-sm font-medium">{editingItem ? copy.edit : copy.new} {copy.piece}</span>
         </div>
 
         <div className="p-4 lg:p-8 max-w-lg mx-auto w-full space-y-5">
           <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">Name</label>
-            <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="What is it?" autoFocus
-              className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
+            <label htmlFor="wishlist-item-name" className="text-xs text-muted-foreground mb-1.5 block">{copy.name}</label>
+            <input id="wishlist-item-name" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder={copy.whatIsIt} autoFocus
+              className="min-h-11 w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
-              <label className="text-xs text-muted-foreground mb-1.5 block">Price</label>
-              <input value={formPrice} onChange={(e) => setFormPrice(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="—" type="text" inputMode="decimal"
-                className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all tabular-nums" />
+              <label htmlFor="wishlist-item-price" className="text-xs text-muted-foreground mb-1.5 block">{copy.price}</label>
+              <input id="wishlist-item-price" value={formPrice} onChange={(e) => setFormPrice(e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="—" type="text" inputMode="decimal"
+                className="min-h-11 w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all tabular-nums" />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block">Currency</label>
-              <select value={formCurrency} onChange={(e) => setFormCurrency(e.target.value)}
-                className="w-full border border-border bg-transparent px-2 py-2.5 text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all appearance-none text-center">
-                {['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'].map((c) => <option key={c} value={c}>{c}</option>)}
+              <label htmlFor="wishlist-item-currency" className="text-xs text-muted-foreground mb-1.5 block">{copy.currency}</label>
+              <select id="wishlist-item-currency" value={formCurrency} onChange={(e) => setFormCurrency(e.target.value)}
+                className="min-h-11 w-full border border-border bg-transparent px-2 py-2.5 text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all appearance-none text-center">
+                {SUPPORTED_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>
 
-          <div>
-            <label className="text-xs text-muted-foreground mb-2 block">Category</label>
+          <fieldset>
+            <legend className="text-xs text-muted-foreground mb-2 block">{copy.category}</legend>
             <div className="flex flex-wrap gap-1.5">
               {VAULT_CATEGORIES.map((cat) => {
                 const Icon = CATEGORY_ICONS[cat.icon] || Package;
                 const sel = formCategory === cat.id;
                 return (
-                  <button key={cat.id} onClick={() => setFormCategory(cat.id)}
-                    className={cn('flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-all border',
+                  <button type="button" key={cat.id} onClick={() => setFormCategory(cat.id)} aria-pressed={sel}
+                    className={cn('flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-all border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       sel ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/30')}>
-                    <Icon className="h-3 w-3" strokeWidth={1.5} />{cat.label}
+                    <Icon className="h-3 w-3" strokeWidth={1.5} />{copy.categories[cat.id][0]}
                   </button>
                 );
               })}
             </div>
+          </fieldset>
+
+          <div>
+            <label htmlFor="wishlist-item-url" className="text-xs text-muted-foreground mb-1.5 block">{copy.link}</label>
+            <input id="wishlist-item-url" value={formUrl} onChange={(e) => setFormUrl(e.target.value)} placeholder="https://..." type="url"
+              className="min-h-11 w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">Link</label>
-            <input value={formUrl} onChange={(e) => setFormUrl(e.target.value)} placeholder="https://..."
-              className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
-          </div>
-
-          <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">Image URL</label>
-            <input value={formImageUrl} onChange={(e) => setFormImageUrl(e.target.value)} placeholder="https://..."
-              className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
+            <label htmlFor="wishlist-item-image-url" className="text-xs text-muted-foreground mb-1.5 block">{copy.imageUrl}</label>
+            <input id="wishlist-item-image-url" value={formImageUrl} onChange={(e) => setFormImageUrl(e.target.value)} placeholder="https://..." type="url"
+              className="min-h-11 w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
             {formImageUrl && (
               <div className="mt-3 rounded-lg border border-border overflow-hidden h-40 bg-muted/30">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={formImageUrl} alt="" className="w-full h-full object-contain p-3"
+                <img src={formImageUrl} alt="" decoding="async" className="w-full h-full object-contain p-3"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               </div>
             )}
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">Notes</label>
-            <textarea value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="Why do you want this?" rows={3}
-              className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all resize-none" />
+            <label htmlFor="wishlist-item-notes" className="text-xs text-muted-foreground mb-1.5 block">{copy.notes}</label>
+            <textarea id="wishlist-item-notes" value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder={copy.whyWant} rows={3}
+              className="min-h-[88px] w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all resize-none" />
           </div>
 
-          <button onClick={handleSubmit} disabled={!formName.trim()}
+          {formError && (
+            <p role="alert" className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              {formError}
+            </p>
+          )}
+
+          <button type="button" onClick={handleSubmit} disabled={!formName.trim()} aria-disabled={!formName.trim()}
             className={cn('w-full flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium transition-all',
               formName.trim() ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]' : 'bg-muted text-muted-foreground cursor-not-allowed')}>
-            {editingItem ? 'Save Changes' : 'Add to Collection'}
+            {editingItem ? copy.saveChanges : copy.addCollection}
           </button>
         </div>
+        <DraftDiscardDialog
+          open={discardTarget === 'form'}
+          title={copy.discardTitle}
+          description={copy.discardDescription}
+          keepLabel={copy.keepEditing}
+          discardLabel={copy.discard}
+          onKeep={() => setDiscardTarget(null)}
+          onDiscard={closeForm}
+        />
       </div>
     );
   }
@@ -322,7 +613,6 @@ export default function WishlistPage() {
   // AUCTION — Editorial Comparison
   // ═══════════════════════════════════════════════════════
   if (view === 'auction') {
-    if (!duelPair) startNewDuel();
     const target = recommendedRounds(activeItems.length);
     const sessionDone = duelCount >= target && duelCount > 0;
 
@@ -331,21 +621,21 @@ export default function WishlistPage() {
         <div className="px-4 lg:px-8 py-4 border-b border-border/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button onClick={() => { setView('gallery'); setDuelCount(0); }} className="text-muted-foreground hover:text-foreground transition-colors">
+              <button type="button" aria-label={copy.gallery} onClick={() => { setView('gallery'); setDuelCount(0); }} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <div>
-                <span className="text-sm font-medium">Auction</span>
+                <span className="text-sm font-medium">{copy.auction}</span>
                 <span className="text-xs text-muted-foreground ml-2 tabular-nums">{duelCount}/{target}</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
               {confidence >= 100 && (
-                <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Ranking stable</span>
+                <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">{copy.stable}</span>
               )}
               {duels.length > 0 && (
-                <button onClick={() => setView('leaderboard')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  Rankings →
+                <button type="button" onClick={() => setView('leaderboard')} className="min-h-11 px-2 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  {copy.rankingsArrow}
                 </button>
               )}
             </div>
@@ -361,7 +651,18 @@ export default function WishlistPage() {
           </div>
         </div>
 
-        {sessionDone ? (
+        {activeItems.length < 2 ? (
+          <div className="flex items-center justify-center py-24">
+            <div className="text-center space-y-3">
+              <p className="text-lg font-medium">{copy.notEnough}</p>
+              <p className="text-sm text-muted-foreground">{copy.needTwo}</p>
+              <button type="button" onClick={() => { setView('gallery'); setShowQuickAdd(true); }}
+                className="inline-flex min-h-11 items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all mt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Plus className="h-3.5 w-3.5" /> {copy.addItems}
+              </button>
+            </div>
+          </div>
+        ) : sessionDone ? (
           /* Session complete */
           <div className="flex items-center justify-center py-24">
             <div className="text-center space-y-4 max-w-sm">
@@ -369,40 +670,34 @@ export default function WishlistPage() {
                 <Trophy className="h-5 w-5 text-emerald-500" />
               </div>
               <div>
-                <p className="text-lg font-semibold tracking-tight">Rankings updated</p>
+              <p className="text-lg font-semibold tracking-tight">{copy.updated}</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {duelCount} rounds completed · {confidence}% confidence
+                  {interpolate(copy.roundsCompleted, { rounds: duelCount, confidence })}
                 </p>
               </div>
               <div className="flex items-center justify-center gap-2 pt-2">
-                <button onClick={() => setView('leaderboard')}
-                  className="inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all">
-                  <Crown className="h-3.5 w-3.5" /> View rankings
+                <button type="button" onClick={() => setView('leaderboard')}
+                  className="inline-flex min-h-11 items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Crown className="h-3.5 w-3.5" /> {copy.viewRankings}
                 </button>
-                <button onClick={() => { setDuelCount(0); startNewDuel(); }}
-                  className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all">
-                  <Gavel className="h-3.5 w-3.5" /> Keep going
+                <button type="button" onClick={() => { setDuelCount(0); startNewDuel(); }}
+                  className="inline-flex min-h-11 items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Gavel className="h-3.5 w-3.5" /> {copy.keepGoing}
                 </button>
               </div>
             </div>
           </div>
         ) : !duelPair ? (
-          <div className="flex items-center justify-center py-24">
-            <div className="text-center space-y-3">
-              <p className="text-lg font-medium">Not enough pieces</p>
-              <p className="text-sm text-muted-foreground">Add at least two items to start comparing.</p>
-              <button onClick={() => { setView('gallery'); setShowQuickAdd(true); }}
-                className="inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all mt-2">
-                <Plus className="h-3.5 w-3.5" /> Add items
-              </button>
-            </div>
+          <div role="status" className="flex items-center justify-center gap-2 py-24 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            <span>{copy.preparing}</span>
           </div>
         ) : (
           <div className="flex flex-col h-[calc(100dvh-theme(spacing.28))] lg:h-auto lg:p-8 max-w-4xl mx-auto">
             {/* Question — compact on mobile */}
             <div className="text-center py-4 lg:py-0 lg:mb-12 shrink-0">
-              <p className="hidden lg:block text-xs text-muted-foreground uppercase tracking-widest mb-2">Lot Comparison</p>
-              <h2 className="text-base lg:text-2xl font-semibold tracking-tight">Which do you want more?</h2>
+              <p className="hidden lg:block text-xs text-muted-foreground uppercase tracking-widest mb-2">{copy.comparison}</p>
+              <h2 className="text-base lg:text-2xl font-semibold tracking-tight">{copy.whichMore}</h2>
             </div>
 
             {/* Two lots — side by side on mobile, stacked on desktop */}
@@ -426,7 +721,7 @@ export default function WishlistPage() {
                     {item.imageUrl ? (
                       <div className="flex-1 min-h-0 overflow-hidden bg-muted/20">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt={item.name}
+                        <img src={item.imageUrl} alt={item.name} decoding="async"
                           className={cn('w-full h-full object-contain p-3 lg:p-6 transition-transform duration-500', !duelResult && 'group-hover:scale-105')} />
                       </div>
                     ) : (
@@ -438,14 +733,14 @@ export default function WishlistPage() {
                     {/* Info — compact on mobile */}
                     <div className="p-2.5 lg:p-5 shrink-0">
                       <p className="text-[10px] lg:text-xs text-muted-foreground mb-0.5 lg:mb-1 font-mono tabular-nums truncate">
-                        <span className="hidden lg:inline">Lot {lotNumber(idx)} · </span>{VAULT_CATEGORIES.find(c => c.id === item.category)?.label}
+                        <span className="hidden lg:inline">{copy.lot} {lotNumber(idx)} · </span>{copy.categories[item.category][0]}
                       </p>
                       <p className="text-xs lg:text-lg font-semibold tracking-tight line-clamp-2 leading-tight">{item.name}</p>
                       <div className="flex items-center justify-between mt-1.5 lg:mt-3 pt-1.5 lg:pt-3 border-t border-border/50">
                         {item.price !== undefined ? (
                           <p className="text-xs lg:text-base font-semibold tabular-nums">{formatPrice(item.price, item.currency)}</p>
                         ) : (
-                          <p className="text-[10px] lg:text-sm text-muted-foreground/50">No price</p>
+                          <p className="text-[10px] lg:text-sm text-muted-foreground/50">{copy.noPrice}</p>
                         )}
                         <p className="text-[10px] lg:text-xs text-muted-foreground tabular-nums font-mono">{item.elo}</p>
                       </div>
@@ -455,7 +750,7 @@ export default function WishlistPage() {
                     {isWinner && (
                       <div className="absolute top-2 right-2 lg:top-3 lg:right-3 bg-foreground text-background rounded-full p-1.5 lg:px-2.5 lg:py-1 text-[10px] font-semibold flex items-center gap-1 animate-scale-in">
                         <Check className="h-3 w-3" />
-                        <span className="hidden lg:inline">Selected</span>
+                        <span className="hidden lg:inline">{copy.selected}</span>
                       </div>
                     )}
                   </button>
@@ -466,8 +761,8 @@ export default function WishlistPage() {
             {/* Skip — bottom of screen on mobile */}
             {!duelResult && (
               <div className="py-4 lg:mt-8 flex justify-center shrink-0">
-                <button onClick={startNewDuel} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-                  Skip <ArrowRight className="h-3 w-3" />
+                <button type="button" onClick={startNewDuel} className="flex min-h-11 items-center gap-1 px-2 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  {copy.skip} <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
             )}
@@ -486,19 +781,19 @@ export default function WishlistPage() {
         <div className="px-4 lg:px-8 py-4 border-b border-border/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button onClick={() => setView('gallery')} className="text-muted-foreground hover:text-foreground transition-colors">
+              <button type="button" aria-label={copy.gallery} onClick={() => setView('gallery')} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-sm font-medium">Rankings</span>
+              <span className="text-sm font-medium">{copy.rankings}</span>
             </div>
             <div className="flex items-center gap-2">
               {confidence > 0 && (
                 <span className={cn('text-[10px] tabular-nums font-medium',
                   confidence >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}>
-                  {confidence}% confident
+                  {interpolate(copy.confident, { confidence })}
                 </span>
               )}
-              <span className="text-[10px] text-muted-foreground/40 tabular-nums">{duels.length} duels</span>
+              <span className="text-[10px] text-muted-foreground/40 tabular-nums">{interpolate(copy.duels, { count: duels.length })}</span>
             </div>
           </div>
           {/* Confidence bar */}
@@ -512,8 +807,8 @@ export default function WishlistPage() {
         <div className="p-3 lg:p-8 max-w-2xl mx-auto w-full">
           {rankedItems.length === 0 ? (
             <div className="text-center py-20">
-              <p className="text-base font-medium text-muted-foreground/50">No rankings yet</p>
-              <p className="text-sm text-muted-foreground/30 mt-1">Run some auctions first.</p>
+              <p className="text-base font-medium text-muted-foreground/50">{copy.noRankings}</p>
+              <p className="text-sm text-muted-foreground/30 mt-1">{copy.auctionFirst}</p>
             </div>
           ) : (
             <div className="space-y-0">
@@ -529,7 +824,12 @@ export default function WishlistPage() {
                     {/* Rank */}
                     <div className={cn('w-7 text-center shrink-0 font-mono',
                       idx === 0 ? 'text-lg font-bold' : 'text-base font-semibold')}>
-                      {idx === 0 ? '👑' : idx + 1}
+                      {idx === 0 ? (
+                        <>
+                          <Crown aria-hidden="true" className="mx-auto h-4 w-4" />
+                          <span className="sr-only">{copy.rank.replace('{rank}', '1')}</span>
+                        </>
+                      ) : idx + 1}
                     </div>
 
                     {/* Thumb */}
@@ -537,7 +837,7 @@ export default function WishlistPage() {
                       <div className={cn('rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20',
                         idx === 0 ? 'h-14 w-14' : 'h-11 w-11')}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain p-0.5" />
                       </div>
                     ) : (
                       <div className={cn('rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50',
@@ -592,7 +892,7 @@ export default function WishlistPage() {
                     {item.imageUrl ? (
                       <div className="h-8 w-8 rounded overflow-hidden shrink-0 border border-border/40 bg-muted/20">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt="" className="w-full h-full object-contain" />
+                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain" />
                       </div>
                     ) : (
                       <div className="h-8 w-8 rounded flex items-center justify-center shrink-0 bg-muted/20">
@@ -616,9 +916,9 @@ export default function WishlistPage() {
           )}
 
           {rankedItems.length >= 2 && (
-            <button onClick={() => { setView('auction'); startNewDuel(); }}
+            <button type="button" onClick={() => { setView('auction'); startNewDuel(); }}
               className="w-full mt-4 lg:mt-6 flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98]">
-              <Gavel className="h-3.5 w-3.5" /> {confidence < 100 ? `Improve rankings (${confidence}%)` : 'Continue Auction'}
+              <Gavel className="h-3.5 w-3.5" /> {confidence < 100 ? interpolate(copy.improve, { confidence }) : copy.continueAuction}
             </button>
           )}
         </div>
@@ -635,14 +935,14 @@ export default function WishlistPage() {
       <div className="min-h-full bg-background">
         <div className="px-4 lg:px-8 py-4 border-b border-border/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => { setView('gallery'); setShowRemoved(false); }} className="text-muted-foreground hover:text-foreground transition-colors">
+            <button type="button" aria-label={copy.gallery} onClick={() => { setView('gallery'); setShowRemoved(false); }} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="text-sm font-medium">{showRemoved ? 'Removed' : 'Acquired'}</span>
+            <span className="text-sm font-medium">{showRemoved ? copy.removed : copy.acquired}</span>
           </div>
-          <button onClick={() => setShowRemoved(!showRemoved)}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded-lg px-2.5 py-1">
-            {showRemoved ? 'Show Acquired' : 'Show Removed'}
+          <button type="button" onClick={() => setShowRemoved(!showRemoved)}
+            className="min-h-11 px-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {showRemoved ? copy.showAcquired : copy.showRemoved}
           </button>
         </div>
 
@@ -650,26 +950,29 @@ export default function WishlistPage() {
           {/* Spend summary */}
           {!showRemoved && acquiredItemsList.length > 0 && (
             <div className="mb-6 pb-6 border-b border-border/50 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Total Spent</p>
-              <p className="text-3xl font-semibold tabular-nums">{formatPrice(stats.acquiredValue, acquiredItemsList[0]?.currency || 'EUR')}</p>
-              <p className="text-xs text-muted-foreground mt-1">{acquiredItemsList.length} items acquired</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{copy.totalSpent}</p>
+              <p className="text-3xl font-semibold tabular-nums">{formatCurrencyTotals(acquiredValueTotals) || '—'}</p>
+              {acquiredValueTotals.length > 1 && (
+                <p className="text-[10px] text-muted-foreground/45 mt-1">{copy.currenciesSeparate}</p>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">{interpolate(copy.itemsAcquired, { count: acquiredItemsList.length })}</p>
             </div>
           )}
 
           {displayItems.length === 0 ? (
             <div className="text-center py-20">
-              <p className="text-base font-medium text-muted-foreground/50">Nothing here yet</p>
+              <p className="text-base font-medium text-muted-foreground/50">{copy.nothingHere}</p>
             </div>
           ) : displayItems.map((item) => {
             const date = new Date(showRemoved ? (item.removedAt || 0) : (item.acquiredAt || 0));
-            const dateStr = date.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+            const dateStr = date.toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' });
             const CatIcon = getCategoryIcon(item.category);
             return (
               <div key={item.id} className="flex items-center gap-3.5 py-3 border-b border-border/30 last:border-0 group">
                 {item.imageUrl ? (
                   <div className="h-11 w-11 rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.imageUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                    <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain p-0.5" />
                   </div>
                 ) : (
                   <div className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50">
@@ -684,12 +987,24 @@ export default function WishlistPage() {
                   {item.price !== undefined && (
                     <p className="text-sm font-medium tabular-nums">{formatPrice(item.price, item.currency)}</p>
                   )}
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => restoreItem(item.id)} className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-md hover:bg-muted/50" title="Restore">
-                      <Undo2 className="h-3.5 w-3.5" />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => restoreItem(item.id)}
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      title={interpolate(copy.restore, { name: item.name })}
+                      aria-label={interpolate(copy.restore, { name: item.name })}
+                    >
+                      <Undo2 className="h-4 w-4" />
                     </button>
-                    <button onClick={() => deleteItem(item.id)} className="text-muted-foreground hover:text-destructive transition-colors p-1.5 rounded-md hover:bg-muted/50" title="Delete">
-                      <Trash2 className="h-3.5 w-3.5" />
+                    <button
+                      type="button"
+                      onClick={() => setDeleteCandidate(item)}
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+                      title={interpolate(copy.deletePermanently, { name: item.name })}
+                      aria-label={interpolate(copy.deletePermanently, { name: item.name })}
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
@@ -697,6 +1012,18 @@ export default function WishlistPage() {
             );
           })}
         </div>
+        <ConfirmDialog
+          open={deleteCandidate !== null}
+          onOpenChange={(open) => {
+            if (!open) setDeleteCandidate(null);
+          }}
+          title={deleteCandidate ? interpolate(copy.deleteTitle, { name: deleteCandidate.name }) : copy.deleteFallback}
+          description={copy.deleteDescription}
+          confirmLabel={copy.deleteConfirm}
+          onConfirm={() => {
+            if (deleteCandidate) deleteItem(deleteCandidate.id);
+          }}
+        />
       </div>
     );
   }
@@ -714,29 +1041,32 @@ export default function WishlistPage() {
       <div className="px-4 lg:px-8 py-4 border-b border-border/50">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-lg font-semibold tracking-tight">The Vault</span>
+            <h1 className="inline text-lg font-semibold tracking-tight">{copy.vault}</h1>
             <span className="text-[11px] text-muted-foreground/40 ml-2 hidden sm:inline tabular-nums">
-              {stats.totalItems} piece{stats.totalItems !== 1 && 's'}
-              {stats.totalValue > 0 && <> · {formatPrice(stats.totalValue, 'EUR')}</>}
+              {interpolate(copy.itemCount, { count: stats.totalItems, item: language === 'de' ? 'Stück' : stats.totalItems === 1 ? 'piece' : 'pieces' })}
+              {activeValueTotals.length > 0 && <> · {formatCurrencyTotals(activeValueTotals)}</>}
             </span>
           </div>
-          <button onClick={() => setShowQuickAdd(true)}
-            className="inline-flex items-center gap-1.5 text-xs font-medium bg-foreground text-background px-3 py-1.5 rounded-lg hover:opacity-90 transition-all">
-            <Plus className="h-3.5 w-3.5" /> Add
+          <button type="button" onClick={() => setShowQuickAdd(true)}
+            className="inline-flex min-h-11 items-center gap-1.5 text-xs font-medium bg-foreground text-background px-3 py-1.5 rounded-lg hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Plus className="h-3.5 w-3.5" /> {copy.add}
           </button>
         </div>
         {/* Nav row */}
-        <div className="flex items-center gap-1 mt-3 -mb-px">
+        <nav aria-label={copy.navigation} className="flex items-center gap-1 mt-3 -mb-px">
           {([
-            { id: 'gallery' as const, icon: Gem, label: 'Gallery' },
-            { id: 'auction' as const, icon: Gavel, label: 'Auction' },
-            { id: 'leaderboard' as const, icon: Crown, label: 'Rankings' },
-            { id: 'acquired' as const, icon: ShoppingBag, label: 'Acquired' },
+            { id: 'gallery' as const, icon: Gem, label: copy.gallery },
+            { id: 'auction' as const, icon: Gavel, label: copy.auction },
+            { id: 'leaderboard' as const, icon: Crown, label: copy.rankings },
+            { id: 'acquired' as const, icon: ShoppingBag, label: copy.acquired },
           ] as const).map((tab) => (
             <button key={tab.id}
+              type="button"
+              aria-label={tab.label}
+              aria-pressed={view === tab.id}
               onClick={() => { if (tab.id === 'auction') startNewDuel(); setView(tab.id); }}
               className={cn(
-                'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-all',
+                'flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto',
                 view === tab.id
                   ? 'bg-foreground/8 text-foreground font-medium'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -745,7 +1075,7 @@ export default function WishlistPage() {
               <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
-        </div>
+        </nav>
       </div>
 
       {/* ── Gallery body — 3D room ────────────────── */}
@@ -753,11 +1083,11 @@ export default function WishlistPage() {
         {activeItems.length === 0 ? (
           <div className="text-center py-24 px-4 text-muted-foreground/60">
             <Gem className="h-10 w-10 mx-auto mb-4 text-muted-foreground/20" strokeWidth={1} />
-            <p className="text-lg font-medium">Your vault is empty</p>
-            <p className="text-sm mt-1 mb-4">Paste a URL or add items to start your collection.</p>
-            <button onClick={() => setShowQuickAdd(true)}
-              className="inline-flex items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all">
-              <Plus className="h-3.5 w-3.5" /> Add first piece
+            <p className="text-lg font-medium">{copy.empty}</p>
+            <p className="text-sm mt-1 mb-4">{copy.emptyDescription}</p>
+            <button type="button" onClick={() => setShowQuickAdd(true)}
+              className="inline-flex min-h-11 items-center gap-2 text-sm font-medium bg-foreground text-background px-4 py-2 rounded-lg hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Plus className="h-3.5 w-3.5" /> {copy.addFirst}
             </button>
           </div>
         ) : (
@@ -767,7 +1097,8 @@ export default function WishlistPage() {
               <div className="px-4 lg:px-8 pt-8 lg:pt-12 pb-2">
                 <button
                   onClick={() => setExpandedCard(expandedCard === heroItem.id ? null : heroItem.id)}
-                  className="w-full text-left group"
+                  aria-expanded={expandedCard === heroItem.id}
+                  className="w-full min-h-11 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-2xl"
                 >
                   <div className="relative overflow-hidden rounded-2xl vault-frame bg-background">
                     {/* Ambient ceiling light */}
@@ -777,7 +1108,7 @@ export default function WishlistPage() {
                       {heroItem.imageUrl ? (
                         <div className="w-full sm:w-1/2 aspect-square sm:aspect-auto sm:h-64 lg:h-80 flex items-center justify-center p-6 lg:p-12 vault-spotlight">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={heroItem.imageUrl} alt={heroItem.name}
+                          <img src={heroItem.imageUrl} alt={heroItem.name} loading="eager" fetchPriority="high" decoding="async"
                             className="max-w-full max-h-full object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-transform duration-700 group-hover:scale-[1.03]" />
                         </div>
                       ) : (
@@ -787,18 +1118,18 @@ export default function WishlistPage() {
                       )}
                       {/* Hero placard */}
                       <div className="flex-1 p-5 sm:p-8 lg:p-10 sm:border-l border-border/30">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/50 mb-2">Featured Piece</p>
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/50 mb-2">{copy.featured}</p>
                         <h2 className="text-lg lg:text-2xl font-semibold tracking-tight leading-snug mb-3">{heroItem.name}</h2>
                         {heroItem.price !== undefined && (
                           <p className="text-sm lg:text-base font-medium tabular-nums text-muted-foreground/80 mb-3">
                             {heroItem.priceEstimated && '~'}{formatPrice(heroItem.price, heroItem.currency)}
-                            {heroItem.priceEstimated && <span className="text-[10px] ml-1 text-amber-500">est.</span>}
+                            {heroItem.priceEstimated && <span className="text-[10px] ml-1 text-amber-500">{copy.estimated}</span>}
                           </p>
                         )}
                         <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
-                          <span className="uppercase tracking-wider">{VAULT_CATEGORIES.find(c => c.id === heroItem.category)?.label}</span>
-                          {heroItem.duelsPlayed > 0 && <span className="tabular-nums font-mono">{heroItem.elo} pts</span>}
-                          <span>#{rankedItems.findIndex(r => r.id === heroItem.id) + 1} Ranked</span>
+                          <span className="uppercase tracking-wider">{copy.categories[heroItem.category][0]}</span>
+                          {heroItem.duelsPlayed > 0 && <span className="tabular-nums font-mono">{heroItem.elo} {copy.points}</span>}
+                          <span>{interpolate(copy.ranked, { rank: rankedItems.findIndex(r => r.id === heroItem.id) + 1 })}</span>
                         </div>
                         {heroItem.notes && (
                           <p className="text-xs text-muted-foreground/60 mt-3 line-clamp-2 leading-relaxed italic">&ldquo;{heroItem.notes}&rdquo;</p>
@@ -828,7 +1159,7 @@ export default function WishlistPage() {
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2.5">
                           <CatIcon className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.5} />
-                          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">{cat.wing}</h2>
+                          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">{copy.categories[cat.id][1]}</h2>
                           <span className="text-[10px] text-muted-foreground/35 tabular-nums">{displayItems.length}</span>
                         </div>
                         <div className="flex-1" />
@@ -842,10 +1173,10 @@ export default function WishlistPage() {
                         const hasImage = !!item.imageUrl;
                         return (
                           <div key={item.id}
-                            className="group cursor-pointer"
+                            className="group relative"
                             style={{ transformStyle: 'preserve-3d' }}
-                            onClick={() => setExpandedCard(item.id)}
                           >
+                            <button type="button" aria-label={item.name} onClick={() => setExpandedCard(item.id)} className="absolute inset-0 z-[1] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                             {/* The frame — hangs on wall with depth */}
                             <div className={cn(
                               'relative overflow-hidden rounded-lg vault-frame bg-background transition-all duration-300',
@@ -866,7 +1197,7 @@ export default function WishlistPage() {
                                 {hasImage ? (
                                   <>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={item.imageUrl} alt={item.name}
+                                    <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async"
                                       className="max-w-[80%] max-h-[80%] object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-transform duration-500 group-hover:scale-[1.04]" />
                                   </>
                                 ) : (
@@ -896,8 +1227,8 @@ export default function WishlistPage() {
                                   )}
                                   {item.url && (
                                     <a href={item.url} target="_blank" rel="noopener noreferrer"
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors shrink-0">
+                                      aria-label={interpolate(copy.source, { name: item.name })}
+                                      className="relative z-[2] flex h-11 w-11 items-center justify-center text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                                       <ExternalLink className="h-2.5 w-2.5 lg:h-3 lg:w-3" />
                                     </a>
                                   )}
@@ -927,21 +1258,20 @@ export default function WishlistPage() {
         const rarity = getItemRarity(item);
         const CatIcon = getCategoryIcon(item.category);
         const catLabel = VAULT_CATEGORIES.find(c => c.id === item.category);
-        return createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-8"
-            onClick={() => setExpandedCard(null)}>
-            {/* Dark gallery room backdrop */}
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" />
-            {/* Spotlight cone from above */}
-            <div className="absolute inset-0 pointer-events-none"
-              style={{ background: 'radial-gradient(ellipse 50% 60% at 50% 25%, rgba(255,255,255,0.06) 0%, transparent 100%)' }} />
-            
-            <div className="relative w-full max-w-2xl bg-background rounded-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200 max-h-[90dvh] flex flex-col vault-frame"
+        return (
+          <Dialog open onOpenChange={(open) => {
+            if (!open) setExpandedCard(null);
+          }}>
+            <DialogContent
+              showCloseButton={false}
+              aria-describedby={undefined}
+              className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden rounded-2xl p-0 vault-frame"
               style={{ boxShadow: '0 0 80px -20px rgba(0,0,0,0.3), 0 12px 40px -10px rgba(0,0,0,0.2)' }}
-              onClick={(e) => e.stopPropagation()}>
+            >
+              <DialogTitle className="sr-only">{item.name}</DialogTitle>
               {/* Close */}
-              <button onClick={() => setExpandedCard(null)}
-                className="absolute top-3 right-3 z-10 text-muted-foreground/40 hover:text-foreground transition-colors p-1.5 rounded-full hover:bg-muted/50">
+              <button type="button" onClick={() => setExpandedCard(null)} aria-label={copy.closeDetails}
+                className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground sm:h-9 sm:w-9">
                 <X className="h-4 w-4" />
               </button>
 
@@ -952,7 +1282,7 @@ export default function WishlistPage() {
                 {item.imageUrl ? (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.imageUrl} alt={item.name}
+                    <img src={item.imageUrl} alt={item.name} decoding="async"
                       className="max-w-full max-h-[40vh] object-contain drop-shadow-[0_12px_32px_rgba(0,0,0,0.15)]" />
                   </>
                 ) : (
@@ -965,10 +1295,10 @@ export default function WishlistPage() {
                 {/* Category & rank */}
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/50">
-                    {catLabel?.wing || catLabel?.label}
+                    {copy.categories[item.category][1] || catLabel?.label}
                   </span>
                   {rank > 0 && item.duelsPlayed > 0 && (
-                    <span className="text-[10px] text-muted-foreground/35 tabular-nums font-mono">Rank #{rank}</span>
+                    <span className="text-[10px] text-muted-foreground/35 tabular-nums font-mono">{interpolate(copy.rank, { rank })}</span>
                   )}
                 </div>
 
@@ -980,18 +1310,20 @@ export default function WishlistPage() {
                       {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
                       {item.priceEstimated && (
                         <button onClick={() => updateItem(item.id, { priceEstimated: false })}
-                          className="ml-1.5 inline-flex items-center justify-center h-4 w-4 rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors align-middle"
-                          title="Confirm price">
+                          type="button"
+                          aria-label={copy.confirmPrice}
+                          className="ml-1.5 inline-flex h-11 w-11 items-center justify-center rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors align-middle sm:h-5 sm:w-5"
+                          title={copy.confirmPrice}>
                           <Check className="h-2.5 w-2.5" strokeWidth={3} />
                         </button>
                       )}
                     </span>
                   )}
-                  <span className="text-xs">{getRarityLabel(rarity)}</span>
+                  <span className="text-xs">{copy.rarity[rarity]}</span>
                   {item.duelsPlayed > 0 && (
-                    <span className="text-xs tabular-nums font-mono">{item.elo} pts · {item.duelsWon}W–{item.duelsPlayed - item.duelsWon}L</span>
+                    <span className="text-xs tabular-nums font-mono">{item.elo} {copy.points} · {item.duelsWon}W–{item.duelsPlayed - item.duelsWon}L</span>
                   )}
-                  <span className="text-xs">{new Date(item.addedAt).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                  <span className="text-xs">{new Date(item.addedAt).toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
                 </div>
 
                 {item.notes && (
@@ -1000,50 +1332,58 @@ export default function WishlistPage() {
 
                 {item.url && (
                   <a href={item.url} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-foreground transition-colors mb-5">
-                    <ExternalLink className="h-3 w-3" /> View source
+                    aria-label={interpolate(copy.source, { name: item.name })}
+                    className="inline-flex min-h-11 items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-foreground transition-colors mb-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <ExternalLink className="h-3 w-3" /> {copy.viewSource}
                   </a>
                 )}
 
                 <div className="flex items-center gap-2 pt-4 border-t border-border/30">
-                  <button onClick={() => { acquireItem(item.id); setExpandedCard(null); }}
-                    className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium bg-foreground text-background hover:opacity-90 transition-all">
-                    <ShoppingBag className="h-3.5 w-3.5" /> Acquired
+                  <button type="button" onClick={() => { acquireItem(item.id); setExpandedCard(null); }}
+                    className="flex min-h-11 items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium bg-foreground text-background hover:opacity-90 transition-all">
+                    <ShoppingBag className="h-3.5 w-3.5" /> {copy.acquiredAction}
                   </button>
-                  <button onClick={() => { openEdit(item); setExpandedCard(null); }}
-                    className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all border border-border/60">
-                    <Edit3 className="h-3.5 w-3.5" /> Edit
+                  <button type="button" onClick={() => { openEdit(item); setExpandedCard(null); }}
+                    className="flex min-h-11 items-center gap-1.5 rounded-lg px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all border border-border/60">
+                    <Edit3 className="h-3.5 w-3.5" /> {copy.edit}
                   </button>
-                  <button onClick={() => { removeItem(item.id); setExpandedCard(null); }}
-                    className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all border border-border/60 ml-auto">
-                    <Archive className="h-3.5 w-3.5" /> Remove
+                  <button type="button" onClick={() => { removeItem(item.id); setExpandedCard(null); }}
+                    className="ml-auto flex min-h-11 items-center gap-1.5 rounded-lg border border-border/60 px-4 py-2 text-xs text-muted-foreground transition-all hover:bg-destructive/5 hover:text-destructive">
+                    <Archive className="h-3.5 w-3.5" /> {copy.remove}
                   </button>
                 </div>
               </div>
-            </div>
-          </div>,
-          document.body
+            </DialogContent>
+          </Dialog>
         );
       })()}
 
       {/* ── Quick-add overlay ────────────────────────── */}
-      {showQuickAdd && mounted && createPortal(
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-          onClick={(e) => { if (e.target === e.currentTarget) { setShowQuickAdd(false); setQuickExpanded(false); setQuickName(''); setQuickPrice(''); setQuickUrl(''); setQuickImageUrl(''); setQuickScrapedSite(''); setQuickPriceEstimated(false); } }}>
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div className="relative w-full sm:max-w-md bg-background border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl p-4 sm:p-5 animate-in slide-in-from-bottom-4 duration-200 max-h-[85dvh] overflow-y-auto">
+      <Dialog open={showQuickAdd} onOpenChange={(open) => {
+        if (!open) requestCloseQuickAdd();
+      }}>
+        <DialogContent
+          showCloseButton={false}
+          aria-describedby={undefined}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            quickInputRef.current?.focus();
+          }}
+          className="bottom-0 top-auto max-h-[85dvh] max-w-none translate-y-0 gap-0 overflow-y-auto rounded-b-none rounded-t-2xl p-4 sm:bottom-auto sm:top-1/2 sm:max-w-md sm:-translate-y-1/2 sm:rounded-2xl sm:p-5"
+        >
             {/* Header */}
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold">Add to Collection</span>
-              <button onClick={() => { setShowQuickAdd(false); setQuickExpanded(false); setQuickName(''); setQuickPrice(''); setQuickUrl(''); setQuickImageUrl(''); setQuickScrapedSite(''); setQuickPriceEstimated(false); }}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 -m-1">
+              <DialogTitle className="text-sm font-semibold">{copy.addTitle}</DialogTitle>
+              <button type="button" onClick={requestCloseQuickAdd} aria-label={copy.closeAdd}
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground sm:h-9 sm:w-9">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             {/* URL / Name input */}
+            <label htmlFor="wishlist-quick-name" className="mb-1.5 block text-xs text-muted-foreground">{copy.productInput}</label>
             <div className="relative">
-              <input ref={quickInputRef} value={quickName} onChange={(e) => {
+              <input id="wishlist-quick-name" ref={quickInputRef} aria-busy={quickScraping} value={quickName} onChange={(e) => {
                 setQuickName(e.target.value);
                 // Auto-scrape if URL pasted
                 if (isUrl(e.target.value)) {
@@ -1051,19 +1391,25 @@ export default function WishlistPage() {
                   scrapeTimeoutRef.current = setTimeout(() => scrapeUrl(e.target.value), 600);
                 }
               }}
-                placeholder="Paste a link or type a name…"
+                placeholder={copy.paste}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !quickExpanded) { if (isUrl(quickName)) { scrapeUrl(quickName); } else { setQuickExpanded(true); } } else if (e.key === 'Enter' && quickExpanded) { handleQuickAdd(); } }}
-                className="w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all pr-10" />
+                className="min-h-11 w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all pr-10" />
               {quickScraping && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Loader2 className="h-4 w-4 text-muted-foreground/50 animate-spin" />
+                  <Loader2 aria-label={copy.loading} className="h-4 w-4 text-muted-foreground/50 animate-spin" />
                 </div>
               )}
             </div>
 
             {quickScrapedSite && (
               <p className="text-[11px] text-muted-foreground/50 mt-1.5 flex items-center gap-1">
-                <Globe className="h-3 w-3" /> {quickScrapedSite}
+                <Globe className="h-3 w-3" /> {interpolate(copy.productDetails, { site: quickScrapedSite })}
+              </p>
+            )}
+
+            {quickError && (
+              <p role="status" className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+                {quickError}
               </p>
             )}
 
@@ -1073,33 +1419,62 @@ export default function WishlistPage() {
                 {quickImageUrl && (
                   <div className="rounded-lg border border-border overflow-hidden h-32 bg-muted/10">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={quickImageUrl} alt="" className="w-full h-full object-contain p-2"
+                    <img src={quickImageUrl} alt="" decoding="async" className="w-full h-full object-contain p-2"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   </div>
                 )}
 
-                <div className="flex gap-2">
-                  <input value={quickPrice} onChange={(e) => setQuickPrice(e.target.value.replace(/[^0-9.]/g, ''))}
-                    placeholder="Price" type="text" inputMode="decimal"
-                    className="flex-1 border border-border bg-transparent px-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 tabular-nums" />
-                  <input value={quickImageUrl} onChange={(e) => setQuickImageUrl(e.target.value)}
-                    placeholder="Image URL" type="text"
-                    className="flex-1 border border-border bg-transparent px-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+                <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+                  <div className="min-w-0">
+                    <label htmlFor="wishlist-quick-price" className="mb-1.5 block text-xs text-muted-foreground">{copy.price}</label>
+                    <input id="wishlist-quick-price" value={quickPrice} onChange={(e) => setQuickPrice(e.target.value.replace(/[^0-9.,]/g, ''))}
+                      placeholder="—" type="text" inputMode="decimal"
+                      className="min-h-11 w-full min-w-0 border border-border bg-transparent px-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 tabular-nums" />
+                  </div>
+                  <div>
+                    <label htmlFor="wishlist-quick-currency" className="mb-1.5 block text-xs text-muted-foreground">{copy.currency}</label>
+                    <select id="wishlist-quick-currency" value={quickCurrency} onChange={(e) => setQuickCurrency(e.target.value)}
+                      className="min-h-11 w-full border border-border bg-background px-2 py-2 text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-foreground/20">
+                      {SUPPORTED_CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label htmlFor="wishlist-quick-url" className="mb-1.5 block text-xs text-muted-foreground">{copy.link}</label>
+                    <input id="wishlist-quick-url" value={quickUrl} onChange={(e) => setQuickUrl(e.target.value)}
+                      placeholder="https://..." type="url"
+                      className="min-h-11 w-full min-w-0 border border-border bg-transparent px-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+                  </div>
+                  <div className="col-span-2">
+                    <label htmlFor="wishlist-quick-image-url" className="mb-1.5 block text-xs text-muted-foreground">{copy.imageUrl}</label>
+                    <input id="wishlist-quick-image-url" value={quickImageUrl} onChange={(e) => setQuickImageUrl(e.target.value)}
+                      placeholder="https://..." type="url"
+                      className="min-h-11 w-full min-w-0 border border-border bg-transparent px-3 py-2 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+                  </div>
                 </div>
 
                 {/* Category pills */}
-                <div className="flex flex-wrap gap-1">
-                  {VAULT_CATEGORIES.map((cat) => {
-                    const Icon = CATEGORY_ICONS[cat.icon] || Package;
-                    const sel = quickCategory === cat.id;
-                    return (
-                      <button key={cat.id} onClick={() => setQuickCategory(cat.id)}
-                        className={cn('flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] transition-all border',
-                          sel ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/30')}>
-                        <Icon className="h-2.5 w-2.5" strokeWidth={1.5} />{cat.label}
-                      </button>
-                    );
-                  })}
+                <fieldset>
+                  <legend className="mb-1.5 text-xs text-muted-foreground">{copy.category}</legend>
+                  <div className="flex flex-wrap gap-1">
+                    {VAULT_CATEGORIES.map((cat) => {
+                      const Icon = CATEGORY_ICONS[cat.icon] || Package;
+                      const sel = quickCategory === cat.id;
+                      return (
+                        <button type="button" key={cat.id} onClick={() => setQuickCategory(cat.id)} aria-pressed={sel}
+                          className={cn('flex min-h-11 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] transition-all border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            sel ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/30')}>
+                          <Icon className="h-2.5 w-2.5" strokeWidth={1.5} />{copy.categories[cat.id][0]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
+                <div>
+                  <label htmlFor="wishlist-quick-notes" className="mb-1.5 block text-xs text-muted-foreground">{copy.notes}</label>
+                  <textarea id="wishlist-quick-notes" value={quickNotes} onChange={(e) => setQuickNotes(e.target.value)}
+                    placeholder={copy.whyWant} rows={3}
+                    className="min-h-[88px] w-full resize-none rounded-lg border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20" />
                 </div>
               </div>
             )}
@@ -1107,31 +1482,41 @@ export default function WishlistPage() {
             {/* Actions */}
             <div className="flex items-center gap-2 mt-4">
               {!quickExpanded && quickName.trim() && !isUrl(quickName) && (
-                <button onClick={() => setQuickExpanded(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  More details
+                <button type="button" onClick={() => setQuickExpanded(true)}
+                  className="min-h-11 px-2 text-xs text-muted-foreground transition-colors hover:text-foreground">
+                  {copy.more}
                 </button>
               )}
               <div className="ml-auto flex items-center gap-2">
                 {quickExpanded && (
-                  <button onClick={() => { setQuickExpanded(false); }}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5">
-                    Less
+                  <button type="button" onClick={() => { setQuickExpanded(false); }}
+                    className="min-h-11 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
+                    {copy.less}
                   </button>
                 )}
-                <button onClick={handleQuickAdd} disabled={!quickName.trim() || quickScraping}
-                  className={cn('inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-all',
+                <button type="button" onClick={handleQuickAdd} disabled={!quickName.trim() || quickScraping}
+                  className={cn('inline-flex min-h-11 items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-all',
                     quickName.trim() && !quickScraping
                       ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
                       : 'bg-muted text-muted-foreground cursor-not-allowed')}>
-                  <Plus className="h-3.5 w-3.5" /> Add
+                  <Plus className="h-3.5 w-3.5" /> {copy.add}
                 </button>
               </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+        </DialogContent>
+      </Dialog>
+      <DraftDiscardDialog
+        open={discardTarget === 'quick'}
+        title={copy.discardTitle}
+        description={copy.discardDescription}
+        keepLabel={copy.keepEditing}
+        discardLabel={copy.discard}
+        onKeep={() => setDiscardTarget(null)}
+        onDiscard={() => {
+          setDiscardTarget(null);
+          closeQuickAdd();
+        }}
+      />
     </div>
   );
 }

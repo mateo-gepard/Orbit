@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "./platform.css";
 import { Providers } from "@/components/providers/providers";
 
 const geistSans = Geist({
@@ -25,28 +26,35 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "ORBIT — Personal Productivity OS",
+  title: "Threadmap - Personal Productivity OS",
   description: "One system, one dashboard, everything connected.",
   manifest: "/manifest.json",
   icons: {
-    icon: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
+    icon: [
+      { url: "/favicon.svg?v=2", type: "image/svg+xml" },
+      { url: "/favicon.ico?v=2", sizes: "any" },
+      { url: "/favicon-16x16.png?v=2", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png?v=2", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png?v=2", sizes: "180x180", type: "image/png" },
+    ],
   },
   openGraph: {
-    title: "ORBIT — Personal Productivity OS",
+    title: "Threadmap - Personal Productivity OS",
     description: "One system, one dashboard, everything connected.",
-    siteName: "ORBIT",
+    siteName: "Threadmap",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "ORBIT — Personal Productivity OS",
+    title: "Threadmap - Personal Productivity OS",
     description: "One system, one dashboard, everything connected.",
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
-    title: "ORBIT",
+    statusBarStyle: "default",
+    title: "Threadmap",
   },
 };
 
@@ -58,16 +66,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Google Identity Services for Calendar OAuth */}
-        <script src="https://accounts.google.com/gsi/client" async defer></script>
-        {/* PWA: Apple Touch Icon */}
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192.png" />
-        <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
-        <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
+        <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
+        <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
+        <link rel="icon" href="/favicon-16x16.png?v=2" sizes="16x16" type="image/png" />
+        <link rel="icon" href="/favicon-32x32.png?v=2" sizes="32x32" type="image/png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="ORBIT" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Threadmap" />
         {/* Splash screens for iOS standalone */}
         <meta name="format-detection" content="telephone=no" />
       </head>

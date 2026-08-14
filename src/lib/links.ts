@@ -1,11 +1,28 @@
 /**
- * Unified Linking System for ORBIT
+ * Unified Linking System for Threadmap
  * 
  * This module provides bulletproof utilities for managing bidirectional links
  * between items, parent-child relationships, and graph traversal.
  */
 
 import type { OrbitItem, ItemType } from './types';
+
+const ALLOWED_PARENT_TYPES: Record<ItemType, ItemType[]> = {
+  // Projects nest. Goals were the only intermediate layer, so a large effort
+  // like a multi-year roadmap could not be broken into sub-projects at all.
+  // `canSetParent` already refuses any parent that is one of the item's own
+  // descendants, so the cycle guard this needs is in place.
+  project: ['project'],
+  goal: ['project'],
+  task: ['project', 'goal'],
+  event: ['project', 'goal'],
+  note: ['project', 'goal'],
+  habit: ['project', 'goal'],
+};
+
+export function getAllowedParentTypes(type: ItemType): ItemType[] {
+  return ALLOWED_PARENT_TYPES[type] || [];
+}
 
 /**
  * Get all items that are directly linked to the given item
@@ -110,23 +127,18 @@ export function getAllRelatedItems(item: OrbitItem, allItems: OrbitItem[], visit
 }
 
 /**
- * Check if two items are connected (directly or indirectly)
- */
-export function areItemsConnected(item1: OrbitItem, item2: OrbitItem, allItems: OrbitItem[]): boolean {
-  const allRelated = getAllRelatedItems(item1, allItems);
-  return allRelated.some(i => i.id === item2.id);
-}
-
-/**
  * Get all items that can be linked to the given item
  * (excludes self, already linked, parent, children, archived)
  */
 export function getLinkableItems(item: OrbitItem, allItems: OrbitItem[], typeFilter?: ItemType): OrbitItem[] {
+  const reverseLinkedIds = getReverseLinkedItems(item, allItems).map(i => i.id);
   const excludedIds = new Set([
     item.id,
     ...(item.linkedIds || []),
+    ...reverseLinkedIds,
     ...(item.parentId ? [item.parentId] : []),
-    ...getChildItems(item, allItems).map(i => i.id)
+    ...getAllAncestors(item, allItems).map(i => i.id),
+    ...getAllDescendants(item, allItems).map(i => i.id),
   ]);
   
   return allItems.filter(i => 
@@ -137,41 +149,42 @@ export function getLinkableItems(item: OrbitItem, allItems: OrbitItem[], typeFil
 }
 
 /**
- * Add a link between two items (bidirectional is optional)
+ * Get items that can be used as a hierarchy parent for the given item.
  */
-export function addLink(item: OrbitItem, targetId: string): Partial<OrbitItem> {
-  const linkedIds = item.linkedIds || [];
-  if (linkedIds.includes(targetId)) {
-    return {}; // Already linked
-  }
-  return { linkedIds: [...linkedIds, targetId] };
+export function getParentableItems(item: OrbitItem, allItems: OrbitItem[], typeFilter?: ItemType): OrbitItem[] {
+  const allowedTypes = getAllowedParentTypes(item.type);
+  if (allowedTypes.length === 0) return [];
+
+  return allItems.filter(i =>
+    i.id !== item.parentId &&
+    canSetParent(item, i, allItems) &&
+    (typeFilter ? i.type === typeFilter : true)
+  );
 }
 
-/**
- * Remove a link between two items
- */
-export function removeLink(item: OrbitItem, targetId: string): Partial<OrbitItem> {
-  const linkedIds = item.linkedIds || [];
-  if (!linkedIds.includes(targetId)) {
-    return {}; // Not linked
-  }
-  return { linkedIds: linkedIds.filter(id => id !== targetId) };
+export function canSetParent(item: OrbitItem, potentialParent: OrbitItem, allItems: OrbitItem[]): boolean {
+  if (potentialParent.id === item.id) return false;
+  if (potentialParent.status === 'archived') return false;
+  if (!getAllowedParentTypes(item.type).includes(potentialParent.type)) return false;
+
+  const descendants = getAllDescendants(item, allItems);
+  if (descendants.some(descendant => descendant.id === potentialParent.id)) return false;
+
+  return true;
 }
 
 /**
  * Set parent for an item
  */
 export function setParent(item: OrbitItem, parentId: string | undefined, allItems: OrbitItem[]): Partial<OrbitItem> {
+  if (item.parentId === parentId) return {};
+
   // Prevent circular parent relationships
   if (parentId) {
     const potentialParent = allItems.find(i => i.id === parentId);
     if (!potentialParent) return {};
-    
-    // Check if setting this parent would create a cycle
-    const ancestors = getAllAncestors(potentialParent, allItems);
-    if (ancestors.some(a => a.id === item.id)) {
-      return {}; // Prevented circular parent relationship
-    }
+
+    if (!canSetParent(item, potentialParent, allItems)) return {};
   }
   
   return { parentId };

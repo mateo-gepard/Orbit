@@ -10,16 +10,17 @@ import {
   Clock,
   CalendarDays,
   CalendarRange,
+  List,
   LayoutGrid,
   MapPin,
   ArrowRight,
 } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { getLocale, getWeekStartsOn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/settings-store';
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation, type Translate } from '@/lib/i18n';
 import {
   format,
   startOfMonth,
@@ -39,27 +40,51 @@ import {
   isTomorrow,
   differenceInDays,
   parseISO,
+  isValid,
   getISOWeek,
 } from 'date-fns';
 import type { Locale } from 'date-fns';
 import {
-  fetchGoogleEvents,
   hasCalendarPermission,
-  requestCalendarPermission,
 } from '@/lib/google-calendar';
-import { getLastSyncTime, isSyncRunning } from '@/lib/google-calendar-sync';
-import { createItem } from '@/lib/firestore';
+import {
+  flushPendingGoogleCalendarEvents,
+  getLastSyncTime,
+  syncGoogleCalendar,
+} from '@/lib/google-calendar-sync';
+import { createItem, updateItem } from '@/lib/firestore';
 import { isMobile } from '@/lib/mobile';
-import type { OrbitItem } from '@/lib/types';
+import type { ThreadmapItem } from '@/lib/types';
+import { eventOccursOnDate } from '@/lib/dashboard';
+import { AgendaView, AGENDA_DAYS } from '@/components/shell/agenda-view';
+import {
+  applyDrag,
+  exceedsDragThreshold,
+  isDragMeaningful,
+  minutesToTime,
+  type DragMode,
+} from '@/lib/calendar-drag';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 // ═══════════════════════════════════════════════════════════
 // Types & Constants
 // ═══════════════════════════════════════════════════════════
 
-type ViewMode = 'month' | 'week' | 'day';
+type ViewMode = 'month' | 'week' | 'day' | 'agenda';
 
 interface CalendarEvent {
-  item: OrbitItem;
+  item: ThreadmapItem;
   startMinute: number;
   endMinute: number;
   isAllDay: boolean;
@@ -137,11 +162,11 @@ function layoutEvents(events: CalendarEvent[]): LayoutSlot[] {
 }
 
 function getMonthMultiDayLayout(
-  events: { item: OrbitItem; startDate: Date; endDate: Date; daysSpan: number }[],
+  events: { item: ThreadmapItem; startDate: Date; endDate: Date; daysSpan: number }[],
   calendarDays: Date[],
   totalRows: number
 ) {
-  const result: { item: OrbitItem; row: number; col: number; span: number; lane: number; isStart: boolean; isEnd: boolean }[] = [];
+  const result: { item: ThreadmapItem; row: number; col: number; span: number; lane: number; isStart: boolean; isEnd: boolean }[] = [];
   const rowLanes: Map<number, number[][]> = new Map();
 
   for (let r = 0; r < totalRows; r++) {
@@ -187,18 +212,22 @@ function getMonthMultiDayLayout(
   return result;
 }
 
-function getEventColor(item: OrbitItem): { bg: string; text: string; border: string; accent: string; dot: string } {
+function getEventColor(item: ThreadmapItem): { bg: string; text: string; border: string; accent: string; dot: string } {
   if (item.type === 'task') return { bg: 'bg-amber-500/10 dark:bg-amber-400/10', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-400/25', accent: 'bg-amber-500', dot: 'bg-amber-400' };
   if (item.calendarSynced) return { bg: 'bg-emerald-500/10 dark:bg-emerald-400/10', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-400/25', accent: 'bg-emerald-500', dot: 'bg-emerald-400' };
   if (item.endDate && item.endDate !== item.startDate) return { bg: 'bg-violet-500/10 dark:bg-violet-400/10', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-400/25', accent: 'bg-violet-500', dot: 'bg-violet-400' };
   return { bg: 'bg-blue-500/10 dark:bg-blue-400/10', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-400/25', accent: 'bg-blue-500', dot: 'bg-blue-400' };
 }
 
-function getRelativeDayLabel(date: Date, loc: Locale): string | null {
-  if (isToday(date)) return 'Today';
-  if (isYesterday(date)) return 'Yesterday';
-  if (isTomorrow(date)) return 'Tomorrow';
+function getRelativeDayLabel(date: Date, locale: Locale | undefined, t: Translate): string | null {
+  if (isToday(date)) return t('calendar.today');
+  if (isYesterday(date)) return t('calendar.yesterday');
+  if (isTomorrow(date)) return t('calendar.tomorrow');
   return null;
+}
+
+function calendarCopy(german: boolean, english: string, deutsch: string): string {
+  return german ? deutsch : english;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -208,109 +237,168 @@ function getRelativeDayLabel(date: Date, loc: Locale): string | null {
 function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Date; time?: string; onClose: () => void; userId: string; locale: Locale }) {
   const [title, setTitle] = useState('');
   const [type, setType] = useState<'event' | 'task'>('event');
-  const defaultDuration = useSettingsStore((s) => s.settings.calendar.defaultEventDuration);
+  const settings = useSettingsStore((state) => state.settings);
+  const defaultDuration = settings.calendar.defaultEventDuration;
+  const german = settings.language === 'de';
   const [startTime, setStartTime] = useState(time || '09:00');
   const [endTime, setEndTime] = useState(() => {
     const base = time || '09:00';
     const [h, m] = base.split(':').map(Number);
-    const totalMin = (h || 0) * 60 + (m || 0) + (defaultDuration || 60);
-    const endH = Math.min(Math.floor(totalMin / 60), 23);
+    const totalMin = Math.min((h || 0) * 60 + (m || 0) + (defaultDuration || 60), 1439);
+    const endH = Math.floor(totalMin / 60);
     const endM = totalMin % 60;
     return `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
   });
   const inputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
-
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = title.trim();
     if (!trimmed) return;
+    if (type === 'event' && timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+      setError(t('calendar.endTimeMustBeAfter'));
+      return;
+    }
+    setSaving(true);
+    setError(null);
     const dateStr = format(date, 'yyyy-MM-dd');
     const now = Date.now();
-    if (type === 'event') {
-      await createItem({ type: 'event', title: trimmed, status: 'active', startDate: dateStr, startTime, endTime, userId, createdAt: now, updatedAt: now, tags: [], linkedIds: [] });
-    } else {
-      await createItem({ type: 'task', title: trimmed, status: 'active', dueDate: dateStr, userId, createdAt: now, updatedAt: now, tags: [], linkedIds: [] });
+    try {
+      if (type === 'event') {
+        const newEvent: Omit<ThreadmapItem, 'id'> = {
+          type: 'event',
+          title: trimmed,
+          status: 'active',
+          startDate: dateStr,
+          startTime,
+          endTime,
+          userId,
+          createdAt: now,
+          updatedAt: now,
+          tags: [],
+          linkedIds: [],
+          ...(settings.calendar.googleCalendarSync && { calendarSynced: false }),
+        };
+        const itemId = await createItem(newEvent);
+        // Quick Add is local-first. The false marker is a durable outbound
+        // queue entry, so a Google failure never turns into a failed local
+        // creation or a duplicate retry.
+        if (settings.calendar.googleCalendarSync) {
+          void flushPendingGoogleCalendarEvents(userId, [
+            { ...newEvent, id: itemId } as ThreadmapItem,
+          ]).then((result) => {
+            if (!result.success) {
+              toast.warning(t('calendar.eventSavedLocallyGoogleCalendar'));
+            }
+          });
+        }
+      } else {
+        await createItem({ type: 'task', title: trimmed, status: 'active', dueDate: dateStr, userId, createdAt: now, updatedAt: now, tags: [], linkedIds: [] });
+      }
+      onClose();
+    } catch {
+      setError(german
+        ? `${type === 'event' ? 'Der Termin' : 'Die Aufgabe'} konnte nicht erstellt werden.`
+        : `Could not create this ${type}.`);
+    } finally {
+      setSaving(false);
     }
-    onClose();
   };
 
-  const relLabel = getRelativeDayLabel(date, loc);
+  const relLabel = getRelativeDayLabel(date, loc, t);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-[6px]" />
-      <form
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={handleSubmit}
-        className={cn(
-          'relative w-full sm:w-[420px] sm:max-w-[92vw] bg-card border border-border/50 shadow-2xl',
-          'rounded-t-3xl sm:rounded-2xl p-6 sm:p-6',
-          'animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:fade-in-0 duration-200'
-        )}
+    <Dialog open onOpenChange={(open) => {
+      if (!open && !saving) onClose();
+    }}>
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby={undefined}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          inputRef.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (saving) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          if (saving) event.preventDefault();
+        }}
+        className="bottom-0 top-auto max-w-none translate-y-0 gap-0 rounded-b-none rounded-t-3xl p-0 sm:bottom-auto sm:top-1/2 sm:max-w-[420px] sm:-translate-y-1/2 sm:rounded-2xl"
       >
+        <DialogTitle id="calendar-quick-add-title" className="sr-only">
+          {t('calendar.createCalendarItem')}
+        </DialogTitle>
+        <form onSubmit={handleSubmit} className="p-6">
         <div className="flex items-center justify-between mb-5">
           <div>
             <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
               {relLabel || format(date, 'EEEE', { locale: loc })}
             </p>
-            <p className="text-[16px] font-semibold mt-0.5">{format(date, 'MMMM d, yyyy', { locale: loc })}</p>
+            <p className="text-[16px] font-semibold mt-0.5">{format(date, 'PPP', { locale: loc })}</p>
           </div>
-          <button type="button" onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-muted/60 transition-colors">
+          <button type="button" onClick={onClose} disabled={saving} aria-label={t('calendar.closeCreateDialog')} className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-muted/60 disabled:opacity-40 sm:h-8 sm:w-8">
             <X className="h-4 w-4 text-muted-foreground/50" />
           </button>
         </div>
 
         <input
+          aria-label={type === 'event'
+            ? (t('calendar.eventTitle'))
+            : (t('calendar.taskTitle'))}
           ref={inputRef}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder={type === 'event' ? t('calendar.untitledEvent') : 'Task title...'}
+          placeholder={type === 'event' ? t('calendar.untitledEvent') : (t('calendar.taskTitle2'))}
           className="w-full bg-muted/30 rounded-xl px-4 py-3 text-[15px] font-medium placeholder:text-muted-foreground/30 outline-none border border-border/30 focus:border-foreground/15 transition-colors mb-4"
         />
 
         <div className="flex gap-2 mb-4">
-          <button type="button" onClick={() => setType('event')} className={cn(
+          <button type="button" onClick={() => setType('event')} aria-pressed={type === 'event'} className={cn(
             'flex-1 rounded-xl px-3 py-2.5 text-[12px] font-semibold transition-all border-2',
             type === 'event' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25' : 'text-muted-foreground/40 border-transparent bg-muted/30 hover:bg-muted/50'
           )}>
             <CalendarDays className="h-3.5 w-3.5 mx-auto mb-1 opacity-70" />
-            Event
+            {t('type.event')}
           </button>
-          <button type="button" onClick={() => setType('task')} className={cn(
+          <button type="button" onClick={() => setType('task')} aria-pressed={type === 'task'} className={cn(
             'flex-1 rounded-xl px-3 py-2.5 text-[12px] font-semibold transition-all border-2',
             type === 'task' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25' : 'text-muted-foreground/40 border-transparent bg-muted/30 hover:bg-muted/50'
           )}>
             <MapPin className="h-3.5 w-3.5 mx-auto mb-1 opacity-70" />
-            Task
+            {t('type.task')}
           </button>
         </div>
 
         {type === 'event' && (
           <div className="flex items-center gap-3 mb-5 bg-muted/20 rounded-xl px-4 py-3 border border-border/20">
             <Clock className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-            <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
+            <input aria-label={t('calendar.startTime')} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
             <ArrowRight className="h-3 w-3 text-muted-foreground/25 shrink-0" />
-            <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
+            <input aria-label={t('calendar.endTime')} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
           </div>
         )}
 
+        {error && <p role="alert" className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-[12px] text-destructive">{error}</p>}
+
         <button
           type="submit"
-          disabled={!title.trim()}
+          disabled={!title.trim() || saving}
           className={cn(
             'w-full rounded-xl py-3 text-[13px] font-bold tracking-wide transition-all uppercase',
-            title.trim()
+            title.trim() && !saving
               ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
               : 'bg-muted/60 text-muted-foreground/25 cursor-not-allowed'
           )}
         >
-          {t('common.create') || 'Create'}
+          {saving ? (t('calendar.creating')) : t('common.create')}
         </button>
-      </form>
-    </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -318,15 +406,180 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
 // Time Grid (Week & Day views)
 // ═══════════════════════════════════════════════════════════
 
-function TimeGrid({
-  days, items, is24h, locale: loc, onEventClick, onSlotClick, showWeekNumbers,
+function AllDayOverflow({
+  events,
+  date,
+  locale: loc,
+  onEventClick,
+  t,
 }: {
-  days: Date[]; items: OrbitItem[]; is24h: boolean; locale: Locale; onEventClick: (id: string) => void; onSlotClick: (date: Date, time: string) => void; showWeekNumbers: boolean;
+  events: CalendarEvent[];
+  date: Date;
+  locale: Locale;
+  onEventClick: (id: string) => void;
+  t: Translate;
 }) {
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [now, setNow] = useState(new Date());
-  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const german = loc.code.startsWith('de');
+  const dateLabel = format(date, 'PPP', { locale: loc });
+  const overflowLabel = calendarCopy(
+    german,
+    `${events.length} more all-day items on ${dateLabel}`,
+    `${events.length} weitere ganztägige Einträge am ${dateLabel}`,
+  );
 
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={overflowLabel}
+          className="flex min-h-8 w-full items-center rounded-lg px-2 text-left text-[10px] font-semibold text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25"
+        >
+          +{events.length} {t('calendar.more')}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        aria-label={overflowLabel}
+        className="w-[min(18rem,calc(100vw-1.5rem))] space-y-1 p-2"
+      >
+        <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+          {german ? `Ganztägig · ${dateLabel}` : `All day · ${dateLabel}`}
+        </p>
+        {events.map((event) => {
+          const color = getEventColor(event.item);
+          return (
+            <button
+              key={event.item.id}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onEventClick(event.item.id);
+              }}
+              className={cn(
+                'min-h-10 w-full truncate rounded-lg px-2.5 text-left text-[11px] font-semibold transition-all hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/25',
+                color.bg,
+                color.text,
+              )}
+              title={event.item.title}
+            >
+              {event.item.title}
+            </button>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+interface ActiveDrag {
+  itemId: string;
+  mode: DragMode;
+  originDayIndex: number;
+  startMinute: number;
+  endMinute: number;
+  pointerX: number;
+  pointerY: number;
+  /** Set once the pointer has travelled far enough to be a drag, not a click. */
+  engaged: boolean;
+  preview: { startMinute: number; endMinute: number; dayIndex: number };
+}
+
+function TimeGrid({
+  days, items, is24h, locale: loc, onEventClick, onSlotClick, onEventReschedule, showWeekNumbers, t,
+}: {
+  days: Date[]; items: ThreadmapItem[]; is24h: boolean; locale: Locale; onEventClick: (id: string) => void; onSlotClick: (date: Date, time?: string) => void; onEventReschedule: (id: string, date: Date, startTime: string, endTime: string) => void; showWeekNumbers: boolean; t: Translate;
+}) {
+  const german = loc.code.startsWith('de');
+  const gridRef = useRef<HTMLDivElement>(null);
+  const columnsRef = useRef<HTMLDivElement>(null);
+  const [now, setNow] = useState(new Date());
+  const [hoveredSlot, setHoveredSlot] = useState<{ dayIndex: number; slotIndex: number } | null>(null);
+
+  // ── Drag to move and resize ──
+  // Rescheduling used to require opening the detail panel and editing time
+  // fields — the interaction a calendar exists to avoid. The arithmetic lives
+  // in `calendar-drag.ts`; this is only the pointer plumbing.
+  const [drag, setDrag] = useState<ActiveDrag | null>(null);
+  // Mirrored in a ref so pointer handlers can read the live drag without doing
+  // it inside a state updater, which React runs during the render phase.
+  const dragRef = useRef<ActiveDrag | null>(null);
+  const commitDrag = (next: ActiveDrag | null) => {
+    dragRef.current = next;
+    setDrag(next);
+  };
+
+  const dayWidth = () => {
+    const width = columnsRef.current?.getBoundingClientRect().width ?? 0;
+    return days.length > 0 ? width / days.length : 0;
+  };
+
+  const beginDrag = (
+    itemEvent: React.PointerEvent<HTMLElement>,
+    itemId: string,
+    dayIndex: number,
+    startMinute: number,
+    endMinute: number,
+    mode: DragMode,
+  ) => {
+    // Only a primary pointer, and never on a touch scroll.
+    if (itemEvent.button !== 0) return;
+    itemEvent.currentTarget.setPointerCapture(itemEvent.pointerId);
+    commitDrag({
+      itemId, mode, originDayIndex: dayIndex, startMinute, endMinute,
+      pointerX: itemEvent.clientX, pointerY: itemEvent.clientY,
+      engaged: false,
+      preview: { startMinute, endMinute, dayIndex },
+    });
+  };
+
+  const moveDrag = (itemEvent: React.PointerEvent<HTMLElement>) => {
+    const current = dragRef.current;
+    if (!current) return;
+    const deltaX = itemEvent.clientX - current.pointerX;
+    const deltaY = itemEvent.clientY - current.pointerY;
+    const engaged = current.engaged || exceedsDragThreshold(deltaX, deltaY);
+    if (!engaged) return;
+    commitDrag({
+      ...current,
+      engaged,
+      preview: applyDrag({
+        startMinute: current.startMinute,
+        endMinute: current.endMinute,
+        dayIndex: current.originDayIndex,
+        deltaX, deltaY,
+        hourHeight: HOUR_HEIGHT,
+        dayWidth: dayWidth(),
+        dayCount: days.length,
+        mode: current.mode,
+      }),
+    });
+  };
+
+  const endDrag = (itemEvent: React.PointerEvent<HTMLElement>) => {
+    itemEvent.currentTarget.releasePointerCapture?.(itemEvent.pointerId);
+    const current = dragRef.current;
+    commitDrag(null);
+    if (!current) return;
+
+    const origin = {
+      startMinute: current.startMinute,
+      endMinute: current.endMinute,
+      dayIndex: current.originDayIndex,
+    };
+    if (current.engaged && isDragMeaningful(origin, current.preview)) {
+      onEventReschedule(
+        current.itemId,
+        days[current.preview.dayIndex],
+        minutesToTime(current.preview.startMinute),
+        minutesToTime(current.preview.endMinute),
+      );
+    } else if (!current.engaged) {
+      // Never moved far enough: this was a click.
+      onEventClick(current.itemId);
+    }
+  };
   useEffect(() => {
     const target = Math.max(0, 7 * HOUR_HEIGHT - 40);
     gridRef.current?.scrollTo({ top: target, behavior: 'smooth' });
@@ -345,14 +598,16 @@ function TimeGrid({
         const dateStr = format(days[dayIdx], 'yyyy-MM-dd');
 
         if (item.type === 'event') {
-          const matchesSingle = item.startDate === dateStr;
-          const matchesMulti = item.startDate && item.endDate && item.startDate <= dateStr && dateStr <= item.endDate;
-          if (!matchesSingle && !matchesMulti) continue;
+          // Repeating events are one item plus a rule, so membership of a day
+          // is a question for `eventOccursOnDate`, not a date comparison.
+          if (!eventOccursOnDate(item, dateStr)) continue;
 
           const isMultiDay = item.endDate && item.endDate !== item.startDate;
           const isAllDay = !item.startTime || !!isMultiDay;
           if (isAllDay) {
-            const key = `allday-${item.id}`;
+            // A multi-day event is drawn once as a bar; a repeating one has to
+            // land on each day it recurs on.
+            const key = item.recurrence ? `allday-${item.id}-${dateStr}` : `allday-${item.id}`;
             if (!seen.has(key)) {
               seen.add(key);
               allDay.get(dayIdx)!.push({ item, startMinute: 0, endMinute: 1440, isAllDay: true });
@@ -397,20 +652,30 @@ function TimeGrid({
           <div className="shrink-0" style={{ width: TIME_GUTTER_WIDTH }}>
             {showWeekNumbers && days.length >= 7 && (
               <div className="flex items-center justify-center h-full text-[9px] text-muted-foreground/25 font-semibold tabular-nums">
-                W{getISOWeek(days[0])}
+                {t('calendar.w')}{getISOWeek(days[0])}
               </div>
             )}
           </div>
           <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
             {days.map((day, i) => {
               const today = isToday(day);
-              const relLabel = getRelativeDayLabel(day, loc);
+              const relLabel = getRelativeDayLabel(day, loc, t);
               return (
-                <div key={i} className={cn(
-                  'text-center py-3 lg:py-3.5 transition-colors',
-                  i > 0 && 'border-l border-border/15',
-                  today && 'bg-blue-500/[0.03]'
-                )}>
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onSlotClick(day)}
+                  aria-label={calendarCopy(
+                    german,
+                    `Create an item on ${format(day, 'PPP', { locale: loc })}`,
+                    `Eintrag am ${format(day, 'PPP', { locale: loc })} erstellen`,
+                  )}
+                  className={cn(
+                    'text-center py-3 lg:py-3.5 transition-colors outline-none hover:bg-foreground/[0.025] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30',
+                    i > 0 && 'border-l border-border/15',
+                    today && 'bg-blue-500/[0.03]'
+                  )}
+                >
                   <div className="text-[10px] text-muted-foreground/40 uppercase font-semibold tracking-wider">
                     {relLabel || format(day, 'EEE', { locale: loc })}
                   </div>
@@ -420,7 +685,7 @@ function TimeGrid({
                   )}>
                     {format(day, 'd')}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -429,7 +694,16 @@ function TimeGrid({
 
       {/* Single day header */}
       {isSingleDay && (
-        <div className="flex items-center gap-4 px-5 py-4 border-b border-border/30 flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => onSlotClick(days[0])}
+          aria-label={calendarCopy(
+            german,
+            `Create an item on ${format(days[0], 'PPP', { locale: loc })}`,
+            `Eintrag am ${format(days[0], 'PPP', { locale: loc })} erstellen`,
+          )}
+          className="flex flex-shrink-0 items-center gap-4 border-b border-border/30 px-5 py-4 text-left outline-none transition-colors hover:bg-foreground/[0.025] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
+        >
           <div className={cn(
             'inline-flex h-12 w-12 items-center justify-center rounded-2xl text-[20px] font-black tabular-nums transition-all',
             isToday(days[0]) ? 'bg-foreground text-background' : 'bg-muted/50 text-foreground'
@@ -438,11 +712,11 @@ function TimeGrid({
           </div>
           <div>
             <div className="text-[14px] font-semibold leading-tight">
-              {getRelativeDayLabel(days[0], loc) || format(days[0], 'EEEE', { locale: loc })}
+              {getRelativeDayLabel(days[0], loc, t) || format(days[0], 'EEEE', { locale: loc })}
             </div>
             <div className="text-[12px] text-muted-foreground/40 mt-0.5">{format(days[0], 'MMMM yyyy', { locale: loc })}</div>
           </div>
-        </div>
+        </button>
       )}
 
       {/* All-day section */}
@@ -450,7 +724,7 @@ function TimeGrid({
         <div className="border-b border-border/25 flex-shrink-0">
           <div className="flex">
             <div className="shrink-0 flex items-center justify-center text-[9px] text-muted-foreground/30 uppercase font-bold tracking-wider" style={{ width: TIME_GUTTER_WIDTH }}>
-              All day
+              {t('calendar.allDay')}
             </div>
             <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
               {days.map((day, dayIdx) => {
@@ -471,7 +745,7 @@ function TimeGrid({
                     {allEvts.slice(0, 3).map((e) => {
                       const color = getEventColor(e.item);
                       return (
-                        <button key={e.item.id} onClick={() => onEventClick(e.item.id)} className={cn(
+                        <button key={e.item.id} type="button" onClick={() => onEventClick(e.item.id)} className={cn(
                           'w-full truncate rounded-lg px-2 py-0.5 text-[10px] font-semibold mb-0.5 text-left transition-all',
                           color.bg, color.text, 'hover:brightness-95 active:scale-[0.98]'
                         )} title={e.item.title}>
@@ -479,7 +753,15 @@ function TimeGrid({
                         </button>
                       );
                     })}
-                    {allEvts.length > 3 && <div className="text-[9px] text-muted-foreground/30 font-medium px-2">+{allEvts.length - 3}</div>}
+                    {allEvts.length > 3 && (
+                      <AllDayOverflow
+                        events={allEvts.slice(3)}
+                        date={day}
+                        locale={loc}
+                        onEventClick={onEventClick}
+                        t={t}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -501,7 +783,7 @@ function TimeGrid({
           </div>
 
           {/* Day columns */}
-          <div className="flex-1 grid relative" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
+          <div ref={columnsRef} className="flex-1 grid relative" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
             {days.map((day, dayIdx) => {
               const today = isToday(day);
               return (
@@ -514,27 +796,46 @@ function TimeGrid({
                     </React.Fragment>
                   ))}
 
-                  {/* Clickable half-hour slots */}
-                  {HOURS.map((h) => (
-                    <React.Fragment key={`slot-${h}`}>
-                      <button
-                        className="absolute inset-x-0 hover:bg-blue-500/[0.04] active:bg-blue-500/[0.07] transition-colors"
-                        style={{ top: h * HOUR_HEIGHT, height: HOUR_HEIGHT / 2 }}
-                        onClick={() => onSlotClick(day, `${h.toString().padStart(2, '0')}:00`)}
-                      />
-                      <button
-                        className="absolute inset-x-0 hover:bg-blue-500/[0.04] active:bg-blue-500/[0.07] transition-colors"
-                        style={{ top: h * HOUR_HEIGHT + HOUR_HEIGHT / 2, height: HOUR_HEIGHT / 2 }}
-                        onClick={() => onSlotClick(day, `${h.toString().padStart(2, '0')}:30`)}
-                      />
-                    </React.Fragment>
-                  ))}
+                  {/* Pointer surface; the day header provides the concise keyboard creation path. */}
+                  {hoveredSlot?.dayIndex === dayIdx && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-0 bg-blue-500/[0.04] transition-colors"
+                      style={{ top: hoveredSlot.slotIndex * HOUR_HEIGHT / 2, height: HOUR_HEIGHT / 2 }}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="absolute inset-0"
+                    onPointerMove={(event) => {
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      const slotIndex = Math.max(0, Math.min(47, Math.floor((event.clientY - bounds.top) / (HOUR_HEIGHT / 2))));
+                      setHoveredSlot((current) => current?.dayIndex === dayIdx && current.slotIndex === slotIndex
+                        ? current
+                        : { dayIndex: dayIdx, slotIndex });
+                    }}
+                    onPointerLeave={() => setHoveredSlot((current) => current?.dayIndex === dayIdx ? null : current)}
+                    onClick={(event) => {
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      const slotIndex = Math.max(0, Math.min(47, Math.floor((event.clientY - bounds.top) / (HOUR_HEIGHT / 2))));
+                      const minutes = slotIndex * 30;
+                      onSlotClick(day, `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`);
+                    }}
+                  />
 
                   {/* Timed events */}
                   {(timedLayouts.get(dayIdx) || []).map((slot) => {
                     const { event, column, totalColumns } = slot;
-                    const top = (event.startMinute / 60) * HOUR_HEIGHT;
-                    const height = Math.max(((event.endMinute - event.startMinute) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
+                    // While dragging, the block follows the pointer from its
+                    // preview position rather than its stored one.
+                    const dragging = drag?.engaged && drag.itemId === event.item.id;
+                    if (dragging && drag.preview.dayIndex !== dayIdx) return null;
+                    const shownStart = dragging ? drag.preview.startMinute : event.startMinute;
+                    const shownEnd = dragging ? drag.preview.endMinute : event.endMinute;
+                    const top = (shownStart / 60) * HOUR_HEIGHT;
+                    const height = Math.max(((shownEnd - shownStart) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
                     const color = getEventColor(event.item);
                     const colWidth = 100 / totalColumns;
                     const left = column * colWidth;
@@ -542,11 +843,32 @@ function TimeGrid({
 
                     return (
                       <button
+                        type="button"
                         key={`${event.item.id}-${dayIdx}`}
-                        onClick={(e) => { e.stopPropagation(); onEventClick(event.item.id); }}
+                        // Click is dispatched from the pointer handlers, so a
+                        // drag that ends over the block does not also open it.
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          beginDrag(e, event.item.id, dayIdx, event.startMinute, event.endMinute, 'move');
+                        }}
+                        onPointerMove={moveDrag}
+                        onPointerUp={(e) => { e.stopPropagation(); endDrag(e); }}
+                        onPointerCancel={() => commitDrag(null)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onEventClick(event.item.id);
+                          }
+                        }}
+                        aria-label={calendarCopy(
+                          german,
+                          `Open ${event.item.title}, ${formatTimeShort(shownStart, is24h)} to ${formatTimeShort(shownEnd, is24h)}. Drag to reschedule.`,
+                          `${event.item.title} öffnen, ${formatTimeShort(shownStart, is24h)} bis ${formatTimeShort(shownEnd, is24h)}. Zum Verschieben ziehen.`,
+                        )}
                         className={cn(
-                          'absolute rounded-lg overflow-hidden text-left transition-all z-10 group',
-                          'border-l-[3px] hover:shadow-lg hover:z-20 hover:brightness-[0.97] active:scale-[0.99]',
+                          'absolute rounded-lg overflow-hidden text-left transition-all z-10 group touch-none',
+                          'border-l-[3px] hover:shadow-lg hover:z-20 hover:brightness-[0.97]',
+                          dragging ? 'z-30 cursor-grabbing opacity-90 shadow-xl' : 'cursor-grab active:scale-[0.99]',
                           color.bg, color.border
                         )}
                         style={{ top: top + 1, height: height - 2, left: `calc(${left}% + 3px)`, width: `calc(${colWidth}% - 6px)`, borderLeftColor: `var(--event-accent)` }}
@@ -567,6 +889,18 @@ function TimeGrid({
                             </div>
                           )}
                         </div>
+                        {/* Resize handle — end time only. */}
+                        <span
+                          role="presentation"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            beginDrag(e, event.item.id, dayIdx, event.startMinute, event.endMinute, 'resize');
+                          }}
+                          onPointerMove={moveDrag}
+                          onPointerUp={(e) => { e.stopPropagation(); endDrag(e); }}
+                          onPointerCancel={() => commitDrag(null)}
+                          className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize touch-none opacity-0 transition-opacity group-hover:opacity-100"
+                        />
                       </button>
                     );
                   })}
@@ -596,45 +930,67 @@ function TimeGrid({
 
 export default function CalendarPage() {
   const { user } = useAuth();
-  const { items, setSelectedItemId } = useOrbitStore();
-  const { weekStart, language, timeFormat } = useSettingsStore((s) => s.settings);
-  const { showWeekNumbers } = useSettingsStore((s) => s.settings.calendar);
+  const items = useThreadmapStore((state) => state.items);
+  const setSelectedItemId = useThreadmapStore((state) => state.setSelectedItemId);
+  const settings = useSettingsStore((state) => state.settings);
+  const { weekStart, language, timeFormat } = settings;
+  const { googleCalendarSync, showWeekNumbers } = settings.calendar;
   const weekStartsOn = getWeekStartsOn(weekStart);
   const locale = getLocale(language);
+  const german = language === 'de';
   const is24h = timeFormat === '24h';
   const { t } = useTranslation();
   const [mobile, setMobile] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [importing, setImporting] = useState(false);
+  const [lastSync, setLastSync] = useState<number>(() => getLastSyncTime(user?.uid ?? null));
+  const [quickAdd, setQuickAdd] = useState<{ date: Date; time?: string } | null>(null);
+  const [selectedMobileDay, setSelectedMobileDay] = useState<Date | null>(null);
+
   useEffect(() => {
     setMobile(isMobile());
     const mql = window.matchMedia('(max-width: 1023px)');
-    const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
+    const handler = (e: MediaQueryListEvent) => {
+      setMobile(e.matches);
+      if (!e.matches) setSelectedMobileDay(null);
+    };
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [importing, setImporting] = useState(false);
-  const [lastSync, setLastSync] = useState<number>(0);
-  const [quickAdd, setQuickAdd] = useState<{ date: Date; time?: string } | null>(null);
-  const [selectedMobileDay, setSelectedMobileDay] = useState<Date | null>(null);
+  useEffect(() => {
+    const refreshLastSync = () => setLastSync(getLastSyncTime(user?.uid ?? null));
+    refreshLastSync();
+    const intervalId = window.setInterval(refreshLastSync, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [user?.uid]);
 
-  useEffect(() => { const i = setInterval(() => setLastSync(getLastSyncTime()), 1000); return () => clearInterval(i); }, []);
-
-  const goToday = () => setCurrentDate(new Date());
+  const goToday = () => {
+    setSelectedMobileDay(null);
+    setCurrentDate(new Date());
+  };
   const goPrev = () => {
-    if (viewMode === 'month') setCurrentDate(subMonths(currentDate, 1));
+    setSelectedMobileDay(null);
+    if (viewMode === 'agenda') setCurrentDate(addDays(currentDate, -AGENDA_DAYS));
+    else if (viewMode === 'month') setCurrentDate(subMonths(currentDate, 1));
     else if (viewMode === 'week') {
       if (mobile) setCurrentDate(addDays(currentDate, -3));
       else setCurrentDate(subWeeks(currentDate, 1));
     } else setCurrentDate(addDays(currentDate, -1));
   };
   const goNext = () => {
-    if (viewMode === 'month') setCurrentDate(addMonths(currentDate, 1));
+    setSelectedMobileDay(null);
+    if (viewMode === 'agenda') setCurrentDate(addDays(currentDate, AGENDA_DAYS));
+    else if (viewMode === 'month') setCurrentDate(addMonths(currentDate, 1));
     else if (viewMode === 'week') {
       if (mobile) setCurrentDate(addDays(currentDate, 3));
       else setCurrentDate(addWeeks(currentDate, 1));
     } else setCurrentDate(addDays(currentDate, 1));
+  };
+  const changeViewMode = (mode: ViewMode) => {
+    setSelectedMobileDay(null);
+    setViewMode(mode);
   };
 
   const weekDays = useMemo(() => {
@@ -663,10 +1019,11 @@ export default function CalendarPage() {
   const totalRows = Math.ceil(calendarDays.length / 7);
 
   const multiDayEvents = useMemo(() => {
-    const events: { item: OrbitItem; startDate: Date; endDate: Date; daysSpan: number }[] = [];
+    const events: { item: ThreadmapItem; startDate: Date; endDate: Date; daysSpan: number }[] = [];
     items.filter((i) => i.type === 'event' && i.status !== 'archived' && i.startDate).forEach((item) => {
       const rawStart = parseISO(item.startDate + 'T12:00:00');
       const rawEnd = item.endDate ? parseISO(item.endDate + 'T12:00:00') : rawStart;
+      if (!isValid(rawStart) || !isValid(rawEnd) || rawEnd < rawStart) return;
       if (rawStart > calendarEnd || rawEnd < calendarStart) return;
       const start = rawStart < calendarStart ? startOfDay(calendarStart) : rawStart;
       const end = rawEnd > calendarEnd ? startOfDay(calendarEnd) : rawEnd;
@@ -686,45 +1043,47 @@ export default function CalendarPage() {
 
   const getItemsForDate = useCallback((date: Date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    return items.filter((i) => i.status !== 'archived' && ((i.type === 'event' && (i.startDate === dateStr || (i.startDate && i.endDate && i.startDate <= dateStr && dateStr <= i.endDate))) || (i.type === 'task' && i.dueDate === dateStr)));
+    return items.filter((i) => i.status !== 'archived' && (
+      (i.type === 'event' && eventOccursOnDate(i, dateStr))
+      || (i.type === 'task' && i.dueDate === dateStr)
+    ));
   }, [items]);
 
   const handleImportFromGoogle = async () => {
     if (!user) return;
+    if (!googleCalendarSync) {
+      toast.warning(t('calendar.enableGoogleCalendarInSettings'));
+      return;
+    }
+    if (!hasCalendarPermission()) {
+      toast.warning(t('calendar.reconnectGoogleCalendarInSettings'));
+      return;
+    }
     setImporting(true);
     try {
-      if (!hasCalendarPermission()) await requestCalendarPermission();
-      const googleEvents = await fetchGoogleEvents(monthStart.toISOString(), monthEnd.toISOString());
-      let count = 0;
-      for (const gcalEvent of googleEvents) {
-        const d: Record<string, unknown> = gcalEvent as Record<string, unknown>;
-        const start = d.start as Record<string, string> | undefined;
-        const end = d.end as Record<string, string> | undefined;
-        if (!items.some((i) => i.googleCalendarId === d.id) && d.id) {
-          const newEvent: Record<string, unknown> = { type: 'event', title: (d.summary as string) || t('calendar.untitledEvent'), status: 'active', googleCalendarId: d.id, calendarSynced: true, userId: user.uid, createdAt: Date.now(), updatedAt: Date.now(), tags: [], linkedIds: [] };
-          if (d.description) newEvent.content = d.description;
-          const sd = start?.date || start?.dateTime?.split('T')[0]; if (sd) newEvent.startDate = sd;
-          let ed = end?.date || end?.dateTime?.split('T')[0];
-          if (ed && start?.date && !start?.dateTime) {
-            const [ey, em, eday] = ed.split('-').map(Number);
-            const endObj = new Date(Date.UTC(ey, em - 1, eday));
-            endObj.setUTCDate(endObj.getUTCDate() - 1);
-            ed = `${endObj.getUTCFullYear()}-${String(endObj.getUTCMonth() + 1).padStart(2, '0')}-${String(endObj.getUTCDate()).padStart(2, '0')}`;
-          }
-          if (ed && ed !== sd) newEvent.endDate = ed;
-          const st = start?.dateTime?.split('T')[1]?.substring(0, 5); if (st) newEvent.startTime = st;
-          const et = end?.dateTime?.split('T')[1]?.substring(0, 5); if (et) newEvent.endTime = et;
-          await createItem(newEvent as Omit<OrbitItem, 'id'>);
-          count++;
-        }
+      const result = await syncGoogleCalendar(user.uid);
+      if (!result.success) {
+        toast.error(t('calendar.googleCalendarCouldNotFinish'));
+        return;
       }
-      console.log(`[ORBIT] Imported ${count} events from Google Calendar`);
+      setLastSync(getLastSyncTime(user.uid));
+      toast.success(language === 'de'
+        ? result.imported > 0
+          ? `${result.imported} Kalender${result.imported === 1 ? 'termin wurde' : 'termine wurden'} importiert`
+          : 'Der Kalender ist bereits aktuell'
+        : result.imported > 0
+          ? `Imported ${result.imported} calendar ${result.imported === 1 ? 'event' : 'events'}`
+          : 'Calendar is already up to date');
     } catch (err) {
-      console.error('[ORBIT] Import failed:', err);
+      console.error('[THREADMAP] Import failed:', err);
+      toast.error(t('calendar.couldNotImportGoogleCalendar'));
     } finally { setImporting(false); }
   };
 
   const headerLabel = useMemo(() => {
+    if (viewMode === 'agenda') {
+      return `${format(currentDate, 'd MMM', { locale })} – ${format(addDays(currentDate, AGENDA_DAYS - 1), 'd MMM yyyy', { locale })}`;
+    }
     if (viewMode === 'month') return format(currentDate, 'MMMM yyyy', { locale });
     if (viewMode === 'week') {
       const days = mobile ? mobileWeekDays : weekDays;
@@ -737,11 +1096,34 @@ export default function CalendarPage() {
   }, [viewMode, currentDate, weekDays, mobileWeekDays, mobile, locale]);
 
   const handleEventClick = useCallback((id: string) => setSelectedItemId(id), [setSelectedItemId]);
-  const handleSlotClick = useCallback((date: Date, time: string) => setQuickAdd({ date, time }), []);
+
+  /** Persist a drag. A recurring series moves as a whole, not per occurrence. */
+  const handleEventReschedule = useCallback(async (
+    id: string,
+    date: Date,
+    startTime: string,
+    endTime: string,
+  ) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const target = items.find((item) => item.id === id);
+    const spansDays = Boolean(target?.endDate && target.endDate !== target.startDate);
+    try {
+      await updateItem(id, {
+        startDate: dateStr,
+        ...(spansDays ? {} : { endDate: dateStr }),
+        startTime,
+        endTime,
+      });
+    } catch {
+      toast.error(t('calendar.theEventCouldNotBe'));
+    }
+  }, [items, t]);
+  const handleSlotClick = useCallback((date: Date, time?: string) => setQuickAdd({ date, time }), []);
   const handleMonthDayClick = useCallback((day: Date) => {
     if (mobile) {
       setSelectedMobileDay((prev) => prev && isSameDay(prev, day) ? null : day);
     } else {
+      setSelectedMobileDay(null);
       setCurrentDate(day);
       setViewMode('day');
     }
@@ -753,67 +1135,73 @@ export default function CalendarPage() {
     return getItemsForDate(selectedMobileDay).sort((a, b) => (a.startTime || '99').localeCompare(b.startTime || '99'));
   }, [selectedMobileDay, getItemsForDate]);
 
+  const viewLabels: Record<ViewMode, string> = german
+    ? { month: 'Monat', week: 'Woche', day: 'Tag', agenda: 'Agenda' }
+    : { month: 'Month', week: 'Week', day: 'Day', agenda: 'Agenda' };
+  const previousViewLabel: Record<ViewMode, string> = german
+    ? { month: 'Vorheriger Monat', week: 'Vorherige Woche', day: 'Vorheriger Tag', agenda: 'Frühere Tage' }
+    : { month: 'Previous month', week: 'Previous week', day: 'Previous day', agenda: 'Earlier days' };
+  const nextViewLabel: Record<ViewMode, string> = german
+    ? { month: 'Nächster Monat', week: 'Nächste Woche', day: 'Nächster Tag', agenda: 'Spätere Tage' }
+    : { month: 'Next month', week: 'Next week', day: 'Next day', agenda: 'Later days' };
+
   return (
     <div className="h-full flex flex-col p-3 lg:p-6 lg:pr-6">
       {/* Quick-Add Modal */}
-      {quickAdd && (
+      {quickAdd && user && (
         <QuickAddModal date={quickAdd.date} time={quickAdd.time} onClose={() => setQuickAdd(null)} userId={user?.uid || 'demo-user'} locale={locale} />
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 lg:mb-5 flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="mb-4 flex flex-shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between lg:mb-5">
+        <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto">
           {/* Navigation arrows + label */}
-          <div className="flex items-center gap-1.5">
-            <button onClick={goPrev} className="h-8 w-8 rounded-xl flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 transition-all active:scale-95">
+          <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">
+            <button type="button" onClick={goPrev} aria-label={previousViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 sm:h-8 sm:w-8">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button onClick={goToday} className="hidden sm:block">
-              <h1 className="text-[17px] lg:text-[19px] font-bold tracking-tight hover:text-foreground/80 transition-colors">
-                {headerLabel}
-              </h1>
-            </button>
-            <h1 className="sm:hidden text-[17px] font-bold tracking-tight">{headerLabel}</h1>
-            <button onClick={goNext} className="h-8 w-8 rounded-xl flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 transition-all active:scale-95">
+            <h1 className="min-w-0 flex-1 truncate text-center text-[17px] font-bold tracking-tight sm:flex-none lg:text-[19px]">
+              {mobile ? headerLabel : (
+                <button type="button" onClick={goToday} aria-label={t('calendar.goToToday')} className="min-w-0 truncate transition-colors hover:text-foreground/80">
+                  {headerLabel}
+                </button>
+              )}
+            </h1>
+            <button type="button" onClick={goNext} aria-label={nextViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 sm:h-8 sm:w-8">
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
 
-          {isSyncRunning() && lastSync > 0 && (
-            <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-muted-foreground/30 shrink-0">
-              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Synced</span>
+          {lastSync > 0 && !importing && (
+            <div
+              className="hidden shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground/45 sm:flex"
+              title={german
+                ? `Letzte Kalendersynchronisierung: ${format(new Date(lastSync), 'Pp', { locale })}`
+                : `Last calendar sync: ${format(new Date(lastSync), 'Pp', { locale })}`}
+            >
+              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span>{t('calendar.synced')}</span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 lg:gap-2">
+        <div className="flex w-full items-center justify-between gap-1.5 sm:w-auto sm:justify-end lg:gap-2">
           {/* View switcher */}
-          <div className="flex items-center bg-muted/30 rounded-xl p-[3px] border border-border/30">
-            {([
-              { mode: 'month' as ViewMode, icon: LayoutGrid, label: 'Month' },
-              { mode: 'week' as ViewMode, icon: CalendarRange, label: 'Week' },
-              { mode: 'day' as ViewMode, icon: CalendarDays, label: 'Day' },
-            ]).map(({ mode, icon: Icon, label }) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-lg px-2 lg:px-3 py-1.5 text-[11px] font-semibold transition-all',
-                  viewMode === mode
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground/40 hover:text-muted-foreground/70'
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span className="hidden lg:inline">{label}</span>
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label={t('calendar.calendarView')}
+            value={viewMode}
+            onChange={changeViewMode}
+            options={[
+              { value: 'month' as ViewMode, label: viewLabels.month, icon: LayoutGrid, labelOnDesktopOnly: true },
+              { value: 'week' as ViewMode, label: viewLabels.week, icon: CalendarRange, labelOnDesktopOnly: true },
+              { value: 'day' as ViewMode, label: viewLabels.day, icon: CalendarDays, labelOnDesktopOnly: true },
+              { value: 'agenda' as ViewMode, label: viewLabels.agenda, icon: List, labelOnDesktopOnly: true },
+            ]}
+          />
 
           {/* Google Import */}
-          <button onClick={handleImportFromGoogle} disabled={importing} className={cn(
-            'hidden sm:flex h-8 w-8 lg:w-auto lg:px-3 items-center justify-center gap-1.5 rounded-xl text-[11px] font-medium transition-all',
+          <button type="button" onClick={handleImportFromGoogle} disabled={importing} aria-label={importing ? t('calendar.importing') : t('calendar.importFromGoogle')} className={cn(
+            'flex h-11 w-11 items-center justify-center gap-1.5 rounded-xl text-[11px] font-medium transition-all lg:h-8 lg:w-auto lg:px-3',
             'text-muted-foreground/50 hover:text-foreground hover:bg-muted/40',
             importing && 'opacity-40 pointer-events-none'
           )}>
@@ -823,30 +1211,44 @@ export default function CalendarPage() {
 
           {/* Quick add FAB */}
           <button
-            onClick={() => setQuickAdd({ date: viewMode === 'day' ? currentDate : new Date() })}
-            className="h-8 w-8 lg:h-8 lg:w-auto lg:px-3.5 rounded-xl bg-foreground text-background flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-95 transition-all shadow-sm"
+            type="button"
+            onClick={() => setQuickAdd({ date: currentDate })}
+            aria-label={t('calendar.createCalendarItem')}
+            className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-xl bg-foreground text-background shadow-sm transition-all hover:opacity-90 active:scale-95 lg:h-8 lg:w-auto lg:px-3.5"
           >
             <Plus className="h-4 w-4 lg:h-3.5 lg:w-3.5" />
-            <span className="hidden lg:inline text-[11px] font-semibold">{t('common.create') || 'New'}</span>
+            <span className="hidden lg:inline text-[11px] font-semibold">{t('common.create')}</span>
           </button>
         </div>
       </div>
 
+      {/* Agenda — a list of what is next, which the grids cannot give. */}
+      {viewMode === 'agenda' && (
+        <AgendaView
+          items={items}
+          start={currentDate}
+          days={AGENDA_DAYS}
+          is24h={is24h}
+          locale={locale}
+          onItemClick={handleEventClick}
+        />
+      )}
+
       {/* Week View */}
       {viewMode === 'week' && (
-        <TimeGrid days={effectiveWeekDays} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} showWeekNumbers={!mobile && showWeekNumbers} />
+        <TimeGrid days={effectiveWeekDays} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onEventReschedule={handleEventReschedule} showWeekNumbers={!mobile && showWeekNumbers} t={t} />
       )}
 
       {/* Day View */}
       {viewMode === 'day' && (
-        <TimeGrid days={[startOfDay(currentDate)]} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} showWeekNumbers={false} />
+        <TimeGrid days={[startOfDay(currentDate)]} items={items} is24h={is24h} locale={locale} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onEventReschedule={handleEventReschedule} showWeekNumbers={false} t={t} />
       )}
 
       {/* Month View */}
       {viewMode === 'month' && (
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 lg:gap-0">
           {/* Calendar grid card */}
-          <div className={cn('flex-1 min-h-0 rounded-2xl border border-border/40 overflow-hidden bg-card shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex flex-col', mobile && selectedMobileDay && 'max-h-[55vh]')}>
+          <div className={cn('flex min-h-[310px] flex-1 flex-col overflow-hidden rounded-2xl border border-border/40 bg-card shadow-[0_1px_3px_rgba(0,0,0,0.04)] lg:min-h-0', mobile && selectedMobileDay && 'max-h-[55vh]')}>
             {/* Day names header */}
             <div className={cn('grid border-b border-border/25 flex-shrink-0', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')}>
               {showWeekNumbers && (
@@ -864,8 +1266,8 @@ export default function CalendarPage() {
             </div>
 
             {/* Calendar grid */}
-            <div className="relative flex-1 min-h-0">
-              <div className={cn('grid h-full', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')} style={{ gridTemplateRows: `repeat(${totalRows}, 1fr)` }}>
+            <div className="relative min-h-[270px] flex-1 lg:min-h-0">
+              <div className={cn('grid h-full min-h-[270px] lg:min-h-0', showWeekNumbers ? 'grid-cols-8' : 'grid-cols-7')} style={{ gridTemplateRows: `repeat(${totalRows}, 1fr)` }}>
                 {calendarDays.map((day, idx) => {
                   const row = Math.floor(idx / 7);
                   const col = idx % 7;
@@ -886,20 +1288,30 @@ export default function CalendarPage() {
                   return (
                     <React.Fragment key={day.toISOString()}>
                       {weekNumCell}
-                      <button
-                        onClick={() => handleMonthDayClick(day)}
+                      <div
                         className={cn(
                           'relative border-b border-r border-border/[0.08] p-1 lg:p-1.5 transition-all text-left group overflow-hidden',
                           'hover:bg-foreground/[0.02] active:bg-foreground/[0.04]',
-                          !isCurrentMonth && 'opacity-30',
+                          !isCurrentMonth && 'bg-muted/15',
                           isTodayDate && 'bg-blue-500/[0.04]',
                           isMobileSelected && 'bg-foreground/[0.06] ring-1 ring-foreground/10 ring-inset'
                         )}
                       >
+                        <button
+                          type="button"
+                          onClick={() => handleMonthDayClick(day)}
+                          aria-label={german
+                            ? `${mobile ? 'Einträge anzeigen' : 'Tag öffnen'}: ${format(day, 'PPPP', { locale })}, ${dayItems.length} ${dayItems.length === 1 ? 'Eintrag' : 'Einträge'}`
+                            : `${mobile ? 'Show items' : 'Open day'}: ${format(day, 'PPPP', { locale })}, ${dayItems.length} ${dayItems.length === 1 ? 'item' : 'items'}`}
+                          className="absolute inset-0 z-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset"
+                        />
+                        <div className="pointer-events-none relative z-[1] h-full">
                         {/* Date number */}
                         <div className={cn(
                           'inline-flex h-6 w-6 lg:h-7 lg:w-7 items-center justify-center rounded-full text-[11px] lg:text-[12px] font-semibold tabular-nums transition-all',
-                          isTodayDate ? 'bg-foreground text-background' : 'text-muted-foreground/40 group-hover:text-foreground/70',
+                          isTodayDate
+                            ? 'bg-foreground text-background'
+                            : cn('text-muted-foreground group-hover:text-foreground', !isCurrentMonth && 'font-normal'),
                         )}>
                           {format(day, 'd')}
                         </div>
@@ -912,18 +1324,20 @@ export default function CalendarPage() {
                           {singleDayItems.slice(0, maxVisible).map((item) => {
                             const color = getEventColor(item);
                             return (
-                              <div
+                              <button
                                 key={item.id}
+                                type="button"
                                 onClick={(e) => { e.stopPropagation(); setSelectedItemId(item.id); }}
+                                aria-label={german ? `${item.title} öffnen` : `Open ${item.title}`}
                                 className={cn(
-                                  'w-full truncate rounded-md px-1.5 py-[2px] text-[10px] font-semibold cursor-pointer transition-all',
+                                  'pointer-events-auto w-full truncate rounded-md px-1.5 py-[2px] text-left text-[10px] font-semibold cursor-pointer transition-all',
                                   color.bg, color.text, 'hover:brightness-95'
                                 )}
                                 title={item.title}
                               >
                                 {item.startTime && <span className="mr-0.5 text-[8px] opacity-50 tabular-nums">{item.startTime}</span>}
                                 {item.title}
-                              </div>
+                              </button>
                             );
                           })}
                           {singleDayItems.length > maxVisible && (
@@ -938,7 +1352,8 @@ export default function CalendarPage() {
                           ))}
                           {dayItems.length > 4 && <span className="text-[7px] text-muted-foreground/25 font-bold ml-0.5">+{dayItems.length - 4}</span>}
                         </div>
-                      </button>
+                        </div>
+                      </div>
                     </React.Fragment>
                   );
                 })}
@@ -951,7 +1366,7 @@ export default function CalendarPage() {
                   const color = getEventColor(seg.item);
                   const colOff = showWeekNumbers ? 2 : 1;
                   return (
-                    <div key={`${seg.item.id}-${i}`} className="pointer-events-auto cursor-pointer px-[2px]" style={{ gridRow: seg.row + 1, gridColumn: `${seg.col + colOff} / span ${seg.span}`, alignSelf: 'start', marginTop: `${38 + seg.lane * 22}px` }} onClick={() => setSelectedItemId(seg.item.id)}>
+                    <button type="button" aria-label={german ? `${seg.item.title} öffnen` : `Open ${seg.item.title}`} key={`${seg.item.id}-${i}`} className="pointer-events-auto cursor-pointer px-[2px] text-left" style={{ gridRow: seg.row + 1, gridColumn: `${seg.col + colOff} / span ${seg.span}`, alignSelf: 'start', marginTop: `${38 + seg.lane * 22}px` }} onClick={() => setSelectedItemId(seg.item.id)}>
                       <div className={cn(
                         'h-[18px] px-2 text-[9px] font-bold leading-[18px] truncate transition-all hover:brightness-110',
                         color.accent, 'text-white shadow-sm',
@@ -962,7 +1377,7 @@ export default function CalendarPage() {
                       )} title={seg.item.title}>
                         {seg.isStart ? seg.item.title : ''}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -984,16 +1399,16 @@ export default function CalendarPage() {
                     </div>
                     <div>
                       <p className="text-[13px] font-bold leading-tight">
-                        {getRelativeDayLabel(selectedMobileDay, locale) || format(selectedMobileDay, 'EEEE', { locale })}
+                        {getRelativeDayLabel(selectedMobileDay, locale, t) || format(selectedMobileDay, 'EEEE', { locale })}
                       </p>
                       <p className="text-[11px] text-muted-foreground/40">{format(selectedMobileDay, 'MMMM yyyy', { locale })}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <button onClick={() => setQuickAdd({ date: selectedMobileDay })} className="h-8 w-8 rounded-xl bg-foreground text-background flex items-center justify-center active:scale-95 transition-all">
+                    <button type="button" onClick={() => setQuickAdd({ date: selectedMobileDay })} aria-label={german ? `Eintrag am ${format(selectedMobileDay, 'PPPP', { locale })} erstellen` : `Create an item on ${format(selectedMobileDay, 'PPPP', { locale })}`} className="flex h-11 w-11 items-center justify-center rounded-xl bg-foreground text-background transition-all active:scale-95">
                       <Plus className="h-4 w-4" />
                     </button>
-                    <button onClick={() => setSelectedMobileDay(null)} className="h-8 w-8 rounded-xl flex items-center justify-center text-muted-foreground/40 hover:bg-muted/40 transition-all">
+                    <button type="button" onClick={() => setSelectedMobileDay(null)} aria-label={t('calendar.closeSelectedDay')} className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/40 transition-all hover:bg-muted/40">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
@@ -1004,8 +1419,8 @@ export default function CalendarPage() {
                   {mobileDayItems.length === 0 ? (
                     <div className="px-4 py-8 text-center">
                       <p className="text-[13px] text-muted-foreground/25 font-medium">{t('calendar.noEventsOrTasks')}</p>
-                      <button onClick={() => setQuickAdd({ date: selectedMobileDay })} className="mt-3 text-[12px] font-semibold text-foreground/60 hover:text-foreground transition-colors">
-                        + Add something
+                      <button type="button" onClick={() => setQuickAdd({ date: selectedMobileDay })} className="mt-3 text-[12px] font-semibold text-foreground/60 hover:text-foreground transition-colors">
+                        {t('calendar.addAnItem')}
                       </button>
                     </div>
                   ) : (
@@ -1023,7 +1438,7 @@ export default function CalendarPage() {
                               <span className="text-[14px] font-semibold truncate block leading-tight">{item.title}</span>
                               {(item.startTime || item.type === 'task') && (
                                 <span className="text-[11px] text-muted-foreground/35 mt-0.5 block font-medium">
-                                  {item.startTime ? `${item.startTime}${item.endTime ? ` – ${item.endTime}` : ''}` : item.type === 'task' ? 'Task' : ''}
+                                  {item.startTime ? `${item.startTime}${item.endTime ? ` – ${item.endTime}` : ''}` : item.type === 'task' ? t('type.task') : ''}
                                 </span>
                               )}
                             </div>
@@ -1044,7 +1459,7 @@ export default function CalendarPage() {
               <div className="rounded-2xl border border-border/40 bg-card shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex flex-col flex-1 min-h-0 overflow-hidden">
                 <div className="px-4 pt-4 pb-3 flex-shrink-0">
                   <p className="text-[10px] font-bold text-muted-foreground/30 uppercase tracking-wider">{t('common.today')}</p>
-                  <p className="text-[15px] font-bold mt-1">{format(new Date(), 'MMMM d', { locale })}</p>
+                  <p className="text-[15px] font-bold mt-1">{format(new Date(), 'PPP', { locale })}</p>
                 </div>
                 <div className="flex-1 overflow-y-auto px-2 pb-2">
                   {(() => {

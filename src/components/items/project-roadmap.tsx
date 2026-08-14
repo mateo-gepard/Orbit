@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback, useState } from 'react';
+import { useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -8,6 +8,7 @@ import {
   BackgroundVariant,
   useNodesState,
   useEdgesState,
+  type AriaLabelConfig,
   type NodeMouseHandler,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -15,6 +16,7 @@ import { useSwipeToClose } from '@/lib/hooks/use-swipe-to-close';
 import {
   X,
   GanttChart,
+  LoaderCircle,
   Plus,
   Target,
 } from 'lucide-react';
@@ -30,12 +32,31 @@ import {
   TaskRoadmapNode,
 } from './roadmap-node';
 import { buildRoadmapGraph } from './roadmap-utils';
+import { format } from 'date-fns';
+import { toast } from 'sonner';
+import { useTranslation, type Translate } from '@/lib/i18n';
 
 const nodeTypes = {
   projectRoadmapNode: ProjectRoadmapNode,
   milestoneRoadmapNode: MilestoneRoadmapNode,
   taskRoadmapNode: TaskRoadmapNode,
 };
+
+function graphAriaLabels(translate: Translate): Partial<AriaLabelConfig> {
+  return {
+    'node.a11yDescription.default': translate('graph.nodeSelectDescription'),
+    'node.a11yDescription.keyboardDisabled': translate('graph.nodeMoveDescription'),
+    'node.a11yDescription.ariaLiveMessage': ({ x, y }) => translate('graph.nodeMoved', { x, y }),
+    'edge.a11yDescription.default': translate('graph.edgeSelectDescription'),
+    'controls.ariaLabel': translate('graph.controls'),
+    'controls.zoomIn.ariaLabel': translate('graph.zoomIn'),
+    'controls.zoomOut.ariaLabel': translate('graph.zoomOut'),
+    'controls.fitView.ariaLabel': translate('graph.fitView'),
+    'controls.interactive.ariaLabel': translate('graph.toggleInteractivity'),
+    'minimap.ariaLabel': translate('graph.miniMap'),
+    'handle.ariaLabel': translate('graph.handle'),
+  };
+}
 
 interface ProjectRoadmapProps {
   open: boolean;
@@ -46,18 +67,29 @@ interface ProjectRoadmapProps {
 }
 
 export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }: ProjectRoadmapProps) {
+  const { t, tp } = useTranslation();
   const { isDragging, swipeStyles, handlers: swipeHandlers } = useSwipeToClose({ onClose });
   const { user } = useAuth();
+  const createPendingRef = useRef(false);
+  const [isCreatingMilestone, setIsCreatingMilestone] = useState(false);
+  const ariaLabelConfig = useMemo(() => graphAriaLabels(t), [t]);
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildRoadmapGraph(project, allItems),
-    [project, allItems],
+    () => buildRoadmapGraph(project, allItems, { dependencyLabel: t('roadmap.dependsOn') }),
+    [project, allItems, t],
   );
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  useEffect(() => {
+    if (!open) return;
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialEdges, initialNodes, open, setEdges, setNodes]);
 
   const hasContent = initialNodes.length > 1;
+  const renderedTaskCount = initialNodes.filter((node) => node.type === 'taskRoadmapNode').length;
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
@@ -71,21 +103,32 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
   );
 
   // ── Quick create ──
-  const handleAddMilestone = async () => {
-    if (!user) return;
-    const id = await createItem({
-      type: 'goal',
-      status: 'active',
-      title: '',
-      parentId: project.id,
-      tags: [],
-      userId: user.uid,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    onNavigate(id);
-    onClose();
-  };
+  const handleAddMilestone = useCallback(async () => {
+    if (!user || createPendingRef.current) return;
+
+    createPendingRef.current = true;
+    setIsCreatingMilestone(true);
+    try {
+      const now = Date.now();
+      const id = await createItem({
+        type: 'goal',
+        status: 'active',
+        title: t('roadmap.newMilestoneTitle'),
+        parentId: project.id,
+        tags: [],
+        userId: user.uid,
+        createdAt: now,
+        updatedAt: now,
+      });
+      onNavigate(id);
+      onClose();
+    } catch {
+      toast.error(t('roadmap.addMilestoneError'));
+    } finally {
+      createPendingRef.current = false;
+      setIsCreatingMilestone(false);
+    }
+  }, [onClose, onNavigate, project.id, t, user]);
 
   // ── Stats ──
   const stats = useMemo(() => {
@@ -98,7 +141,8 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
     const done = tasks.filter(t => t.status === 'done').length;
     const active = tasks.filter(t => t.status === 'active').length;
     const waiting = tasks.filter(t => t.status === 'waiting').length;
-    const overdue = tasks.filter(t => !['done', 'archived'].includes(t.status) && t.dueDate && t.dueDate < new Date().toISOString().split('T')[0]).length;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const overdue = tasks.filter(t => !['done', 'archived'].includes(t.status) && t.dueDate && t.dueDate < today).length;
     return {
       milestones: milestones.length,
       milestoneDone: milestones.filter(m => m.status === 'done').length,
@@ -115,13 +159,12 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent
         side="bottom"
-        className="h-[92dvh] lg:h-[88dvh] rounded-t-2xl p-0 border-0"
+        className="mobile-sheet-height rounded-t-2xl p-0 border-0 lg:h-[88dvh]"
         showCloseButton={false}
-        onOpenAutoFocus={(e) => e.preventDefault()}
         style={swipeStyles}
       >
         <SheetHeader className="sr-only">
-          <SheetTitle>Project Roadmap</SheetTitle>
+          <SheetTitle>{t('roadmap.title')}</SheetTitle>
         </SheetHeader>
 
         <div className="h-full flex flex-col bg-background">
@@ -143,17 +186,31 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
                 <GanttChart className="h-5 w-5 text-muted-foreground/60 shrink-0" />
                 <span className="text-xl shrink-0">{project.emoji || '📁'}</span>
                 <div className="min-w-0">
-                  <h2 className="text-[15px] font-semibold truncate">{project.title || 'Untitled Project'}</h2>
-                  <div className="flex items-center gap-3 mt-0.5">
+                  <h2 className="text-[15px] font-semibold truncate">
+                    {project.title || t('projects.untitledProject')}
+                  </h2>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
                     <span className="text-[11px] text-muted-foreground/50">
-                      {stats.milestones} milestone{stats.milestones !== 1 ? 's' : ''}
+                      {tp('roadmap.milestones.one', 'roadmap.milestones.other', stats.milestones)}
                     </span>
                     <span className="text-[11px] text-muted-foreground/50">
-                      {stats.done}/{stats.tasks} tasks
+                      {tp('roadmap.taskProgress.one', 'roadmap.taskProgress.other', stats.tasks, {
+                        done: stats.done,
+                        total: stats.tasks,
+                      })}
                     </span>
+                    {stats.tasks > renderedTaskCount && (
+                      <span className="text-[11px] text-muted-foreground/50">
+                        {tp(
+                          'roadmap.hiddenTasks.one',
+                          'roadmap.hiddenTasks.other',
+                          stats.tasks - renderedTaskCount,
+                        )}
+                      </span>
+                    )}
                     {stats.overdue > 0 && (
                       <span className="text-[11px] text-red-500 font-medium">
-                        {stats.overdue} overdue
+                        {tp('roadmap.overdue.one', 'roadmap.overdue.other', stats.overdue)}
                       </span>
                     )}
                     <span className="text-[11px] font-medium" style={{ color: project.color || '#6366f1' }}>
@@ -164,18 +221,25 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
+                  type="button"
                   onClick={handleAddMilestone}
-                  className="flex items-center gap-1.5 rounded-lg bg-foreground/[0.06] hover:bg-foreground/[0.1] px-3 py-1.5 text-[11px] font-medium text-foreground/80 transition-colors"
+                  disabled={!user || isCreatingMilestone}
+                  aria-busy={isCreatingMilestone}
+                  className="flex items-center gap-1.5 rounded-lg bg-foreground/[0.06] hover:bg-foreground/[0.1] px-3 py-1.5 text-[11px] font-medium text-foreground/80 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  Milestone
+                  {isCreatingMilestone ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {t('roadmap.addMilestone')}
                 </button>
                 <Button
                   size="icon"
                   variant="ghost"
                   onClick={onClose}
                   className="h-8 w-8 shrink-0"
-                  aria-label="Close roadmap"
+                  aria-label={t('roadmap.close')}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -193,10 +257,13 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
                 onEdgesChange={onEdgesChange}
                 onNodeClick={onNodeClick}
                 nodeTypes={nodeTypes}
+                ariaLabelConfig={ariaLabelConfig}
                 fitView
                 fitViewOptions={{ padding: 0.3, maxZoom: 1.2 }}
                 minZoom={0.2}
                 maxZoom={2}
+                nodesConnectable={false}
+                deleteKeyCode={null}
                 defaultEdgeOptions={{
                   type: 'smoothstep',
                 }}
@@ -221,16 +288,25 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
                 <div className="h-20 w-20 rounded-2xl bg-foreground/[0.03] flex items-center justify-center mb-5">
                   <Target className="h-10 w-10 text-muted-foreground/20" />
                 </div>
-                <h3 className="text-base font-semibold text-foreground/80 mb-1.5">No roadmap data yet</h3>
+                <h3 className="text-base font-semibold text-foreground/80 mb-1.5">
+                  {t('roadmap.emptyTitle')}
+                </h3>
                 <p className="text-[13px] text-muted-foreground/50 max-w-[300px] leading-relaxed mb-5">
-                  Add milestones and tasks to see your project&apos;s full dependency graph with progress tracking
+                  {t('roadmap.emptyDescription')}
                 </p>
                 <button
+                  type="button"
                   onClick={handleAddMilestone}
-                  className="flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background hover:opacity-90 active:scale-[0.98] transition-all"
+                  disabled={!user || isCreatingMilestone}
+                  aria-busy={isCreatingMilestone}
+                  className="flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background hover:opacity-90 active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <Plus className="h-4 w-4" />
-                  Add First Milestone
+                  {isCreatingMilestone ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {t('roadmap.addFirstMilestone')}
                 </button>
               </div>
             )}
@@ -241,23 +317,23 @@ export function ProjectRoadmap({ open, onClose, project, allItems, onNavigate }:
             <div className="bg-background/95 backdrop-blur-sm border-t border-border/60 px-4 py-2 flex items-center justify-center gap-6 flex-wrap shrink-0">
               <div className="flex items-center gap-1.5">
                 <div className="w-5 h-[2px] bg-muted-foreground rounded-full" />
-                <span className="text-[10px] text-muted-foreground/50">Parent → Child</span>
+                <span className="text-[10px] text-muted-foreground/50">{t('roadmap.parentChild')}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-5 h-[2px] bg-blue-500 rounded-full" style={{ strokeDasharray: '4,3' }} />
-                <span className="text-[10px] text-muted-foreground/50">Dependency</span>
+                <span className="text-[10px] text-muted-foreground/50">{t('roadmap.dependency')}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-red-500" />
-                <span className="text-[10px] text-muted-foreground/50">High</span>
+                <span className="text-[10px] text-muted-foreground/50">{t('priority.high')}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-amber-500" />
-                <span className="text-[10px] text-muted-foreground/50">Medium</span>
+                <span className="text-[10px] text-muted-foreground/50">{t('priority.medium')}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-blue-400" />
-                <span className="text-[10px] text-muted-foreground/50">Low</span>
+                <span className="text-[10px] text-muted-foreground/50">{t('priority.low')}</span>
               </div>
             </div>
           )}

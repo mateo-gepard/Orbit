@@ -2,7 +2,7 @@ import type { OrbitItem } from './types';
 import { calculateStreak } from './habits';
 
 // ═══════════════════════════════════════════════════════════
-// ORBIT — Badge & Achievement System
+// Threadmap — Badge & Achievement System
 // ═══════════════════════════════════════════════════════════
 
 export type BadgeTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
@@ -168,9 +168,17 @@ function getCategoryValue(category: string, items: OrbitItem[]): number {
     case 'notes':
       return items.filter((i) => i.type === 'note' && i.status !== 'archived').length;
     case 'links': {
-      let total = 0;
-      items.forEach((i) => { total += (i.linkedIds?.length || 0); });
-      return total;
+      const itemIds = new Set(items.map((item) => item.id));
+      const connections = new Set<string>();
+
+      for (const item of items) {
+        for (const linkedId of item.linkedIds || []) {
+          if (linkedId === item.id || !itemIds.has(linkedId)) continue;
+          connections.add([item.id, linkedId].sort().join('\u0000'));
+        }
+      }
+
+      return connections.size;
     }
     default:
       return 0;

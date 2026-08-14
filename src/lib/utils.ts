@@ -21,16 +21,6 @@ export function getWeekStartsOn(ws: WeekStart = 'monday'): 0 | 1 {
   return ws === 'sunday' ? 0 : 1;
 }
 
-/** Map DateFormat setting to a date-fns format string */
-function dateFmtToPattern(df: DateFormat): string {
-  switch (df) {
-    case 'DD.MM.YYYY': return 'dd.MM.yyyy';
-    case 'MM/DD/YYYY': return 'MM/dd/yyyy';
-    case 'YYYY-MM-DD': return 'yyyy-MM-dd';
-    default: return 'dd.MM.yyyy';
-  }
-}
-
 /** Map TimeFormat setting to date-fns time pattern */
 function timeFmtToPattern(tf: TimeFormat): string {
   return tf === '12h' ? 'h:mm a' : 'HH:mm';
@@ -63,4 +53,29 @@ export const DATE_FORMAT_SHORT = 'dd MMM';
 
 export function formatTimestamp(timestamp: number, fmt: string = DATE_FORMAT_FULL): string {
   return format(new Date(timestamp), fmt);
+}
+
+/**
+ * A foreground that stays legible on an arbitrary user-picked accent colour.
+ *
+ * The accent picker accepts any hex, so a fixed white or black foreground
+ * would be unreadable across half the range.
+ *
+ * This uses perceived brightness (the YIQ luma weights) rather than WCAG
+ * relative luminance. The two disagree right where common accent colours sit:
+ * WCAG's 0.179 crossover puts *black* on indigo-500, because the contrast
+ * ratios there are near-identical (4.71 vs 4.46) — while every design system,
+ * this one included, puts white on it. Brightness matches that expectation.
+ */
+export function readableForeground(hex: string): '#000000' | '#ffffff' {
+  const match = /^#([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!match) return '#ffffff';
+
+  const int = parseInt(match[1], 16);
+  const red = (int >> 16) & 0xff;
+  const green = (int >> 8) & 0xff;
+  const blue = int & 0xff;
+  const brightness = (red * 299 + green * 587 + blue * 114) / 1000;
+
+  return brightness >= 149 ? '#000000' : '#ffffff';
 }

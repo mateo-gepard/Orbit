@@ -7,6 +7,7 @@ import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ITEM_TYPE_CONFIG } from './link-graph-config';
 import type { OrbitItem } from '@/lib/types';
+import { useTranslation } from '@/lib/i18n';
 
 interface OrbitNodeData {
   item: OrbitItem;
@@ -16,6 +17,7 @@ interface OrbitNodeData {
 }
 
 function OrbitNodeComponent({ data }: { data: OrbitNodeData }) {
+  const { t } = useTranslation();
   const { item, isCurrent, depth = 0 } = data;
   const config = ITEM_TYPE_CONFIG[item.type];
   const Icon = config.icon;
@@ -48,6 +50,7 @@ function OrbitNodeComponent({ data }: { data: OrbitNodeData }) {
           )}
         >
           <Icon
+            aria-hidden="true"
             className={cn(
               'h-4 w-4',
               isCurrent ? 'text-primary' : config.color
@@ -62,27 +65,27 @@ function OrbitNodeComponent({ data }: { data: OrbitNodeData }) {
             )}
           >
             {item.emoji && <span className="mr-1">{item.emoji}</span>}
-            {item.title}
+            {item.title || t('common.untitled')}
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <Badge
               variant="secondary"
               className={cn('text-[9px] px-1.5 py-0 h-3.5 capitalize font-medium', config.color)}
             >
-              {item.type}
+              {t(`type.${item.type}`)}
             </Badge>
             {isDone && (
               <Badge
                 variant="outline"
                 className="text-[9px] px-1.5 py-0 h-3.5 text-green-600 border-green-200"
               >
-                Done
+                {t('status.done')}
               </Badge>
             )}
           </div>
         </div>
         {isCurrent && (
-          <Sparkles className="h-3.5 w-3.5 text-primary animate-pulse shrink-0" />
+          <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-primary animate-pulse shrink-0" />
         )}
       </div>
 

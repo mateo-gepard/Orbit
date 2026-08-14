@@ -1,34 +1,26 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Inbox,
   CheckSquare,
   CalendarDays,
-  Target,
   FolderKanban,
   Repeat,
   Flame,
-  ArrowRight,
   Plus,
   Sparkles,
   ChevronLeft,
   ChevronRight,
   Clock3,
 } from 'lucide-react';
-import { useOrbitStore } from '@/lib/store';
+import { useThreadmapStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useSettingsStore } from '@/lib/settings-store';
 import { ItemRow } from '@/components/items/item-row';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { cn, getLocale, getWeekStartsOn } from '@/lib/utils';
 import {
   format,
   isToday,
-  isPast,
-  parseISO,
   startOfWeek,
   addDays,
   subDays,
@@ -43,15 +35,33 @@ import { updateItem } from '@/lib/firestore';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n';
-import { auth } from '@/lib/firebase';
+import { getTaskBuckets } from '@/lib/task-buckets';
+import { eventOccursOnDate, getProjectTaskProgress } from '@/lib/dashboard';
+import { toast } from 'sonner';
 
 /* ── Login ── */
-function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, onResetPassword }: {
-  onSignIn: () => void;
+function LoginScreen({
+  onSignIn,
+  onDemo,
+  onEmailSignIn,
+  onEmailSignUp,
+  onSendEmailLink,
+  onResetPassword,
+  emailLinkState,
+  emailLinkError,
+  onCompleteEmailLink,
+  onCancelEmailLink,
+}: {
+  onSignIn: () => Promise<void>;
+  onDemo: () => Promise<void>;
   onEmailSignIn: (email: string, password: string) => Promise<void>;
   onEmailSignUp: (email: string, password: string, displayName?: string) => Promise<void>;
   onSendEmailLink: (email: string) => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
+  emailLinkState: 'idle' | 'needs-email' | 'signing-in' | 'error';
+  emailLinkError: string | null;
+  onCompleteEmailLink: (email: string) => Promise<void>;
+  onCancelEmailLink: () => void;
 }) {
   const [mode, setMode] = useState<'choice' | 'login' | 'signup' | 'email-link' | 'email-link-sent' | 'reset-password' | 'reset-sent'>('choice');
   const [email, setEmail] = useState('');
@@ -75,6 +85,12 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
     return map[code] || t('error.generic');
   };
 
+  const authErrorMessage = (err: unknown) => {
+    const code = (err as { code?: string })?.code || '';
+    if (code) return firebaseErrorMessage(code);
+    return err instanceof Error ? err.message : t('error.generic');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -86,8 +102,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
         await onEmailSignIn(email, password);
       }
     } catch (err: unknown) {
-      const code = (err as { code?: string })?.code || '';
-      setError(firebaseErrorMessage(code));
+      setError(authErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -101,22 +116,79 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
       await onSendEmailLink(email);
       setMode('email-link-sent');
     } catch (err: unknown) {
-      const code = (err as { code?: string })?.code || '';
-      setError(firebaseErrorMessage(code));
+      setError(authErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCompleteEmailLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      await onCompleteEmailLink(email);
+    } catch (err: unknown) {
+      setError(authErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancelEmailLink = () => {
+    setEmail('');
+    setError('');
+    setSubmitting(false);
+    onCancelEmailLink();
+  };
+
+  const isCompletingEmailLink = emailLinkState !== 'idle';
+  const completingEmailLink = submitting || emailLinkState === 'signing-in';
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setSubmitting(true);
+    try {
+      await onSignIn();
+    } catch (err: unknown) {
+      setError(authErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDemo = async () => {
+    setError('');
+    setSubmitting(true);
+    try {
+      await onDemo();
+    } catch (err: unknown) {
+      setError(authErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center px-6">
+    <main className="flex min-h-[100dvh] items-center justify-center px-6">
+      <nav
+        aria-label="Legal and security"
+        className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-10 flex justify-center gap-4 px-4 text-[11px] text-muted-foreground"
+      >
+        <Link className="transition-colors hover:text-foreground" href="/privacy">Privacy</Link>
+        <Link className="transition-colors hover:text-foreground" href="/terms">Terms</Link>
+        <Link className="transition-colors hover:text-foreground" href="/security">Security</Link>
+      </nav>
       <div className="w-full max-w-sm space-y-8">
         <div className="space-y-2 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-foreground text-background font-bold text-xl">
-            O
-          </div>
+          <div
+            aria-hidden="true"
+            className="mx-auto h-14 w-14 rounded-2xl bg-cover bg-center shadow-[var(--shadow-soft)]"
+            style={{ backgroundImage: "url('/favicon.svg')" }}
+          />
           <h1 className="text-2xl font-bold tracking-tight mt-4">
-            {mode === 'signup' ? t('login.createAccount')
+            {isCompletingEmailLink ? t('login.confirmEmailLink')
+              : mode === 'signup' ? t('login.createAccount')
               : mode === 'email-link' ? t('login.signInEmailLink')
               : mode === 'email-link-sent' ? t('login.checkInbox')
               : mode === 'reset-password' ? t('login.resetPassword')
@@ -124,7 +196,9 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               : t('login.welcome')}
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {mode === 'signup'
+            {isCompletingEmailLink
+              ? t('login.confirmEmailLinkDesc')
+              : mode === 'signup'
               ? t('login.createAccountDesc')
               : mode === 'email-link'
               ? t('login.emailLinkDesc')
@@ -138,10 +212,58 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
           </p>
         </div>
 
-        {mode === 'choice' ? (
+        {isCompletingEmailLink ? (
+          <form onSubmit={handleCompleteEmailLink} className="space-y-3">
+            <label htmlFor="confirm-email-link-address" className="text-[12px] font-medium text-foreground/80">
+              {t('login.emailUsedForLink')}
+            </label>
+            <input
+              id="confirm-email-link-address"
+              type="email"
+              placeholder={t('login.emailPlaceholder')}
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(''); }}
+              required
+              disabled={completingEmailLink}
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40 disabled:cursor-wait disabled:opacity-60"
+              autoComplete="email"
+              autoFocus
+            />
+
+            {(error || emailLinkError) && (
+              <p role="alert" className="px-1 text-[12px] font-medium text-destructive">
+                {error || emailLinkError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={completingEmailLink}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50 active:scale-[0.98] transition-transform"
+            >
+              {completingEmailLink ? (
+                <>
+                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                  {t('login.completingSignIn')}
+                </>
+              ) : (
+                t('login.completeSignIn')
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelEmailLink}
+              disabled={completingEmailLink}
+              className="w-full py-1 text-[12px] text-muted-foreground/70 transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              {t('login.cancelEmailLink')}
+            </button>
+          </form>
+        ) : mode === 'choice' ? (
           <div className="space-y-2.5">
             <button
-              onClick={onSignIn}
+              onClick={handleGoogleSignIn}
+              disabled={submitting}
               className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 active:scale-[0.98] transition-transform"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24">
@@ -152,6 +274,9 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               </svg>
               {t('login.continueGoogle')}
             </button>
+            {error && (
+              <p role="alert" className="px-1 text-[12px] font-medium text-destructive">{error}</p>
+            )}
 
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">
@@ -174,14 +299,13 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
             >
               {t('login.signInEmailLink')}
             </button>
-            {!auth && (
-              <button
-                onClick={onSignIn}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
-              >
-                {t('login.tryWithout')}
-              </button>
-            )}
+            <button
+              onClick={handleDemo}
+              disabled={submitting}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
+            >
+              {t('login.tryWithout')}
+            </button>
           </div>
         ) : mode === 'email-link-sent' ? (
           <div className="space-y-4 text-center">
@@ -216,16 +340,20 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
             />
 
             {error && (
-              <p className="text-[12px] text-destructive font-medium px-1">{error}</p>
+              <p role="alert" className="text-[12px] text-destructive font-medium px-1">{error}</p>
             )}
 
             <button
               type="submit"
               disabled={submitting}
+              aria-busy={submitting}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
             >
               {submitting ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                <>
+                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                  <span>{t('login.sendSignInLink')}</span>
+                </>
               ) : (
                 t('login.sendSignInLink')
               )}
@@ -257,8 +385,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               await onResetPassword(email);
               setMode('reset-sent');
             } catch (err: unknown) {
-              const code = (err as { code?: string })?.code || '';
-              setError(firebaseErrorMessage(code));
+              setError(authErrorMessage(err));
             } finally {
               setSubmitting(false);
             }
@@ -276,15 +403,19 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
               autoFocus
             />
             {error && (
-              <p className="text-[12px] text-destructive font-medium px-1">{error}</p>
+              <p role="alert" className="text-[12px] text-destructive font-medium px-1">{error}</p>
             )}
             <button
               type="submit"
               disabled={submitting}
+              aria-busy={submitting}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
             >
               {submitting ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                <>
+                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                  <span>{t('login.sendResetLink')}</span>
+                </>
               ) : (
                 t('login.sendResetLink')
               )}
@@ -358,16 +489,20 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
             />
 
             {error && (
-              <p className="text-[12px] text-destructive font-medium px-1">{error}</p>
+              <p role="alert" className="text-[12px] text-destructive font-medium px-1">{error}</p>
             )}
 
             <button
               type="submit"
               disabled={submitting}
+              aria-busy={submitting}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
             >
               {submitting ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                <>
+                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                  <span>{mode === 'signup' ? t('login.createAccount') : t('login.signIn')}</span>
+                </>
               ) : mode === 'signup' ? (
                 t('login.createAccount')
               ) : (
@@ -413,7 +548,7 @@ function LoginScreen({ onSignIn, onEmailSignIn, onEmailSignUp, onSendEmailLink, 
             : t('login.dataEncrypted')}
         </p>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -431,7 +566,7 @@ function OnboardingState({ onOpen }: { onOpen: () => void }) {
       </p>
       <button
         onClick={onOpen}
-        className="mt-5 flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
+        className="mt-5 flex min-h-11 items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
       >
         <Plus className="h-3.5 w-3.5" />
         {t('onboarding.cta')}
@@ -458,96 +593,93 @@ function Section({
 }) {
   const { t } = useTranslation();
   return (
-    <div data-slot="section">
-      <div className="flex items-center justify-between mb-2 px-1">
-        <div className="flex items-center gap-2">
-          <Icon className="h-3.5 w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
-          <span className="text-[13px] font-semibold">{title}</span>
+    <section data-slot="section" className="group/section">
+      <div className="mb-2 flex items-center justify-between gap-3 px-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.04] text-muted-foreground transition-colors group-hover/section:bg-foreground/[0.07] group-hover/section:text-foreground">
+            <Icon className="h-3.5 w-3.5" strokeWidth={1.7} />
+          </span>
+          <span className="truncate text-[13px] font-semibold">{title}</span>
           {count !== undefined && (
-            <span className="text-[11px] text-muted-foreground/50 tabular-nums">{count}</span>
+            <span className="rounded-full bg-foreground/[0.05] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+              {count}
+            </span>
           )}
         </div>
-        {href && (
-          <Link href={href} className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors">
-            {t('common.viewAll')}
-          </Link>
-        )}
-        {action}
+        <div className="flex shrink-0 items-center gap-2">
+          {href && (
+            <Link
+              href={href}
+              className="mobile-touch-target rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+            >
+              {t('common.viewAll')}
+            </Link>
+          )}
+          {action}
+        </div>
       </div>
-      <div className="rounded-xl border border-border/60 bg-card">
+      <div className="overflow-hidden rounded-xl border border-border/60 bg-card/80 shadow-sm shadow-black/[0.02] backdrop-blur-sm transition-colors group-hover/section:border-border lg:rounded-2xl">
         {children}
+      </div>
+    </section>
+  );
+}
+
+function OverviewTile({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string | number;
+  icon: typeof CheckSquare;
+}) {
+  return (
+    <div className="group relative overflow-hidden rounded-[20px] border border-border/60 bg-card/90 p-4 text-foreground shadow-[0_14px_35px_-30px_rgba(0,0,0,0.55)] transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-[0_20px_42px_-30px_rgba(0,0,0,0.5)]">
+      <div aria-hidden="true" className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-foreground/25 to-transparent" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-medium text-muted-foreground">{label}</p>
+          <p className="mt-1 text-2xl font-semibold leading-none tracking-normal tabular-nums text-foreground">
+            {value}
+          </p>
+        </div>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/50 bg-foreground/[0.035] text-foreground/60 transition-colors group-hover:bg-foreground/[0.06] group-hover:text-foreground">
+          <Icon className="h-4 w-4" strokeWidth={1.8} />
+        </span>
       </div>
     </div>
   );
 }
 
-/* ── Hockey / Medical Quotes ── */
-const HOCKEY_QUOTES = [
-  { text: 'Hockey ist nicht nur ein Sport — es ist eine Lebenseinstellung.', emoji: '🏒' },
-  { text: 'Wer am härtesten trainiert, feiert am lautesten.', emoji: '🏑' },
-  { text: 'Jeder Treffer beginnt mit dem ersten Schritt aufs Feld.', emoji: '🥅' },
-  { text: 'Im Hockey wie im Leben: Wer stehen bleibt, verliert den Ball.', emoji: '🏒' },
-  { text: 'Ein Team ist stärker als die Summe seiner Spieler.', emoji: '🤝' },
-  { text: 'Die beste Verteidigung ist ein guter Angriff.', emoji: '🛡️' },
-  { text: 'Nicht der Größte gewinnt, sondern der Entschlossenste.', emoji: '💪' },
-  { text: 'Jede Niederlage ist ein Trainingsplan in Verkleidung.', emoji: '📋' },
-  { text: 'Disziplin auf dem Feld, Disziplin im Leben.', emoji: '🏟️' },
-  { text: 'Ein guter Arzt heilt, ein großartiger Arzt verhindert.', emoji: '🩺' },
-  { text: 'Manchmal ist die beste Medizin ein Hockeyschläger und frische Luft.', emoji: '🌿' },
-  { text: 'Diagnose: Zu viel Talent für nur ein Spielfeld.', emoji: '⚕️' },
-  { text: 'Die Short Corner ist die Ecke, an der sich Spiele entscheiden.', emoji: '🏒' },
-  { text: 'Spielintelligenz schlägt Schnelligkeit — meistens.', emoji: '🧠' },
-  { text: 'Jeder Sprint zum Tor ist ein Sprint zum Erfolg.', emoji: '🏃' },
-  { text: 'Ärzte und Hockeyspieler haben eins gemeinsam: Unter Druck glänzen sie.', emoji: '💎' },
-  { text: 'Die Strafecke gehört den Mutigen.', emoji: '🎯' },
-  { text: 'Nach dem Spiel ist vor dem Spiel.', emoji: '🔄' },
-  { text: 'Kein Patient, kein Gegner — kein Problem ist unlösbar.', emoji: '🩻' },
-  { text: 'Im dritten Drittel zeigt sich der wahre Charakter.', emoji: '⏱️' },
-];
-
-function HockeyQuote() {
-  const [idx, setIdx] = useState(0);
-
-  useEffect(() => {
-    setIdx(Math.floor(Math.random() * HOCKEY_QUOTES.length));
-  }, []);
-
-  const quote = HOCKEY_QUOTES[idx];
-
-  return (
-    <div
-      className="group relative rounded-xl border border-cyan-500/20 bg-gradient-to-r from-cyan-500/[0.03] to-emerald-500/[0.03] px-4 py-3 overflow-hidden cursor-pointer select-none transition-all hover:border-cyan-500/30"
-      onClick={() => setIdx((idx + 1) % HOCKEY_QUOTES.length)}
-      title="Klick für neues Zitat"
-    >
-      {/* subtle field-line decoration */}
-      <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
-        <div className="absolute top-1/2 left-0 right-0 h-px bg-cyan-500" />
-        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-cyan-500" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border border-cyan-500" />
-      </div>
-      <div className="flex items-start gap-3 relative z-10">
-        <span className="text-lg mt-0.5 transition-transform group-hover:scale-125 group-hover:rotate-12">
-          {quote.emoji}
-        </span>
-        <p className="text-[13px] italic text-foreground/70 leading-relaxed">
-          &ldquo;{quote.text}&rdquo;
-        </p>
-      </div>
-      <p className="text-[9px] text-muted-foreground/40 mt-1.5 text-right tracking-wider uppercase">
-        Tipp: Klicken für mehr
-      </p>
-    </div>
-  );
+function stableIndex(seed: string, length: number) {
+  if (length === 0) return -1;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return hash % length;
 }
 
 /* ── Dashboard ── */
 export default function DashboardPage() {
-  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, sendEmailLink, resetPassword } = useAuth();
-  const { items, setSelectedItemId, setCommandBarOpen } = useOrbitStore();
+  const {
+    user,
+    loading,
+    signInWithGoogle,
+    signInWithEmail,
+    signUpWithEmail,
+    sendEmailLink,
+    resetPassword,
+    continueAsDemo,
+    emailLinkState,
+    emailLinkError,
+    completeEmailLink,
+    cancelEmailLink,
+  } = useAuth();
+  const { items, setSelectedItemId, setCommandBarOpen } = useThreadmapStore();
   const defaultView = useSettingsStore((s) => s.settings.defaultView);
-  const { weekStart: weekStartSetting, language, dateFormat } = useSettingsStore((s) => s.settings);
-  const hockeyMode = useSettingsStore((s) => s.settings.hockeyMode && s.settings.language === 'de');
+  const { weekStart: weekStartSetting, language } = useSettingsStore((s) => s.settings);
   const locale = getLocale(language);
   const weekStartsOn = getWeekStartsOn(weekStartSetting);
   const router = useRouter();
@@ -556,32 +688,52 @@ export default function DashboardPage() {
   // Hydration-safe: avoid rendering date-dependent text during SSR
   const [mounted, setMounted] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const currentDayRef = useRef(format(new Date(), 'yyyy-MM-dd'));
 
   useEffect(() => {
-    setMounted(true);
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  // Keep an open dashboard correct across midnight without pulling a chosen
+  // historical date back to today.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const next = new Date();
+      const nextDay = format(next, 'yyyy-MM-dd');
+      const previousDay = currentDayRef.current;
+      if (nextDay !== previousDay) {
+        setSelectedDate((selected) => (
+          format(selected, 'yyyy-MM-dd') === previousDay ? next : selected
+        ));
+        currentDayRef.current = nextDay;
+      }
+      setCurrentTime(next);
+    }, 30_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // Redirect to the configured start page if not dashboard
   useEffect(() => {
     if (!mounted || loading || !user) return;
     const viewRoutes: Record<string, string> = {
-      today: '/today',
       tasks: '/tasks',
-      inbox: '/inbox',
     };
     const route = viewRoutes[defaultView];
-    const alreadyApplied = window.sessionStorage.getItem('orbit-start-view-applied');
+    const startViewKey = `threadmap-start-view-applied:${user.uid}`;
+    const alreadyApplied = window.sessionStorage.getItem(startViewKey);
     if (!alreadyApplied) {
-      window.sessionStorage.setItem('orbit-start-view-applied', 'true');
+      window.sessionStorage.setItem(startViewKey, 'true');
       if (route) router.replace(route);
     }
   }, [mounted, loading, user, defaultView, router]);
 
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
-  const isViewingToday = isToday(selectedDate);
-  const isViewingPast = isPast(selectedDate) && !isToday(selectedDate);
-
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const todayStr = format(currentTime, 'yyyy-MM-dd');
+  const isViewingToday = selectedDateStr === todayStr;
+  const isViewingPast = selectedDateStr < todayStr;
+  const isViewingFuture = selectedDateStr > todayStr;
 
   const {
     todayTasks,
@@ -591,56 +743,26 @@ export default function DashboardPage() {
     todayEvents,
     habits,
     activeProjects,
-    goals,
     principles,
     totalActive,
   } = useMemo(() => {
-    // For current/future dates, show active tasks
-    // For past dates, also show tasks that were completed on that day (archived)
-    const todayTasks = items.filter((i) => {
-      if (i.type !== 'task') return false;
-      if (i.dueDate !== selectedDateStr) return false;
-      
-      // For past dates, include completed tasks from that day
-      if (isViewingPast) {
-        return i.status === 'done' || (i.status !== 'archived');
-      }
-      
-      // For today/future, only active tasks
-      return i.status !== 'done' && i.status !== 'archived';
+    const { todayTasks, myDayTasks, notDoneFromBefore, overdueItems } = getTaskBuckets({
+      items,
+      selectedDateStr,
+      todayStr,
+      isViewingPast,
+      isViewingToday,
     });
 
-    // My Day tasks: myDay is set to the selected date
-    const myDayTasks = items.filter(
-      (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay === selectedDateStr
-    );
-
-    // Not done from before: myDay was set to a past date (accumulated)
-    const notDoneFromBefore = isViewingToday
-      ? items.filter(
-          (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.myDay && i.myDay < todayStr
-        )
-      : [];
-
-    const overdueItems = isViewingToday
-      ? items.filter(
-          (i) => i.type === 'task' && i.status !== 'done' && i.status !== 'archived' && i.dueDate && isPast(parseISO(i.dueDate)) && !isToday(parseISO(i.dueDate))
-        )
-      : [];
-
-    const todayEvents = items.filter((i) => {
-      if (i.type !== 'event' || i.status === 'archived') return false;
-      return i.startDate === selectedDateStr || (!i.startDate && i.dueDate === selectedDateStr);
-    });
+    const todayEvents = items.filter((item) => eventOccursOnDate(item, selectedDateStr));
 
     const habits = items.filter((i) => i.type === 'habit' && i.status === 'active');
     const activeProjects = items.filter((i) => i.type === 'project' && i.status === 'active');
-    const goals = items.filter((i) => i.type === 'goal' && i.status === 'active');
     const principles = items.filter(
       (i) => i.type === 'note' && (i.noteSubtype === 'principle' || i.tags?.includes('principle')) && i.status !== 'archived'
     );
     const totalActive = items.filter((i) => i.status !== 'archived').length;
-    return { todayTasks, myDayTasks, notDoneFromBefore, overdueItems, todayEvents, habits, activeProjects, goals, principles, totalActive };
+    return { todayTasks, myDayTasks, notDoneFromBefore, overdueItems, todayEvents, habits, activeProjects, principles, totalActive };
   }, [items, selectedDateStr, isViewingPast, isViewingToday, todayStr]);
 
   if (loading || !mounted) {
@@ -652,47 +774,132 @@ export default function DashboardPage() {
   }
 
   if (!user) {
-    return <LoginScreen onSignIn={signInWithGoogle} onEmailSignIn={signInWithEmail} onEmailSignUp={signUpWithEmail} onSendEmailLink={sendEmailLink} onResetPassword={resetPassword} />;
+    return (
+      <LoginScreen
+        onSignIn={signInWithGoogle}
+        onDemo={continueAsDemo}
+        onEmailSignIn={signInWithEmail}
+        onEmailSignUp={signUpWithEmail}
+        onSendEmailLink={sendEmailLink}
+        onResetPassword={resetPassword}
+        emailLinkState={emailLinkState}
+        emailLinkError={emailLinkError}
+        onCompleteEmailLink={completeEmailLink}
+        onCancelEmailLink={cancelEmailLink}
+      />
+    );
   }
 
   // Show onboarding if empty
   if (totalActive === 0) {
     return (
-      <div className="p-4 lg:p-8 max-w-3xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight">
-            {format(selectedDate, 'EEEE, d MMMM')}
-          </h1>
+      <div
+        className="mobile-page-gutter py-4 lg:p-8"
+        style={{ width: '100%' }}
+      >
+        <div style={{ width: '100%', maxWidth: '768px', marginInline: 'auto' }}>
+          <div className="mb-6">
+            <h1 className="text-xl font-semibold tracking-tight">
+              {format(selectedDate, 'EEEE, d MMMM', { locale })}
+            </h1>
+          </div>
+          <OnboardingState onOpen={() => setCommandBarOpen(true)} />
         </div>
-        <OnboardingState onOpen={() => setCommandBarOpen(true)} />
       </div>
     );
   }
 
   const getProjectProgress = (projectId: string) => {
-    const children = items.filter((i) => i.parentId === projectId);
-    if (children.length === 0) return 0;
-    const done = children.filter((i) => i.status === 'done').length;
-    return Math.round((done / children.length) * 100);
+    return getProjectTaskProgress(items, projectId);
   };
 
   const todayHabits = habits.filter((h) => isHabitScheduledForDate(h, selectedDate));
   const completedHabitsToday = todayHabits.filter((h) => isHabitCompletedForDate(h, selectedDate)).length;
+  const principleIndex = stableIndex(selectedDateStr, principles.length);
+  const principle = principleIndex >= 0 ? principles[principleIndex] : undefined;
 
   const toggleHabit = async (habit: typeof items[0]) => {
     const completions = { ...(habit.completions || {}) };
     completions[selectedDateStr] = !completions[selectedDateStr];
-    await updateItem(habit.id, { completions });
+    try {
+      await updateItem(habit.id, { completions });
+    } catch {
+      toast.error(language === 'de' ? 'Gewohnheit konnte nicht aktualisiert werden' : 'Could not update this habit');
+    }
   };
 
   const weekStartDate = startOfWeek(selectedDate, { weekStartsOn });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
+  // Everything actually waiting today, carried-over work included. Excluding
+  // it made the headline tile read 0 while fifteen tasks sat listed
+  // underneath — the first number a user reads was the one under-reporting
+  // the day. The second tile breaks out how many of these are carried over.
+  const focusTaskCount = overdueItems.length + todayTasks.length + myDayTasks.length + notDoneFromBefore.length;
+  const habitProgressLabel = todayHabits.length > 0 ? `${completedHabitsToday}/${todayHabits.length}` : '0';
+  const renderDateBar = (className: string) => (
+    <div className={cn('items-center gap-1 overflow-hidden rounded-2xl border border-border/60 bg-card/50 p-1 shadow-sm shadow-black/[0.02]', className)}>
+      {weekDays.map((day) => {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const dayItems = items.filter(
+          (i) =>
+            i.status !== 'archived' &&
+            ((i.type === 'task' && i.dueDate === dayStr) ||
+             (i.type === 'event' && eventOccursOnDate(i, dayStr)))
+        );
+        const isCurrentDay = isSameDay(day, selectedDate);
+        const isDayToday = isToday(day);
+        return (
+          <button
+            type="button"
+            key={dayStr}
+            onClick={() => setSelectedDate(day)}
+            aria-label={format(day, 'EEEE, d MMMM yyyy', { locale })}
+            className={cn(
+              'mobile-touch-target flex min-w-0 flex-1 flex-col items-center rounded-xl py-2.5 transition-colors active:scale-95 lg:py-2',
+              isCurrentDay
+                ? 'bg-foreground text-background'
+                : isDayToday
+                ? 'bg-foreground/[0.08] hover:bg-foreground/[0.12]'
+                : 'hover:bg-foreground/[0.03]'
+            )}
+          >
+            <span className={cn(
+              'text-[10px] font-medium uppercase',
+              !isCurrentDay && !isDayToday && 'text-muted-foreground/50',
+              isDayToday && !isCurrentDay && 'text-foreground/70'
+            )}>
+              {format(day, 'EEE', { locale })}
+            </span>
+            <span className={cn(
+              'mt-0.5 text-sm font-semibold tabular-nums',
+              !isCurrentDay && 'text-foreground'
+            )}>
+              {format(day, 'd')}
+            </span>
+            {dayItems.length > 0 && (
+              <div className="mt-1 flex gap-0.5">
+                {dayItems.slice(0, 3).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      'h-1 w-1 rounded-full',
+                      isCurrentDay ? 'bg-background/50' : 'bg-foreground/20'
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
-    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6 lg:space-y-8" data-slot="page-content">
+    <div className="mobile-page-gutter mx-auto max-w-6xl space-y-5 py-4 lg:space-y-8 lg:p-8" data-slot="page-content">
       {/* ── Header with Date Navigation ── */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1">
+      <div className="flex flex-col gap-4 border-b border-border/60 pb-4 lg:flex-row lg:items-center lg:justify-between lg:pb-5">
+        <div className="min-w-0 flex-1">
           <p className="text-[13px] text-muted-foreground">
             {format(selectedDate, 'EEEE, d MMMM yyyy', { locale })}
             {!isViewingToday && (
@@ -704,9 +911,9 @@ export default function DashboardPage() {
           <h1 className="text-xl font-semibold tracking-tight mt-0.5">
             {isViewingToday ? (
               <>
-                {new Date().getHours() < 12
+                {currentTime.getHours() < 12
                   ? t('greeting.morning')
-                  : new Date().getHours() < 18
+                  : currentTime.getHours() < 18
                   ? t('greeting.afternoon')
                   : t('greeting.evening')}
                 {user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}
@@ -718,183 +925,89 @@ export default function DashboardPage() {
         </div>
 
         {/* Date Navigation Controls */}
-        <div className="flex items-center gap-1">
+        <div className="hidden w-full items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-1 lg:flex lg:w-auto">
           <button
+            type="button"
             onClick={() => setSelectedDate(subDays(selectedDate, 1))}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-foreground/[0.05] active:scale-95 transition-all"
+            className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:bg-foreground/[0.05] active:scale-95"
             title={t('date.previousDay')}
+            aria-label={t('date.previousDay')}
           >
             <ChevronLeft className="h-4 w-4 text-muted-foreground" />
           </button>
           
           {!isViewingToday && (
             <button
-              onClick={() => setSelectedDate(new Date())}
-              className="rounded-lg px-3 py-1.5 text-[11px] font-medium bg-foreground/[0.08] hover:bg-foreground/[0.12] active:scale-95 transition-all"
+              type="button"
+              onClick={() => setSelectedDate(currentTime)}
+              className="rounded-xl bg-foreground/[0.08] px-3 py-2 text-[11px] font-medium transition-all hover:bg-foreground/[0.12] active:scale-95"
             >
               {t('date.today')}
             </button>
           )}
           
           <button
+            type="button"
             onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-foreground/[0.05] active:scale-95 transition-all"
+            className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:bg-foreground/[0.05] active:scale-95"
             title={t('date.nextDay')}
+            aria-label={t('date.nextDay')}
           >
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
+
+        <div className="flex items-center justify-between gap-2 lg:hidden">
+          <button
+            type="button"
+            onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+            aria-label={t('date.previousDay')}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background/70 text-muted-foreground active:scale-95"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(currentTime)}
+            aria-current={isViewingToday ? 'date' : undefined}
+            className="min-h-11 flex-1 rounded-xl border border-border/60 bg-background/70 px-3 text-[12px] font-medium active:scale-[0.98]"
+          >
+            {isViewingToday ? t('date.today') : `${t('date.today')} · ${format(currentTime, 'd MMM', { locale })}`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+            aria-label={t('date.nextDay')}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background/70 text-muted-foreground active:scale-95"
+          >
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        {renderDateBar('flex lg:hidden')}
       </div>
 
       {/* ── Principles / Hockey Quotes ── */}
-      {hockeyMode ? (
-        <HockeyQuote />
-      ) : principles.length > 0 ? (
+      {principle ? (
         <div className="rounded-xl bg-foreground/[0.02] border border-border/40 px-4 py-3">
           <p className="text-[13px] italic text-foreground/70 leading-relaxed">
-            &ldquo;{principles[Math.floor(Math.random() * principles.length)]?.title}&rdquo;
+            &ldquo;{principle.title}&rdquo;
           </p>
         </div>
       ) : null}
 
       {/* ── Stats strip / Hockey Scoreboard ── */}
-      {hockeyMode ? (
-        <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-r from-cyan-500/[0.04] to-emerald-500/[0.04] p-3">
-          <div className="flex items-center justify-between">
-            {/* Left team: completed */}
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🏒</span>
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Erledigt</p>
-                <p className="text-2xl font-black tabular-nums text-foreground leading-none mt-0.5">
-                  {items.filter(i => {
-                    if (i.type !== 'task' || i.status !== 'done' || !i.completedAt) return false;
-                    const today = new Date(); today.setHours(0,0,0,0);
-                    return i.completedAt >= today.getTime();
-                  }).length}
-                </p>
-              </div>
-            </div>
-            
-            {/* Center: VS divider + period */}
-            <div className="flex flex-col items-center gap-0.5">
-              <span className="text-[10px] font-black text-muted-foreground/30">:</span>
-              <span className="text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-wider">
-                {new Date().getHours() < 12 ? '1. Drittel' : new Date().getHours() < 17 ? '2. Drittel' : '3. Drittel'}
-              </span>
-            </div>
-            
-            {/* Right team: remaining */}
-            <div className="flex items-center gap-2">
-              <div className="text-right">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Offen</p>
-                <p className="text-2xl font-black tabular-nums text-foreground/50 leading-none mt-0.5">
-                  {todayTasks.length + myDayTasks.length + overdueItems.length}
-                </p>
-              </div>
-              <span className="text-lg">🩺</span>
-            </div>
-          </div>
-          
-          {/* Bottom: habits as period stats */}
-          {todayHabits.length > 0 && (
-            <div className="flex items-center justify-center gap-2 mt-2 pt-2 border-t border-cyan-500/10">
-              <span className="text-[10px] text-muted-foreground/50">Training</span>
-              <div className="flex gap-0.5">
-                {todayHabits.map((h, i) => (
-                  <div
-                    key={h.id}
-                    className={cn(
-                      'h-2 w-2 rounded-full transition-colors',
-                      isHabitCompletedForDate(h, selectedDate) ? 'bg-cyan-500' : 'bg-foreground/10'
-                    )}
-                    title={h.title}
-                  />
-                ))}
-              </div>
-              <span className="text-[10px] text-muted-foreground/40 tabular-nums">{completedHabitsToday}/{todayHabits.length}</span>
-            </div>
-          )}
+      {(
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <OverviewTile label={t('dashboard.tasks')} value={focusTaskCount} icon={CheckSquare} />
+          <OverviewTile label={t('today.notDoneFromBefore')} value={notDoneFromBefore.length} icon={Clock3} />
+          <OverviewTile label={t('nav.habits')} value={habitProgressLabel} icon={Repeat} />
+          <OverviewTile label={t('nav.projects')} value={activeProjects.length} icon={FolderKanban} />
         </div>
-      ) : (
-      <div className="flex items-center gap-4 lg:gap-6 text-[13px] overflow-x-auto -mx-4 px-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
-        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
-          <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-          <span className="tabular-nums font-medium">{todayTasks.length + myDayTasks.length + overdueItems.length}</span>
-          <span className="text-muted-foreground/60">{t('dashboard.tasks')}</span>
-        </div>
-        {todayHabits.length > 0 && (
-          <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
-            <Repeat className="h-3.5 w-3.5" strokeWidth={1.5} />
-            <span className="tabular-nums font-medium">{completedHabitsToday}/{todayHabits.length}</span>
-            <span className="text-muted-foreground/60">{t('dashboard.habitsLabel')}</span>
-          </div>
-        )}
-        {isViewingToday && (
-          <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
-            <FolderKanban className="h-3.5 w-3.5" strokeWidth={1.5} />
-            <span className="tabular-nums font-medium">{activeProjects.length}</span>
-            <span className="text-muted-foreground/60">{t('dashboard.projectsLabel')}</span>
-          </div>
-        )}
-      </div>
       )}
 
       {/* ── Week strip — larger touch targets on mobile ── */}
-      <div className="flex items-center gap-1">
-        {weekDays.map((day) => {
-          const dayStr = format(day, 'yyyy-MM-dd');
-          const dayItems = items.filter(
-            (i) =>
-              i.status !== 'archived' &&
-              ((i.type === 'task' && i.dueDate === dayStr) ||
-               (i.type === 'event' && i.startDate === dayStr))
-          );
-          const isCurrentDay = isSameDay(day, selectedDate);
-          const isDayToday = isToday(day);
-          return (
-            <button
-              key={dayStr}
-              onClick={() => setSelectedDate(day)}
-              className={cn(
-                'flex flex-1 flex-col items-center rounded-xl py-2.5 lg:py-2 transition-colors active:scale-95',
-                isCurrentDay 
-                  ? 'bg-foreground text-background' 
-                  : isDayToday
-                  ? 'bg-foreground/[0.08] hover:bg-foreground/[0.12]'
-                  : 'hover:bg-foreground/[0.03]'
-              )}
-            >
-              <span className={cn(
-                'text-[10px] font-medium uppercase', 
-                !isCurrentDay && !isDayToday && 'text-muted-foreground/50',
-                isDayToday && !isCurrentDay && 'text-foreground/70'
-              )}>
-                {format(day, 'EEE', { locale })}
-              </span>
-              <span className={cn(
-                'text-sm font-semibold mt-0.5 tabular-nums', 
-                !isCurrentDay && 'text-foreground'
-              )}>
-                {format(day, 'd')}
-              </span>
-              {dayItems.length > 0 && (
-                <div className="flex gap-0.5 mt-1">
-                  {dayItems.slice(0, 3).map((_, idx) => (
-                    <div
-                      key={idx}
-                      className={cn(
-                        'h-1 w-1 rounded-full',
-                        isCurrentDay ? 'bg-background/50' : 'bg-foreground/20'
-                      )}
-                    />
-                  ))}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {renderDateBar('hidden lg:flex')}
 
       {/* ── Content — masonry-style two column on desktop ── */}
       <div className="lg:hidden flex flex-col gap-4">
@@ -903,17 +1016,17 @@ export default function DashboardPage() {
         <Section
           title={isViewingToday ? t('nav.today') : format(selectedDate, 'MMM d', { locale })}
           icon={CheckSquare}
-          count={todayTasks.length + myDayTasks.length + overdueItems.length}
-          href="/today"
+          count={focusTaskCount}
+          href="/tasks"
         >
           <div className="py-1">
             {overdueItems.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
-            {myDayTasks.map((item) => (
+            {todayTasks.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
-            {todayTasks.map((item) => (
+            {myDayTasks.map((item) => (
               <ItemRow key={item.id} item={item} showProject compact />
             ))}
             {overdueItems.length === 0 && todayTasks.length === 0 && myDayTasks.length === 0 && (
@@ -936,32 +1049,34 @@ export default function DashboardPage() {
               return (
                 <div key={habit.id} className="flex items-center gap-2.5 py-1">
                   <button
+                    type="button"
                     onClick={() => toggleHabit(habit)}
-                    disabled={isViewingPast && !completed}
+                    disabled={isViewingFuture}
+                    aria-label={`${completed ? 'Mark incomplete' : 'Mark complete'}: ${habit.title}`}
+                    aria-pressed={completed}
                     className={cn(
-                      'flex h-5 w-5 items-center justify-center rounded-md border transition-all shrink-0',
+                      'flex h-9 w-9 items-center justify-center rounded-lg border transition-all shrink-0 lg:h-5 lg:w-5 lg:rounded-md',
                       completed
                         ? 'border-foreground/20 bg-foreground/10'
                         : 'border-foreground/15 hover:border-foreground/30',
-                      isViewingPast && !completed && 'opacity-30 cursor-not-allowed'
+                      isViewingFuture && 'cursor-not-allowed opacity-30'
                     )}
                   >
                     {completed && <CheckSquare className="h-3 w-3 text-foreground/50" />}
                   </button>
-                  <span
+                  <button
+                    type="button"
                     className={cn(
-                      'flex-1 text-[13px] cursor-pointer transition-colors hover:text-foreground',
+                      'flex-1 text-left text-[13px] cursor-pointer transition-colors hover:text-foreground',
                       completed ? 'line-through text-muted-foreground/50' : 'text-foreground'
                     )}
                     onClick={() => setSelectedItemId(habit.id)}
                   >
                     {habit.title}
-                  </span>
+                  </button>
                   {streak > 0 && (
                     <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums">
-                      {hockeyMode ? (
-                        <span className="text-xs">🏒</span>
-                      ) : (
+                      {(
                         <Flame className="h-3 w-3" />
                       )}
                       {streak}
@@ -1050,17 +1165,17 @@ export default function DashboardPage() {
           <Section
             title={isViewingToday ? t('nav.today') : format(selectedDate, 'MMM d', { locale })}
             icon={CheckSquare}
-            count={todayTasks.length + myDayTasks.length + overdueItems.length}
-            href="/today"
+            count={focusTaskCount}
+            href="/tasks"
           >
             <div className="py-1">
               {overdueItems.map((item) => (
                 <ItemRow key={item.id} item={item} showProject compact />
               ))}
-              {myDayTasks.map((item) => (
+              {todayTasks.map((item) => (
                 <ItemRow key={item.id} item={item} showProject compact />
               ))}
-              {todayTasks.map((item) => (
+              {myDayTasks.map((item) => (
                 <ItemRow key={item.id} item={item} showProject compact />
               ))}
               {overdueItems.length === 0 && todayTasks.length === 0 && myDayTasks.length === 0 && (
@@ -1096,32 +1211,34 @@ export default function DashboardPage() {
                 return (
                   <div key={habit.id} className="flex items-center gap-2.5 py-1">
                     <button
+                      type="button"
                       onClick={() => toggleHabit(habit)}
-                      disabled={isViewingPast && !completed}
+                      disabled={isViewingFuture}
+                      aria-label={`${completed ? 'Mark incomplete' : 'Mark complete'}: ${habit.title}`}
+                      aria-pressed={completed}
                       className={cn(
-                        'flex h-5 w-5 items-center justify-center rounded-md border transition-all shrink-0',
+                        'flex h-9 w-9 items-center justify-center rounded-lg border transition-all shrink-0 lg:h-5 lg:w-5 lg:rounded-md',
                         completed
                           ? 'border-foreground/20 bg-foreground/10'
                           : 'border-foreground/15 hover:border-foreground/30',
-                        isViewingPast && !completed && 'opacity-30 cursor-not-allowed'
+                        isViewingFuture && 'cursor-not-allowed opacity-30'
                       )}
                     >
                       {completed && <CheckSquare className="h-3 w-3 text-foreground/50" />}
                     </button>
-                    <span
+                    <button
+                      type="button"
                       className={cn(
-                        'flex-1 text-[13px] cursor-pointer transition-colors hover:text-foreground',
+                        'flex-1 text-left text-[13px] cursor-pointer transition-colors hover:text-foreground',
                         completed ? 'line-through text-muted-foreground/50' : 'text-foreground'
                       )}
                       onClick={() => setSelectedItemId(habit.id)}
                     >
                       {habit.title}
-                    </span>
+                    </button>
                     {streak > 0 && (
                       <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 tabular-nums">
-                        {hockeyMode ? (
-                          <span className="text-xs">🏒</span>
-                        ) : (
+                        {(
                           <Flame className="h-3 w-3" />
                         )}
                         {streak}
