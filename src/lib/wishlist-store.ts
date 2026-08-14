@@ -217,7 +217,7 @@ export interface WishlistCloudData extends Record<string, unknown> {
   deletedItems?: Record<string, number>;
 }
 
-interface NormalizedWishlistCloudData {
+interface NormalizedWishlistCloudData extends Record<string, unknown> {
   items: VaultItem[];
   duels: AuctionDuel[];
   deletedItems: Record<string, number>;
