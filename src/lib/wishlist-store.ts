@@ -601,7 +601,11 @@ export const useWishlistStore = create<WishlistState>()(
           const cloud = normalizeWishlistCloudData(data);
           const local = get();
           if (local.cloudDirty) {
-            const merged = mergeWishlistCloudData(local, cloud);
+            const merged = mergeWishlistCloudData({
+              items: local.items,
+              duels: local.duels,
+              deletedItems: local.deletedItems,
+            }, cloud);
             if (JSON.stringify(merged) === JSON.stringify(cloud)) {
               set({ ...cloud, cloudDirty: false });
             } else {
