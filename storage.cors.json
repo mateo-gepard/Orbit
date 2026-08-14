@@ -6,7 +6,7 @@
       "http://localhost:3000",
       "http://127.0.0.1:3000"
     ],
-    "method": ["GET", "HEAD", "POST", "PUT", "DELETE"],
+    "method": ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
     "responseHeader": [
       "Content-Type",
       "Content-Length",

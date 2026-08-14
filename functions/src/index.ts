@@ -1708,6 +1708,13 @@ export const deleteThreadmapAttachment = onCall(
   }
 );
 
+const ATTACHMENT_UPLOAD_ORIGINS = new Set([
+  'https://threadmap.app',
+  'https://www.threadmap.app',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+]);
+
 /** Reserve an immutable object path and durable orphan-cleanup intent before upload. */
 export const beginThreadmapUpload = onCall(
   {
@@ -1718,6 +1725,10 @@ export const beginThreadmapUpload = onCall(
   },
   async (request) => {
     const uid = requireUid(request);
+    const uploadOrigin = request.rawRequest.get('origin') || '';
+    if (!ATTACHMENT_UPLOAD_ORIGINS.has(uploadOrigin)) {
+      throw new HttpsError('permission-denied', 'Uploads must start from an approved Threadmap origin.');
+    }
     const itemId = typeof request.data?.itemId === 'string' ? request.data.itemId : '';
     const name = typeof request.data?.name === 'string' ? request.data.name.trim() : '';
     const size = Number(request.data?.size);
@@ -1824,6 +1835,7 @@ export const beginThreadmapUpload = onCall(
     });
     try {
       const [uploadUrl] = await storage.bucket().file(storagePath).createResumableUpload({
+        origin: uploadOrigin,
         metadata: {
           contentType: type,
           metadata: { threadmapUploadId: fileId },

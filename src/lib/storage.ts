@@ -106,10 +106,6 @@ function uploadThroughResumableSession(
     request.open('PUT', uploadUrl, true);
     request.timeout = 5 * 60_000;
     request.setRequestHeader('Content-Type', contentType);
-    request.setRequestHeader(
-      'Content-Range',
-      file.size === 0 ? 'bytes */0' : `bytes 0-${file.size - 1}/${file.size}`,
-    );
     request.upload.addEventListener('progress', (event) => {
       const totalBytes = event.lengthComputable ? event.total : file.size;
       const bytesTransferred = Math.min(event.loaded, totalBytes);
