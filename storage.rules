@@ -12,10 +12,10 @@ service firebase.storage {
           && !firestore.exists(/databases/(default)/documents/accountDeletionJobs/$(request.auth.uid));
     }
 
-    function ownsProject(userId, projectId) {
+    function ownsItem(userId, itemId) {
       return owner(userId)
-          && firestore.exists(/databases/(default)/documents/items/$(projectId))
-          && firestore.get(/databases/(default)/documents/items/$(projectId)).data.userId == userId;
+          && firestore.exists(/databases/(default)/documents/items/$(itemId))
+          && firestore.get(/databases/(default)/documents/items/$(itemId)).data.userId == userId;
     }
 
     function validFile() {
@@ -36,6 +36,8 @@ service firebase.storage {
             'image/png',
             'image/gif',
             'image/webp',
+            'image/heic',
+            'image/heif',
             'application/zip',
             'application/x-zip-compressed'
           ];
@@ -53,7 +55,7 @@ service firebase.storage {
       // The Admin SDK creates this rules-denied Firestore intent before the
       // browser can upload. This closes raw-SDK orphan and quota bypasses.
       allow create: if resource == null
-          && ownsProject(userId, projectId)
+          && ownsItem(userId, projectId)
           && validFile()
           && firestore.exists(/databases/(default)/documents/attachmentUploadIntents/$(intentId))
           && firestore.get(/databases/(default)/documents/attachmentUploadIntents/$(intentId)).data.userId == userId

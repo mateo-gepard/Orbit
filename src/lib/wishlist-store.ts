@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { saveToolData, ToolDataConflictError } from './firestore';
+import { mergeToolData } from './firestore';
 import { prepareScopedStorage } from './account-storage';
 import { verifiedLocalStateStorage } from './verified-storage';
 
@@ -435,19 +435,23 @@ function scheduleSave(items: VaultItem[], duels: AuctionDuel[], deletedItems: Re
         || revision < _localRevision) return;
     const clean = sanitizeForFirestore({ items, duels, deletedItems } satisfies WishlistCloudData);
     try {
-      await saveToolData(scheduledUserId, 'wishlist', clean);
+      const merged = await mergeToolData(
+        scheduledUserId,
+        'wishlist',
+        clean,
+        (pending, remote) => mergeWishlistCloudData(
+          pending,
+          remote || { items: [], duels: [], deletedItems: {} },
+        ),
+      );
       if (_syncUserId !== scheduledUserId
           || _scopeGeneration !== scheduledGeneration
           || revision !== _localRevision) return;
-      useWishlistStore.setState({ cloudDirty: false });
+      useWishlistStore.setState({ ...merged, cloudDirty: false });
     } catch (error) {
       if (_syncUserId !== scheduledUserId
           || _scopeGeneration !== scheduledGeneration
           || revision !== _localRevision) return;
-      if (error instanceof ToolDataConflictError) {
-        useWishlistStore.setState({ cloudDirty: true });
-        return;
-      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
           detail: { message: 'Wishlist changes are saved on this device, but cloud sync will retry.' },

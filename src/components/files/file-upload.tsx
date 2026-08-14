@@ -99,7 +99,12 @@ export function FileUpload({ item }: FileUploadProps) {
         toast.success(tp('files.uploaded.one', 'files.uploaded.other', uploadedCount));
       }
       if (failedCount > 0) {
-        setError(tp('files.uploadFailed.one', 'files.uploadFailed.other', failedCount));
+        const firstFailure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+        const reason = firstFailure?.reason instanceof Error ? firstFailure.reason.message : '';
+        results.forEach((result) => {
+          if (result.status === 'rejected') console.error('[FileUpload] Upload failed:', result.reason);
+        });
+        setError(`${tp('files.uploadFailed.one', 'files.uploadFailed.other', failedCount)}${reason ? ` ${reason}` : ''}`);
       }
       
       // Reset input
@@ -162,7 +167,7 @@ export function FileUpload({ item }: FileUploadProps) {
           onChange={handleFileSelect}
           className="hidden"
           aria-label={t('files.chooseLabel')}
-          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.jpg,.jpeg,.png,.gif,.webp,.zip"
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.zip"
         />
         {canUpload ? (
           <Button

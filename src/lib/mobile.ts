@@ -39,7 +39,8 @@ export function isMobile(): boolean {
 /** Detect iOS specifically */
 export function isIOS(): boolean {
   if (typeof navigator === 'undefined') return false;
-  return /iPad|iPhone|iPod/.test(navigator.userAgent);
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
 /** Detect if device supports touch */

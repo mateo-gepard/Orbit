@@ -260,6 +260,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             duels: useWishlistStore.getState().duels,
             deletedItems: useWishlistStore.getState().deletedItems,
           }),
+          hasPendingLocalChanges: () => useWishlistStore.getState().cloudDirty,
         }
       ));
 

@@ -42,11 +42,41 @@ const ALLOWED_TYPES = [
   'image/png',
   'image/gif',
   'image/webp',
+  'image/heic',
+  'image/heif',
   
   // Archives
   'application/zip',
   'application/x-zip-compressed',
 ];
+
+const EXTENSION_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  md: 'text/markdown',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  zip: 'application/zip',
+};
+
+function attachmentContentType(file: File): string {
+  const extension = file.name.split('.').pop()?.toLowerCase() || '';
+  const inferred = EXTENSION_TYPES[extension];
+  const reported = file.type === 'image/jpg' ? 'image/jpeg' : file.type;
+  return inferred && (!reported || !ALLOWED_TYPES.includes(reported)) ? inferred : reported;
+}
 
 export interface UploadProgress {
   progress: number; // 0-100
@@ -55,7 +85,8 @@ export interface UploadProgress {
 }
 
 /**
- * Upload a file to Firebase Storage for a specific project
+ * Upload a file to Firebase Storage for a specific Threadmap item.
+ * The historical `/projects/` namespace is retained for existing objects.
  */
 export async function uploadProjectFile(
   file: File,
@@ -72,8 +103,8 @@ export async function uploadProjectFile(
     throw new Error(`File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB`);
   }
 
-  // Validate file type
-  if (!ALLOWED_TYPES.includes(file.type)) {
+  const contentType = attachmentContentType(file);
+  if (!ALLOWED_TYPES.includes(contentType)) {
     throw new Error('File type not allowed. Please upload a document, image, or archive file.');
   }
 
@@ -82,7 +113,7 @@ export async function uploadProjectFile(
     { itemId: string; name: string; size: number; type: string },
     { file: ProjectFile; expiresAt: number }
   >(cloudFunctions, 'beginThreadmapUpload');
-  const intent = await begin({ itemId: projectId, name: file.name, size: file.size, type: file.type });
+  const intent = await begin({ itemId: projectId, name: file.name, size: file.size, type: contentType });
   const projectFile = intent.data.file;
   assertAttachmentOwner(projectId, userId, projectFile);
 
@@ -91,7 +122,7 @@ export async function uploadProjectFile(
 
   // Upload file
   const uploadTask: UploadTask = uploadBytesResumable(storageRef, file, {
-    contentType: file.type,
+    contentType,
     customMetadata: { threadmapUploadId: projectFile.id },
   });
 
@@ -162,7 +193,7 @@ function applyScopedAttachmentCommit(
 
   let changed = false;
   const items = state.items.map((item) => {
-    if (item.id !== projectId || item.userId !== userId || item.type !== 'project') return item;
+    if (item.id !== projectId || item.userId !== userId) return item;
     const localRevision = Number.isSafeInteger(item.revision) && Number(item.revision) >= 0
       ? Number(item.revision)
       : 0;
@@ -267,13 +298,16 @@ export async function getProjectFileObjectUrl(storagePath: string): Promise<stri
 export async function getOwnedProjectFileBlob(
   userId: string,
   itemId: string,
-  file: Pick<ProjectFile, 'storagePath' | 'size'>,
+  file: Pick<ProjectFile, 'id' | 'storagePath' | 'size'>,
 ): Promise<Blob> {
   const prefix = `users/${userId}/projects/${itemId}/`;
-  const filename = file.storagePath.startsWith(prefix)
+  const relativePath = file.storagePath.startsWith(prefix)
     ? file.storagePath.slice(prefix.length)
     : '';
-  if (!filename || filename.includes('/')) {
+  const pathParts = relativePath.split('/').filter(Boolean);
+  const validLegacyPath = pathParts.length === 1;
+  const validIntentPath = pathParts.length === 2 && pathParts[0] === file.id;
+  if (!relativePath || (!validLegacyPath && !validIntentPath)) {
     throw new Error('An attachment path does not belong to this account export.');
   }
   if (!Number.isFinite(file.size) || file.size < 0 || file.size > MAX_FILE_SIZE) {
@@ -292,14 +326,19 @@ export async function getOwnedProjectFileBlob(
 
 export async function downloadProjectFile(file: ProjectFile): Promise<void> {
   const objectUrl = await getProjectFileObjectUrl(file.storagePath);
-  try {
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = file.name;
-    link.click();
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-  }
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = file.name;
+  link.rel = 'noopener';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  // Safari may consume the blob URL after the click task has returned. A
+  // zero-delay revoke intermittently cancels the download, especially in PWAs.
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }, 60_000);
 }
 
 /**

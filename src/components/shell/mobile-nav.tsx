@@ -54,9 +54,9 @@ export function MobileNav() {
         style={{
           display: pathname.startsWith('/settings') ? 'none' : undefined,
           position: 'fixed',
-          right: '16px',
-          bottom: 'calc(var(--bottom-nav-height) + var(--safe-bottom) + 12px)',
-          zIndex: 30,
+          right: 'max(16px, calc(var(--safe-right) + 12px))',
+          bottom: 'calc(var(--bottom-nav-height) + var(--safe-bottom) + 16px)',
+          zIndex: 40,
         }}
       >
         <Plus aria-hidden="true" className="h-6 w-6" strokeWidth={2.5} />
@@ -75,7 +75,7 @@ export function MobileNav() {
           bottom: '0px',
           left: '0px',
           right: '0px',
-          zIndex: 30,
+          zIndex: 35,
           paddingBottom: 'var(--safe-bottom)',
         }}
       >

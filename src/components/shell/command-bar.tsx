@@ -547,7 +547,7 @@ export function CommandBar() {
               submitting && 'pointer-events-none opacity-60',
             )}
             style={{
-              maxHeight: 'min(62dvh, calc(var(--visual-viewport-height) - 88px))',
+              maxHeight: 'min(62dvh, calc(var(--visual-viewport-height) - 88px - var(--keyboard-accessory-height)))',
               paddingBottom: 'max(var(--keyboard-safe-bottom), 8px)',
             }}
           >

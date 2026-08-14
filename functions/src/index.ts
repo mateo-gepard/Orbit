@@ -80,6 +80,8 @@ const ALLOWED_ATTACHMENT_TYPES = new Set([
   'image/png',
   'image/gif',
   'image/webp',
+  'image/heic',
+  'image/heif',
   'application/zip',
   'application/x-zip-compressed',
 ]);
@@ -1731,8 +1733,8 @@ export const beginThreadmapUpload = onCall(
     }
     const itemRef = db.doc(`items/${itemId}`);
     const item = await itemRef.get();
-    if (!item.exists || item.data()?.userId !== uid || item.data()?.type !== 'project') {
-      throw new HttpsError('permission-denied', 'Project not found.');
+    if (!item.exists || item.data()?.userId !== uid) {
+      throw new HttpsError('permission-denied', 'Item not found.');
     }
     const existingFiles = Array.isArray(item.data()?.files) ? item.data()!.files : [];
     if (existingFiles.length >= 50) {
@@ -1764,8 +1766,8 @@ export const beginThreadmapUpload = onCall(
         transaction.get(intentRef),
         transaction.get(registryRef),
       ]);
-      if (!freshItem.exists || freshItem.data()?.userId !== uid || freshItem.data()?.type !== 'project') {
-        throw new HttpsError('permission-denied', 'Project not found.');
+      if (!freshItem.exists || freshItem.data()?.userId !== uid) {
+        throw new HttpsError('permission-denied', 'Item not found.');
       }
       const freshFiles = Array.isArray(freshItem.data()?.files) ? freshItem.data()!.files : [];
       if (freshFiles.length >= 50) {
@@ -1877,8 +1879,8 @@ export const attachThreadmapUpload = onCall(
           || intent?.userId !== uid || intent?.itemId !== itemId || intent?.storagePath !== storagePath) {
         throw new HttpsError('failed-precondition', 'The upload is already being cleaned up.');
       }
-      if (!item.exists || item.data()?.userId !== uid || item.data()?.type !== 'project') {
-        throw new HttpsError('permission-denied', 'Project not found.');
+      if (!item.exists || item.data()?.userId !== uid) {
+        throw new HttpsError('permission-denied', 'Item not found.');
       }
       const files = Array.isArray(item.data()?.files) ? item.data()!.files : [];
       if (files.length >= 50 && !files.some((candidate: Record<string, unknown>) => candidate?.id === fresh.file?.id)) {

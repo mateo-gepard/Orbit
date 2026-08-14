@@ -2020,6 +2020,64 @@ export function saveToolData<T extends Record<string, unknown>>(
   return toolSaveQueue.run(revisionKey, () => saveToolDataUnqueued(userId, toolId, data));
 }
 
+/**
+ * Atomically merge a tool's pending browser state with the latest cloud
+ * document. Firestore retries the transaction when another device commits,
+ * so the merge function always receives the exact state it will replace.
+ */
+export function mergeToolData<T extends Record<string, unknown>>(
+  userId: string,
+  toolId: string,
+  localData: T,
+  mergeRemote: (local: T, remote: T | null) => T,
+): Promise<T> {
+  assertActiveAccount(userId);
+  const revisionKey = `${userId}_${toolId}`;
+  return toolSaveQueue.run(revisionKey, async () => {
+    const contextGeneration = captureActiveDataContext(userId);
+
+    if (!isFirebaseAvailable(userId)) {
+      let remoteData: T | null = null;
+      try {
+        const stored = localStorage.getItem(localToolDataKey(userId, toolId));
+        if (stored) remoteData = JSON.parse(stored) as T;
+      } catch { /* merge against the pending state only */ }
+      const merged = mergeRemote(localData, remoteData);
+      const payload = { ...merged, userId, toolId, updatedAt: Date.now() };
+      writeLocalStorageVerified(localToolDataKey(userId, toolId), JSON.stringify(payload));
+      acceptedToolData.set(revisionKey, payload);
+      return merged;
+    }
+
+    let committed: { data: T; payload: Record<string, unknown>; revision: number } | null = null;
+    await withRetry(async () => {
+      assertActiveDataContext(userId, contextGeneration);
+      const database = getDb();
+      const docRef = doc(database, TOOL_DATA_COLLECTION, revisionKey);
+      await runTransaction(database, async (transaction) => {
+        const snapshot = await transaction.get(docRef);
+        const remoteData = snapshot.exists() ? snapshot.data() as T : null;
+        const merged = mergeRemote(localData, remoteData);
+        const payload = { ...merged, userId, toolId, updatedAt: Date.now() };
+        const payloadBytes = new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+        if (payloadBytes > MAX_TOOL_DOCUMENT_BYTES) {
+          throw new Error(`${toolId} has reached its cloud storage limit. Export or remove older data.`);
+        }
+        const revision = Number(snapshot.data()?.revision || 0) + 1;
+        transaction.set(docRef, { ...payload, revision });
+        committed = { data: merged, payload, revision };
+      });
+    }, `mergeToolData(${toolId})`);
+
+    if (!committed) throw new Error('Merged tool data transaction did not commit.');
+    assertActiveDataContext(userId, contextGeneration);
+    const result = committed as { data: T; payload: Record<string, unknown>; revision: number };
+    rememberToolBaseRevision(userId, toolId, result.revision);
+    acceptedToolData.set(revisionKey, result.payload);
+    return result.data;
+  });
+}
+
 async function saveToolDataUnqueued<T extends Record<string, unknown>>(
   userId: string,
   toolId: string,

@@ -91,9 +91,26 @@ export function registerServiceWorker(): () => void {
     return () => {};
   }
 
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloadingForUpdate = false;
+  const handleControllerChange = () => {
+    // A claimed worker does not replace JavaScript already running in an
+    // installed PWA. Reload once so geometry and data fixes cannot remain
+    // stranded behind an older app shell after deployment.
+    if (!hadController || reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    window.dispatchEvent(new CustomEvent('threadmap:app-updated'));
+    window.location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+
   const register = async () => {
     try {
-      await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+        updateViaCache: 'none',
+      });
+      await registration.update();
     } catch {
       // The application remains usable online if registration is unavailable.
     }
@@ -105,7 +122,10 @@ export function registerServiceWorker(): () => void {
     window.addEventListener('load', register, { once: true });
   }
 
-  return () => window.removeEventListener('load', register);
+  return () => {
+    window.removeEventListener('load', register);
+    navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+  };
 }
 
 /** Set up the viewport height CSS variable (handles iOS address bar) */
@@ -127,14 +147,18 @@ export function setupViewportHeight(): () => void {
       'padding-right:env(safe-area-inset-right, 0px)',
       'padding-bottom:env(safe-area-inset-bottom, 0px)',
       'padding-left:env(safe-area-inset-left, 0px)',
+      'margin-top:env(safe-area-max-inset-top, 0px)',
+      'margin-right:env(safe-area-max-inset-right, 0px)',
+      'margin-bottom:env(safe-area-max-inset-bottom, 0px)',
+      'margin-left:env(safe-area-max-inset-left, 0px)',
     ].join(';');
     document.body.appendChild(probe);
     const styles = window.getComputedStyle(probe);
     const measured = {
-      top: Number.parseFloat(styles.paddingTop) || 0,
-      right: Number.parseFloat(styles.paddingRight) || 0,
-      bottom: Number.parseFloat(styles.paddingBottom) || 0,
-      left: Number.parseFloat(styles.paddingLeft) || 0,
+      top: Math.max(Number.parseFloat(styles.paddingTop) || 0, Number.parseFloat(styles.marginTop) || 0),
+      right: Math.max(Number.parseFloat(styles.paddingRight) || 0, Number.parseFloat(styles.marginRight) || 0),
+      bottom: Math.max(Number.parseFloat(styles.paddingBottom) || 0, Number.parseFloat(styles.marginBottom) || 0),
+      left: Math.max(Number.parseFloat(styles.paddingLeft) || 0, Number.parseFloat(styles.marginLeft) || 0),
     };
     probe.remove();
 
@@ -165,7 +189,7 @@ export function setupViewportHeight(): () => void {
   const setVH = () => {
     const root = document.documentElement;
     const viewport = window.visualViewport;
-    const layoutHeight = window.innerHeight;
+    const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
     const visualHeight = viewport?.height || layoutHeight;
     const visualOffsetTop = Math.max(0, viewport?.offsetTop || 0);
     const visualBottom = Math.max(0, layoutHeight - visualHeight - visualOffsetTop);
@@ -178,6 +202,7 @@ export function setupViewportHeight(): () => void {
     root.style.setProperty('--visual-viewport-offset-top', `${visualOffsetTop}px`);
     root.style.setProperty('--visual-viewport-bottom', `${visualBottom}px`);
     root.style.setProperty('--keyboard-inset', `${visualBottom}px`);
+    root.style.setProperty('--keyboard-accessory-height', `${keyboardOpen && isIOS() ? 48 : 0}px`);
     root.style.setProperty('--keyboard-safe-bottom', `${keyboardOpen ? 0 : safeArea.bottom}px`);
     root.style.setProperty('--safe-top', `${safeArea.top}px`);
     root.style.setProperty('--safe-right', `${safeArea.right}px`);
@@ -213,14 +238,29 @@ export function setupViewportHeight(): () => void {
   };
   window.addEventListener('orientationchange', handleOrientationChange);
 
+  const refreshGeometry = () => {
+    safeArea = measureSafeArea();
+    scheduleVH();
+  };
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') refreshGeometry();
+  };
+  window.addEventListener('pageshow', refreshGeometry);
+  window.addEventListener('focus', refreshGeometry);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
   return () => {
     window.removeEventListener('resize', scheduleVH);
     window.visualViewport?.removeEventListener('resize', scheduleVH);
     window.visualViewport?.removeEventListener('scroll', scheduleVH);
     window.removeEventListener('orientationchange', handleOrientationChange);
+    window.removeEventListener('pageshow', refreshGeometry);
+    window.removeEventListener('focus', refreshGeometry);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     if (orientationTimer) clearTimeout(orientationTimer);
     if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
     document.documentElement.classList.remove('keyboard-open');
+    document.documentElement.style.removeProperty('--keyboard-accessory-height');
   };
 }
 

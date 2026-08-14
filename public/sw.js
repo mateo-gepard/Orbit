@@ -4,7 +4,7 @@
 // Push credentials stay in the app runtime; this worker handles standards-based
 // Web Push payloads and the Firebase Messaging payload shape without a CDN SDK.
 
-const CACHE_VERSION = 11;
+const CACHE_VERSION = 12;
 const CACHE_PREFIX = 'threadmap-';
 const STATIC_CACHE = `${CACHE_PREFIX}static-v${CACHE_VERSION}`;
 const NAVIGATION_CACHE = `${CACHE_PREFIX}navigation-v${CACHE_VERSION}`;

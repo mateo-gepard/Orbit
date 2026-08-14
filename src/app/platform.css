@@ -10,6 +10,7 @@
   --visual-viewport-offset-top: 0px;
   --visual-viewport-bottom: 0px;
   --keyboard-inset: 0px;
+  --keyboard-accessory-height: 0px;
   --keyboard-safe-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
   --safe-area-max-bottom: env(safe-area-max-inset-bottom, 36px);
   color-scheme: light;
@@ -131,7 +132,11 @@ select,
 }
 
 [data-slot="sheet-content"][data-side="bottom"] {
-  bottom: calc(var(--visual-viewport-bottom) + var(--keyboard-safe-bottom));
+  bottom: calc(
+    var(--visual-viewport-bottom) +
+    var(--keyboard-safe-bottom) +
+    var(--keyboard-accessory-height)
+  );
   max-height: calc(
     var(--visual-viewport-height) - max(0.75rem, var(--safe-top))
   );
@@ -171,14 +176,19 @@ select,
   [data-slot="dialog-content"] {
     top: auto !important;
     right: max(0.75rem, var(--safe-right)) !important;
-    bottom: calc(var(--visual-viewport-bottom) + max(0.5rem, var(--keyboard-safe-bottom))) !important;
+    bottom: calc(
+      var(--visual-viewport-bottom) +
+      max(0.5rem, var(--keyboard-safe-bottom)) +
+      var(--keyboard-accessory-height)
+    ) !important;
     left: max(0.75rem, var(--safe-left)) !important;
     width: auto !important;
     max-width: none !important;
     max-height: calc(
       var(--visual-viewport-height) -
       max(1rem, var(--safe-top)) -
-      max(1rem, var(--keyboard-safe-bottom))
+      max(1rem, var(--keyboard-safe-bottom)) -
+      var(--keyboard-accessory-height)
     ) !important;
     margin: 0 !important;
     padding: 1.25rem !important;
@@ -208,9 +218,13 @@ select,
 
   [data-slot="dialog-content"][data-command-bar] {
     right: 0 !important;
-    bottom: var(--visual-viewport-bottom) !important;
+    bottom: calc(var(--visual-viewport-bottom) + var(--keyboard-accessory-height)) !important;
     left: 0 !important;
-    max-height: calc(var(--visual-viewport-height) - max(0.5rem, var(--safe-top))) !important;
+    max-height: calc(
+      var(--visual-viewport-height) -
+      max(0.5rem, var(--safe-top)) -
+      var(--keyboard-accessory-height)
+    ) !important;
     padding: 0 !important;
     overflow: hidden !important;
     border-radius: 0 !important;
@@ -226,6 +240,7 @@ select,
 
   [data-slot="dialog-content"][data-command-bar] [data-command-scroll] {
     min-height: 0;
+    scroll-padding-bottom: max(1rem, var(--keyboard-safe-bottom));
     -webkit-overflow-scrolling: touch;
   }
 }
