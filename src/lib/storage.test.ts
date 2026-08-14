@@ -111,8 +111,39 @@ function uploadFile() {
   return new File(['hello'], 'notes.txt', { type: 'text/plain' });
 }
 
+class SuccessfulUploadRequest {
+  status = 200;
+  timeout = 0;
+  private loadHandler: (() => void) | null = null;
+  private progressHandler: ((event: { lengthComputable: boolean; loaded: number; total: number }) => void) | null = null;
+
+  upload = {
+    addEventListener: (
+      type: string,
+      listener: (event: { lengthComputable: boolean; loaded: number; total: number }) => void,
+    ) => {
+      if (type === 'progress') this.progressHandler = listener;
+    },
+  };
+
+  open() {}
+  setRequestHeader() {}
+
+  addEventListener(type: string, listener: () => void) {
+    if (type === 'load') this.loadHandler = listener;
+  }
+
+  send(body: Blob) {
+    this.progressHandler?.({ lengthComputable: true, loaded: body.size, total: body.size });
+    queueMicrotask(() => this.loadHandler?.());
+  }
+}
+
+const TRUSTED_UPLOAD_URL = 'https://storage.googleapis.com/upload/storage/v1/b/threadmap-test/o?uploadType=resumable&upload_id=test';
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal('XMLHttpRequest', SuccessfulUploadRequest);
   harness.handlers.clear();
   setStore([project(4)], 'user-a');
 });
@@ -167,7 +198,7 @@ describe('attachment revision and account guards', () => {
   it('applies an uploaded attachment only when its revision advances the active project', async () => {
     setStore([project(4, [])], 'user-a');
     setCallable('beginThreadmapUpload', async () => ({
-      data: { file: ownerFile, expiresAt: 1_000 },
+      data: { file: ownerFile, expiresAt: 1_000, uploadUrl: TRUSTED_UPLOAD_URL },
     }));
     setCallable('attachThreadmapUpload', async () => ({
       data: { success: true, file: ownerFile, updatedAt: 50, revision: 5 },
@@ -184,7 +215,7 @@ describe('attachment revision and account guards', () => {
     setStore([project(4, [])], 'user-a');
     const attachment = deferred<unknown>();
     setCallable('beginThreadmapUpload', async () => ({
-      data: { file: ownerFile, expiresAt: 1_000 },
+      data: { file: ownerFile, expiresAt: 1_000, uploadUrl: TRUSTED_UPLOAD_URL },
     }));
     const attachHandler = vi.fn(() => attachment.promise);
     setCallable('attachThreadmapUpload', attachHandler);
@@ -211,7 +242,7 @@ describe('attachment revision and account guards', () => {
     setStore([project(4, [])], 'user-a');
     const attachment = deferred<unknown>();
     setCallable('beginThreadmapUpload', async () => ({
-      data: { file: ownerFile, expiresAt: 1_000 },
+      data: { file: ownerFile, expiresAt: 1_000, uploadUrl: TRUSTED_UPLOAD_URL },
     }));
     const attachHandler = vi.fn(() => attachment.promise);
     setCallable('attachThreadmapUpload', attachHandler);
