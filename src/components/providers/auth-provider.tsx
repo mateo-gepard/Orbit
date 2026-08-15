@@ -19,10 +19,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
-  sendSignInLinkToEmail,
   isSignInWithEmailLink,
   signInWithEmailLink,
-  sendPasswordResetEmail,
   getMultiFactorResolver,
   TotpMultiFactorGenerator,
   type User,
@@ -36,6 +34,8 @@ import { clearGoogleAccessToken } from '@/lib/google-calendar';
 import { deleteAccountData } from '@/lib/account-data';
 import { unregisterFCMToken } from '@/lib/fcm';
 import { findTotpFactor, normalizeTotpCode, recoverMfaWithCode } from '@/lib/mfa';
+import { sendThreadmapAuthEmail } from '@/lib/auth-email';
+import { isMobile, isStandalone } from '@/lib/mobile';
 
 const MfaChallengeDialog = dynamic(
   () => import('@/components/auth/mfa-challenge-dialog').then((module) => module.MfaChallengeDialog),
@@ -204,16 +204,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Local-only sessions never need the App Check or reCAPTCHA runtimes.
     // Cloud sessions warm them in parallel so the first deliberate auth or
     // data request is attested without blocking the initial interface.
-    const redirectPending = window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === '1';
-    const appCheckReady = !isLocalModeEnabled() && (redirectPending || Boolean(auth.currentUser))
-      ? ensureAppCheck()
-      : Promise.resolve(null);
+    if (!isLocalModeEnabled() && auth.currentUser) void ensureAppCheck();
 
     let cancelled = false;
     let settled = false;
 
-    // Complete a redirect started because the popup was blocked.
-    void appCheckReady.then(() => getRedirectResult(firebaseAuth))
+    // Complete OAuth before warming unrelated cloud services. Waiting for App
+    // Check here could strand Safari/PWA redirects behind a blocked reCAPTCHA
+    // request even though Firebase Auth itself had already returned correctly.
+    void getRedirectResult(firebaseAuth)
       .then(() => {
         window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
       })
@@ -294,6 +293,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     }
     try {
+      // Mobile browsers and installed PWAs are much more reliable with a
+      // first-party redirect. Desktop keeps the faster popup flow. Threadmap's
+      // /__/auth reverse proxy keeps both sides on threadmap.app, avoiding the
+      // third-party storage boundary that Safari and modern Chrome block.
+      if (isMobile() || isStandalone()) {
+        if (auth.currentUser) await unregisterCurrentDevice();
+        window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, '1');
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+
       // Do not await here: the popup must open within the original pointer
       // gesture on Safari and installed PWAs. Google account selection gives
       // App Check time to finish before Firebase exchanges the credential.
@@ -364,18 +374,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sendEmailLinkFn = useCallback(async (email: string) => {
     if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     await ensureAppCheck();
-    const actionCodeSettings = {
-      url: window.location.origin,
-      handleCodeInApp: true,
-    };
-    await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+    await sendThreadmapAuthEmail('email-sign-in', email, window.location.origin);
     window.localStorage.setItem(EMAIL_LINK_KEY, email);
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
     if (!auth) throw new Error(FIREBASE_NOT_CONFIGURED_MESSAGE);
     await ensureAppCheck();
-    await sendPasswordResetEmail(auth, email);
+    await sendThreadmapAuthEmail('password-reset', email, window.location.origin);
   }, []);
 
   const finishEmailLinkSignIn = useCallback(async (email: string, href: string) => {

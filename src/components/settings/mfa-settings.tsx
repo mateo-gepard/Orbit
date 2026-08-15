@@ -1,9 +1,10 @@
 'use client';
 
+import { sendThreadmapAuthEmail } from '@/lib/auth-email';
+
 import { useEffect, useState } from 'react';
 import {
   multiFactor,
-  sendEmailVerification,
   TotpMultiFactorGenerator,
   type MultiFactorInfo,
   type TotpSecret,
@@ -156,9 +157,12 @@ export function MfaSettings() {
     setSendingVerification(true);
     setError(null);
     try {
-      await sendEmailVerification(user, {
-        url: `${window.location.origin}/settings?section=data`,
-      });
+      if (!user.email) throw new Error('This account has no email address to verify.');
+      await sendThreadmapAuthEmail(
+        'email-verification',
+        user.email,
+        `${window.location.origin}/settings?section=data`,
+      );
       toast.success(de ? 'Bestatigungs-E-Mail gesendet.' : 'Verification email sent.');
     } catch (verificationError) {
       setError(mfaErrorMessage(verificationError, language));

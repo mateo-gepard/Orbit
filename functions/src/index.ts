@@ -26,6 +26,7 @@ import {
   mfaRecoveryDigest,
   normalizeMfaRecoveryCode,
 } from './mfa-recovery';
+import { createThreadmapAuthEmailFunction } from './auth-email';
 
 initializeApp();
 
@@ -40,6 +41,8 @@ const db = getFirestore();
 const messaging = getMessaging();
 const auth = getAuth();
 const storage = getStorage();
+
+export const sendThreadmapAuthEmail = createThreadmapAuthEmailFunction(auth, db);
 
 const vapidPublicKey = defineSecret('VAPID_PUBLIC_KEY');
 const vapidPrivateKey = defineSecret('VAPID_PRIVATE_KEY');

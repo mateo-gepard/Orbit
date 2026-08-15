@@ -134,6 +134,7 @@ export function setupViewportHeight(): () => void {
 
   let orientationTimer: ReturnType<typeof setTimeout> | null = null;
   let animationFrame: number | null = null;
+  let stableAppHeight = 0;
   const root = document.documentElement;
   root.classList.remove('keyboard-open');
   root.style.removeProperty('--safe-top');
@@ -144,18 +145,39 @@ export function setupViewportHeight(): () => void {
   root.style.removeProperty('--keyboard-safe-bottom');
   root.style.removeProperty('--visual-viewport-bottom');
 
+  const hasEditableFocus = () => {
+    const active = document.activeElement;
+    return active instanceof HTMLElement && (
+      active.matches('input, textarea, select, [contenteditable="true"]')
+      || Boolean(active.closest('[contenteditable="true"]'))
+    );
+  };
+
   const setVH = () => {
     const viewport = window.visualViewport;
     const visualHeight = viewport?.height || window.innerHeight;
     const visualOffsetTop = Math.max(0, viewport?.offsetTop || 0);
+    const visualBottom = visualOffsetTop + visualHeight;
+    const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
+
+    if (stableAppHeight <= 0) stableAppHeight = Math.max(layoutHeight, visualBottom);
+    const occludedHeight = Math.max(0, stableAppHeight - visualBottom);
+    const keyboardOpen = hasEditableFocus() && occludedHeight > 100;
+
+    // Browser chrome may legitimately resize the viewport. Adopt that size
+    // only while no keyboard is present; otherwise preserve the shell's stable
+    // geometry and expose the smaller visual viewport separately to overlays.
+    if (!keyboardOpen) stableAppHeight = Math.max(layoutHeight, visualBottom);
 
     root.style.setProperty('--vh', `${visualHeight * 0.01}px`);
     root.style.setProperty('--real-vh', `${visualHeight}px`);
-    // Match the pre-optimization PWA contract: the application shell follows
-    // the actually visible viewport instead of staying behind the keyboard.
-    root.style.setProperty('--app-height', `${visualHeight}px`);
+    root.style.setProperty('--app-height', `${stableAppHeight}px`);
     root.style.setProperty('--visual-viewport-height', `${visualHeight}px`);
     root.style.setProperty('--visual-viewport-offset-top', `${visualOffsetTop}px`);
+    root.style.setProperty('--visual-viewport-bottom', `${Math.max(0, stableAppHeight - visualBottom)}px`);
+    root.style.setProperty('--keyboard-inset', `${keyboardOpen ? occludedHeight : 0}px`);
+    root.style.setProperty('--keyboard-safe-bottom', keyboardOpen ? '0px' : 'var(--safe-bottom)');
+    root.classList.toggle('keyboard-open', keyboardOpen);
   };
 
   const scheduleVH = () => {
@@ -182,6 +204,10 @@ export function setupViewportHeight(): () => void {
   };
   window.addEventListener('orientationchange', handleOrientationChange);
 
+  const handleFocusChange = () => scheduleVH();
+  document.addEventListener('focusin', handleFocusChange);
+  document.addEventListener('focusout', handleFocusChange);
+
   const refreshGeometry = () => {
     scheduleVH();
   };
@@ -197,6 +223,8 @@ export function setupViewportHeight(): () => void {
     window.visualViewport?.removeEventListener('resize', scheduleVH);
     window.visualViewport?.removeEventListener('scroll', scheduleVH);
     window.removeEventListener('orientationchange', handleOrientationChange);
+    document.removeEventListener('focusin', handleFocusChange);
+    document.removeEventListener('focusout', handleFocusChange);
     window.removeEventListener('pageshow', refreshGeometry);
     window.removeEventListener('focus', refreshGeometry);
     document.removeEventListener('visibilitychange', handleVisibilityChange);

@@ -198,9 +198,11 @@
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --safe-left: env(safe-area-inset-left, 0px);
     --safe-right: env(safe-area-inset-right, 0px);
+    --keyboard-inset: 0px;
+    --keyboard-safe-bottom: var(--safe-bottom);
     --app-height: 100dvh;
     --bottom-nav-height: 66px;
-    --mobile-content-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 24px);
+    --mobile-content-bottom: calc(var(--bottom-nav-height) + var(--keyboard-safe-bottom) + 24px);
     --mobile-sheet-max-height: calc(var(--app-height) - max(var(--safe-top), 8px));
   }
 }
@@ -222,7 +224,7 @@
 /* ─── Mobile bottom nav safe area ─── */
 @layer utilities {
   .pb-safe {
-    padding-bottom: max(var(--safe-bottom), 8px);
+    padding-bottom: max(var(--keyboard-safe-bottom), 8px);
   }
   .pt-safe {
     padding-top: max(var(--safe-top), 0px);
@@ -319,6 +321,37 @@
   .group:focus-within .reveal-action,
   .reveal-action:focus-visible {
     opacity: 1;
+  }
+}
+
+/* Keep the document stable when a software keyboard opens. Only interactive
+   overlays follow the visual viewport; otherwise iOS leaves a large blank band
+   and can place the focused input behind the keyboard accessory bar. */
+html.keyboard-open {
+  --mobile-content-bottom: 16px;
+  --mobile-sheet-max-height: calc(var(--visual-viewport-height) - 16px);
+}
+
+@media (max-width: 767px), (max-height: 620px) and (pointer: coarse) {
+  html.keyboard-open [data-slot="dialog-content"] {
+    top: calc(var(--visual-viewport-offset-top) + 8px) !important;
+    bottom: auto !important;
+    max-height: calc(var(--visual-viewport-height) - 16px) !important;
+    margin: 0 !important;
+    transform: translateX(-50%) !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-bottom: 1rem;
+  }
+
+  html.keyboard-open .mobile-sheet-height,
+  html.keyboard-open .mobile-graph-sheet-height {
+    height: var(--mobile-sheet-max-height);
+    max-height: var(--mobile-sheet-max-height);
+  }
+
+  html.keyboard-open .mobile-scroll {
+    scroll-padding-bottom: calc(var(--keyboard-inset) + 1rem);
   }
 }
 
