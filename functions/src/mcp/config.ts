@@ -12,6 +12,7 @@ import type { ThreadmapOAuthConfiguration } from './oauth';
  * `functions/src/mcp/http.ts` routes them internally.
  */
 export const MCP_DEFAULT_ORIGIN = 'https://threadmap.app';
+const MCP_PRODUCTION_PROJECT_ID = 'orbit-9e0b6';
 const MCP_STAGING_PROJECT_ID = 'threadmap-staging-9e0b6';
 const MCP_VERCEL_PREVIEW_HOST = /^orbit-[a-z0-9-]+-mateos-projects-c394726f\.vercel\.app$/;
 
@@ -58,19 +59,16 @@ export const MCP_SUPPORTED_SCOPES = Object.freeze([
 ]);
 
 /**
- * Scopes a dynamically registered client (ChatGPT, Claude, Claude Code) may
- * request without an operator adding it by hand.
+ * Live server-wide scope ceiling for MCP clients and tokens. It narrows new
+ * dynamic registrations and is re-applied to legacy authorization requests,
+ * access tokens, and refresh rotation on every use.
  *
- * Read and write are included so the agent can actually manage tasks, which is
- * the point of the integration; both are guarded downstream by
- * `expected_revision` and a required idempotency UUID. `threadmap.delete` is
- * deliberately excluded — deletion is irreversible, and even with the
- * preview/confirm handshake it should be an explicit operator decision. Widen or
- * narrow with `MCP_DYNAMIC_CLIENT_SCOPES` (space-separated).
+ * Dynamic registration fails closed to read-only access plus refresh tokens.
+ * Write and delete are consequential capabilities and require an explicit
+ * operator decision through `MCP_DYNAMIC_CLIENT_SCOPES` (space-separated).
  */
 export const MCP_DEFAULT_DYNAMIC_CLIENT_SCOPES = Object.freeze([
   THREADMAP_MCP_SCOPES.read,
-  THREADMAP_MCP_SCOPES.write,
   'offline_access',
 ]);
 
@@ -81,11 +79,28 @@ export class McpConfigurationError extends Error {
   }
 }
 
-function trimmedEnv(name: string): string | undefined {
-  const value = process.env[name];
+function trimmedEnv(
+  name: string,
+  environment: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const value = environment[name];
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function resolveConfiguredMcpOrigin(
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  const configured = trimmedEnv('MCP_ORIGIN', environment);
+  if (configured) return originOf(configured);
+  const projectId = environment.GCLOUD_PROJECT
+    || environment.GOOGLE_CLOUD_PROJECT
+    || environment.GCP_PROJECT;
+  if (projectId !== MCP_PRODUCTION_PROJECT_ID) {
+    throw new McpConfigurationError('MCP_ORIGIN must be configured for non-production projects.');
+  }
+  return MCP_DEFAULT_ORIGIN;
 }
 
 function originOf(rawOrigin: string): string {
@@ -117,7 +132,7 @@ export interface ResolvedMcpEndpoints {
 }
 
 export function resolveMcpEndpoints(
-  rawOrigin: string = trimmedEnv('MCP_ORIGIN') ?? MCP_DEFAULT_ORIGIN,
+  rawOrigin: string = resolveConfiguredMcpOrigin(),
 ): ResolvedMcpEndpoints {
   const origin = originOf(rawOrigin);
   const absolute = (path: string): string => `${origin}${path}`;
@@ -161,6 +176,7 @@ export function resolveMcpOAuthConfiguration(
     registrationEndpoint: endpoints.register,
     revocationEndpoint: endpoints.revoke,
     protectedResourceMetadataUrl: endpoints.protectedResourceMetadata,
+    authorizationConsentUrl: `${endpoints.origin}/integrations/authorize`,
     scopesSupported: [...MCP_SUPPORTED_SCOPES],
     resourceName: 'Threadmap',
     dynamicClientScopes,

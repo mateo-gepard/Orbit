@@ -45,12 +45,12 @@ interface PendingDispatchSave {
 }
 
 const BLOCK_COLORS = [
-  'bg-sky-500/10 border-sky-500/20 text-sky-600 dark:text-sky-400',
-  'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400',
-  'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400',
-  'bg-violet-500/10 border-violet-500/20 text-violet-600 dark:text-violet-400',
-  'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400',
-  'bg-cyan-500/10 border-cyan-500/20 text-cyan-600 dark:text-cyan-400',
+  'bg-sky-500/10 border-sky-500/20 text-sky-700 dark:text-sky-300',
+  'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+  'bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300',
+  'bg-violet-500/10 border-violet-500/20 text-violet-700 dark:text-violet-300',
+  'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300',
+  'bg-cyan-500/10 border-cyan-500/20 text-cyan-700 dark:text-cyan-300',
 ];
 
 const BLOCK_LABELS = {
@@ -478,7 +478,7 @@ export default function DispatchPage() {
             onClick={handleGenerateRoute}
             disabled={activeTasks.length === 0}
             className={cn(
-              'mt-4 flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-medium transition-all active:scale-95',
+              'mt-4 flex min-h-11 items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-medium transition-all active:scale-95',
               activeTasks.length > 0
                 ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-600/15'
                 : 'bg-muted text-muted-foreground/40 cursor-not-allowed'
@@ -555,13 +555,13 @@ export default function DispatchPage() {
                 </div>
                 <div className="flex items-center gap-1">
                   {/* Reorder */}
-                  <div className="flex opacity-70 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <div className="flex opacity-70 transition-opacity focus-within:opacity-100 lg:opacity-0 lg:group-hover:opacity-100">
                     {idx > 0 && (
                       <button
                         onClick={() => handleMoveBlock(block.id, 'up')}
                         aria-label={interpolate(copy.moveEarlier, { label: block.label })}
                         title={interpolate(copy.moveEarlier, { label: block.label })}
-                        className="grid h-11 w-11 md:h-8 md:w-8 place-items-center rounded-lg opacity-70 hover:bg-background/50 hover:opacity-100 focus-visible:opacity-100 transition-all"
+                        className="grid h-11 w-11 place-items-center rounded-lg opacity-70 transition-all hover:bg-background/50 hover:opacity-100 focus-visible:opacity-100 lg:h-8 lg:w-8"
                       >
                         <ChevronUp className="h-3 w-3" />
                       </button>
@@ -571,7 +571,7 @@ export default function DispatchPage() {
                         onClick={() => handleMoveBlock(block.id, 'down')}
                         aria-label={interpolate(copy.moveLater, { label: block.label })}
                         title={interpolate(copy.moveLater, { label: block.label })}
-                        className="grid h-11 w-11 md:h-8 md:w-8 place-items-center rounded-lg opacity-70 hover:bg-background/50 hover:opacity-100 focus-visible:opacity-100 transition-all"
+                        className="grid h-11 w-11 place-items-center rounded-lg opacity-70 transition-all hover:bg-background/50 hover:opacity-100 focus-visible:opacity-100 lg:h-8 lg:w-8"
                       >
                         <ChevronDown className="h-3 w-3" />
                       </button>
@@ -594,7 +594,7 @@ export default function DispatchPage() {
                     }}
                     aria-label={interpolate(copy.startFlight, { label: block.label })}
                     title={interpolate(copy.startFlight, { label: block.label })}
-                    className="flex min-h-11 md:min-h-8 items-center gap-1 rounded-lg px-2 text-[11px] opacity-70 hover:bg-background/50 hover:opacity-100 focus-visible:opacity-100 transition-all"
+                    className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] opacity-70 transition-all hover:bg-background/50 hover:opacity-100 focus-visible:opacity-100 lg:min-h-8"
                   >
                     <Play className="h-3 w-3" />
                     {copy.fly}
@@ -603,7 +603,7 @@ export default function DispatchPage() {
                     onClick={() => handleRemoveBlock(block.id)}
                     aria-label={interpolate(copy.removeBlock, { label: block.label })}
                     title={interpolate(copy.removeBlock, { label: block.label })}
-                    className="ml-1 grid h-11 w-11 md:h-8 md:w-8 place-items-center rounded-lg opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:bg-background/50 hover:opacity-100 focus-visible:opacity-100 transition-all"
+                    className="ml-1 grid h-11 w-11 place-items-center rounded-lg opacity-70 transition-all hover:bg-background/50 hover:opacity-100 focus-visible:opacity-100 lg:h-8 lg:w-8 lg:opacity-0 lg:group-hover:opacity-100"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -631,9 +631,9 @@ export default function DispatchPage() {
                     {task?.priority && (
                       <span
                         className={cn(
-                          'text-[11px] uppercase opacity-60',
-                          task.priority === 'high' && 'text-red-500',
-                          task.priority === 'medium' && 'text-amber-500'
+                          'text-[11px] font-medium uppercase',
+                          task.priority === 'high' && 'text-red-700 dark:text-red-300',
+                          task.priority === 'medium' && 'text-amber-700 dark:text-amber-300'
                         )}
                       >
                         {task.priority === 'high' ? '!' : task.priority === 'medium' ? '·' : ''}
@@ -645,7 +645,7 @@ export default function DispatchPage() {
                       }
                       aria-label={interpolate(copy.removeTask, { task: task?.title || copy.taskUnavailable, label: block.label })}
                       title={interpolate(copy.removeTask, { task: task?.title || copy.taskUnavailable, label: block.label })}
-                      className="grid h-11 w-11 md:h-8 md:w-8 place-items-center rounded-lg opacity-70 md:opacity-0 md:group-hover/task:opacity-100 hover:bg-background/50 focus-visible:opacity-100 transition-all"
+                      className="grid h-11 w-11 place-items-center rounded-lg opacity-70 transition-all hover:bg-background/50 focus-visible:opacity-100 lg:h-8 lg:w-8 lg:opacity-0 lg:group-hover/task:opacity-100"
                     >
                       <X className="h-2.5 w-2.5" />
                     </button>
@@ -685,7 +685,7 @@ export default function DispatchPage() {
                 <button
                   onClick={() => setAddingToBlock(block.id)}
                   aria-label={interpolate(copy.addTaskTo, { label: block.label })}
-                  className="mt-2 flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] opacity-70 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-muted-foreground/60 hover:bg-background/40 hover:text-foreground"
+                  className="mt-2 flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] text-muted-foreground/60 opacity-70 transition-opacity hover:bg-background/40 hover:text-foreground focus-visible:opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                 >
                   <Plus className="h-2.5 w-2.5" />
                   {copy.addTask}

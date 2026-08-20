@@ -4,7 +4,9 @@
   --line: #ddd6cd;
   --paper: #f4f1ec;
   --accent: #df643f;
+  height: 100dvh;
   min-height: 100svh;
+  overflow-y: auto;
   color: var(--ink);
   background:
     radial-gradient(circle at 82% 8%, rgba(223, 100, 63, 0.16), transparent 28rem),

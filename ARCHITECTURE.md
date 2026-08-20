@@ -1,428 +1,220 @@
-# 🏗️ Threadmap — System Architecture
+# Threadmap architecture
 
-## Übersicht
+**Reviewed against repository:** 20 August 2026
 
-Threadmap ist **hybrid**: Läuft komplett offline (localStorage) UND mit Cloud-Sync (Firebase).
+## System context
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         Threadmap App                            │
-│                      (Next.js 16 / React)                    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ├──────────────┬──────────────┐
-                              │              │              │
-                    ┌─────────▼────┐  ┌──────▼─────┐  ┌────▼─────┐
-                    │ UI Components│  │   Zustand   │  │ Providers│
-                    │   (Pages)    │  │    Store    │  │ Auth/Data│
-                    └──────────────┘  └──────┬──────┘  └─────┬────┘
-                                             │               │
-                                    ┌────────▼───────────────▼──┐
-                                    │   firestore.ts (API)      │
-                                    │   • Retry Logic           │
-                                    │   • Validation            │
-                                    │   • Optimistic Updates    │
-                                    └────────┬──────────────────┘
-                                             │
-                            ┌────────────────┴────────────────┐
-                            │                                 │
-                    ┌───────▼────────┐              ┌─────────▼────────┐
-                    │  localStorage   │              │    Firebase      │
-                    │  (Demo Mode)    │              │   (Cloud Mode)   │
-                    │                 │              │                  │
-                    │  • Instant      │              │  • Auth          │
-                    │  • No Setup     │              │  • Firestore     │
-                    │  • Local Only   │              │  • Multi-Device  │
-                    └─────────────────┘              └──────────────────┘
+Threadmap is a Next.js 16 local-first personal workspace with an optional Firebase cloud profile.
+It has four operational planes:
+
+```mermaid
+flowchart LR
+  U["Browser / installed PWA"] --> V["Vercel Next.js\nfra1"]
+  U --> A["Firebase Auth / App Check"]
+  U --> D["Firestore + Storage"]
+  V --> F["Firebase Functions\neurope-west1"]
+  H["MCP host"] --> V
+  V --> F
+  F --> D
+  F --> A
+  G["GitHub protected release"] --> S["Staged Vercel artifact"]
+  G --> F
+  S --> V
 ```
 
----
+- The browser owns interaction, local-mode persistence, optimistic state, and installed-PWA state.
+- Vercel owns server rendering, App Router APIs, security headers, environment-aware MCP rewrites,
+  and release health identity.
+- Firebase owns identity, shared data, files, push delivery, scheduled work, destructive lifecycle,
+  OAuth state, and server-enforced authorization.
+- GitHub Actions owns repeatable verification and approved production orchestration. It is not the
+  source of live platform truth; evidence must be collected after deployment.
 
-## 📦 Data Layer (firestore.ts)
+## Domain model
 
-### Bulletproof Features
+`ThreadmapItem` is the shared graph node. Item types are task, project, habit, event, goal, and
+note. Common state covers identity, lifecycle, timestamps, revision, owner, content, tags,
+relationships, and attachments; specialized fields cover scheduling, recurrence, checklists,
+habits, projects, goals, notes, and calendar sync. `OrbitItem` is deprecated compatibility only.
 
-#### 1. **Dual-Mode System**
-```typescript
-isFirebaseAvailable() 
-  ? useFirestore()     // Cloud mit Realtime-Sync
-  : useLocalStorage()  // Demo mit instant UX
+Hierarchy (`parentId`) and peer relationships (`linkedIds`) have different semantics. Parent
+eligibility is validated at client/data/rules boundaries and repaired by an event Function if a
+parent becomes ineligible. Peer relationships must remain symmetric. Every cloud write preserves
+the authenticated uid and increments or checks the optimistic revision.
+
+Tool data such as wishlist, Abitur, focus/flight sessions, briefing journals, dispatch plans,
+settings, and toolbox state is owner-scoped but not forced into the item shape.
+
+## Browser architecture
+
+The App Router supplies route composition and public/API surfaces. The shared shell owns desktop
+sidebar, mobile navigation, global command capture, detail editing, completion feedback, and focus
+management. Providers compose:
+
+| Provider area | Responsibility |
+| --- | --- |
+| Auth | Firebase session, explicit local mode, account transition |
+| Data | subscriptions, optimistic store updates, conflict/retry state |
+| Settings | theme, locale, visual and behavior side effects |
+| PWA | service worker, install events, update consent, mobile viewport behavior |
+| Error boundary | render containment and recovery affordance |
+
+Local/demo mode uses account-scoped browser storage without calling cloud persistence. Cloud mode
+uses the Firebase uid as the storage namespace and authorization principal. Legacy unscoped browser
+keys may migrate only into the demo scope, never into an authenticated account.
+
+## Synchronization and consistency
+
+The client applies changes optimistically. Firestore operations serialize writes per item, include
+revision checks, and queue retryable mutations in an outbox. Account-generation guards prevent an
+operation started under one identity from committing into a later session. Verified local mirrors
+support fast startup and recovery but are not authority for cross-user access.
+
+Consistency is deliberately bounded rather than transactional across the entire graph:
+
+- an item write uses a revision and owner checks;
+- relationship operations update both sides together where supported;
+- destructive item/file cleanup creates durable jobs for retry;
+- account deletion creates a tombstone before removing credentials/data;
+- upload intents reserve size/count and bind the final object to owner/item/path;
+- background schedulers claim work before delivery/cleanup to limit duplicate effects.
+
+At scale, query bounds, localStorage quota, subscription breadth, and Functions cold starts remain
+capacity concerns. Production load evidence—not architecture intent—sets safe limits.
+
+## Server/API boundary
+
+App Router APIs include health and bounded wishlist scraping. Scrape routes authenticate the caller,
+validate targets, apply SSRF defenses and response/time/concurrency bounds, and consume a shared
+Firebase quota. API responses are private/no-store.
+
+Firebase callable/HTTP Functions cover:
+
+- auth email and MFA recovery-code lifecycle;
+- push devices, schedules, and scheduled notifications;
+- scrape quota;
+- hierarchy repair;
+- item and attachment deletion;
+- upload begin/attach/cancel/cleanup;
+- account export/deletion/retry;
+- MCP authorization listing/revocation and the MCP/OAuth HTTP server.
+
+Firestore and Storage Rules remain the direct-client authorization boundary. Functions re-check
+authentication/ownership because Admin SDK access bypasses Rules. App Check reduces unauthorized
+client abuse but never replaces user authorization.
+
+## MCP security architecture
+
+The MCP endpoint is stateless per request. Durable clients, authorization requests, codes, hashed
+tokens, token families, user grants, idempotency records, delete confirmations, quotas, and audit
+records live in Firestore with TTL policies where appropriate.
+
+```mermaid
+sequenceDiagram
+  participant H as MCP host
+  participant O as OAuth server
+  participant C as Consent UI
+  participant A as Firebase Auth
+  participant M as MCP tools/DAL
+  H->>O: register + authorize (PKCE, resource, scopes)
+  O-->>H: redirect to consent request
+  H->>C: open consent
+  C->>A: prove Firebase user
+  C->>O: approve subset for authenticated uid
+  O-->>H: one-time authorization code
+  H->>O: exchange code + verifier
+  O-->>H: uid/client/resource/scopes-bound tokens
+  H->>M: bearer + tool call
+  M->>M: grant/tombstone/scope/quota/revision checks
+  M-->>H: bounded owner-scoped result
 ```
 
-#### 2. **Retry Logic mit Exponential Backoff**
-```typescript
-async function withRetry<T>(
-  operation: () => Promise<T>,
-  retries = 3
-): Promise<T> {
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      return await operation();
-    } catch (err) {
-      if (attempt < retries - 1) {
-        await sleep(500 * Math.pow(2, attempt)); // 500ms, 1s, 2s
-      }
-    }
-  }
-  throw lastError;
-}
-```
-
-**Nutzen:**
-- ✅ Netzwerkfehler werden automatisch recovered
-- ✅ Wie Microsoft To Do: Zuverlässig auch bei schlechtem Internet
-
-#### 3. **Data Validation & Sanitization**
-```typescript
-function sanitizeItem(item: OrbitItem): OrbitItem {
-  return {
-    ...item,
-    id: item.id || crypto.randomUUID(),
-    title: (item.title || '').trim() || 'Untitled',
-    type: VALID_TYPES.has(item.type) ? item.type : 'task',
-    status: VALID_STATUSES.has(item.status) ? item.status : 'active',
-    // ... validates all fields
-  };
-}
-```
-
-**Nutzen:**
-- ✅ Korrupte Daten werden automatisch repariert
-- ✅ Keine Runtime-Crashes durch ungültige Werte
-
-#### 4. **Optimistic Updates mit Rollback**
-```typescript
-export async function updateItem(id: string, updates: Partial<OrbitItem>) {
-  // 1. UI sofort updaten (optimistisch)
-  const prevItems = store.items;
-  store.setItems(prevItems.map(i => 
-    i.id === id ? { ...i, ...updates } : i
-  ));
-
-  try {
-    // 2. Backend-Update
-    await firestore.update(id, updates);
-  } catch (err) {
-    // 3. Bei Fehler: Rollback
-    store.setItems(prevItems);
-    throw err;
-  }
-}
-```
-
-**Nutzen:**
-- ✅ UI reagiert instant (keine Ladezeit)
-- ✅ Bei Fehler: Automatischer Rollback ohne Datenverlust
-
-#### 5. **Storage Quota Handling**
-```typescript
-if (err.name === 'QuotaExceededError') {
-  // Auto-Cleanup: Lösche archivierte Items > 30 Tage
-  const compacted = items.filter(
-    i => i.status !== 'archived' || 
-         Date.now() - i.updatedAt < 30 * 24 * 60 * 60 * 1000
-  );
-  localStorage.setItem(KEY, JSON.stringify(compacted));
-}
-```
-
-**Nutzen:**
-- ✅ localStorage wird nie voll
-- ✅ Automatisches Aufräumen alter Daten
-
----
-
-## 🔐 Security Layer
-
-### Firestore Security Rules
-
-```javascript
-// User kann nur eigene Items sehen
-allow read: if request.auth.uid == resource.data.userId;
-
-// User kann nur eigene Items erstellen
-allow create: if request.auth.uid == request.resource.data.userId;
-
-// userId darf NICHT geändert werden
-allow update: if resource.data.userId == request.resource.data.userId;
-```
-
-**Was das verhindert:**
-- ❌ Cross-User-Zugriffe
-- ❌ userId-Hijacking
-- ❌ Unauthenticated Reads/Writes
-
----
-
-## 🎯 State Management (Zustand)
-
-### Store mit Safe Selectors
-
-```typescript
-export const useOrbitStore = create<OrbitStore>((set, get) => ({
-  items: [],
-  
-  // Guard: Nur Arrays akzeptieren
-  setItems: (items) => {
-    if (!Array.isArray(items)) {
-      console.error('[THREADMAP] Invalid items:', typeof items);
-      return;
-    }
-    set({ items });
-  },
-
-  // Safe Selectors mit try/catch
-  getItemById: (id) => {
-    try {
-      return get().items.find(i => i.id === id);
-    } catch {
-      return undefined; // Never crash
-    }
-  },
-}));
-```
-
-**Nutzen:**
-- ✅ Store kann nicht in ungültigen Zustand kommen
-- ✅ Selectors crashen nie, selbst bei korrupten Daten
-
----
-
-## 🌐 Network Layer
-
-### Auto-Reconnection
-
-```typescript
-// Online/Offline Detection
-window.addEventListener('online', () => {
-  console.info('[THREADMAP] Network back — reconnecting');
-  reconnect();
-});
-
-window.addEventListener('offline', () => {
-  console.warn('[THREADMAP] Network offline — using local cache');
-});
-```
-
-### Firestore Subscription mit Fallback
-
-```typescript
-const unsubscribe = onSnapshot(
-  query,
-  (snapshot) => {
-    // Success: Update store
-    callback(items);
-  },
-  (error) => {
-    // Error: Use local cache
-    console.error('[THREADMAP] Firestore error:', error);
-    const cached = loadLocalItems();
-    if (cached.length > 0) {
-      callback(cached);
-    }
-  }
-);
-```
-
-**Nutzen:**
-- ✅ App funktioniert auch bei Firestore-Ausfall
-- ✅ Automatische Wiederverbindung bei Netzwerk-Rückkehr
-
----
-
-## 🛡️ Error Handling
-
-### 1. Error Boundary (React)
-```typescript
-class ErrorBoundary extends Component {
-  componentDidCatch(error, errorInfo) {
-    console.error('[THREADMAP] Uncaught error:', error);
-  }
-  
-  render() {
-    if (this.state.hasError) {
-      return <ErrorScreen onReload={() => window.location.reload()} />;
-    }
-    return this.props.children;
-  }
-}
-```
-
-### 2. Try/Catch um alle async Ops
-```typescript
-const handleUpdate = async (updates) => {
-  try {
-    await updateItem(item.id, updates);
-  } catch (err) {
-    console.error('[THREADMAP] Update failed:', err);
-    // UI bleibt stabil dank optimistischem Update
-  }
-};
-```
-
-### 3. Firebase Errors → Demo Mode Fallback
-```typescript
-const signInWithGoogle = async () => {
-  try {
-    await signInWithPopup(auth, googleProvider);
-  } catch (error) {
-    // Fehler? → Demo Mode
-    setUser(createDemoUser());
-    setIsDemo(true);
-  }
-};
-```
-
-**Nutzen:**
-- ✅ App crashed NIE
-- ✅ Bei jedem Fehler: Graceful Degradation
-
----
-
-## ⚡ Performance
-
-### Optimizations
-
-1. **Memoization**
-   ```typescript
-   const filteredItems = useMemo(
-     () => items.filter(i => i.status === 'active'),
-     [items]
-   );
-   ```
-
-2. **Optimistic Updates** — UI reagiert sofort, Backend async
-
-3. **Local-First** — Lesen von localStorage ist instant
-
-4. **Debouncing** (in Textfeldern via onChange + onBlur)
-
-5. **Code Splitting** — Next.js lädt nur benötigte Pages
-
----
-
-## 📊 Data Flow
-
-### Item Creation
-```
-User drückt ⌘K
-  → Gibt "Müll rausbringen morgen #home" ein
-  → parseCommand() erkennt: type=task, due=morgen, tag=home
-  → createItem() wird aufgerufen
-  
-  [Local Mode]
-  → Item zu localStorage.items[]
-  → syncStoreFromLocal()
-  → UI aktualisiert sofort
-  
-  [Cloud Mode]
-  → Optimistic: Item zu store.items[]
-  → UI aktualisiert sofort
-  → Async: addDoc(firestore)
-  → Bei Erfolg: Firestore Realtime Listener aktualisiert Store
-  → Bei Fehler: Rollback (Item aus Store entfernen)
-```
-
-### Item Update
-```
-User ändert Titel in Detail Panel
-  → onBlur → handleUpdate({ title: newTitle })
-  
-  [Local Mode]
-  → localStorage.items[idx].title = newTitle
-  → syncStoreFromLocal()
-  
-  [Cloud Mode]
-  → Optimistic: store.items[idx].title = newTitle
-  → UI zeigt neuen Titel sofort
-  → Async: updateDoc(firestore)
-  → Bei Fehler: Rollback auf alten Titel
-```
-
----
-
-## 🚀 Deployment
-
-### Production Checklist
-
-- [x] **Build** passes ohne Errors
-- [x] **TypeScript** strict mode
-- [x] **Error Boundaries** um alle Provider
-- [x] **Retry Logic** für alle Firestore Ops
-- [x] **Validation** bei jedem Write
-- [x] **Security Rules** in Firestore
-- [x] **localStorage Fallback** funktioniert
-- [x] **Optimistic Updates** mit Rollback
-- [x] **Offline Mode** detection
-
-### Vercel Deployment
-
-```bash
-npx vercel
-```
-
-**Environment Variables in Vercel setzen:**
-- `NEXT_PUBLIC_FIREBASE_API_KEY`
-- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
-- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-- `NEXT_PUBLIC_FIREBASE_APP_ID`
-
----
-
-## 📈 Monitoring & Logging
-
-Alle kritischen Operationen loggen mit `[THREADMAP]` Prefix:
-
-```typescript
-console.info('[THREADMAP Auth] Firebase available — using cloud mode');
-console.warn('[THREADMAP] Network offline — using local data');
-console.error('[THREADMAP] Update failed:', err);
-```
-
-**In Production:**
-- Logs → Browser Console (F12)
-- Firebase Console → Monitoring für Firestore Errors
-- Vercel Analytics für Performance
-
----
-
-## 🎓 Design Principles
-
-### 1. **Local-First**
-App funktioniert OHNE Backend. Backend ist Optional-Enhancement.
-
-### 2. **Optimistic UI**
-Jede User-Aktion zeigt sofort Feedback. Keine Ladezeiten.
-
-### 3. **Fail-Safe**
-Bei jedem Fehler: Graceful Degradation, nie komplett broken.
-
-### 4. **Data Integrity**
-Validation + Sanitization bei jedem Write. Korrupte Daten werden repariert.
-
-### 5. **Zero-Config**
-Demo-Modus ohne Setup. Firebase ist optional.
-
----
-
-## 🔮 Future Enhancements
-
-- [ ] **IndexedDB** statt localStorage (mehr Speicher, strukturiert)
-- [ ] **Service Worker** für echtes Offline-First
-- [ ] **PWA** mit Install-Prompt
-- [ ] **End-to-End Encryption** für sensitive Notes
-- [ ] **Collaborative Items** (Multi-User Sharing)
-- [ ] **Google Calendar Bidirectional Sync**
-- [ ] **Push Notifications** für Habit-Reminders
-- [ ] **Export/Import** (JSON, CSV)
-- [ ] **Undo/Redo** History
-
----
-
-**Fazit:**
-
-Threadmap ist gebaut wie Microsoft To Do oder Todoist — **bulletproof, zuverlässig, performant**.
-
-Jede Design-Entscheidung folgt Production-Best-Practices. 🚀
+One dynamic client can have independent grants for multiple users. Revocation is user-scoped and
+places an atomic grant barrier before derivative credentials are swept. Account deletion blocks
+new authorization and all existing credential paths. Item text is data; it cannot change scopes or
+skip confirmation.
+
+## PWA lifecycle
+
+The app registers one stable `/sw.js` URL. A no-store route embeds the exact release SHA in the
+worker response bytes and cache names, so native byte comparison can discover a new deployment;
+foreground, restored-network, and hourly checks cover long-lived SPA sessions. Install precaches an
+offline fallback and current shell assets, but does not take control automatically. The app
+announces a waiting update with a persistent localized prompt. Explicit acceptance writes a session
+marker and sends `SKIP_WAITING`; only a matching later `controllerchange` reloads once.
+
+This prevents an automatic worker update from replacing an unsaved editing session. Activation
+claims clients and removes caches from other Threadmap revisions and legacy Orbit workers. Worker
+and registration listeners are cancellable so provider remounts or locale changes do not multiply
+notifications. Briefing schedule UPDATE/CLEAR messages carry a monotonically increasing generation
+persisted in the worker's IndexedDB transaction. A clear advances that barrier before it is
+acknowledged, so a delayed callback from the prior account cannot recreate notification state.
+
+## Deployment and region contract
+
+Production and staging are deliberately asymmetric:
+
+| Concern | Staging/default | Production |
+| --- | --- | --- |
+| Firebase project | `threadmap-staging-9e0b6` | `orbit-9e0b6` |
+| Firebase Functions | `europe-west1` | `europe-west1` |
+| Vercel compute | configured `fra1` | configured and runtime-verified `fra1` |
+| Storage CORS | localhost policy file | threadmap.app/www only |
+| Deploy path | explicit staging npm scripts | protected workflow/guarded scripts |
+| Evidence | engineering feedback | exact-SHA release record and approval |
+
+Application code imports `FIREBASE_FUNCTIONS_REGION` from one source. Because Functions compile in
+a separate package, the release audit verifies their `FUNCTION_REGION` matches rather than trying
+to share a cross-build import. Vercel region is intentionally a separate constant because it names
+a different provider's compute topology.
+
+Next configuration resolves one validated Firebase project for the deployment environment and uses
+it for both MCP and `/__/auth/*` rewrites. Production requires `orbit-9e0b6`; Vercel previews require
+`threadmap-staging-9e0b6`, and a conflicting explicit project fails the build instead of routing one
+auth surface to production. Settings displays the current origin's `/mcp` endpoint, so a staging
+artifact cannot instruct a client to authorize against `threadmap.app`. The production web artifact is built once, staged with production
+semantics without domain assignment, verified, then promoted. Firebase changes between staging and
+promotion must be backward compatible with the old web artifact throughout the rollback window.
+
+The staged production URL is a dark production-configured web candidate, not a substitute for the
+staging environment. The workflow therefore fails closed before secrets or mutation. To enable it,
+an upstream job must deploy the exact SHA to `threadmap-staging-9e0b6`, pair it with a
+staging-configured web artifact, exercise authenticated read/write/upload/revocation contracts, and
+pass validated evidence outputs to a separate production-environment job. This ordering ensures
+protected approval occurs after evidence exists, not before a single combined job starts.
+
+## Release identity and observability
+
+`/api/health` separates liveness from configuration readiness and exposes safe release/runtime
+metadata. Release identity resolves from an explicit build SHA before Vercel/GitHub SHA, with `local-0.1.0` only as a local
+fallback. The route never returns secrets, but it can name missing production variables.
+
+Observability must correlate web SHA/deployment id, Firebase project/Function name, user-safe
+request identifiers, and timestamps. Browser error telemetry is not currently assumed; adding it
+requires privacy/redaction/retention review. Firebase Functions still lack an independent artifact
+SHA endpoint, so backend provenance is a documented gap.
+
+## Security boundaries
+
+1. Firebase uid is the workspace boundary.
+2. Firestore/Storage Rules govern direct browser data access.
+3. Functions authenticate and authorize again before Admin SDK operations.
+4. App Check is abuse resistance, not identity or authorization.
+5. OAuth client, user grant, resource, scope, token family, and deletion tombstone jointly govern MCP.
+6. Browser content, MCP item text, query strings, and remote scrape responses are untrusted data.
+7. GitHub environment approval and explicit project ids govern release authority.
+8. Health/release evidence proves an artifact, not legal approval or platform ownership.
+
+See `SECURITY_BOUNDARY_REVIEW.md` for assurance limits and `RECOVERY_RUNBOOK.md` for failure-plane
+response.
+
+## Quality strategy
+
+The app unit suite covers pure and orchestration modules; Firebase Rules run with emulators; the
+Functions package compiles then runs Node tests; Playwright cold-loads key routes on desktop
+Chromium, mobile Chromium, and iPhone WebKit. Each cold load collects runtime errors, checks layout
+overflow, and runs axe for moderate/serious/critical WCAG findings. A keyboard smoke verifies skip-link/main
+focus and command-surface focus.
+
+Automated checks do not replace real iOS/PWA testing, screen readers, two-user isolation, recovery,
+provider control inspection, load behavior, alert delivery, or legal/release authority.

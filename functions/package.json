@@ -5,7 +5,9 @@
     "build": "tsc",
     "test": "npm run build && node --test 'lib/**/*.test.js'",
     "serve": "npm run build && firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "npm run deploy:production",
+    "deploy:staging": "cd .. && firebase deploy --project threadmap-staging-9e0b6 --only functions",
+    "deploy:production": "cd .. && node scripts/guarded-firebase-deploy.mjs --project orbit-9e0b6 --only functions",
     "migrate:legacy-files": "npm run build && node lib/migrate-legacy-storage.js",
     "migrate:revisions": "npm run build && node lib/migrate-revisions.js"
   },

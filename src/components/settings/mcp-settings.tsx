@@ -1,28 +1,67 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { Check, Clipboard, KeyRound, LockKeyhole, PlugZap, ShieldCheck, UserRound, Wrench } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import {
+  Check,
+  Clipboard,
+  KeyRound,
+  Loader2,
+  LockKeyhole,
+  PlugZap,
+  RefreshCw,
+  ShieldCheck,
+  ShieldOff,
+  UserRound,
+  Wrench,
+} from 'lucide-react';
 
+import { useAuth } from '@/components/providers/auth-provider';
 import { Button } from '@/components/ui/button';
+import { cloudFunctions, ensureAppCheck } from '@/lib/firebase';
+import { useSettingsStore } from '@/lib/settings-store';
 
-const MCP_ENDPOINT = 'https://threadmap.app/mcp';
+const MCP_ENDPOINT_PATH = '/mcp';
 
 const CAPABILITIES = [
   'Find and read your Threadmap items',
-  'Create tasks, notes, projects, habits, goals, and events',
-  'Update, complete, archive, tag, and connect items',
-  'Use natural-language dates and Threadmap relationships',
+  'Review agendas, tags, relationships, and attachment metadata',
+  'Inspect wishlist, study, flight, briefing, and settings data',
 ];
 
 const CLIENTS = [
   { name: 'ChatGPT', step: 'In Settings -> Apps, add a custom MCP app and use the endpoint below.' },
   { name: 'Claude', step: 'In Settings -> Connectors, choose Add custom connector and use the endpoint below.' },
-  {
-    name: 'Claude Code',
-    step: 'Run the command below in a terminal, then complete authorization in your browser.',
-    command: `claude mcp add --transport http threadmap ${MCP_ENDPOINT}`,
-  },
 ];
+
+interface McpAuthorization {
+  clientId: string;
+  clientName: string;
+  authorizedAt: number;
+  lastAuthorizedAt: number;
+  expiresAt?: number;
+}
+
+interface McpAuthorizationListResponse {
+  authorizations: McpAuthorization[];
+}
+
+interface McpAuthorizationRevokeResponse {
+  success: true;
+  revoked: boolean;
+}
+
+function validTimestamp(value: number): boolean {
+  return Number.isFinite(value) && value > 0 && !Number.isNaN(new Date(value).getTime());
+}
+
+function formatAuthorizationDate(value: number, language: string): string {
+  if (!validTimestamp(value)) return language === 'de' ? 'Unbekannt' : 'Unknown';
+  return new Intl.DateTimeFormat(language === 'de' ? 'de-DE' : 'en', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
 
 function InfoCard({ children, icon: Icon, title }: { children: ReactNode; icon: typeof PlugZap; title: string }) {
   return (
@@ -39,12 +78,142 @@ function InfoCard({ children, icon: Icon, title }: { children: ReactNode; icon: 
 }
 
 export function McpSettings() {
+  const { user } = useAuth();
+  const userId = user?.uid;
+  const language = useSettingsStore((state) => state.settings.language);
+  const german = language === 'de';
   const [copied, setCopied] = useState<string | null>(null);
+  const [mcpEndpoint, setMcpEndpoint] = useState<string | null>(null);
+  const [authorizations, setAuthorizations] = useState<McpAuthorization[]>([]);
+  const [authorizationsLoading, setAuthorizationsLoading] = useState(true);
+  const [authorizationsError, setAuthorizationsError] = useState<string | null>(null);
+  const [authorizationStatus, setAuthorizationStatus] = useState<string | null>(null);
+  const [revokingClientId, setRevokingClientId] = useState<string | null>(null);
+  const requestGenerationRef = useRef(0);
+  const copyResetTimerRef = useRef<number | null>(null);
+
+  const loadAuthorizations = useCallback(async () => {
+    const generation = ++requestGenerationRef.current;
+    setAuthorizationStatus(null);
+    setAuthorizationsError(null);
+    setRevokingClientId(null);
+    // Never render one account's client names while a new account scope is
+    // being resolved. A retry repopulates the list from the server.
+    setAuthorizations([]);
+
+    if (!userId || userId === 'demo-user') {
+      setAuthorizationsLoading(false);
+      return;
+    }
+
+    setAuthorizationsLoading(true);
+    try {
+      await ensureAppCheck();
+      if (!cloudFunctions) throw new Error('MCP authorization management is unavailable.');
+      const callable = httpsCallable<Record<string, never>, McpAuthorizationListResponse>(
+        cloudFunctions,
+        'listMcpAuthorizations',
+      );
+      const result = await callable({});
+      if (generation !== requestGenerationRef.current) return;
+      if (!Array.isArray(result.data.authorizations)) {
+        throw new Error('Invalid MCP authorization response.');
+      }
+      const safeAuthorizations = result.data.authorizations.map((authorization) => {
+        if (!authorization || typeof authorization.clientId !== 'string' || !authorization.clientId.trim()) {
+          // A grant without an identifier cannot be revoked safely. Surface a
+          // load error instead of presenting a misleading, incomplete list.
+          throw new Error('Invalid MCP authorization identifier.');
+        }
+        return {
+          clientId: authorization.clientId.trim(),
+          clientName: typeof authorization.clientName === 'string' && authorization.clientName.trim()
+            ? authorization.clientName.trim()
+            : (german ? 'Unbekannter Client' : 'Unknown client'),
+          authorizedAt: authorization.authorizedAt,
+          lastAuthorizedAt: authorization.lastAuthorizedAt,
+          ...(validTimestamp(authorization.expiresAt ?? Number.NaN)
+            ? { expiresAt: authorization.expiresAt }
+            : {}),
+        } satisfies McpAuthorization;
+      }).sort((left, right) => {
+        const leftDate = validTimestamp(left.lastAuthorizedAt) ? left.lastAuthorizedAt : 0;
+        const rightDate = validTimestamp(right.lastAuthorizedAt) ? right.lastAuthorizedAt : 0;
+        return rightDate - leftDate;
+      });
+      setAuthorizations(safeAuthorizations);
+    } catch {
+      if (generation !== requestGenerationRef.current) return;
+      setAuthorizationsError(german
+        ? 'Autorisierte Clients konnten nicht geladen werden.'
+        : 'Authorized clients could not be loaded.');
+    } finally {
+      if (generation === requestGenerationRef.current) setAuthorizationsLoading(false);
+    }
+  }, [german, userId]);
+
+  useEffect(() => {
+    void loadAuthorizations();
+    return () => {
+      requestGenerationRef.current += 1;
+    };
+  }, [loadAuthorizations]);
+
+  useEffect(() => {
+    // Keep staging/preview clients on their same-origin MCP rewrite. A
+    // hard-coded production endpoint would cross the deployment trust plane.
+    setMcpEndpoint(new URL(MCP_ENDPOINT_PATH, window.location.origin).href);
+  }, []);
+
+  useEffect(() => () => {
+    if (copyResetTimerRef.current) window.clearTimeout(copyResetTimerRef.current);
+  }, []);
 
   async function copy(value: string, key: string) {
     await navigator.clipboard.writeText(value);
     setCopied(key);
-    window.setTimeout(() => setCopied(null), 1800);
+    if (copyResetTimerRef.current) window.clearTimeout(copyResetTimerRef.current);
+    copyResetTimerRef.current = window.setTimeout(() => {
+      setCopied(null);
+      copyResetTimerRef.current = null;
+    }, 1800);
+  }
+
+  async function revokeAuthorization(authorization: McpAuthorization) {
+    if (!userId || userId === 'demo-user' || revokingClientId) return;
+    const generation = requestGenerationRef.current;
+    setRevokingClientId(authorization.clientId);
+    setAuthorizationsError(null);
+    setAuthorizationStatus(null);
+    try {
+      await ensureAppCheck();
+      if (!cloudFunctions) throw new Error('MCP authorization management is unavailable.');
+      const callable = httpsCallable<{ clientId: string }, McpAuthorizationRevokeResponse>(
+        cloudFunctions,
+        'revokeMcpAuthorization',
+      );
+      const result = await callable({ clientId: authorization.clientId });
+      if (generation !== requestGenerationRef.current) return;
+      if (!result.data.success) throw new Error('MCP authorization revocation was not accepted.');
+
+      // Both `revoked` outcomes are successful and safe to replay. A false
+      // value means another tab/request already removed the same grant.
+      setAuthorizations((current) => current.filter((entry) => entry.clientId !== authorization.clientId));
+      setAuthorizationStatus(german
+        ? result.data.revoked
+          ? `Zugriff für ${authorization.clientName} wurde widerrufen.`
+          : `Der Zugriff für ${authorization.clientName} war bereits widerrufen.`
+        : result.data.revoked
+          ? `Access revoked for ${authorization.clientName}.`
+          : `Access for ${authorization.clientName} was already revoked.`);
+    } catch {
+      if (generation !== requestGenerationRef.current) return;
+      setAuthorizationsError(german
+        ? `Der Zugriff für ${authorization.clientName} konnte nicht widerrufen werden.`
+        : `Access for ${authorization.clientName} could not be revoked.`);
+    } finally {
+      if (generation === requestGenerationRef.current) setRevokingClientId(null);
+    }
   }
 
   return (
@@ -52,18 +221,134 @@ export function McpSettings() {
       <InfoCard icon={PlugZap} title="Connection endpoint">
         <p className="mb-3 text-sm leading-6 text-muted-foreground">Use this same URL in every supported client. Do not add a user ID, API key, or query parameter.</p>
         <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-border/70 bg-muted/35 p-2 pl-4">
-          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-sm">{MCP_ENDPOINT}</code>
+          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-sm">
+            {mcpEndpoint || MCP_ENDPOINT_PATH}
+          </code>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => void copy(MCP_ENDPOINT, 'endpoint')}
+            onClick={() => {
+              if (mcpEndpoint) void copy(mcpEndpoint, 'endpoint');
+            }}
+            disabled={!mcpEndpoint}
             aria-label={copied === 'endpoint' ? 'MCP endpoint copied' : 'Copy MCP endpoint'}
-            className="h-11 w-11 px-0 sm:h-8 sm:w-auto sm:px-3"
+            className="h-11 w-11 px-0 lg:h-8 lg:w-auto lg:px-3"
           >
             {copied === 'endpoint' ? <Check className="size-4" /> : <Clipboard className="size-4" />}
-            <span className="ml-2 hidden sm:inline">{copied === 'endpoint' ? 'Copied' : 'Copy'}</span>
+            <span className="ml-2 hidden lg:inline">{copied === 'endpoint' ? 'Copied' : 'Copy'}</span>
           </Button>
+        </div>
+      </InfoCard>
+
+      <InfoCard icon={ShieldOff} title={german ? 'Autorisierte Clients' : 'Authorized clients'}>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {german
+            ? 'Hier siehst du die Clients mit serverseitigem Zugriff auf dein Threadmap-Konto. Ein Widerruf sperrt den Client und seine abgeleiteten Tokens sofort.'
+            : 'These clients have server-side access to your Threadmap account. Revoking one immediately blocks that client and its derivative tokens.'}
+        </p>
+
+        <div className="mt-4" aria-busy={authorizationsLoading}>
+          {authorizationStatus && (
+            <p role="status" aria-live="polite" className="mb-3 rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5 text-sm text-foreground">
+              {authorizationStatus}
+            </p>
+          )}
+
+          {authorizationsError && (
+            <div role="alert" className="mb-3 flex flex-col gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+              <span>{authorizationsError}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void loadAuthorizations()}
+                disabled={authorizationsLoading || Boolean(revokingClientId)}
+                className="min-h-11 shrink-0 lg:min-h-8"
+              >
+                <RefreshCw aria-hidden="true" className="size-3.5" />
+                {german ? 'Erneut versuchen' : 'Retry'}
+              </Button>
+            </div>
+          )}
+
+          {!userId || userId === 'demo-user' ? (
+            <div className="rounded-2xl border border-border/60 bg-muted/25 px-4 py-5 text-sm leading-6 text-muted-foreground">
+              {german
+                ? 'Melde dich mit einem Cloud-Konto an, um autorisierte MCP-Clients zu verwalten.'
+                : 'Sign in with a cloud account to manage authorized MCP clients.'}
+            </div>
+          ) : authorizationsLoading ? (
+            <div role="status" aria-live="polite" className="flex min-h-24 items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/20 text-sm text-muted-foreground">
+              <Loader2 aria-hidden="true" className="size-4 motion-safe:animate-spin" />
+              {german ? 'Autorisierte Clients werden geladen…' : 'Loading authorized clients…'}
+            </div>
+          ) : authorizationsError && authorizations.length === 0 ? null : authorizations.length === 0 ? (
+            <div className="rounded-2xl border border-border/60 bg-muted/25 px-4 py-5">
+              <p className="text-sm font-medium">{german ? 'Keine autorisierten Clients' : 'No authorized clients'}</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {german
+                  ? 'Neue Clients erscheinen hier, nachdem du den Zugriff im Autorisierungsfenster genehmigt hast.'
+                  : 'New clients appear here after you approve access in the authorization screen.'}
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60">
+              {authorizations.map((authorization) => {
+                const revoking = revokingClientId === authorization.clientId;
+                const expires = authorization.expiresAt && validTimestamp(authorization.expiresAt)
+                  ? formatAuthorizationDate(authorization.expiresAt, language)
+                  : null;
+                return (
+                  <li key={authorization.clientId} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{authorization.clientName}</p>
+                      <dl className="mt-1 space-y-0.5 text-xs leading-5 text-muted-foreground">
+                        <div>
+                          <dt className="inline font-medium text-foreground/80">{german ? 'Zuletzt autorisiert:' : 'Last authorized:'}</dt>{' '}
+                          <dd className="inline">{formatAuthorizationDate(authorization.lastAuthorizedAt, language)}</dd>
+                        </div>
+                        <div>
+                          <dt className="inline font-medium text-foreground/80">{german ? 'Erstmals autorisiert:' : 'First authorized:'}</dt>{' '}
+                          <dd className="inline">{formatAuthorizationDate(authorization.authorizedAt, language)}</dd>
+                        </div>
+                        <div>
+                          <dt className="inline font-medium text-foreground/80">{german ? 'Client-ID:' : 'Client ID:'}</dt>{' '}
+                          <dd className="break-all font-mono">{authorization.clientId}</dd>
+                        </div>
+                        {expires && (
+                          <div>
+                            <dt className="inline font-medium text-foreground/80">{german ? 'Läuft ab:' : 'Expires:'}</dt>{' '}
+                            <dd className="inline">{expires}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void revokeAuthorization(authorization)}
+                      disabled={Boolean(revokingClientId)}
+                      aria-label={german
+                        ? `Zugriff für ${authorization.clientName} widerrufen`
+                        : `Revoke access for ${authorization.clientName}`}
+                      className="min-h-11 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive lg:min-h-8"
+                    >
+                      {revoking ? (
+                        <Loader2 aria-hidden="true" className="size-3.5 motion-safe:animate-spin" />
+                      ) : (
+                        <ShieldOff aria-hidden="true" className="size-3.5" />
+                      )}
+                      {revoking
+                        ? (german ? 'Wird widerrufen…' : 'Revoking…')
+                        : (german ? 'Zugriff widerrufen' : 'Revoke access')}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </InfoCard>
 
@@ -90,24 +375,15 @@ export function McpSettings() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">{client.name}</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">{client.step}</p>
-                  {client.command ? (
-                    <div className="mt-3 flex min-w-0 items-center gap-2 rounded-xl bg-foreground p-2 pl-3 text-background">
-                      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs">{client.command}</code>
-                      <button
-                        type="button"
-                        onClick={() => void copy(client.command!, 'command')}
-                        className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-background/10 text-background hover:bg-background/15 sm:size-8 sm:rounded-lg"
-                        aria-label={copied === 'command' ? 'Claude Code command copied' : 'Copy Claude Code command'}
-                      >
-                        {copied === 'command' ? <Check className="size-3.5" /> : <Clipboard className="size-3.5" />}
-                      </button>
-                    </div>
-                  ) : null}
                 </div>
               </div>
             </div>
           ))}
         </div>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          Claude Code is not enabled for the production launch. Its local OAuth callback requires a
+          separate security and compatibility review before Threadmap can accept it.
+        </p>
       </InfoCard>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -117,13 +393,19 @@ export function McpSettings() {
               <li key={capability} className="flex gap-3 text-sm leading-5"><Check className="mt-0.5 size-4 shrink-0 text-foreground/55" aria-hidden="true" /><span>{capability}</span></li>
             ))}
           </ul>
+          <p className="mt-4 rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
+            Production connections are read-only at launch. They cannot create, update, complete,
+            archive, link, or delete items. Any future write access will require a new scope policy,
+            consent, and release review. Every Google-connected or Google-derived event is excluded
+            from MCP tools, including Threadmap events while they remain connected to Google.
+          </p>
         </InfoCard>
 
         <InfoCard icon={ShieldCheck} title="Account and privacy">
           <div className="space-y-4 text-sm leading-6 text-muted-foreground">
             <p className="flex gap-3"><UserRound className="mt-1 size-4 shrink-0 text-foreground/55" aria-hidden="true" />Authorization binds the client to the Threadmap user signed in on that browser, not to the person who configured the server.</p>
             <p className="flex gap-3"><LockKeyhole className="mt-1 size-4 shrink-0 text-foreground/55" aria-hidden="true" />The client never receives your password. It receives a scoped token and cannot cross into another tenant.</p>
-            <p className="flex gap-3"><ShieldCheck className="mt-1 size-4 shrink-0 text-foreground/55" aria-hidden="true" />Disconnect the integration from the AI client to stop future access. Reconnect while signed into the correct account if you chose the wrong user.</p>
+            <p className="flex gap-3"><ShieldCheck className="mt-1 size-4 shrink-0 text-foreground/55" aria-hidden="true" />Removing a connection in the AI client does not revoke its server-side grant. Use Authorized clients above to revoke access, then reconnect while signed into the intended account if needed.</p>
           </div>
         </InfoCard>
       </div>

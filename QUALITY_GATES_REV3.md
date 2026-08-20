@@ -1,61 +1,105 @@
-# Revision 3 quality-gate cross-check
+# Revision 3 quality-gate assessment
 
-Source benchmark: Team-Built Tools Quality Gates, Revision 3, 16 July 2026.
-Assessment date: 12 August 2026.
+**Assessment basis:** repository reviewed 20 August 2026; live controls require separate evidence
+**Classification:** T4 external-user application handling personal workspace data
+**Decision:** **NO-GO pending the hard blocks below**
 
-## App typology
-
-| Field | Classification |
-| --- | --- |
-| Tool | Threadmap |
-| Tier | T4 |
-| Users | External |
-| Data | Personal/customer-style workspace data |
-| AI | No first-party model processing; optional user-authorized MCP clients can read or act within granted scopes |
-| Technical owner | Mateo Mamaladze |
+Threadmap has no first-party model inference, but user-authorized external MCP hosts can read or
+mutate data within granted scopes. That makes identity, authorization, consent, revocation, and
+agent least privilege release-critical.
 
 ## Gate matrix
 
-| Revision 3 gate | Status | Evidence or action |
-| --- | --- | --- |
-| Named owner and inventory-ready record | Pass | `TOOL_INVENTORY.md`; central organizational register still needs a chosen system of record |
-| Paid/organizational plan for every real service | Blocked | Firebase/GCP billing is linked; Vercel reports active Hobby billing and must be upgraded before real data under this guide |
-| No secrets in source, prompts, logs, or browser bundles | Pass | Managed env/secrets, origin-restricted browser keys, no user-managed service-account keys, GitHub secret scanning/push protection |
-| Authentication on non-public data | Pass | Firebase Authentication/Identity Platform; private data denied without a verified UID |
-| Server/data-layer authorization | Pass | Firestore and Storage rules plus owner-scoped Functions/MCP DAL; UI hiding is not the boundary |
-| Negative cross-user isolation test | Pass | `src/test/firebase-rules.test.ts`, 19/19 emulator tests |
-| Data classes/processors/flows listed | Pass | `DATA_GOVERNANCE.md` |
-| Retention, export, deletion, and recovery path | Pass | Settings export/deletion, public privacy notice, `RECOVERY_RUNBOOK.md`, 7-day daily/28-day weekly backups, 30-day logs |
-| No real data in preview/test | Pass | Isolated staging Firebase project, preview-aware EU MCP routing, and Vercel preview environment; production routing is selected only for `VERCEL_ENV=production` |
-| Public brand/domain | Pass | `threadmap.app`, unified Threadmap identity and legal/security routes |
-| Rate limiting/basic abuse protection | Partial | App Check and Vercel DDoS protection are active; WAF observes 120 `/api/` requests/min/IP but safe 429 enforcement awaits traffic review |
-| Incident owner and escalation path | Partial | `INCIDENT_RESPONSE.md` and named technical owner exist; working security mailbox and second owner remain open |
-| Automated dependency/vulnerability/license scans | Pass | npm audits, Dependabot, CodeQL, secret scanning, and deterministic production-license policy in CI |
-| Platform-native and boundary testing | Pass/partial | Firebase rule suite, App Check smoke tests, callable tests, and this boundary review pass; independent human sign-off remains open |
-| In-region data services | Pass/Legal | Firestore, Storage, Functions, staging, and backups are EU-based; Legal must verify processor contract/transfer language including Auth/Vercel |
-| DPAs, SCCs, lawful basis, privacy approval | Blocked | Requires controller identity, Legal execution, and a maintained subprocessor register; must not be invented in code |
-| External-user MFA available | Pass | Optional TOTP enrollment/challenge added and Identity Platform TOTP enabled in production/staging |
-| AI/MCP flow documented | Pass | `DATA_GOVERNANCE.md` documents destinations, scopes, data returned, and provider boundary |
-| Agent least privilege and human approval | Pass/partial | Separate scopes, omitted unauthorized tools, revisions/idempotency, destructive hints, quotas, and two-step deletion; client remains responsible for presenting approval for non-delete writes |
-| No direct regulated-product data access | Pass | Threadmap has no Keystone/QMS or equivalent product-database connection |
-| CTO/release authority green-light | Blocked | Technical permission is not legal or formal launch approval; owner must record final go-live sign-off after hard blocks close |
+| Gate | Repository control | Evidence still required | Status |
+| --- | --- | --- | --- |
+| Named technical/product/release owners | documentation names the system and release process | current named owners, deputies, escalation roster | Partial |
+| Paid organizational services | code targets Vercel and billed Firebase/GCP resources | paid Vercel org plan and approved procurement record | Blocked |
+| No secrets in source/browser/logs | examples separate public ids/server secrets; secret scanning expected | current GitHub/provider scans and log sample | Partial |
+| Authentication for private data | Firebase Authentication; local profile explicit | production flows and account recovery | Partial |
+| Server/data authorization | uid-scoped Rules, Functions, MCP principal/DAL | current negative two-user tests and independent review | Partial |
+| Preview/test isolation | staging Firebase default; preview-aware MCP routing | live Vercel env ids and no production-data proof | Partial |
+| Dependency/license/supply-chain gates | audit/license scripts; full-SHA pinned Actions; pinned npm | green exact-SHA CI and exception review | Partial |
+| Platform-native tests | Rules emulators, Functions tests, Playwright Chromium/WebKit | green exact-SHA reports; real iOS and assistive tech | Partial |
+| Accessibility | axe moderate/serious/critical WCAG gate; keyboard smoke | manual screen reader, zoom/reflow, cognitive review | Partial |
+| Data inventory/flows | architecture/governance/security documentation | owner-approved current inventory and subprocessor map | Partial |
+| Retention/export/deletion | account export/deletion and durable cleanup/tombstone design | production verification and approved retention schedule | Partial |
+| Recovery | runbook and staging-first restore model | current synthetic restore and production rollback drills | Partial |
+| Abuse/cost protection | App Check hooks, quotas, instance caps, validation bounds | live enforcement, WAF policy, budget/alert delivery | Partial |
+| Regional placement | Firebase `europe-west1`, Vercel candidate config `fra1`, recursive audit | live production was observed in `iad1`; promote only after staged/final `runtime.region` verifies `fra1`, then complete contractual transfer review | Blocked |
+| Legal/privacy | configurable legal identity and public trust pages | real controller/contact/address, counsel, DPA/SCCs | Blocked |
+| MFA/admin recovery | user TOTP/recovery-code code paths; provider MFA expected | recovery-capable second owner and tested provider recovery | Blocked |
+| Agent least privilege | read/write/delete scopes, narrowed DCR, revision/idempotency, delete preview | real host consent/revocation test and approved scope policy | Partial |
+| Incident/alert readiness | runbooks and exact-SHA health endpoint | healthy signed drain or approved error integration, multi-location synthetic, redaction/retention proof, post-deploy error scan, on-call acknowledgement drill | Blocked |
+| Release authority | fail-closed workflow plus retained downstream design | implement true-staging job and separate post-evidence production approval; then exact-SHA GO record | Blocked |
 
-## Hard launch blocks under Revision 3
+“Repository control” means the candidate contains a mechanism; it does not mean the live system is
+configured or the control operated successfully.
 
-- Upgrade Vercel from Hobby to a paid organizational plan.
-- Supply the real controller/legal identity, postal address, privacy/security inboxes, and final legal-page approval.
-- Execute/file DPAs and SCCs and confirm residency/transfer terms for Google and Vercel.
-- Add a second human owner and test the recovery/escalation path.
-- Obtain an independent human engineer review of auth/tenant boundaries.
-- Complete a real-user release drill and record final release-authority approval.
+## Automated release gates
 
-## Non-blocking scheduled follow-ups
+The exact candidate SHA must pass:
 
-- Review the WAF observation data, validate a 429 action in preview, and then publish production enforcement.
-- Establish a verified MFA factor-reset procedure before making MFA mandatory.
-- Track the dev-only Firebase tooling advisory and upgrade when upstream compatibility permits.
-- Schedule the next boundary/security review no later than 12 August 2027 and a third-party test when real customer data/scale triggers it.
+1. Secret-free repository contract, Firebase/Vercel region audit, license policy, and dependency
+   audit with no unaccepted high/critical finding.
+2. ESLint, TypeScript, app tests, Firebase Rules emulator tests, Functions build/tests, and Next
+   production build.
+3. Desktop Chromium, mobile Chromium, and mobile WebKit route cold loads with runtime-console,
+   overflow, moderate/serious/critical WCAG axe, and keyboard command/focus checks.
+4. Staged `/api/health` exact SHA/readiness, actual `fra1` compute, production Firebase project,
+   `europe-west1` Functions origin, quota Function contract, and OAuth discovery.
+5. Mandatory compatible Firebase deployment from the same candidate, re-verification of both the
+   prior live web SHA and staged artifact, promotion of that staged artifact, and final production
+   alias verification for the candidate SHA.
 
-## Release decision
+The automated post-deploy verifier covers release identity, regions, shared-secret/App Check
+boundary, quota route, and public OAuth discovery. It does not authenticate a disposable user or
+exercise Firestore/callable/upload schemas. The matching-SHA true-staging drill is therefore a
+separate protected human gate, not an inferred PASS from these probes.
 
-The technical isolation, authentication, secret, staging, recovery, scanning, and MCP controls meet or exceed the guide's core irreversible-harm gates. Threadmap is not fully releasable under Revision 3 until the paid-plan, legal/processor, second-owner, independent-review, and final human release gates above are closed.
+Skipped, quarantined, flaky-retried-only, or historical tests are not PASS without explicit risk
+acceptance. A source change after staging invalidates artifact-specific evidence.
+
+## Irreversible-harm gates
+
+These require both automation and a human test:
+
+- cross-user isolation for Firestore, Storage, Functions, MCP, export, and destructive operations;
+- account deletion/tombstone behavior under delayed retries and upload sessions;
+- permanent item/file deletion impact, idempotency, and cleanup;
+- OAuth scope display, per-user revocation, token replay handling, and account deletion;
+- production Storage CORS including denial of unapproved origins and resumable-upload cancellation;
+- backup restore without overwriting production and rollback across web, backend, and cached clients.
+
+## Hard launch blocks
+
+- Replace the intentional release-workflow blocker with a real `threadmap-staging-9e0b6` Firebase
+  plus staging-configured web job; pass validated outputs to a separate production-environment job
+  so approval occurs after evidence and before credentials/mutation.
+- Confirm a paid, organization-owned Vercel plan and provider account ownership.
+- Supply and approve the legal controller identity, working privacy/security channels, postal
+  address, lawful bases, retention policy, and user-facing language.
+- Execute and retain DPAs/SCCs and approve the subprocessor/data-transfer register.
+- Add a second recovery-capable human owner and test GitHub, Google/Firebase, Vercel, DNS, and email
+  recovery with phishing-resistant MFA.
+- Configure the protected GitHub `production` environment and prove live Vercel main auto-deploy is
+  disabled before relying on the staged workflow.
+- Run current two-user, real-host MCP, real iOS PWA, restore, rollback, and alert-delivery drills.
+- Obtain independent engineering/security review and formal release-authority GO for the exact SHA.
+
+## Accepted only with explicit time-bounded risk ownership
+
+The following are not silent follow-ups:
+
+- long-lived `FIREBASE_TOKEN` in release automation pending Workload Identity Federation;
+- no independent Firebase Functions artifact-SHA attestation;
+- any monitoring-only WAF threshold pending measured traffic;
+- lack of privacy-reviewed client error telemetry;
+- any upstream development-only advisory without a compatible fixed toolchain.
+
+Each acceptance must name owner, rationale, blast radius, compensating control, expiry, and tracked
+remediation. A permanent “known issue” label is not acceptance.
+
+## Release rule
+
+The application remains NO-GO under Revision 3 until every hard block is evidenced. Technical
+review, a successful build, or access to deploy does not confer legal or release authority.

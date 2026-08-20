@@ -1,7 +1,6 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import Image from 'next/image';
 import { useSettingsStore } from '@/lib/settings-store';
 import {
   Plane,
@@ -31,6 +30,7 @@ import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
 import { updateItem } from '@/lib/firestore';
 import { PlaneAnimation } from '@/components/flight/plane-animation';
+import { AircraftSilhouette } from '@/components/flight/aircraft-silhouette';
 import {
   DURATION_PRESETS,
   PRIVATE_DURATION_PRESETS,
@@ -402,12 +402,16 @@ function FlightPageContent() {
 
   // Subscribe to Firestore flight logs for real-time sync
   useEffect(() => {
-    if (!user?.uid) return;
+    // DataProvider establishes the guarded Flight owner before this page's
+    // deferred per-account initialization marks the scope as mounted. Waiting
+    // for that sentinel prevents cold-route effects from racing the owner
+    // assignment without weakening the cross-account check in flight.ts.
+    if (!mounted || !user?.uid) return;
     const unsub = subscribeToFlightLogs(user.uid, (logs) => {
       setFlightLogs(logs);
     });
     return () => unsub();
-  }, [user?.uid]);
+  }, [mounted, user?.uid]);
 
   // Departure/arrival times
   const departureTime = useMemo(() => {
@@ -918,7 +922,7 @@ function FlightPageContent() {
     return (
       <div className="flex min-h-[240px] items-center justify-center p-6" role="status" aria-live="polite">
         <div className="text-center">
-          <Plane aria-hidden="true" className="mx-auto h-5 w-5 animate-pulse text-sky-500 motion-reduce:animate-none" />
+          <Plane aria-hidden="true" className="mx-auto h-5 w-5 animate-pulse text-primary motion-reduce:animate-none" />
           <p className="mt-2 text-[12px] text-muted-foreground">{text('Preparing Flight…', 'Flug wird vorbereitet…')}</p>
         </div>
       </div>
@@ -932,7 +936,7 @@ function FlightPageContent() {
   if (showLogbook) {
     const stats = getFlightStats(flightLogs);
     return (
-      <div className="flex flex-col h-full bg-background">
+      <div className="motion-surface flex h-full flex-col bg-background">
         {/* Header */}
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -944,7 +948,7 @@ function FlightPageContent() {
             >
               <ChevronLeft aria-hidden="true" className="h-4 w-4" />
             </button>
-            <BookOpen aria-hidden="true" className="h-3.5 w-3.5 text-sky-500" strokeWidth={1.5} />
+            <BookOpen aria-hidden="true" className="h-3.5 w-3.5 text-primary" strokeWidth={1.5} />
             <span className="text-[11px] font-mono text-muted-foreground/50">{text('FLIGHT LOGBOOK', 'FLUGBUCH')}</span>
           </div>
           <span className="text-[11px] text-muted-foreground/30">
@@ -968,7 +972,7 @@ function FlightPageContent() {
                 { label: text('Completion', 'Abschluss'), value: stats.totalFlights > 0 ? `${Math.round(flightLogs.filter((l) => l.completedNormally).length / stats.totalFlights * 100)}%` : '—', icon: TrendingUp },
               ].map((stat) => (
                 <div key={stat.label} className="rounded-2xl border border-border/40 p-3 text-center">
-                  <stat.icon aria-hidden="true" className="h-3.5 w-3.5 text-sky-500/50 mx-auto mb-1.5" strokeWidth={1.5} />
+                  <stat.icon aria-hidden="true" className="mx-auto mb-1.5 h-3.5 w-3.5 text-primary" strokeWidth={1.5} />
                   <p className="text-lg font-bold tabular-nums leading-none">{stat.value}</p>
                   <p className="text-[10px] text-muted-foreground/45 uppercase tracking-wider mt-1">{stat.label}</p>
                 </div>
@@ -1003,26 +1007,26 @@ function FlightPageContent() {
 
   if (status === 'inflight' || status === 'paused') {
     return (
-      <div className={cn('flex flex-col h-full bg-background', shakeClass)}>
+      <div className={cn('motion-surface flex h-full flex-col bg-background', shakeClass)}>
         {/* Flight strip header */}
         <div className="px-4 lg:px-8 py-3 border-b border-border/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {isPrivate ? (
-              <Crown className="h-3.5 w-3.5 text-purple-500" strokeWidth={1.5} />
+              <Crown className="h-3.5 w-3.5 text-primary" strokeWidth={1.5} />
             ) : (
-              <Plane className="h-3.5 w-3.5 text-sky-500" strokeWidth={1.5} />
+              <Plane className="h-3.5 w-3.5 text-primary" strokeWidth={1.5} />
             )}
             <span className="text-[11px] font-mono text-muted-foreground/50">{flightNumber}</span>
             <span className="text-[11px] text-muted-foreground/30">
               {route.from.code} → {route.to.code}
             </span>
             {isPrivate && (
-              <span className="text-[11px] font-medium text-purple-500 bg-purple-500/10 px-1.5 py-0.5 rounded-md">
+              <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-foreground">
                 {text('PRIVATE', 'PRIVAT')}
               </span>
             )}
             {status === 'paused' && (
-              <span className="text-[10px] font-medium text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-md">
+              <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
                 {text('HOLDING', 'WARTESCHLEIFE')}
               </span>
             )}
@@ -1035,7 +1039,7 @@ function FlightPageContent() {
                   <button
                     type="button"
                     onClick={handlePause}
-                    className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] text-muted-foreground/40 transition-colors hover:bg-foreground/[0.04] hover:text-amber-500 lg:min-h-8"
+                    className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] text-muted-foreground/40 transition-colors hover:bg-foreground/[0.04] hover:text-amber-700 dark:hover:text-amber-300 lg:min-h-8"
                   >
                     <Pause aria-hidden="true" className="h-3 w-3" />
                     {text('Hold', 'Pausieren')}
@@ -1044,7 +1048,7 @@ function FlightPageContent() {
                   <button
                     type="button"
                     onClick={handleResume}
-                    className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-amber-500 transition-colors hover:bg-amber-500/[0.06] hover:text-amber-400 lg:min-h-8"
+                    className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-500/[0.06] hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200 lg:min-h-8"
                   >
                     <Play aria-hidden="true" className="h-3 w-3" />
                     {text('Resume', 'Fortsetzen')}
@@ -1055,7 +1059,7 @@ function FlightPageContent() {
             <button
               type="button"
               onClick={handleDivert}
-              className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] text-muted-foreground/45 transition-colors hover:bg-red-500/[0.05] hover:text-red-400 lg:min-h-8"
+              className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] text-muted-foreground/45 transition-colors hover:bg-red-500/[0.05] hover:text-red-700 dark:hover:text-red-300 lg:min-h-8"
             >
               <AlertTriangle aria-hidden="true" className="h-3 w-3" />
               {isPrivate ? text('Abort', 'Abbrechen') : text('Divert', 'Umleiten')}
@@ -1066,7 +1070,7 @@ function FlightPageContent() {
         <div className="flex-1 overflow-y-auto">
           <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-6">
             {sessionSaveError && (
-              <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-[12px] text-red-500">
+              <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-[12px] text-red-700 dark:text-red-300">
                 <p>{sessionIssueMessage}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
@@ -1090,7 +1094,7 @@ function FlightPageContent() {
             <div className="text-center">
               <p className={cn(
                 'text-[10px] uppercase tracking-widest',
-                isPrivate ? 'text-purple-500/40' : 'text-muted-foreground/30'
+                'text-muted-foreground'
               )}>
                 {isPrivate && status === 'inflight'
                   ? text('Deep focus', 'Tiefenfokus')
@@ -1116,8 +1120,8 @@ function FlightPageContent() {
               </p>
               {isPrivate && (
                 <div className="flex items-center justify-center gap-1.5 mt-3">
-                  <Shield aria-hidden="true" className="h-3 w-3 text-purple-500/40" />
-                  <span className="text-[11px] text-purple-500/30 uppercase tracking-widest font-medium">{text('No-distractions mode', 'Ablenkungsfreier Modus')}</span>
+                  <Shield aria-hidden="true" className="h-3 w-3 text-primary" />
+                  <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">{text('No-distractions mode', 'Ablenkungsfreier Modus')}</span>
                 </div>
               )}
             </div>
@@ -1132,8 +1136,8 @@ function FlightPageContent() {
                     const phaseIdx = phases.indexOf(phaseInfo.phase);
                     const isCurrent = i === phaseIdx;
                     const isPast = i < phaseIdx;
-                    const accentColor = isPrivate ? 'bg-purple-500' : 'bg-sky-500';
-                    const accentColorDim = isPrivate ? 'bg-purple-500/60' : 'bg-sky-500/60';
+                    const accentColor = 'bg-primary';
+                    const accentColorDim = 'bg-primary/60';
                     return (
                       <div key={phase} className="flex-1 relative group">
                         <div
@@ -1207,9 +1211,9 @@ function FlightPageContent() {
 
                 {/* Private: focus commitment card */}
                 {isPrivate && (
-                  <div className="rounded-2xl border border-purple-500/20 bg-purple-500/[0.02] p-4 text-center">
-                    <Shield aria-hidden="true" className="h-5 w-5 text-purple-500/50 mx-auto mb-2" />
-                    <p className="text-[11px] font-medium text-purple-500/60">{text('Focus locked', 'Fokus gesperrt')}</p>
+                  <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 text-center">
+                    <Shield aria-hidden="true" className="mx-auto mb-2 h-5 w-5 text-primary" />
+                    <p className="text-[11px] font-medium text-foreground">{text('Focus locked', 'Fokus gesperrt')}</p>
                     <p className="text-[11px] text-muted-foreground/30 mt-1">
                       {text('No pauses. No distractions. Stay in the zone.', 'Keine Pausen. Keine Ablenkungen. Bleib im Fokus.')}
                     </p>
@@ -1275,11 +1279,11 @@ function FlightPageContent() {
   if (status === 'debrief') {
     const completedCount = tasks.filter((t) => t.completed).length;
     return (
-      <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
+      <div className="motion-surface mx-auto max-w-2xl space-y-6 p-4 lg:p-8">
         <div className="text-center">
           <p className={cn(
             'text-[10px] uppercase tracking-widest mb-2',
-            isPrivate ? 'text-purple-500/40' : 'text-muted-foreground/30'
+            'text-muted-foreground'
           )}>
             {completedNormally 
               ? (isPrivate ? text('Mission complete', 'Mission abgeschlossen') : text('Flight complete', 'Flug abgeschlossen'))
@@ -1296,7 +1300,7 @@ function FlightPageContent() {
         {/* Stats grid */}
         <div className={cn('grid gap-3', isPrivate ? 'grid-cols-2' : 'grid-cols-3')}>
           <div className="rounded-2xl border border-border/40 p-4 text-center">
-            <Clock aria-hidden="true" className={cn('h-3.5 w-3.5 mx-auto mb-1.5', isPrivate ? 'text-purple-500' : 'text-sky-500')} />
+            <Clock aria-hidden="true" className="mx-auto mb-1.5 h-3.5 w-3.5 text-primary" />
             <p className="text-lg font-bold tabular-nums">{formatTime(elapsed)}</p>
             <p className="text-[10px] text-muted-foreground/45 uppercase tracking-wider mt-0.5">
               {isPrivate ? text('Focus time', 'Fokuszeit') : text('Flight time', 'Flugzeit')}
@@ -1374,7 +1378,7 @@ function FlightPageContent() {
               disabled={finishingDebrief}
               maxLength={10_000}
               placeholder={text('Quick summary…', 'Kurze Zusammenfassung…')}
-              className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/45 focus:outline-none focus:border-sky-500/40 transition-colors"
+              className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/45 transition-colors focus-visible:border-[var(--focus-ring)]"
             />
           </div>
           <div>
@@ -1388,14 +1392,14 @@ function FlightPageContent() {
               disabled={finishingDebrief}
               maxLength={2_000}
               placeholder={text('What comes next?', 'Was kommt als Nächstes?')}
-              className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/45 focus:outline-none focus:border-sky-500/40 transition-colors"
+              className="mt-1.5 w-full rounded-xl border border-border/40 bg-transparent px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/45 transition-colors focus-visible:border-[var(--focus-ring)]"
             />
           </div>
         </div>
 
         {pendingReconciliation && (
           <div aria-live="polite" className="rounded-xl border border-amber-500/25 bg-amber-500/[0.05] p-3 text-[12px]">
-            <p className="font-semibold text-amber-600 dark:text-amber-400">
+            <p className="font-semibold text-amber-700 dark:text-amber-300">
               {pendingReconciliation.stage === 'tasks'
                 ? text('Task completion sync pending', 'Aufgabenabgleich ausstehend')
                 : text('Flight log save pending', 'Speichern des Flugprotokolls ausstehend')}
@@ -1419,7 +1423,7 @@ function FlightPageContent() {
                   return (
                     <li key={taskId} className="flex items-center justify-between gap-3 rounded-lg bg-background/60 px-2.5 py-2">
                       <span className="min-w-0 truncate">{task?.title ?? text('Unavailable task', 'Nicht verfügbare Aufgabe')}</span>
-                      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wider text-amber-700 dark:text-amber-300">
                         {failed ? text('Sync failed', 'Abgleich fehlgeschlagen') : text('Retry pending', 'Wiederholung ausstehend')}
                       </span>
                     </li>
@@ -1431,13 +1435,13 @@ function FlightPageContent() {
         )}
 
         {debriefIssueMessage && (
-          <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-[12px] text-red-500">
+          <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-[12px] text-red-700 dark:text-red-300">
             {debriefIssueMessage}
           </p>
         )}
 
         {sessionSaveError && (
-          <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-[12px] text-red-500">
+          <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-[12px] text-red-700 dark:text-red-300">
             <p>{sessionIssueMessage}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <button
@@ -1487,9 +1491,7 @@ function FlightPageContent() {
           disabled={finishingDebrief}
           className={cn(
             'w-full flex items-center justify-center gap-2 rounded-2xl py-4 text-[14px] font-semibold transition-all active:scale-[0.98] disabled:cursor-wait disabled:opacity-60',
-            isPrivate
-              ? 'bg-purple-600 text-white hover:bg-purple-500 shadow-lg shadow-purple-600/20'
-              : 'bg-foreground text-background hover:opacity-90'
+            'bg-primary text-primary-foreground shadow-[var(--shadow-soft)] hover:opacity-90'
           )}
         >
           <CheckSquare aria-hidden="true" className="h-4 w-4" />
@@ -1512,13 +1514,13 @@ function FlightPageContent() {
   // ═══════════════════════════════════════════════════════════
 
   return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
+    <div className="motion-surface mx-auto max-w-2xl space-y-6 p-4 lg:p-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isPrivate ? (
-            <Crown className="h-5 w-5 text-purple-500" strokeWidth={1.5} />
+            <Crown className="h-5 w-5 text-primary" strokeWidth={1.5} />
           ) : (
-            <Plane className="h-5 w-5 text-sky-500" strokeWidth={1.5} />
+            <Plane className="h-5 w-5 text-primary" strokeWidth={1.5} />
           )}
           <h1 className="text-xl font-semibold tracking-tight">
             {isPrivate ? text('Private charter', 'Privatcharter') : text('Cleared for takeoff', 'Startfreigabe')}
@@ -1528,7 +1530,7 @@ function FlightPageContent() {
           <button
             type="button"
             onClick={() => setShowLogbook(true)}
-            className="flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-[11px] text-muted-foreground/40 transition-colors hover:bg-foreground/[0.04] hover:text-sky-500 lg:min-h-8"
+            className="flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-[11px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground lg:min-h-8"
           >
             <BookOpen aria-hidden="true" className="h-3.5 w-3.5" />
             {text('Logbook', 'Flugbuch')} ({flightLogs.length})
@@ -1537,7 +1539,7 @@ function FlightPageContent() {
       </div>
 
       {sessionSaveError && (
-        <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-[12px] text-red-500">
+        <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-[12px] text-red-700 dark:text-red-300">
           <p>
             {text(
               'Browser storage is unavailable. Free some space or restore browser access, then retry session recovery before starting another flight.',
@@ -1583,15 +1585,10 @@ function FlightPageContent() {
               isPrivate ? 'left-1/2' : 'left-0'
             )}
           >
-            <div className={cn(
-              'absolute inset-0 transition-colors duration-500',
-              isPrivate
-                ? 'bg-gradient-to-br from-purple-500/[0.08] via-purple-600/[0.04] to-violet-500/[0.06]'
-                : 'bg-gradient-to-br from-sky-500/[0.08] via-sky-600/[0.04] to-blue-500/[0.06]'
-            )} />
+            <div className="absolute inset-0 bg-primary/[0.06] transition-colors duration-500" />
             <div className={cn(
               'absolute inset-y-0 w-[2px] transition-colors duration-500',
-              isPrivate ? 'right-0 left-auto bg-purple-500/20' : 'left-0 bg-sky-500/20'
+              isPrivate ? 'right-0 left-auto bg-primary/30' : 'left-0 bg-primary/30'
             )} />
           </div>
 
@@ -1619,25 +1616,27 @@ function FlightPageContent() {
               <div className="flex items-center gap-2 mb-1.5">
                 <div className={cn(
                   'h-6 w-6 rounded-lg flex items-center justify-center transition-colors duration-500',
-                  !isPrivate ? 'bg-sky-500/15' : 'bg-foreground/[0.04]'
+                  !isPrivate ? 'bg-primary/10' : 'bg-foreground/[0.04]'
                 )}>
-                  <Plane className={cn('h-3.5 w-3.5 transition-colors duration-500', !isPrivate ? 'text-sky-500' : 'text-muted-foreground/45')} />
+                  <Plane className={cn('h-3.5 w-3.5 transition-colors duration-500', !isPrivate ? 'text-primary' : 'text-muted-foreground/45')} />
                 </div>
                 <span className={cn('text-[13px] font-bold tracking-tight transition-colors duration-500', !isPrivate ? 'text-foreground' : 'text-muted-foreground/30')}>
                   {text('Commercial', 'Linienflug')}
                 </span>
               </div>
               <div className={cn('flex items-center gap-2 mt-2 transition-opacity duration-500', !isPrivate ? 'opacity-100' : 'opacity-30')}>
-                <Image src="/a380.png" alt="" width={1132} height={461} className="h-8 w-auto object-contain" />
+                <AircraftSilhouette kind="commercial" className="h-8 w-16 shrink-0" />
                 <div className="flex flex-col">
-                  <span className="text-[10px] text-muted-foreground/40 uppercase tracking-widest font-medium">A380</span>
+                  <span className="text-[10px] text-muted-foreground/40 uppercase tracking-widest font-medium">
+                    {text('Widebody', 'Großraumjet')}
+                  </span>
                   <span className="text-[11px] text-muted-foreground/45 mt-0.5">{text('Tasks · Distraction log · Pause', 'Aufgaben · Ablenkungslog · Pause')}</span>
                 </div>
               </div>
               <div className={cn('mt-2 flex items-center gap-1 transition-opacity duration-500', !isPrivate ? 'opacity-100' : 'opacity-20')}>
                 <div className="flex gap-0.5">
                   {[20, 60, 120, 240, 460].map((d) => (
-                    <div key={d} className="h-1 w-1 rounded-full bg-sky-500/40" />
+                    <div key={d} className="h-1 w-1 rounded-full bg-primary/40" />
                   ))}
                 </div>
                 <span className="text-[10px] text-muted-foreground/45 ml-1">{text('20 min – 7+ hr', '20 Min. – 7+ Std.')}</span>
@@ -1667,16 +1666,16 @@ function FlightPageContent() {
               <div className="flex items-center gap-2 mb-1.5">
                 <div className={cn(
                   'h-6 w-6 rounded-lg flex items-center justify-center transition-colors duration-500',
-                  isPrivate ? 'bg-purple-500/15' : 'bg-foreground/[0.04]'
+                  isPrivate ? 'bg-primary/10' : 'bg-foreground/[0.04]'
                 )}>
-                  <Crown className={cn('h-3.5 w-3.5 transition-colors duration-500', isPrivate ? 'text-purple-500' : 'text-muted-foreground/45')} />
+                  <Crown className={cn('h-3.5 w-3.5 transition-colors duration-500', isPrivate ? 'text-primary' : 'text-muted-foreground/45')} />
                 </div>
                 <span className={cn('text-[13px] font-bold tracking-tight transition-colors duration-500', isPrivate ? 'text-foreground' : 'text-muted-foreground/30')}>
                   {text('Private', 'Privat')}
                 </span>
               </div>
               <div className={cn('flex items-center gap-2 mt-2 transition-opacity duration-500', isPrivate ? 'opacity-100' : 'opacity-30')}>
-                <Image src="/lg60sidee.png" alt="" width={1920} height={600} className="h-8 w-auto object-contain" />
+                <AircraftSilhouette kind="private" className="h-8 w-16 shrink-0" />
                 <div className="flex flex-col">
                   <span className="text-[10px] text-muted-foreground/40 uppercase tracking-widest font-medium">Charter</span>
                   <span className="text-[11px] text-muted-foreground/45 mt-0.5">{text('1 mission · No pause · Focus', '1 Mission · Keine Pause · Fokus')}</span>
@@ -1685,7 +1684,7 @@ function FlightPageContent() {
               <div className={cn('mt-2 flex items-center gap-1 transition-opacity duration-500', isPrivate ? 'opacity-100' : 'opacity-20')}>
                 <div className="flex gap-0.5">
                   {[20, 45, 60, 90].map((d) => (
-                    <div key={d} className="h-1 w-1 rounded-full bg-purple-500/40" />
+                    <div key={d} className="h-1 w-1 rounded-full bg-primary/40" />
                   ))}
                 </div>
                 <span className="text-[10px] text-muted-foreground/45 ml-1">{text('20–90 min', '20–90 Min.')}</span>
@@ -1700,93 +1699,93 @@ function FlightPageContent() {
         {/* ── Boarding Pass ── */}
         {isPrivate ? (
           // ── Private Charter Document ──
-          <div className="rounded-2xl overflow-hidden bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800 border border-purple-500/15">
-            {/* Gold accent line */}
-            <div className="h-[2px] bg-gradient-to-r from-transparent via-purple-400/50 to-transparent" />
+          <div className="overflow-hidden rounded-2xl border border-border/60 bg-card">
+            {/* Shared accent line; aircraft and labels carry class meaning. */}
+            <div className="h-[2px] bg-primary/30" />
 
             {/* Header */}
             <div className="px-5 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <Crown className="h-4 w-4 text-purple-400/80" />
+                <Crown className="h-4 w-4 text-primary" />
                 <div>
-                  <span className="text-[11px] font-bold text-zinc-300 tracking-[0.15em] uppercase">Threadmap Private</span>
-                  <p className="text-[10px] text-zinc-400 tracking-[0.2em] uppercase mt-0.5">{text('Charter manifest', 'Chartermanifest')}</p>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-foreground">Threadmap Private</span>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{text('Charter manifest', 'Chartermanifest')}</p>
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-[12px] font-mono font-bold text-purple-400/70 tracking-wider">{flightNumber}</span>
+                <span className="text-[12px] font-mono font-bold tracking-wider text-foreground">{flightNumber}</span>
               </div>
             </div>
 
             {/* Thin separator */}
-            <div className="mx-5 h-px bg-zinc-800" />
+            <div className="mx-5 h-px bg-border" />
 
             {/* Route — dramatic, large */}
             <div className="px-5 py-5">
               <div className="flex items-start gap-3">
                 <button type="button" onClick={() => setPickingAirport('from')} aria-label={text(`Change origin from ${route.from.city}`, `Abflugort ${route.from.city} ändern`)} className="flex-1 group">
-                  <p className="text-[10px] text-zinc-400 uppercase tracking-[0.15em] font-medium">{text('Origin', 'Abflugort')}</p>
-                  <p className="text-4xl font-black tracking-tight leading-none mt-1 text-zinc-100 group-hover:text-purple-400 transition-colors">{route.from.code}</p>
-                  <p className="text-[10px] text-zinc-500 mt-1">{route.from.city}</p>
-                  <p className="text-[16px] font-bold tabular-nums mt-2 tracking-tight text-zinc-300">{departureTime ? formatClock(departureTime) : '--:--'}</p>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">{text('Origin', 'Abflugort')}</p>
+                  <p className="mt-1 text-4xl font-black leading-none tracking-tight text-foreground transition-colors group-hover:text-foreground/80">{route.from.code}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">{route.from.city}</p>
+                  <p className="mt-2 text-[16px] font-bold tabular-nums tracking-tight text-foreground">{departureTime ? formatClock(departureTime) : '--:--'}</p>
                 </button>
 
                 <div className="flex flex-col items-center pt-6 shrink-0 px-3">
                   <div className="flex items-center gap-1.5">
-                    <div className="h-px w-5 bg-purple-500/20" />
-                    <div className="h-2 w-2 rounded-full border border-purple-500/30" />
-                    <div className="h-px w-3 bg-purple-500/15" />
-                    <Crown className="h-3 w-3 text-purple-400/40" />
-                    <div className="h-px w-3 bg-purple-500/15" />
-                    <div className="h-2 w-2 rounded-full bg-purple-500/30" />
-                    <div className="h-px w-5 bg-purple-500/20" />
+                    <div className="h-px w-5 bg-primary/20" />
+                    <div className="h-2 w-2 rounded-full border border-primary/30" />
+                    <div className="h-px w-3 bg-primary/20" />
+                    <Crown className="h-3 w-3 text-primary" />
+                    <div className="h-px w-3 bg-primary/20" />
+                    <div className="h-2 w-2 rounded-full bg-primary/30" />
+                    <div className="h-px w-5 bg-primary/20" />
                   </div>
-                  <span className="text-[10px] text-zinc-400 mt-1.5 tabular-nums font-medium">
+                  <span className="mt-1.5 text-[10px] font-medium tabular-nums text-muted-foreground">
                     {formatLocalizedFlightTime(route.realFlightMin, lang)}
                   </span>
                 </div>
 
                 <button type="button" onClick={() => setPickingAirport('to')} aria-label={text(`Change destination from ${route.to.city}`, `Zielort ${route.to.city} ändern`)} className="flex-1 text-right group">
-                  <p className="text-[10px] text-zinc-400 uppercase tracking-[0.15em] font-medium">{text('Destination', 'Zielort')}</p>
-                  <p className="text-4xl font-black tracking-tight leading-none mt-1 text-zinc-100 group-hover:text-purple-400 transition-colors">{route.to.code}</p>
-                  <p className="text-[10px] text-zinc-500 mt-1">{route.to.city}</p>
-                  <p className="text-[16px] font-bold tabular-nums mt-2 tracking-tight text-zinc-300">{arrivalTime ? formatClock(arrivalTime) : '--:--'}</p>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">{text('Destination', 'Zielort')}</p>
+                  <p className="mt-1 text-4xl font-black leading-none tracking-tight text-foreground transition-colors group-hover:text-foreground/80">{route.to.code}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">{route.to.city}</p>
+                  <p className="mt-2 text-[16px] font-bold tabular-nums tracking-tight text-foreground">{arrivalTime ? formatClock(arrivalTime) : '--:--'}</p>
                 </button>
               </div>
             </div>
 
             {/* Thin separator */}
-            <div className="mx-5 h-px bg-zinc-800" />
+            <div className="mx-5 h-px bg-border" />
 
             {/* Bottom details — minimal, premium */}
             <div className="px-5 py-3.5 flex items-center justify-between">
               <div>
-                <p className="text-[10px] text-zinc-400 uppercase tracking-[0.15em]">{text('Pilot', 'Pilot/in')}</p>
-                <p className="text-[11px] font-semibold text-zinc-300 mt-0.5">{(user?.displayName || text('Pilot', 'Pilot/in')).toUpperCase()}</p>
+                <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">{text('Pilot', 'Pilot/in')}</p>
+                <p className="mt-0.5 text-[11px] font-semibold text-foreground">{(user?.displayName || text('Pilot', 'Pilot/in')).toUpperCase()}</p>
               </div>
               <div className="text-center">
-                <p className="text-[10px] text-zinc-400 uppercase tracking-[0.15em]">{text('Focus', 'Fokus')}</p>
-                <p className="text-[11px] font-semibold text-purple-400 mt-0.5">{duration} {text('min', 'Min.')}</p>
+                <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">{text('Focus', 'Fokus')}</p>
+                <p className="mt-0.5 text-[11px] font-semibold text-foreground">{duration} {text('min', 'Min.')}</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-zinc-400 uppercase tracking-[0.15em]">{text('Range', 'Reichweite')}</p>
-                <p className="text-[11px] font-semibold text-zinc-300 font-mono mt-0.5">{route.distanceKm.toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')} km</p>
+                <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">{text('Range', 'Reichweite')}</p>
+                <p className="mt-0.5 font-mono text-[11px] font-semibold text-foreground">{route.distanceKm.toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')} km</p>
               </div>
             </div>
 
             {/* Bottom accent */}
-            <div className="h-[1px] bg-gradient-to-r from-transparent via-purple-400/20 to-transparent" />
+            <div className="h-px bg-border" />
           </div>
         ) : (
           // ── Commercial Boarding Pass ──
           <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
             {/* Airline header */}
-            <div className="bg-sky-600 dark:bg-sky-700 px-5 py-2.5 flex items-center justify-between">
+            <div className="flex items-center justify-between bg-primary px-5 py-2.5 text-primary-foreground">
               <div className="flex items-center gap-2">
-                <Plane className="h-3.5 w-3.5 text-white/90" />
-                <span className="text-[13px] font-bold text-white tracking-wide">THREADMAP AIR</span>
+                <Plane className="h-3.5 w-3.5" />
+                <span className="text-[13px] font-bold tracking-wide">THREADMAP AIR</span>
               </div>
-              <span className="text-[11px] font-mono text-white/70 tracking-wider">{flightNumber}</span>
+              <span className="text-[11px] font-mono tracking-wider">{flightNumber}</span>
             </div>
 
             {/* Route row */}
@@ -1794,7 +1793,7 @@ function FlightPageContent() {
               <div className="flex items-start gap-3">
                 <button type="button" onClick={() => setPickingAirport('from')} aria-label={text(`Change departure from ${route.from.city}`, `Abflugort ${route.from.city} ändern`)} className="flex-1 group">
                   <p className="text-[11px] text-muted-foreground/40 uppercase tracking-wider font-medium">{text('Departure', 'Abflug')}</p>
-                  <p className="text-3xl font-black tracking-tight group-hover:text-sky-500 transition-colors leading-none mt-1">{route.from.code}</p>
+                  <p className="mt-1 text-3xl font-black leading-none tracking-tight transition-colors group-hover:text-foreground/80">{route.from.code}</p>
                   <p className="text-[11px] text-muted-foreground/50 mt-0.5">{route.from.city}</p>
                   <p className="text-[18px] font-bold tabular-nums mt-1.5 tracking-tight">{departureTime ? formatClock(departureTime) : '--:--'}</p>
                 </button>
@@ -1812,7 +1811,7 @@ function FlightPageContent() {
 
                 <button type="button" onClick={() => setPickingAirport('to')} aria-label={text(`Change arrival at ${route.to.city}`, `Zielort ${route.to.city} ändern`)} className="flex-1 text-right group">
                   <p className="text-[11px] text-muted-foreground/40 uppercase tracking-wider font-medium">{text('Arrival', 'Ankunft')}</p>
-                  <p className="text-3xl font-black tracking-tight group-hover:text-sky-500 transition-colors leading-none mt-1">{route.to.code}</p>
+                  <p className="mt-1 text-3xl font-black leading-none tracking-tight transition-colors group-hover:text-foreground/80">{route.to.code}</p>
                   <p className="text-[11px] text-muted-foreground/50 mt-0.5">{route.to.city}</p>
                   <p className="text-[18px] font-bold tabular-nums mt-1.5 tracking-tight">{arrivalTime ? formatClock(arrivalTime) : '--:--'}</p>
                 </button>
@@ -1870,30 +1869,20 @@ function FlightPageContent() {
 
           {/* ── Duration Wheel ── */}
           <div>
-            <p className={cn(
-              'text-[11px] font-medium mb-2.5 uppercase tracking-wider',
-              isPrivate ? 'text-purple-500/40' : 'text-muted-foreground/50'
-            )}>
+            <p className="mb-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               {isPrivate ? text('Focus duration', 'Fokusdauer') : text('Flight duration', 'Flugdauer')}
             </p>
             <DurationWheel
               value={duration}
               onChange={handleDurationChange}
               presets={isPrivate ? PRIVATE_DURATION_PRESETS : DURATION_PRESETS}
-              accentColor={isPrivate ? 'purple' : 'sky'}
             />
           </div>
 
           {/* ── Task Manifest ── */}
-          <div className={cn(
-            'rounded-2xl border p-5',
-            isPrivate ? 'border-purple-500/20' : 'border-border/50'
-          )}>
+          <div className="rounded-2xl border border-border/50 p-5">
             <div className="flex items-center justify-between mb-3">
-              <p className={cn(
-                'text-[10px] font-medium uppercase tracking-widest',
-                isPrivate ? 'text-purple-500/30' : 'text-muted-foreground/40'
-              )}>
+              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
                 {isPrivate
                   ? `${text('Priority mission', 'Prioritätsmission')}${tasks.length > 0 ? ' ✓' : ''}`
                   : `${text('Task manifest', 'Aufgabenmanifest')} (${tasks.length})`}
@@ -1902,12 +1891,7 @@ function FlightPageContent() {
                 <button
                   type="button"
                   onClick={() => setAddingTasks(true)}
-                  className={cn(
-                    'flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] transition-colors lg:min-h-8',
-                    isPrivate
-                      ? 'text-purple-500 hover:text-purple-400'
-                      : 'text-sky-500 hover:text-sky-400'
-                  )}
+                  className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] text-foreground transition-colors hover:bg-foreground/[0.04] lg:min-h-8"
                 >
                   <Plus aria-hidden="true" className="h-3 w-3" />
                   {isPrivate ? text('Set mission', 'Mission festlegen') : text('Add task', 'Aufgabe hinzufügen')}
@@ -1919,16 +1903,11 @@ function FlightPageContent() {
               <button
                 type="button"
                 onClick={() => setAddingTasks(true)}
-                className={cn(
-                  'w-full rounded-xl border border-dashed py-6 flex flex-col items-center justify-center text-center transition-all',
-                  isPrivate
-                    ? 'border-purple-500/20 hover:border-purple-500/30 hover:bg-purple-500/[0.02]'
-                    : 'border-border/40 hover:border-sky-500/30 hover:bg-sky-500/[0.02]'
-                )}
+                className="flex w-full flex-col items-center justify-center rounded-xl border border-dashed border-border/40 py-6 text-center transition-colors hover:border-border hover:bg-foreground/[0.025]"
               >
                 {isPrivate ? (
                   <>
-                    <Target aria-hidden="true" className="h-5 w-5 text-purple-500/20 mb-1.5" />
+                    <Target aria-hidden="true" className="mb-1.5 h-5 w-5 text-primary" />
                     <p className="text-[12px] text-muted-foreground/40">{text('Set your single focus mission', 'Lege deine einzige Fokusmission fest')}</p>
                     <p className="text-[10px] text-muted-foreground/45 mt-0.5">{text('One task. No distractions. Maximum output.', 'Eine Aufgabe. Keine Ablenkungen. Maximale Wirkung.')}</p>
                   </>
@@ -1954,9 +1933,7 @@ function FlightPageContent() {
                   >
                     <span className={cn(
                       'h-1.5 w-1.5 rounded-full shrink-0',
-                      isPrivate
-                        ? 'bg-purple-500'
-                        : task.type === 'primary' ? 'bg-sky-500' : 'bg-muted-foreground/20'
+                      isPrivate || task.type === 'primary' ? 'bg-primary' : 'bg-muted-foreground/20'
                     )} />
                     <span className="flex-1 truncate">{task.title}</span>
                     {!isPrivate && (
@@ -1966,7 +1943,7 @@ function FlightPageContent() {
                       type="button"
                       onClick={() => handleRemoveTask(task.id)}
                       aria-label={text(`Remove ${task.title} from manifest`, `${task.title} aus dem Manifest entfernen`)}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 opacity-70 transition-colors hover:bg-red-500/10 hover:text-red-500 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/30 lg:h-7 lg:w-7 lg:opacity-0 lg:group-hover:opacity-100"
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 opacity-70 transition-colors hover:bg-red-500/10 hover:text-red-700 focus-visible:opacity-100 dark:hover:text-red-300 lg:h-7 lg:w-7 lg:opacity-0 lg:group-hover:opacity-100"
                     >
                       <X aria-hidden="true" className="h-3 w-3" />
                     </button>
@@ -1981,12 +1958,7 @@ function FlightPageContent() {
             type="button"
             onClick={handleStartFlight}
             disabled={Boolean(sessionSaveError)}
-            className={cn(
-              'w-full flex items-center justify-center gap-2 rounded-2xl py-4 text-[14px] font-semibold transition-all active:scale-[0.98] text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50',
-              isPrivate
-                ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/20'
-                : 'bg-sky-600 hover:bg-sky-500 shadow-sky-600/20'
-            )}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-[14px] font-semibold text-primary-foreground shadow-[var(--shadow-soft)] transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isPrivate ? (
               <>
@@ -2039,7 +2011,7 @@ function FlightPageContent() {
                                 aria-label={text(`Select ${airport.city} (${airport.code})`, `${airport.city} (${airport.code}) auswählen`)}
                                 className={cn(
                                   'min-h-11 text-left rounded-lg px-2.5 py-1.5 transition-colors hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/30',
-                                  isSelected ? 'bg-sky-500/10 border border-sky-500/20' : 'border border-transparent'
+                                  isSelected ? 'border border-primary/30 bg-primary/10' : 'border border-transparent'
                                 )}
                               >
                                 <p className="text-[13px] font-bold">{airport.code}</p>
@@ -2081,7 +2053,7 @@ function FlightPageContent() {
                   onChange={(e) => setTaskSearch(e.target.value)}
                   aria-label={text('Search tasks', 'Aufgaben suchen')}
                   placeholder={text('Search tasks…', 'Aufgaben suchen…')}
-                  className="w-full rounded-xl border border-border/40 bg-transparent pl-9 pr-3 py-2 text-[13px] placeholder:text-muted-foreground/45 focus:outline-none focus:border-sky-500/40 transition-colors"
+                  className="w-full rounded-xl border border-border/40 bg-transparent py-2 pl-9 pr-3 text-[13px] placeholder:text-muted-foreground/45 transition-colors focus-visible:border-[var(--focus-ring)]"
                 />
               </div>
 
@@ -2100,10 +2072,10 @@ function FlightPageContent() {
                       onClick={() => handleAddTask(task)}
                       className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-colors hover:bg-foreground/[0.04] focus-visible:ring-2 focus-visible:ring-ring/30"
                     >
-                      <Plus aria-hidden="true" className="h-3 w-3 text-sky-500 shrink-0" />
+                      <Plus aria-hidden="true" className="h-3 w-3 shrink-0 text-primary" />
                       <span className="flex-1 truncate">{task.title}</span>
                       {task.priority && (
-                        <span className={cn('text-[11px] uppercase font-medium', task.priority === 'high' ? 'text-red-400' : task.priority === 'medium' ? 'text-amber-400' : 'text-muted-foreground/30')}>
+                        <span className={cn('text-[11px] font-medium uppercase', task.priority === 'high' ? 'text-red-700 dark:text-red-300' : task.priority === 'medium' ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground/30')}>
                           {task.priority === 'high'
                             ? text('high', 'hoch')
                             : task.priority === 'medium'
@@ -2124,7 +2096,7 @@ function FlightPageContent() {
                   <button
                     type="button"
                     onClick={() => { setAddingTasks(false); setTaskSearch(''); }}
-                    className="min-h-11 w-full rounded-xl py-2 text-[13px] font-medium text-sky-500 transition-colors hover:bg-sky-500/5"
+                    className="min-h-11 w-full rounded-xl py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.04]"
                   >
                     {text(
                       `Done (${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'})`,
@@ -2143,13 +2115,13 @@ function FlightPageContent() {
 // Duration Wheel — Scrollable disc for time selection
 // ═══════════════════════════════════════════════════════════
 
-function DurationWheel({ value, onChange, presets, accentColor = 'sky' }: { 
+function DurationWheel({ value, onChange, presets }: {
   value: FlightDuration; 
   onChange: (d: FlightDuration) => void;
   presets?: typeof DURATION_PRESETS;
-  accentColor?: 'sky' | 'purple';
 }) {
   const { lang, text } = useFlightLocale();
+  const reduceMotion = useSettingsStore((state) => state.settings.accessibility.reduceMotion);
   const scrollRef = useRef<HTMLDivElement>(null);
   const activePresets = presets || DURATION_PRESETS;
   const allDurations = useMemo<FlightDuration[]>(() => {
@@ -2169,10 +2141,10 @@ function DurationWheel({ value, onChange, presets, accentColor = 'sky' }: {
     if (el) {
       scrollRef.current.scrollTo({
         left: el.offsetLeft - scrollRef.current.offsetWidth / 2 + el.offsetWidth / 2,
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        behavior: reduceMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
       });
     }
-  }, [allDurations, value]);
+  }, [allDurations, reduceMotion, value]);
 
   // Category label for a duration
   const getCategory = useCallback((d: FlightDuration): string => {
@@ -2181,12 +2153,6 @@ function DurationWheel({ value, onChange, presets, accentColor = 'sky' }: {
     }
     return '';
   }, [activePresets]);
-
-  const selectedBg = accentColor === 'purple' ? 'bg-purple-500/10' : 'bg-sky-500/10';
-  const selectedBorder = accentColor === 'purple' ? 'border-purple-500/30' : 'border-sky-500/30';
-  const selectedText = accentColor === 'purple' ? 'text-purple-600 dark:text-purple-400' : 'text-sky-600 dark:text-sky-400';
-  const selectedNumber = accentColor === 'purple' ? 'text-purple-500' : 'text-sky-500';
-  const indicatorBg = accentColor === 'purple' ? 'bg-purple-500/30' : 'bg-sky-500/30';
 
   return (
     <div className="relative">
@@ -2216,11 +2182,11 @@ function DurationWheel({ value, onChange, presets, accentColor = 'sky' }: {
               className={cn(
                 'shrink-0 snap-center rounded-2xl px-4 py-3 text-center transition-all active:scale-95 border min-w-[72px]',
                 isSelected
-                  ? `${selectedBg} ${selectedBorder} ${selectedText} scale-105 shadow-sm`
+                  ? 'scale-105 border-primary/30 bg-primary/10 text-foreground shadow-sm'
                   : 'border-border/30 text-muted-foreground/40 hover:border-border/50 hover:text-foreground/60'
               )}
             >
-              <p className={cn('text-[15px] font-bold tabular-nums', isSelected && selectedNumber)}>
+              <p className="text-[15px] font-bold tabular-nums">
                 {formatLocalizedFlightTime(d, lang)}
               </p>
               <p className="text-[10px] text-muted-foreground/45 uppercase tracking-wider mt-0.5 truncate max-w-[64px]">
@@ -2233,7 +2199,7 @@ function DurationWheel({ value, onChange, presets, accentColor = 'sky' }: {
 
       {/* Selection indicator */}
       <div className="flex justify-center mt-1">
-        <div className={cn('h-0.5 w-6 rounded-full', indicatorBg)} />
+        <div className="h-0.5 w-6 rounded-full bg-primary/30" />
       </div>
     </div>
   );
@@ -2262,49 +2228,47 @@ function LogbookCard({ log }: { log: FlightLog }) {
   if (logIsPrivate) {
     return (
       <div className={cn(
-        'rounded-2xl overflow-hidden transition-colors',
-        'bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800',
-        'border',
-        log.completedNormally ? 'border-purple-500/20' : 'border-amber-500/30'
+        'overflow-hidden rounded-2xl border bg-card transition-colors',
+        log.completedNormally ? 'border-border/40' : 'border-amber-500/30'
       )}>
-        {/* Gold accent line */}
+        {/* Shared status line */}
         <div className={cn(
           'h-[2px]',
           log.completedNormally
-            ? 'bg-gradient-to-r from-transparent via-purple-400/60 to-transparent'
-            : 'bg-gradient-to-r from-transparent via-amber-400/60 to-transparent'
+            ? 'bg-primary/30'
+            : 'bg-amber-500/60'
         )} />
 
         {/* Header */}
         <div className="px-4 pt-3 pb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Crown className={cn('h-3 w-3', log.completedNormally ? 'text-purple-400' : 'text-amber-400')} />
-            <span className="text-[10px] font-mono font-bold text-zinc-400 tracking-wider">{log.flightNumber}</span>
+            <Crown className={cn('h-3 w-3', log.completedNormally ? 'text-primary' : 'text-amber-500')} />
+            <span className="text-[10px] font-mono font-bold tracking-wider text-muted-foreground">{log.flightNumber}</span>
           </div>
-          <span className="text-[11px] text-zinc-500 font-mono">{dateStr} · {timeStr}</span>
+          <span className="font-mono text-[11px] text-muted-foreground">{dateStr} · {timeStr}</span>
         </div>
 
         {/* Route — larger, more dramatic */}
         <div className="px-4 py-2 flex items-center gap-3">
           <div className="flex-1">
-            <p className="text-2xl font-black tracking-tight leading-none text-zinc-100">{log.route.from.code}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider">{log.route.from.city}</p>
+            <p className="text-2xl font-black leading-none tracking-tight text-foreground">{log.route.from.code}</p>
+            <p className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{log.route.from.city}</p>
           </div>
           <div className="flex flex-col items-center gap-0.5 px-1">
             <div className="flex items-center gap-0.5">
-              <div className="h-px w-4 bg-purple-500/30" />
-              <div className="h-1.5 w-1.5 rounded-full border border-purple-500/40" />
-              <div className="h-px w-3 bg-purple-500/20" />
-              <Crown className="h-2.5 w-2.5 text-purple-400/50" />
-              <div className="h-px w-3 bg-purple-500/20" />
-              <div className="h-1.5 w-1.5 rounded-full bg-purple-500/40" />
-              <div className="h-px w-4 bg-purple-500/30" />
+              <div className="h-px w-4 bg-primary/30" />
+              <div className="h-1.5 w-1.5 rounded-full border border-primary/40" />
+              <div className="h-px w-3 bg-primary/20" />
+              <Crown className="h-2.5 w-2.5 text-primary" />
+              <div className="h-px w-3 bg-primary/20" />
+              <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
+              <div className="h-px w-4 bg-primary/30" />
             </div>
-            <span className="text-[10px] text-zinc-400 tabular-nums">{formatLocalizedFlightTime(actualMin, lang)}</span>
+            <span className="text-[10px] tabular-nums text-muted-foreground">{formatLocalizedFlightTime(actualMin, lang)}</span>
           </div>
           <div className="flex-1 text-right">
-            <p className="text-2xl font-black tracking-tight leading-none text-zinc-100">{log.route.to.code}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider">{log.route.to.city}</p>
+            <p className="text-2xl font-black leading-none tracking-tight text-foreground">{log.route.to.code}</p>
+            <p className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{log.route.to.city}</p>
           </div>
         </div>
 
@@ -2312,8 +2276,8 @@ function LogbookCard({ log }: { log: FlightLog }) {
         <div className="px-4 pb-3 pt-1 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {log.tasks.length > 0 && (
-              <span className="flex items-center gap-1 text-[11px] text-zinc-500">
-                <Target className="h-2.5 w-2.5 text-purple-400/50" />
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Target className="h-2.5 w-2.5 text-primary" />
                 {completedTasks}/{log.tasks.length}
               </span>
             )}
@@ -2322,7 +2286,7 @@ function LogbookCard({ log }: { log: FlightLog }) {
             )}
           </div>
           {log.debrief.summary && (
-            <span className="text-[10px] text-zinc-400 italic truncate max-w-[140px]">
+            <span className="max-w-[140px] truncate text-[10px] italic text-muted-foreground">
               &ldquo;{log.debrief.summary}&rdquo;
             </span>
           )}
@@ -2340,11 +2304,11 @@ function LogbookCard({ log }: { log: FlightLog }) {
       {/* Airline header strip */}
       <div className={cn(
         'px-4 py-2 flex items-center justify-between',
-        log.completedNormally ? 'bg-sky-600/10' : 'bg-amber-500/10'
+        log.completedNormally ? 'bg-primary/10' : 'bg-amber-500/10'
       )}>
         <div className="flex items-center gap-2">
-          <Plane className={cn('h-3 w-3', log.completedNormally ? 'text-sky-500' : 'text-amber-500')} />
-          <span className="text-[10px] font-bold text-sky-600/70 dark:text-sky-400/70 tracking-wider">THREADMAP AIR</span>
+          <Plane className={cn('h-3 w-3', log.completedNormally ? 'text-primary' : 'text-amber-500')} />
+          <span className="text-[10px] font-bold tracking-wider text-foreground">THREADMAP AIR</span>
           <span className="text-[10px] font-mono font-bold text-muted-foreground/50">{log.flightNumber}</span>
         </div>
         <span className="text-[11px] text-muted-foreground/30 font-mono">{dateStr}</span>
@@ -2359,9 +2323,9 @@ function LogbookCard({ log }: { log: FlightLog }) {
         </div>
         <div className="flex flex-col items-center gap-0.5 px-1 shrink-0">
           <div className="flex items-center gap-0.5">
-            <div className="h-px w-5 bg-sky-500/20" />
-            <Plane className="h-3 w-3 text-sky-500/30" />
-            <div className="h-px w-5 bg-sky-500/20" />
+            <div className="h-px w-5 bg-primary/20" />
+            <Plane className="h-3 w-3 text-primary" />
+            <div className="h-px w-5 bg-primary/20" />
           </div>
           <span className="text-[10px] text-muted-foreground/45 tabular-nums">{formatLocalizedFlightTime(actualMin, lang)}</span>
         </div>
@@ -2399,7 +2363,7 @@ function LogbookCard({ log }: { log: FlightLog }) {
             </span>
           )}
           {!log.completedNormally && (
-            <span className="text-amber-500 font-medium uppercase">{text('Diverted', 'Umgeleitet')}</span>
+            <span className="font-medium uppercase text-amber-700 dark:text-amber-300">{text('Diverted', 'Umgeleitet')}</span>
           )}
         </div>
         {log.debrief.summary && (

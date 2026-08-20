@@ -1,417 +1,221 @@
-# Threadmap — System Documentation
+# Threadmap system documentation
 
-**Written:** 2026-08-07 · against `main` @ `c133eb0`
+**Repository truth reviewed:** 20 August 2026
 
-Threadmap is a local-first personal productivity system built on a single universal item type.
-Tasks, projects, habits, events, goals and notes are all the same shape, linked into one graph, so
-a task can belong to a project, reference a note, support a goal, and appear on the calendar
-without leaving the model.
+Threadmap is a local-first personal productivity application. Tasks, projects, habits, events,
+goals, and notes share one `ThreadmapItem` model and can be connected by hierarchy and peer links.
+This document describes the repository architecture; it does not assert that an unverified live
+deployment contains the current tree. A deployment is identified by its full commit SHA, not by
+the package version.
 
-This document describes how the system is actually built. For known defects see
-[AUDIT.md](AUDIT.md); for the current state of work see [HANDOFF.md](HANDOFF.md).
+## 1. Repository map
 
----
-
-## Contents
-
-1. [Shape of the repository](#1-shape-of-the-repository)
-2. [The data model](#2-the-data-model)
-3. [Runtime, storage and sync](#3-runtime-storage-and-sync)
-4. [The app surface](#4-the-app-surface)
-5. [Cloud Functions](#5-cloud-functions)
-6. [The MCP server](#6-the-mcp-server)
-7. [Internationalisation](#7-internationalisation)
-8. [Testing](#8-testing)
-9. [Build, CI and deployment](#9-build-ci-and-deployment)
-
----
-
-## 1. Shape of the repository
-
-```
-src/
-  app/          App Router pages + API routes      ~25 routes
-  components/   shell, providers, items, files, notes, mobile, ui
-  lib/          stores, persistence, Firebase, parsing, tools     ~70 modules
-  test/         Firestore rules suite (emulator-gated)
-functions/
-  src/          Cloud Functions (Node 22, 2nd gen)
-  src/mcp/      OAuth 2.1 AS + MCP server + 23 tools
-firestore.rules · storage.rules · firestore.indexes.json
+```text
+src/app/                   Next.js App Router pages and HTTP route handlers
+src/components/            shell, providers, item editors, tools, and UI primitives
+src/lib/                   model, state, persistence, Firebase, PWA, and integration logic
+src/test/                  Firebase Rules emulator suite
+e2e/                       Playwright cold-load and release smoke tests
+functions/src/             Firebase Functions (Node 22, second generation)
+functions/src/mcp/         OAuth authorization server, MCP router, tools, and data layer
+src/app/sw.js/route.ts     stable, non-cacheable service-worker response
+src/service-worker/        worker template with build-revision injection point
+firestore.rules            Firestore authorization boundary
+storage.rules              Storage authorization boundary
+firestore.indexes.json     query indexes and TTL policies
+.github/workflows/ci.yml   pull-request and branch quality gates
+.github/workflows/release.yml  fail-closed production design pending true staging topology
 ```
 
-Roughly **53,000 lines** across `src/` and **9,300** across `functions/src/`.
+This repository uses Next.js 16.3 and React 19. Before changing framework behavior, read the
+matching guide under `node_modules/next/dist/docs/`; older App Router assumptions may be wrong.
 
-The largest modules, which is also a fair map of where the complexity lives:
+## 2. Data model and relationships
 
-| Module | Lines | What |
-|---|---:|---|
-| `src/app/tools/abitur/page.tsx` | 2,620 | German Abitur grade calculator |
-| `src/app/tools/flight/page.tsx` | 2,429 | Flight logging tool |
-| `src/app/settings/page.tsx` | 2,240 | Settings |
-| `src/lib/i18n.ts` | 2,206 | 423-key en/de translation table |
-| `src/lib/firestore.ts` | 2,154 | Sync orchestration — optimistic writes, revisions, outbox |
-| `functions/src/index.ts` | 2,035 | All Cloud Functions |
-| `src/components/shell/detail-panel.tsx` | 1,805 | The universal item editor |
-| `functions/src/mcp/dal.ts` | 1,777 | Owner-scoped Firestore access for MCP |
-| `functions/src/mcp/oauth.ts` | 1,680 | OAuth 2.1 authorization server |
-
----
-
-## 2. The data model
-
-### The universal item
-
-Everything the user creates is an `OrbitItem` (`src/lib/types.ts`). One shape, six types,
-type-specific fields left optional:
+`src/lib/types.ts` defines `ThreadmapItem`. `OrbitItem` is a deprecated compatibility alias while
+older call sites are migrated.
 
 ```ts
-type ItemType   = 'task' | 'project' | 'habit' | 'event' | 'goal' | 'note';
+type ItemType = 'task' | 'project' | 'habit' | 'event' | 'goal' | 'note';
 type ItemStatus = 'active' | 'waiting' | 'done' | 'archived';
-type Priority   = 'low' | 'medium' | 'high';
 ```
 
-| Group | Fields |
-|---|---|
-| Identity | `id`, `type`, `status`, `title`, `content`, `userId` |
-| Time | `createdAt`, `updatedAt`, `completedAt`, `revision` |
-| Task | `dueDate`, `priority`, `checklist`, `myDay` |
-| Project | `emoji`, `color`, `tier` (1–3) |
-| Habit | `frequency`, `customDays`, `habitTime`, `completions` |
-| Event | `startDate`, `endDate`, `startTime`, `endTime`, `googleCalendarId`, `calendarSynced` |
-| Goal | `timeframe` (quarterly/yearly/longterm), `metric` |
-| Note | `noteSubtype` (idea/principle/plan/journal/general) |
-| Relations | `parentId`, `linkedIds`, `tags` |
-| Files | `files: ProjectFile[]` |
+Every item has an id, type, status, title, timestamps, user id, and optional revision. Type-specific
+fields add task due dates/checklists, project presentation, habit schedules/completions, event
+times/recurrence, goal metrics, note subtype, relationships, attachments, and My Day state.
 
-> **Correction pending.** `types.ts:37` documents `content` as *"Rich text (HTML from Tiptap)"*.
-> It holds **plain text** — the note editor is a `<textarea>` and no Tiptap package is imported
-> anywhere. This false comment is what `htmlToPlainText` was written against, and it caused a
-> content-corruption bug (audit M-03). See F-24.
+Relationships use two mechanisms:
 
-### Relations
+- `parentId` expresses a directed hierarchy validated by `src/lib/links.ts`, Firestore Rules, and
+  the hierarchy-repair Function.
+- `linkedIds` expresses symmetric peer relationships and is maintained atomically by the data
+  layer and MCP operations.
 
-Two distinct mechanisms:
+Cloud revisions provide optimistic concurrency. Any new write path must preserve owner identity,
+revision behavior, relationship invariants, and account-deletion tombstones.
 
-- **`parentId`** — hierarchy. Projects and goals act as parents; `ALLOWED_PARENT_TYPES`
-  (`src/lib/links.ts`) governs what may parent what. Projects cannot currently nest.
-- **`linkedIds`** — peer links, bidirectional, with reverse links surfaced in the UI.
+## 3. Runtime profiles, storage, and synchronization
 
-`revision` is a monotonic cloud counter used to reject stale cross-device writes.
+Threadmap has two explicit profiles:
 
-### Tags and life areas
+| Profile | Identity | Durable store | Intended use |
+| --- | --- | --- | --- |
+| Local/demo | local demo identity | account-scoped browser storage | development, demos, one browser |
+| Cloud | Firebase Authentication uid | Firestore plus account-scoped local mirror | signed-in cross-device use |
 
-11 fixed life-area tags (`tech`, `uni`, `career`, `health`, `family`, `social`, `growth`,
-`finance`, `home`, `personal`, `life`) plus free tags. Each area gets a generated page at
-`/areas/[tag]`.
+The Firebase uid is the workspace/tenant boundary. Browser UI state is never an authorization
+boundary. Firestore and Storage Rules and authenticated Functions enforce ownership again on the
+server.
 
----
+`src/lib/firestore.ts` orchestrates subscriptions, optimistic writes, revisions, account-generation
+guards, and the mutation outbox. `src/lib/store.ts` owns in-memory Zustand state. Browser keys are
+scoped by account so a signed-out or prior account cannot be silently loaded into another user.
+Account deletion creates durable server-side state before destructive cleanup; old credentials and
+delayed upload sessions must not be able to recreate a deleted account.
 
-## 3. Runtime, storage and sync
+The provider composition in `src/components/providers/` covers authentication, data subscriptions,
+settings effects, themes, PWA lifecycle, and render-error containment.
 
-Threadmap runs in two modes, chosen explicitly rather than by silent fallback.
+## 4. Application surface
 
-| Mode | Identity | Storage |
-|---|---|---|
-| Local / demo | `demo-user` | localStorage only, no backend |
-| Signed in | Firebase Auth uid | Firestore + localStorage mirror |
+The principal routes are dashboard (`/`), Today, tasks, projects, habits, goals, notes, calendar,
+files, archive, life areas, toolbox, focused tools, briefing, and settings. Public trust surfaces
+include About, Privacy, Terms, Security, and `/.well-known/security.txt`.
 
-### Account-scoped storage
+`/integrations/authorize` is the Firebase-authenticated MCP consent surface. `/api/health` is the
+release liveness/readiness endpoint. `/api/scrape` and its image/price variants are authenticated,
+bounded wishlist helpers and share a distributed Firebase quota.
 
-Every browser key is scoped by account (`src/lib/account-storage.ts`):
+The command bar is the central capture surface. It parses bilingual type commands, tags, priority,
+mentions, and dates. Parser changes require focused tests because the same text can influence title,
+relationships, type, and schedule.
 
-```
-orbit-items:<uid>        orbit-settings:<uid>       orbit-wishlist:<uid>
-orbit-tags:<uid>         orbit-abitur:<uid>         orbit-toolbox:<uid>
-```
+## 5. Firebase and regional topology
 
-The pre-auth scope is the literal string `signed-out`. `migrateLegacyStorageToDemo` carries
-unscoped legacy keys into the demo profile **only** — never into a signed-in account, deliberately,
-so one user's browser data cannot leak into another's account.
+Firebase production is `orbit-9e0b6`; staging is `threadmap-staging-9e0b6`. `.firebaserc` deliberately
+sets staging as the default. Application runtime code imports the single
+`FIREBASE_FUNCTIONS_REGION` constant from `src/lib/deployment-config.ts`; Firebase Functions have a
+separate build boundary, so `scripts/check-deployment-regions.mjs` verifies their local
+`FUNCTION_REGION` remains equal.
 
-> Work done before signing in is therefore orphaned rather than migrated (F-22). Real data can sit
-> under `orbit-abitur:signed-out` and be unreachable after account creation.
+| Plane | Region | Reason it is separate |
+| --- | --- | --- |
+| Firebase Functions | `europe-west1` | callable, HTTP, scheduled, and event Functions |
+| Vercel Functions / Next.js compute | `fra1` | Next.js route handlers and server rendering |
 
-### The sync path
+The region audit recursively scans application and Functions runtime sources for disallowed US
+references, divergent literals, and hard-coded regional endpoints. It also validates Next/Vercel
+configuration. Passing the static audit does not prove where a live instance executed; the staged
+release verifier requires the health route to report `fra1` at runtime.
 
-`src/lib/firestore.ts` is the orchestration layer. Its public surface:
+The Functions surface includes authentication email, notification scheduling/device lifecycle,
+MFA recovery-code operations, distributed scraper quota, hierarchy repair, item/attachment/upload
+lifecycle, account export/deletion/retry, connection management, and the MCP HTTP endpoint.
 
-```
-subscribeToItems · createItem · updateItem · deleteItem · getItem
-linkItems · unlinkItems
-subscribeToUserSettings · saveUserSettings · saveTagMutation
-saveToolData · subscribeToToolData
-setFirestoreDataContext · isFirestoreDataContextCurrent · retryQueuedItemMutations
-```
+## 6. MCP and OAuth
 
-Writes are optimistic: the Zustand store updates first, the Firestore write follows, and a
-`revision` check rejects stale writes from another device. Failed writes go to a **mutation
-outbox** (`item-mutation-outbox.ts`) and are retried. Per-item ordering is guaranteed by a
-`KeyedSerialQueue`, so concurrent edits to one item serialise while different items proceed in
-parallel. `setFirestoreDataContext` / `isFirestoreDataContextCurrent` are account-generation
-guards — they stop an in-flight write from a previous account landing in the current one.
+`functions/src/mcp/` implements a multi-user OAuth 2.1 authorization server and stateless MCP
+Streamable HTTP endpoint. A consent decision binds the dynamically registered client to the
+currently authenticated Firebase uid; there is no deployment-wide owner uid.
 
-The primitives underneath are individually tested (outbox, keyed queue, verified storage, merge
-recovery). The orchestration on top of them is not (F-58) — which is where this design's risk
-actually lives.
+Public paths share the Threadmap origin and are forwarded by environment-aware Next.js rewrites:
 
-> The item subscription is `where userId == uid` + `orderBy updatedAt desc` with **no `limit()`**,
-> and each snapshot is `JSON.stringify`'d whole into localStorage against a ~5 MB ceiling (F-19).
-
-### Providers
-
-`src/components/providers/` composes the runtime:
-
-| Provider | Responsibility |
-|---|---|
-| `auth-provider` | Firebase Auth state, sign-in flows, local-mode flag |
-| `data-provider` | Subscriptions, sync status, conflict banners |
-| `settings-effects` | Applies settings as side effects (auto-archive, theme, fonts) |
-| `theme-provider` | Light/dark/system |
-| `pwa-provider` | Service worker registration and update prompts |
-| `error-boundary` | Render-error containment |
-
----
-
-## 4. The app surface
-
-### Routes
-
-| Route | Purpose |
-|---|---|
-| `/` | Dashboard — focus tiles, week strip, carried-over work |
-| `/today` | My Day |
-| `/tasks` | Task list — status/tag/priority filters, sort, grouping |
-| `/projects` | Projects and project dashboards |
-| `/habits` | Habit tracking, week and month views |
-| `/goals` | Goals with progress |
-| `/notes` | Notes, filtered by subtype |
-| `/calendar` | Month / week / day grids |
-| `/files` | Attachments (projects only today — F-25) |
-| `/archive` | Archived items, restore |
-| `/areas/[tag]` | Generated life-area pages |
-| `/toolbox` | Tool launcher |
-| `/tools/{abitur,flight,dispatch,briefing,wishlist}` | Focused tools |
-| `/briefing` | Daily briefing |
-| `/settings` | Settings |
-| `/integrations/authorize` | **MCP OAuth consent screen** |
-| `/api/health` | Vercel health probe |
-| `/api/scrape`, `/api/scrape/image`, `/api/scrape/price` | Wishlist import helpers |
-
-### The command bar
-
-`⌘K` opens the single capture surface (`src/components/shell/command-bar.tsx`), which parses a
-natural-language line via `src/lib/command-parser.ts`:
-
-| Syntax | Meaning |
-|---|---|
-| `/task` `/note` `/project` `/habit` `/goal` `/event` `/idea` | Item type |
-| `#tag` | Tag |
-| `!priority` | Priority |
-| `@name` | Link to another item |
-| `heute`, `morgen`, `tomorrow`, `friday`, `15.12`, … | Bilingual date keywords |
-
-> This language is **undocumented anywhere in the app** (F-14) and the parser has three critical
-> defects in it (F-10, F-11, F-12). It is the app's headline feature and its least safe surface.
-> Read those findings before changing anything here.
-
-### The shell
-
-`app-shell.tsx` owns layout: sidebar, mobile nav, command bar, detail panel, completion animation.
-Two exemptions matter — the MCP consent screen (`/integrations/authorize`) renders bare, without
-app chrome, because it is a standalone decision surface and provides its own `<main>`; and it is
-exempt from the signed-out redirect, so a one-time `?request=` token is never discarded.
-
----
-
-## 5. Cloud Functions
-
-Firebase project `orbit-9e0b6`, region `us-central1`, Node 22, 2nd gen.
-**The codebase is named `briefing-cron`** — deploy filters must include it.
-
-| Function | Purpose |
-|---|---|
-| `sendBriefingNotifications` | Scheduled push briefings |
-| `upsertThreadmapPushDevice` / `updateThreadmapPushSchedule` / `deleteThreadmapPushDevice` | Push device registry |
-| `consumeThreadmapScrapeQuota` | Rate limiting for scrape helpers |
-| `repairThreadmapHierarchy` | Parent/child integrity repair |
-| `deleteThreadmapItem` | Cascade delete |
-| `beginThreadmapUpload` / `attachThreadmapUpload` / `cleanupThreadmapUpload` | Upload handshake |
-| `deleteThreadmapAttachment` / `cleanupDeletedItemFiles` | Attachment lifecycle |
-| `exportThreadmapAccount` / `deleteThreadmapAccount` / `retryThreadmapAccountDeletions` | Account workflows |
-| `threadmapMcp` | **The MCP + OAuth HTTP endpoint** |
-
----
-
-## 6. The MCP server
-
-`functions/src/mcp/` — an OAuth 2.1 authorization server and an MCP server over Streamable HTTP,
-serving exactly one Threadmap account. Full operational detail is in [MCP_SETUP.md](MCP_SETUP.md);
-this is the shape.
-
-### Layout
-
-| File | Role |
-|---|---|
-| `config.ts` | Derives every URL from one origin; reads env |
-| `oauth.ts` | OAuth 2.1 AS — PKCE, DCR, resource indicators, refresh rotation |
-| `metadata.ts` | RFC 8414 / RFC 9728 discovery documents |
-| `http.ts` | Web-standard router + Node/Express bridge |
-| `sdk-server.ts` | Registers the tool catalog on a per-request `McpServer` |
-| `tools.ts` | Tool catalog, scope enforcement, quotas, audit records |
-| `dal.ts` | Owner-scoped Firestore access, idempotency, delete confirmation |
-| `security.ts` | Redirect classification, PKCE, token hashing |
-
-Built on `@modelcontextprotocol/server` v2, stateless per request via
-`createMcpHandler(factory, { legacy: 'stateless' })`.
-
-### Endpoints
-
-```
-/mcp                                            the MCP endpoint
-/.well-known/oauth-protected-resource/mcp       RFC 9728
-/.well-known/oauth-authorization-server         RFC 8414
+```text
+/mcp
+/.well-known/oauth-authorization-server
+/.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/mcp
 /api/mcp/oauth/{authorize,token,register,revoke}
-/integrations/authorize                         consent screen (Next.js)
 ```
 
-### Authorization
+Authorization uses PKCE S256, resource indicators, hashed opaque tokens, short-lived codes, refresh
+rotation/reuse detection, per-user grants, and owner-visible revocation. The data layer constructs
+every query from the authenticated principal and never accepts an owner id from a tool argument.
+Writes use expected revisions plus idempotency ids. Permanent deletion is a preview/confirm flow
+with a short-lived owner/client/revision-bound token. File tools expose metadata, never file URLs,
+paths, or content.
 
-OAuth 2.1: authorization code + PKCE S256, RFC 8707 resource indicators, dynamic client
-registration, RFC 7009 revocation, RFC 8252 loopback redirects for local clients. Refresh tokens
-rotate, and reuse is detected — a replayed refresh token revokes its whole token family.
+There are 23 tools across `threadmap.read`, `threadmap.write`, and `threadmap.delete`. The server
+filters `tools/list` to granted scopes and enforces the required scope again before dispatch. The
+checked-in Functions example intentionally defaults dynamic clients to `threadmap.read` plus
+`offline_access`; widening write or delete access is an explicit production policy decision.
 
-**Scope narrowing.** Hosts commonly request every scope discovery advertises. Rather than refuse,
-both the registration and authorization endpoints grant the intersection with policy and report it
-back (RFC 7591 §2, RFC 6749 §3.3), refusing only when nothing requested is grantable. Downstream of
-the authorize endpoint every check is a strict subset test.
+See `MCP_SETUP.md` for configuration and operational verification.
 
-### Tools
+## 7. PWA and deployment-safe updates
 
-23 tools, and `tools/list` is filtered to the scopes the presented token actually carries.
+The app registers the stable `/sw.js` URL. Its route embeds the exact deployment SHA in the worker
+response bytes and cache names, old Threadmap/legacy caches are deleted on activation, and Next.js
+serves the worker with `no-store`/`no-cache` headers. Because the URL stays stable while bytes
+change, browser update comparison can discover release B from a page still running release A.
+Visibility, restored-network, and hourly checks cover long-lived SPA sessions.
 
-| Scope | Tools |
-|---|---|
-| `threadmap.read` | `get_life_overview`, `get_agenda`, `list_items`, `search_items`, `get_item`, `list_tags`, `list_files_metadata`, `get_wishlist`, `get_abitur_profile`, `get_flight_logs`, `get_briefing_journal`, `get_dispatch_plans`, `get_settings`, `get_toolbox` |
-| `threadmap.write` | `create_item`, `update_item`, `complete_item`, `archive_item`, `set_habit_completion`, `link_items`, `unlink_items` |
-| `threadmap.delete` | `preview_delete_item`, `confirm_delete_item` |
+An installing worker does not call `skipWaiting` automatically. When an update is waiting, the app
+shows a persistent localized prompt. Only the user's “Reload now” action asks the worker to
+activate. A session marker permits one controlled reload after `controllerchange`; an activation
+that occurs because old tabs were closed must not overwrite an open draft. Provider and worker
+listeners are removed on unmount.
 
-Write safety, enforced server-side regardless of what a host or model claims: mutations require
-`expected_revision` and fail on a stale one; every write needs a fresh `client_request_id` UUID and
-replays are idempotent; deletion is two-stage, where `preview_delete_item` returns a short-lived,
-single-use token bound to owner, client and revision that `confirm_delete_item` must present. File
-tools return metadata only — never URLs, paths or contents. `get_settings` returns an allowlisted
-projection.
+## 8. Health and release identity
 
-Nothing an item's own content says can widen a scope, skip a confirmation, or trigger a tool.
+`GET /api/health` is dynamic and non-cacheable. Its payload includes:
 
-### Verifying a deployment
+- liveness (`status`) and configuration readiness;
+- product version and full/short release SHA;
+- Vercel deployment URL/id and environment where available;
+- executing and configured Vercel regions;
+- Firebase project and Functions origin/region;
+- App Check configuration presence and the names—not values—of missing production settings.
+
+The package/manifest version is currently `0.1.0`. It is not sufficient to prove artifact identity.
+Promotion and rollback evidence must record the full 40-character commit SHA and deployment URL/id.
+
+## 9. Test and release system
+
+Run local gates without relying on historical test counts:
 
 ```bash
-curl -s https://threadmap.app/.well-known/oauth-protected-resource/mcp
+npm ci
+npm run release:contract
+npm run audit:regions
+npm run audit:licenses
+npm run lint
+npm run typecheck
+npm test
+npm run test:rules       # requires Java and Firebase emulators
+npm run test:e2e         # requires Playwright Chromium and WebKit
+npm run build
+(cd functions && npm ci && npm test)
 ```
 
-```bash
-curl -s -X POST https://threadmap.app/api/mcp/oauth/register -H 'content-type: application/json' -d '{"client_name":"Probe","redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"scope":"threadmap.read threadmap.write threadmap.delete offline_access"}'
-```
+CI separates application, Rules, Functions, and browser jobs. Browser smoke coverage cold-loads
+key routes using project device fixtures for desktop Chromium, Pixel-class Chromium, and iPhone
+WebKit. Artifacts live under ignored `.vercel/` paths so evidence generation cannot make the
+guarded production worktree dirty; a full-SHA-pinned upload action retains CI and staged-release
+reports for 14 and 30 days respectively.
 
-A correct server returns 201 with `scope` narrowed to `threadmap.read threadmap.write
-offline_access`. Delete probe clients from `mcpOAuthClients` afterwards.
+Production promotion is intentionally unavailable until the release topology is corrected. The
+workflow has an unconditional fail-closed step before secrets or mutations. Implement a true
+staging-Firebase plus staging-configured-web job first, then pass validated SHA/status/artifact
+outputs to a separate `production` environment job so human approval occurs after evidence exists.
+Only then enable this intended sequence:
 
----
+1. Dispatch `.github/workflows/release.yml` on `main` with the exact full candidate SHA.
+2. The upstream staging job produces matching-SHA Firebase/web/authenticated-contract evidence.
+3. GitHub's protected `production` environment requests approval after that evidence and supplies
+   production secrets only to the mutation job.
+4. Validate that the SHA is an ancestor of `main`, run all source gates, and link the intended
+   Vercel organization/project explicitly.
+5. Build once, deploy the prebuilt production artifact with `--skip-domain`, and test the staged URL.
+6. Verify health SHA, readiness, production provider/deployment identity, actual regions, Firebase
+   project, quota Function, and OAuth discovery.
+7. Capture and verify the currently live web SHA, deploy the compatible Firebase plane from the
+   same candidate, then rerun release-level health/identity/quota-secret/OAuth probes for both the
+   prior web artifact and staged candidate. Authenticated compatibility comes from the required
+   matching-SHA true-staging record; promotion has no web-only bypass.
+8. Promote the already-tested Vercel artifact and verify `threadmap.app` against the candidate SHA.
 
-## 7. Internationalisation
-
-English and German, with German as the primary language. `src/lib/i18n.ts` holds **423 keys** at
-exact en/de parity — no duplicates, no gaps — plus a `hockeyOverrides` layer for a joke theme.
-
-Alongside it sit roughly **250 inline `language === 'de' ? … : …` ternaries across 27 files**
-(F-49). Two surfaces — `areas/[tag]/page.tsx` and the sidebar's delete-area dialog — bypass the
-table entirely. A third language would mean hunting through components rather than editing one
-table.
-
-The app addresses the user informally (*du*) throughout, with two stray formal *Sie* strings in the
-email-link sign-in flow (F-51).
-
----
-
-## 8. Testing
-
-| Suite | Runner | Count |
-|---|---|---|
-| App unit tests | Vitest | **217 passing**, 19 skipped |
-| Firestore rules | Vitest + emulators | 19 (the skipped ones) |
-| Functions | `node:test` | **38 passing** |
-
-```bash
-npm test           # app
-npm run test:rules # rules, needs Java + emulators
-cd functions && npm test
-```
-
-> A local `npm test` reports 19 skipped. That is the entire Firestore rules suite, gated on
-> emulator availability. CI runs it in a dedicated job so it *is* covered — but a local run looks
-> like the security rules passed when they never executed (F-61).
-
-**Well covered:** the storage and sync primitives (outbox, keyed queue, verified storage, merge
-recovery), task buckets, dates, badges, dispatch durability, flight sessions, the OAuth flow end to
-end, and — in the Abitur tool — `calculateBlockII`, `calculateSemesterPoints`,
-`calculateSeminarTotal`, and validation.
-
-**Not covered:** `firestore.ts` and `store.ts`, the two most intricate modules (F-58); the Abitur
-tool's `calculateBlockI`, `calculateAbitur` and `optimizeEinbringungen` — the headline number and
-the results that get submitted (F-59); and the command parser's mention and keyword-stripping
-passes, which is exactly why three critical parser bugs survived (F-60).
-
----
-
-## 9. Build, CI and deployment
-
-**Stack.** Next.js 16.3 · React 19.2 · TypeScript · Tailwind 4 · Zustand 5 · `radix-ui` ·
-Firebase 12 (Auth, Firestore, Storage, Messaging, Functions) · Vercel · Node 22 (`.nvmrc`).
-
-Six `@tiptap/*` packages and `cmdk` are declared dependencies with **zero imports** anywhere in
-`src/` — the note editor is a plain `<textarea>` and the command bar is hand-rolled (F-24).
-
-> `AGENTS.md` warns that this Next.js version has breaking changes against older knowledge. Read
-> `node_modules/next/dist/docs/` before writing framework code.
-
-### CI
-
-`.github/workflows/ci.yml` runs three jobs: **app** (lint, typecheck, test, build), **rules**
-(emulator-backed Firestore rules), **functions** (build + `node:test`). The functions job was added
-in this session — 357 lines of OAuth security tests had never run in CI before it.
-
-### Full local verification
-
-```bash
-npm ci && npm run lint && npm run typecheck && npm test && npm run build
-```
-
-### Deployment
-
-The Next.js app deploys to Vercel from `main`. `vercel.json` rewrites five paths to the Cloud
-Functions origin, which is what makes the MCP server appear on the app's own domain:
-
-```
-/mcp                                        → …cloudfunctions.net/threadmapMcp/mcp
-/.well-known/oauth-authorization-server      → …/threadmapMcp/.well-known/…
-/.well-known/oauth-protected-resource[/mcp]  → …/threadmapMcp/.well-known/…
-/api/mcp/oauth/:path*                        → …/threadmapMcp/api/mcp/oauth/:path*
-```
-
-This matters more than it looks: OAuth metadata validation requires the issuer origin and every
-endpoint origin to match, so the server must be reachable at `threadmap.app`, not at the raw
-Functions URL. `MCP_ORIGIN` and these rewrites have to agree.
-
-```bash
-npm run deploy:rules
-```
-
-```bash
-npx firebase deploy --only functions:briefing-cron:threadmapMcp --non-interactive
-```
-
-MCP configuration lives in `functions/.env`, which is **gitignored and exists only on the original
-machine** — recreate it elsewhere or the endpoint returns 503 by design. See
-[HANDOFF.md](HANDOFF.md) §3.
+Automatic `main` promotion is disabled in `vercel.json`. No ordinary pull request needs production
+secrets: `release:contract` validates structure only, while `release:check` and the future enabled
+release topology validate actual production values. See `PRODUCTION_READINESS.md`, `RELEASE_DRILL_EVIDENCE.md`, and
+`RECOVERY_RUNBOOK.md` for approval, evidence, and rollback requirements.

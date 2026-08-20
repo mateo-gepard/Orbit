@@ -669,8 +669,33 @@ const FLIGHT_PENDING_KEY = 'orbit-flight-pending';
 const FLIGHT_SAVE_WAIT_MS = 5_000;
 const MAX_PRUNE_BATCH_SIZE = 400;
 let activeFlightOwnerId: string | null = null;
-const flightWritesInFlight = new Map<string, { payload: string; promise: Promise<void> }>();
-const legacyMigrationsInFlight = new Map<string, Promise<void>>();
+let activeFlightGeneration = 0;
+const flightWritesInFlight = new Map<string, {
+  generation: number;
+  payload: string;
+  promise: Promise<void>;
+}>();
+const legacyMigrationsInFlight = new Map<string, {
+  generation: number;
+  promise: Promise<void>;
+}>();
+
+export function isFlightStorageContextCurrent(userId: string, generation: number): boolean {
+  return activeFlightOwnerId === userId && activeFlightGeneration === generation;
+}
+
+function captureFlightContext(userId: string): number {
+  if (activeFlightOwnerId !== userId) {
+    throw new Error('The active account changed before flight history work began.');
+  }
+  return activeFlightGeneration;
+}
+
+function assertFlightContext(userId: string, generation: number): void {
+  if (!isFlightStorageContextCurrent(userId, generation)) {
+    throw new Error('The active account changed before flight history work completed.');
+  }
+}
 
 function flightLogsKey(userId: string): string {
   return scopedStorageKey(FLIGHT_LOGS_KEY, userId);
@@ -691,32 +716,37 @@ function loadPendingLogIds(userId: string): Set<string> {
   }
 }
 
-function savePendingLogIds(userId: string, ids: Set<string>): void {
+function savePendingLogIds(userId: string, ids: Set<string>, generation: number): void {
+  assertFlightContext(userId, generation);
   writeLocalStorageVerified(
     pendingLogsKey(userId),
     JSON.stringify([...ids].slice(-MAX_FLIGHT_LOGS))
   );
 }
 
-function clearPendingLogIds(userId: string, committedIds: Iterable<string>): void {
+function clearPendingLogIds(userId: string, committedIds: Iterable<string>, generation: number): void {
+  assertFlightContext(userId, generation);
   const pending = loadPendingLogIds(userId);
   let changed = false;
   for (const id of committedIds) changed = pending.delete(id) || changed;
-  if (changed) savePendingLogIds(userId, pending);
+  if (changed) savePendingLogIds(userId, pending, generation);
 }
 
-export function setFlightStorageOwner(userId: string | null): void {
+export function setFlightStorageOwner(userId: string | null): number {
   activeFlightOwnerId = userId;
+  activeFlightGeneration += 1;
+  const generation = activeFlightGeneration;
   migrateLegacyStorageToDemo(FLIGHT_LOGS_KEY, userId);
   if (userId && typeof localStorage !== 'undefined') {
     try {
       const logs = loadFlightLogsLocal(userId);
       writeLocalStorageVerified(flightLogsKey(userId), JSON.stringify(logs));
-      retainPendingLogIds(userId, logs);
+      retainPendingLogIds(userId, logs, generation);
     } catch {
       // Existing data remains available if storage compaction is unavailable.
     }
   }
+  return generation;
 }
 
 /** Sanitise a flight log so it only contains Firestore-safe plain values. */
@@ -729,12 +759,13 @@ export function boundFlightLogHistory(value: unknown): FlightLog[] {
   return boundFlightHistory<FlightLog>(value).map((entry) => sanitiseLog(entry));
 }
 
-function retainPendingLogIds(userId: string, logs: FlightLog[]): void {
+function retainPendingLogIds(userId: string, logs: FlightLog[], generation: number): void {
+  assertFlightContext(userId, generation);
   const retainedIds = new Set(logs.map((log) => log.id));
   const pending = new Set(
     [...loadPendingLogIds(userId)].filter((id) => retainedIds.has(id))
   );
-  savePendingLogIds(userId, pending);
+  savePendingLogIds(userId, pending, generation);
 }
 
 function samePlainValue(left: unknown, right: unknown): boolean {
@@ -756,12 +787,14 @@ function samePlainValue(left: unknown, right: unknown): boolean {
       );
 }
 
-async function persistFlightLog(log: FlightLog, userId: string): Promise<void> {
+async function persistFlightLog(log: FlightLog, userId: string, generation: number): Promise<void> {
   if (!db) throw new Error('Cloud sync is unavailable.');
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
+      assertFlightContext(userId, generation);
       await setDoc(doc(db, 'flightLogs', `${userId}_${log.id}`), sanitiseLog({ ...log, userId }));
+      assertFlightContext(userId, generation);
       return;
     } catch (error) {
       lastError = error;
@@ -770,21 +803,21 @@ async function persistFlightLog(log: FlightLog, userId: string): Promise<void> {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** attempt)));
+      assertFlightContext(userId, generation);
     }
   }
   throw lastError;
 }
 
-async function pruneCloudFlightLogs(userId: string): Promise<void> {
+async function pruneCloudFlightLogs(userId: string, generation: number): Promise<void> {
   if (!db) throw new Error('Cloud sync is unavailable.');
-  if (activeFlightOwnerId !== userId) {
-    throw new Error('The active account changed before flight history could be pruned.');
-  }
+  assertFlightContext(userId, generation);
 
   const snapshot = await getDocs(query(
     collection(db, 'flightLogs'),
     where('userId', '==', userId),
   ));
+  assertFlightContext(userId, generation);
   const prefix = `${userId}_`;
   const owned = snapshot.docs
     .filter((entry) => entry.id.startsWith(prefix) && entry.data().userId === userId)
@@ -796,30 +829,33 @@ async function pruneCloudFlightLogs(userId: string): Promise<void> {
   const excess = owned.slice(MAX_FLIGHT_LOGS);
 
   for (let offset = 0; offset < excess.length; offset += MAX_PRUNE_BATCH_SIZE) {
-    if (activeFlightOwnerId !== userId) {
-      throw new Error('The active account changed before flight history could be pruned.');
-    }
+    assertFlightContext(userId, generation);
     const batch = writeBatch(db);
     for (const entry of excess.slice(offset, offset + MAX_PRUNE_BATCH_SIZE)) {
       batch.delete(entry.ref);
     }
     await batch.commit();
+    assertFlightContext(userId, generation);
   }
 }
 
 function queueFlightLogSync(log: FlightLog, userId: string): Promise<void> {
+  const generation = captureFlightContext(userId);
   const key = `${userId}_${log.id}`;
   const existing = flightWritesInFlight.get(key);
   const payload = JSON.stringify(sanitiseLog(log));
-  if (existing?.payload === payload) return existing.promise;
+  if (existing?.generation === generation && existing.payload === payload) return existing.promise;
   const predecessor = existing?.promise.catch(() => undefined) || Promise.resolve();
-  const entry = { payload, promise: Promise.resolve() };
+  const entry = { generation, payload, promise: Promise.resolve() };
   entry.promise = predecessor
-    .then(() => persistFlightLog(log, userId))
+    .then(() => {
+      assertFlightContext(userId, generation);
+      return persistFlightLog(log, userId, generation);
+    })
     // Retention is destructive, so it runs only after setDoc confirms that the
     // replacement/newest record is durably committed for this owner.
-    .then(() => pruneCloudFlightLogs(userId))
-    .then(() => clearPendingLogIds(userId, [log.id]))
+    .then(() => pruneCloudFlightLogs(userId, generation))
+    .then(() => clearPendingLogIds(userId, [log.id], generation))
     .finally(() => {
       if (flightWritesInFlight.get(key) === entry) flightWritesInFlight.delete(key);
     });
@@ -827,10 +863,12 @@ function queueFlightLogSync(log: FlightLog, userId: string): Promise<void> {
   return entry.promise;
 }
 
-async function runLegacyFlightMigration(userId: string): Promise<void> {
-  if (!db || activeFlightOwnerId !== userId) return;
+async function runLegacyFlightMigration(userId: string, generation: number): Promise<void> {
+  if (!db) return;
+  assertFlightContext(userId, generation);
   const legacyRef = doc(db, 'toolData', `${userId}_flightLogs`);
   const legacy = await getDocFromServer(legacyRef);
+  assertFlightContext(userId, generation);
   if (!legacy.exists()) return;
 
   const rawLogs = legacy.data().logs;
@@ -846,36 +884,40 @@ async function runLegacyFlightMigration(userId: string): Promise<void> {
   const logs = boundFlightLogHistory(rawLogs)
     .map((entry) => sanitiseLog({ ...entry, userId }));
   for (const log of logs) {
-    if (activeFlightOwnerId !== userId) {
-      throw new Error('The active account changed during flight history migration.');
-    }
-    await persistFlightLog(log, userId);
+    assertFlightContext(userId, generation);
+    await persistFlightLog(log, userId, generation);
   }
 
   const verified = await Promise.all(logs.map(async (log) => {
     const snapshot = await getDocFromServer(doc(db!, 'flightLogs', `${userId}_${log.id}`));
+    assertFlightContext(userId, generation);
     return snapshot.exists() && samePlainValue(snapshot.data(), log);
   }));
   if (!verified.every(Boolean)) {
     throw new Error('Legacy flight history verification failed; the source was preserved.');
   }
-  if (activeFlightOwnerId !== userId) {
-    throw new Error('The active account changed during flight history migration.');
-  }
+  assertFlightContext(userId, generation);
 
-  await pruneCloudFlightLogs(userId);
+  await pruneCloudFlightLogs(userId, generation);
   // Deletion is deliberately last: every migrated document was read back from
   // the server and retention completed before the only legacy copy is cleared.
+  assertFlightContext(userId, generation);
   await deleteDoc(legacyRef);
-  clearPendingLogIds(userId, logs.map((log) => log.id));
+  assertFlightContext(userId, generation);
+  clearPendingLogIds(userId, logs.map((log) => log.id), generation);
 }
 
 export function migrateLegacyFlightLogs(userId: string): Promise<void> {
+  const generation = captureFlightContext(userId);
   const existing = legacyMigrationsInFlight.get(userId);
-  if (existing) return existing;
-  const migration = runLegacyFlightMigration(userId)
-    .finally(() => legacyMigrationsInFlight.delete(userId));
-  legacyMigrationsInFlight.set(userId, migration);
+  if (existing?.generation === generation) return existing.promise;
+  const migration = runLegacyFlightMigration(userId, generation)
+    .finally(() => {
+      if (legacyMigrationsInFlight.get(userId)?.promise === migration) {
+        legacyMigrationsInFlight.delete(userId);
+      }
+    });
+  legacyMigrationsInFlight.set(userId, { generation, promise: migration });
   return migration;
 }
 
@@ -892,11 +934,12 @@ export async function saveFlightLog(log: FlightLog, userId?: string): Promise<Fl
   if (!uid || uid !== activeFlightOwnerId) {
     throw new Error('The active account changed before the flight log was saved.');
   }
+  const generation = captureFlightContext(uid);
   const safeLog = sanitiseLog({ ...log, userId: uid });
   const existing = loadFlightLogsLocal(uid).filter((entry) => entry.id !== log.id);
   const retained = boundFlightLogHistory([safeLog, ...existing]);
   writeLocalStorageVerified(flightLogsKey(uid), JSON.stringify(retained));
-  retainPendingLogIds(uid, retained);
+  retainPendingLogIds(uid, retained, generation);
 
   if (!db || uid === 'local' || uid === DEMO_USER_ID) {
     return { savedLocally: true, synced: false };
@@ -904,7 +947,7 @@ export async function saveFlightLog(log: FlightLog, userId?: string): Promise<Fl
 
   const pending = loadPendingLogIds(uid);
   pending.add(log.id);
-  savePendingLogIds(uid, pending);
+  savePendingLogIds(uid, pending, generation);
   const cloudWrite = queueFlightLogSync(safeLog, uid).then(() => {
     return true;
   });
@@ -939,17 +982,20 @@ export function subscribeToFlightLogs(
   userId: string,
   callback: (logs: FlightLog[]) => void
 ): () => void {
-  if (userId !== activeFlightOwnerId) {
-    throw new Error('Flight logs were requested for an inactive account.');
-  }
+  const generation = captureFlightContext(userId);
+  let unsubscribed = false;
+  const isCurrent = () => !unsubscribed && isFlightStorageContextCurrent(userId, generation);
   const key = flightLogsKey(userId);
   if (!db || userId === DEMO_USER_ID || userId === 'local') {
-    callback(loadFlightLogsLocal(userId));
+    if (isCurrent()) callback(loadFlightLogsLocal(userId));
     const handler = (event: StorageEvent) => {
-      if (event.key === key) callback(loadFlightLogsLocal(userId));
+      if (isCurrent() && event.key === key) callback(loadFlightLogsLocal(userId));
     };
     window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
+    return () => {
+      unsubscribed = true;
+      window.removeEventListener('storage', handler);
+    };
   }
 
   // Deterministic IDs make migration idempotent. The source is removed only
@@ -959,7 +1005,7 @@ export function subscribeToFlightLogs(
   });
 
   const retryPendingLogs = () => {
-    if (activeFlightOwnerId !== userId) return;
+    if (!isCurrent()) return;
     void migrateLegacyFlightLogs(userId).catch((error) => {
       console.warn('[THREADMAP] Legacy flight log migration was deferred:', error);
     });
@@ -979,11 +1025,12 @@ export function subscribeToFlightLogs(
     limit(MAX_FLIGHT_LOGS)
   );
   const unsubscribe = onSnapshot(logsQuery, (snapshot) => {
+    if (!isCurrent()) return;
     const cloudLogs = snapshot.docs
       .filter((entry) => entry.id.startsWith(`${userId}_`) && entry.data().userId === userId)
       .map((entry) => entry.data() as FlightLog);
     const cloudIds = new Set(cloudLogs.map((log) => log.id));
-    clearPendingLogIds(userId, cloudIds);
+    clearPendingLogIds(userId, cloudIds, generation);
     const pendingIds = loadPendingLogIds(userId);
     const merged = new Map(cloudLogs.map((log) => [log.id, log]));
     for (const localLog of loadFlightLogsLocal(userId)) {
@@ -993,18 +1040,20 @@ export function subscribeToFlightLogs(
     const logs = boundFlightLogHistory([...merged.values()]);
     try {
       localStorage.setItem(key, JSON.stringify(logs));
-      retainPendingLogIds(userId, logs);
+      retainPendingLogIds(userId, logs, generation);
     } catch {
       // The cloud snapshot remains authoritative if the browser cache is full.
     }
     callback(logs);
   }, (error) => {
+    if (!isCurrent()) return;
     console.error('[THREADMAP] Flight log subscription failed:', error);
     callback(loadFlightLogsLocal(userId));
   });
   window.addEventListener('online', retryPendingLogs);
   retryPendingLogs();
   return () => {
+    unsubscribed = true;
     window.removeEventListener('online', retryPendingLogs);
     unsubscribe();
   };

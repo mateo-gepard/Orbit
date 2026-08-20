@@ -61,17 +61,22 @@ let activeDataGeneration = 0;
 export function setFirestoreDataContext(
   userId: string | null,
   mode: FirestoreDataMode
-): void {
+): number {
+  const previousUserId = activeUserId;
   if (activeUserId !== userId || activeDataMode !== mode) activeDataGeneration += 1;
   activeUserId = userId;
   activeDataMode = mode;
+  if (previousUserId && previousUserId !== userId) {
+    clearFirestoreAccountMemory(previousUserId);
+  }
   if (userId === DEMO_USER_ID) {
     migrateLegacyStorageToDemo(LOCAL_STORAGE_KEY, userId);
     migrateLegacyStorageToDemo(LOCAL_SETTINGS_KEY, userId);
   }
+  return activeDataGeneration;
 }
 
-export function isFirestoreDataContextCurrent(userId: string, generation: number): boolean {
+export function isFirestoreDataContextCurrent(userId: string | null, generation: number): boolean {
   return activeUserId === userId && activeDataGeneration === generation;
 }
 
@@ -111,6 +116,21 @@ function equalStringArrays(left: unknown, right: readonly string[]): boolean {
   return Array.isArray(left)
     && left.length === right.length
     && left.every((value, index) => value === right[index]);
+}
+
+/**
+ * Converge a legacy `inbox` record as part of an otherwise unrelated canonical
+ * update. The payload intentionally contains no copy of unknown remote fields:
+ * Firestore update semantics leave them untouched, while rules prevent callers
+ * from adding, changing, or deleting those fields.
+ */
+export function normalizeLegacyItemUpdatePayload(
+  remote: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  statusWasExplicitlyTouched = Object.prototype.hasOwnProperty.call(payload, 'status'),
+): Record<string, unknown> {
+  if (remote.status !== 'inbox' || statusWasExplicitlyTouched) return payload;
+  return { ...payload, status: 'active' };
 }
 
 /** Retry an async operation with exponential backoff */
@@ -365,15 +385,15 @@ function loadLocalItems(userId: string): OrbitItem[] {
   }
 }
 
-/**
- * Ceiling on the item subscription.
+/** Active graph and archive are separate operational datasets.
  *
- * The query had no `limit()` at all, so every session downloaded the entire
- * item history and held it in memory. Generous enough that no realistic
- * account is truncated, but bounded — and when the bound *is* reached the user
- * is told, rather than quietly seeing a partial graph.
+ * A single 5,000-row query previously mixed archived history with live work.
+ * Archiving then advanced `updatedAt`, so the recommended remedy actually
+ * pushed active records out of the client. Keep the full working set isolated
+ * from a smaller, explicitly bounded archive window instead.
  */
-const MAX_SUBSCRIBED_ITEMS = 5_000;
+const MAX_SUBSCRIBED_ACTIVE_ITEMS = 5_000;
+const MAX_SUBSCRIBED_ARCHIVED_ITEMS = 1_000;
 
 /**
  * Ceiling on the browser recovery mirror in cloud mode.
@@ -448,15 +468,16 @@ function saveLocalItems(userId: string, items: OrbitItem[]): boolean {
 function updateScopedItems(
   userId: string,
   mutator: (items: OrbitItem[]) => OrbitItem[],
-  generation?: number,
+  generation: number,
 ): OrbitItem[] {
   const isStillActive = activeUserId === userId
-    && (generation === undefined || activeDataGeneration === generation);
-  const source = isStillActive
-    ? useOrbitStore.getState().items
-    : loadLocalItems(userId);
+    && activeDataGeneration === generation;
+  // A stale completion must be a true no-op. Loading and saving the old
+  // account's recovery mirror here used to recreate its just-forgotten key.
+  if (!isStillActive) return [];
+  const source = useOrbitStore.getState().items;
   const next = mutator([...source]);
-  if (isStillActive) useOrbitStore.getState().setItems(next);
+  useOrbitStore.getState().setItems(next);
   saveLocalItems(userId, next);
   return next;
 }
@@ -642,7 +663,7 @@ async function replayItemMutation(record: ItemMutationRecord): Promise<void> {
     });
 
     record.patches.forEach((patch, index) => {
-      const payload: Record<string, unknown> = { ...patch.fields };
+      let payload: Record<string, unknown> = { ...patch.fields };
       for (const field of patch.deleteFields || []) payload[field] = deleteField();
       for (const [field, values] of Object.entries(patch.arrayUnionFields || {})) {
         payload[field] = arrayUnion(...values);
@@ -653,6 +674,17 @@ async function replayItemMutation(record: ItemMutationRecord): Promise<void> {
       if ((patch.arrayUnionFields || patch.arrayRemoveFields) && snapshots[index].exists()) {
         payload.updatedAt = Math.max(Date.now(), Number(snapshots[index].data().updatedAt || 0) + 1);
         payload.revision = Number(snapshots[index].data().revision || 0) + 1;
+      }
+      if (patch.mode === 'update' && snapshots[index].exists()) {
+        const statusWasExplicitlyTouched = Object.prototype.hasOwnProperty.call(patch.fields, 'status')
+          || patch.deleteFields?.includes('status') === true
+          || Object.prototype.hasOwnProperty.call(patch.arrayUnionFields || {}, 'status')
+          || Object.prototype.hasOwnProperty.call(patch.arrayRemoveFields || {}, 'status');
+        payload = normalizeLegacyItemUpdatePayload(
+          snapshots[index].data(),
+          payload,
+          statusWasExplicitlyTouched,
+        );
       }
       if (patch.mode === 'create') transaction.set(refs[index], payload);
       else transaction.update(refs[index], payload);
@@ -745,6 +777,33 @@ function mergeQueuedItemMutations(
   return merge.items;
 }
 
+/**
+ * Merge independent live-query partitions without exposing a transient
+ * duplicate while an item moves between statuses. Firestore can deliver the
+ * old partition and the new partition on separate snapshot ticks; prefer the
+ * newest revision (then timestamp) and keep the UI's existing recency order.
+ */
+export function mergeItemSubscriptionPartitions(
+  ...partitions: readonly OrbitItem[][]
+): OrbitItem[] {
+  const newestById = new Map<string, OrbitItem>();
+  for (const partition of partitions) {
+    for (const item of partition) {
+      const current = newestById.get(item.id);
+      const itemRevision = Number(item.revision || 0);
+      const currentRevision = Number(current?.revision || 0);
+      if (!current
+          || itemRevision > currentRevision
+          || (itemRevision === currentRevision
+            && Number(item.updatedAt || 0) >= Number(current.updatedAt || 0))) {
+        newestById.set(item.id, item);
+      }
+    }
+  }
+  return [...newestById.values()]
+    .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+}
+
 // ═══════════════════════════════════════════════════════════
 // Public API
 // ═══════════════════════════════════════════════════════════
@@ -770,71 +829,117 @@ export function subscribeToItems(
     return () => window.removeEventListener('storage', handler);
   }
 
-  const q = query(
+  const activeQuery = query(
     collection(getDb(), ITEMS_COLLECTION),
     where('userId', '==', userId),
+    // Keep the legacy `inbox` value visible long enough for the normal read
+    // boundary to migrate it to `active` instead of silently stranding it.
+    where('status', 'in', ['active', 'waiting', 'done', 'inbox']),
     orderBy('updatedAt', 'desc'),
-    limit(MAX_SUBSCRIBED_ITEMS)
+    limit(MAX_SUBSCRIBED_ACTIVE_ITEMS)
+  );
+  const archivedQuery = query(
+    collection(getDb(), ITEMS_COLLECTION),
+    where('userId', '==', userId),
+    where('status', '==', 'archived'),
+    orderBy('updatedAt', 'desc'),
+    limit(MAX_SUBSCRIBED_ARCHIVED_ITEMS)
   );
 
   let unsubscribed = false;
+  let failed = false;
+  let activeReady = false;
+  let archivedReady = false;
+  let activeAuthoritative = false;
+  let archivedAuthoritative = false;
+  let activeItems: OrbitItem[] = [];
+  let archivedItems: OrbitItem[] = [];
+  let reportedActiveLimit = false;
+  let reportedArchiveLimit = false;
+  let unsubscribeActive = () => {};
+  let unsubscribeArchived = () => {};
 
-  const unsubscribe = onSnapshot(
-    q,
-    (snapshot) => {
-      if (unsubscribed || !isFirestoreDataContextCurrent(userId, generation)) return;
-      const cloudItems: OrbitItem[] = [];
-      snapshot.forEach((d) => {
-        cloudItems.push(sanitizeItem({ id: d.id, ...d.data() } as OrbitItem));
-      });
+  const emitCombinedSnapshot = () => {
+    if (failed || !activeReady || !archivedReady) return;
+    if (unsubscribed || !isFirestoreDataContextCurrent(userId, generation)) return;
 
-      const authoritative = !snapshot.metadata.hasPendingWrites && !snapshot.metadata.fromCache;
-      const items = mergeQueuedItemMutations(userId, cloudItems, authoritative);
+    const cloudItems = mergeItemSubscriptionPartitions(activeItems, archivedItems);
+    const authoritative = activeAuthoritative && archivedAuthoritative;
+    const items = mergeQueuedItemMutations(userId, cloudItems, authoritative);
 
-      // A truncated result means the account has outgrown the subscription.
-      // Say so: a silently partial graph reads as data loss.
-      if (cloudItems.length >= MAX_SUBSCRIBED_ITEMS) {
-        reportQueuedWrite(
-          `Only the ${MAX_SUBSCRIBED_ITEMS} most recently updated items are loaded. Archive what you no longer need.`,
-          { userId, generation },
-        );
-      }
-
-      // Preserve both the cloud view and any independently journaled browser
-      // mutation. A late rejected write must never be erased by a snapshot.
-      if (!saveSnapshotMirror(userId, items)) {
-        reportQueuedWrite('The latest cloud snapshot could not be added to this browser’s recovery cache.', {
-          userId,
-          generation,
-        });
-      }
-
-      callback(
-        items,
-        authoritative ? 'cloud' : 'pending',
+    if (!reportedActiveLimit && activeItems.length >= MAX_SUBSCRIBED_ACTIVE_ITEMS) {
+      reportedActiveLimit = true;
+      reportQueuedWrite(
+        `Only the ${MAX_SUBSCRIBED_ACTIVE_ITEMS} most recently updated active items are loaded. Archive completed work or use the full account export before continuing.`,
+        { userId, generation },
       );
-    },
-    (error) => {
-      if (unsubscribed || !isFirestoreDataContextCurrent(userId, generation)) return;
-      console.error('[THREADMAP] Firestore subscription error:', error);
-      onError?.(error);
-      // Fallback: load from local cache backup
-      const cached = loadLocalItems(userId);
-      if (cached.length > 0) {
-        console.warn('[THREADMAP] Using local cache as fallback (' + cached.length + ' items)');
-        callback(cached, 'fallback');
-      } else {
-        // No cache available — still call callback so loading screen dismisses
-        // and user sees an error state rather than infinite loading
-        console.error('[THREADMAP] No local cache available — showing empty state');
-        callback([], 'fallback');
-      }
     }
+    if (!reportedArchiveLimit && archivedItems.length >= MAX_SUBSCRIBED_ARCHIVED_ITEMS) {
+      reportedArchiveLimit = true;
+      reportQueuedWrite(
+        `The Archive shows the ${MAX_SUBSCRIBED_ARCHIVED_ITEMS} most recently updated items. Older records remain in the full account export.`,
+        { userId, generation },
+      );
+    }
+
+    // A cache-only or locally pending snapshot can be empty or incomplete.
+    // Never let it shrink the independent recovery mirror; wait for both
+    // partitions to be confirmed by the server.
+    if (authoritative && !saveSnapshotMirror(userId, items)) {
+      reportQueuedWrite('The latest cloud snapshot could not be added to this browser’s recovery cache.', {
+        userId,
+        generation,
+      });
+    }
+
+    callback(items, authoritative ? 'cloud' : 'pending');
+  };
+
+  const handleSubscriptionError = (error: Error) => {
+    if (failed || unsubscribed || !isFirestoreDataContextCurrent(userId, generation)) return;
+    failed = true;
+    unsubscribeActive();
+    unsubscribeArchived();
+    console.error('[THREADMAP] Firestore subscription error:', error);
+    onError?.(error);
+    const cached = loadLocalItems(userId);
+    if (cached.length > 0) {
+      console.warn('[THREADMAP] Using local cache as fallback (' + cached.length + ' items)');
+      callback(cached, 'fallback');
+    } else {
+      console.error('[THREADMAP] No local cache available — showing empty state');
+      callback([], 'fallback');
+    }
+  };
+
+  unsubscribeActive = onSnapshot(
+    activeQuery,
+    (snapshot) => {
+      if (unsubscribed || failed || !isFirestoreDataContextCurrent(userId, generation)) return;
+      activeItems = snapshot.docs.map((d) => sanitizeItem({ id: d.id, ...d.data() } as OrbitItem));
+      activeAuthoritative = !snapshot.metadata.hasPendingWrites && !snapshot.metadata.fromCache;
+      activeReady = true;
+      emitCombinedSnapshot();
+    },
+    handleSubscriptionError,
+  );
+
+  unsubscribeArchived = onSnapshot(
+    archivedQuery,
+    (snapshot) => {
+      if (unsubscribed || failed || !isFirestoreDataContextCurrent(userId, generation)) return;
+      archivedItems = snapshot.docs.map((d) => sanitizeItem({ id: d.id, ...d.data() } as OrbitItem));
+      archivedAuthoritative = !snapshot.metadata.hasPendingWrites && !snapshot.metadata.fromCache;
+      archivedReady = true;
+      emitCombinedSnapshot();
+    },
+    handleSubscriptionError,
   );
 
   return () => {
     unsubscribed = true;
-    unsubscribe();
+    unsubscribeActive();
+    unsubscribeArchived();
   };
 }
 
@@ -1135,7 +1240,7 @@ async function updateItemUnqueued(
           throw new ItemRevisionConflictError(id);
         }
 
-        const firestoreUpdates: Record<string, unknown> = {
+        let firestoreUpdates: Record<string, unknown> = {
           updatedAt: now,
           revision: nextRevision,
         };
@@ -1143,6 +1248,11 @@ async function updateItemUnqueued(
           if (key === 'id' || key === 'revision') continue;
           firestoreUpdates[key] = value === undefined ? deleteField() : value;
         }
+        firestoreUpdates = normalizeLegacyItemUpdatePayload(
+          snapshot.data(),
+          firestoreUpdates,
+          Object.prototype.hasOwnProperty.call(updates, 'status'),
+        );
         transaction.update(ref, firestoreUpdates);
       });
     }, 'This item change', {
@@ -1229,7 +1339,12 @@ export async function deleteItem(
     if (calendarDeleted && existingItem) {
       updateScopedItems(ownerId, (items) => items.map((item) =>
         item.id === id
-          ? { ...item, googleCalendarId: undefined, calendarSynced: false }
+          ? {
+              ...item,
+              googleCalendarId: undefined,
+              calendarSynced: false,
+              googleCalendarOrigin: true,
+            }
           : item
       ), contextGeneration);
     }
@@ -1249,7 +1364,11 @@ export async function deleteItem(
     useOrbitStore.getState().setItems(prevItems);
     if (calendarDeleted && existingItem) {
       try {
-        await updateItem(id, { googleCalendarId: undefined, calendarSynced: false });
+        await updateItem(id, {
+          googleCalendarId: undefined,
+          calendarSynced: false,
+          googleCalendarOrigin: true,
+        });
       } catch { /* the original browser-storage failure remains authoritative */ }
     }
     throw new Error('The deletion could not be saved in browser storage.');
@@ -1324,6 +1443,7 @@ export async function deleteItem(
           await updateItem(id, {
             googleCalendarId: undefined,
             calendarSynced: false,
+            googleCalendarOrigin: true,
           });
         } catch (detachError) {
           console.warn('[THREADMAP] The restored item could not be detached from its deleted Google event:', detachError);
@@ -1331,7 +1451,12 @@ export async function deleteItem(
       } else {
         updateScopedItems(ownerId, (items) => items.map((item) =>
           item.id === id
-            ? { ...item, googleCalendarId: undefined, calendarSynced: false }
+            ? {
+                ...item,
+                googleCalendarId: undefined,
+                calendarSynced: false,
+                googleCalendarOrigin: true,
+              }
             : item
         ), contextGeneration);
       }
@@ -1677,25 +1802,30 @@ export function subscribeToUserSettings(
   callback: (settings: UserSettings, authoritative: boolean) => void,
   options: { getInitialData?: () => Omit<UserSettings, 'updatedAt' | 'revision'> } = {},
 ): () => void {
-  assertActiveAccount(userId);
+  const generation = captureActiveDataContext(userId);
+  let unsubscribed = false;
+  const isCurrent = () => !unsubscribed && isFirestoreDataContextCurrent(userId, generation);
   if (!isFirebaseAvailable(userId)) {
     // Local mode: load from localStorage
     const key = localSettingsKey(userId);
     const stored = localStorage.getItem(key);
     if (stored) {
       try {
-        callback(JSON.parse(stored), true);
+        if (isCurrent()) callback(JSON.parse(stored), true);
       } catch {
         // Don't reset — keep whatever is in the store
       }
     }
     const handler = (e: StorageEvent) => {
-      if (e.key === key && e.newValue) {
+      if (isCurrent() && e.key === key && e.newValue) {
         try { callback(JSON.parse(e.newValue), true); } catch { /* ignore */ }
       }
     };
     window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
+    return () => {
+      unsubscribed = true;
+      window.removeEventListener('storage', handler);
+    };
   }
 
   const docRef = doc(getDb(), SETTINGS_COLLECTION, userId);
@@ -1703,6 +1833,7 @@ export function subscribeToUserSettings(
   const unsubscribe = onSnapshot(
     docRef,
     (snapshot) => {
+      if (!isCurrent()) return;
       if (snapshot.exists()) {
         const data = snapshot.data() as UserSettings;
         callback({
@@ -1718,19 +1849,27 @@ export function subscribeToUserSettings(
         if (!snapshot.metadata.fromCache && initial && !seedAttempted) {
           seedAttempted = true;
           void saveUserSettings(userId, initial, { revision: 0, updatedAt: 0 }).catch((error) => {
+            if (!isCurrent()) return;
             console.error('[THREADMAP] Failed to seed account tags:', error);
-            reportQueuedWrite('Tag settings are saved in this browser, but their first cloud sync did not finish.');
+            reportQueuedWrite(
+              'Tag settings are saved in this browser, but their first cloud sync did not finish.',
+              { userId, generation },
+            );
           });
         }
       }
     },
     (error) => {
+      if (!isCurrent()) return;
       console.error('[THREADMAP] User settings subscription error:', error);
       // Don't reset — just keep whatever is in the store
     }
   );
 
-  return unsubscribe;
+  return () => {
+    unsubscribed = true;
+    unsubscribe();
+  };
 }
 
 /**
@@ -1967,6 +2106,27 @@ const toolRevisions = new Map<string, number>();
 const acceptedToolData = new Map<string, Record<string, unknown> | null>();
 const toolSaveQueue = new KeyedSerialQueue();
 
+function clearFirestoreAccountMemory(userId: string): void {
+  lastMirrorPayload.delete(userId);
+  // Only one account can be active in this module. Clearing the tiny maps in
+  // full avoids delimiter ambiguity for Firebase UIDs that themselves contain
+  // underscores; the next subscription repopulates its authoritative bases.
+  toolRevisions.clear();
+  acceptedToolData.clear();
+}
+
+export function mergedToolDocumentPayload(
+  remote: Record<string, unknown> | null,
+  merged: Record<string, unknown>,
+  metadata: { userId: string; toolId: string; updatedAt: number },
+): Record<string, unknown> {
+  return {
+    ...(remote || {}),
+    ...merged,
+    ...metadata,
+  };
+}
+
 export class ToolDataConflictError extends Error {
   readonly toolId: string;
   readonly baseRevision: number | null;
@@ -2058,7 +2218,11 @@ export function mergeToolData<T extends Record<string, unknown>>(
         const snapshot = await transaction.get(docRef);
         const remoteData = snapshot.exists() ? snapshot.data() as T : null;
         const merged = mergeRemote(localData, remoteData);
-        const payload = { ...merged, userId, toolId, updatedAt: Date.now() };
+        const payload = mergedToolDocumentPayload(
+          snapshot.exists() ? snapshot.data() : null,
+          merged,
+          { userId, toolId, updatedAt: Date.now() },
+        );
         const payloadBytes = new TextEncoder().encode(JSON.stringify(payload)).byteLength;
         if (payloadBytes > MAX_TOOL_DOCUMENT_BYTES) {
           throw new Error(`${toolId} has reached its cloud storage limit. Export or remove older data.`);
@@ -2132,6 +2296,10 @@ async function saveToolDataUnqueued<T extends Record<string, unknown>>(
         committedRevision = nextRevision;
       });
     }, `saveToolData(${toolId})`);
+    // The transaction may settle after secure sign-out invalidated the account
+    // generation. Do not recreate its browser revision marker or accepted-data
+    // cache after the UID-scoped keys were forgotten.
+    assertActiveDataContext(userId, contextGeneration);
     if (committedRevision === null) throw new Error('Tool data transaction did not commit.');
     rememberToolBaseRevision(userId, toolId, committedRevision);
     acceptedToolData.set(revisionKey, payload);
@@ -2143,7 +2311,9 @@ async function saveToolDataUnqueued<T extends Record<string, unknown>>(
     // come from Firestore's own cache; first-run fallback comes from
     // `getInitialData`.
   } catch (error) {
-    if (error instanceof ToolDataConflictError && typeof window !== 'undefined') {
+    if (error instanceof ToolDataConflictError
+        && typeof window !== 'undefined'
+        && isFirestoreDataContextCurrent(userId, contextGeneration)) {
       const acceptedData = acceptedToolData.get(revisionKey) ?? null;
       try {
         preserveToolConflict({
@@ -2161,16 +2331,14 @@ async function saveToolDataUnqueued<T extends Record<string, unknown>>(
           { userId, generation: contextGeneration },
         );
       }
-      if (isFirestoreDataContextCurrent(userId, contextGeneration)) {
-        window.dispatchEvent(new CustomEvent('threadmap:sync-conflict', {
-          detail: {
-            userId,
-            generation: contextGeneration,
-            toolId,
-            message: error.message,
-          },
-        }));
-      }
+      window.dispatchEvent(new CustomEvent('threadmap:sync-conflict', {
+        detail: {
+          userId,
+          generation: contextGeneration,
+          toolId,
+          message: error.message,
+        },
+      }));
     }
     throw error;
   }
@@ -2193,7 +2361,9 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
     mergeInitialData?: (local: T, remote: T | null) => T;
   } = {}
 ): () => void {
-  assertActiveAccount(userId);
+  const generation = captureActiveDataContext(userId);
+  let unsubscribed = false;
+  const isCurrent = () => !unsubscribed && isFirestoreDataContextCurrent(userId, generation);
   const localKey = localToolDataKey(userId, toolId);
   if (userId === DEMO_USER_ID) {
     migrateLegacyStorageToDemo(`orbit-tool-${toolId}`, userId);
@@ -2205,19 +2375,22 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
     try {
       const stored = localStorage.getItem(localKey);
       if (stored) {
-        callback(JSON.parse(stored) as T);
+        if (isCurrent()) callback(JSON.parse(stored) as T);
         delivered = true;
       }
     } catch { /* ignore */ }
-    if (!delivered) callback(options.getInitialData?.() ?? null);
+    if (!delivered && isCurrent()) callback(options.getInitialData?.() ?? null);
 
     const handler = (e: StorageEvent) => {
-      if (e.key === localKey && e.newValue) {
+      if (isCurrent() && e.key === localKey && e.newValue) {
         try { callback(JSON.parse(e.newValue) as T); } catch { /* ignore */ }
       }
     };
     window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
+    return () => {
+      unsubscribed = true;
+      window.removeEventListener('storage', handler);
+    };
   }
 
   // Reclaim the duplicate mirror left by earlier versions. The cloud is
@@ -2234,6 +2407,7 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
   const unsubscribe = onSnapshot(
     docRef,
     (snapshot) => {
+      if (!isCurrent()) return;
       if (snapshot.exists()) {
         const revision = Number(snapshot.data().revision || 0);
         const hasPendingLocalChanges = options.hasPendingLocalChanges?.() === true;
@@ -2262,13 +2436,14 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
             ? mergeToolData(userId, toolId, initialData, options.mergeInitialData)
             : saveToolData(userId, toolId, initialData);
           void seed.catch((error) => {
+            if (!isCurrent()) return;
             seedAttempted = false;
             console.error(`[THREADMAP] Failed to seed tool data (${toolId}):`, error);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('threadmap:sync-warning', {
                 detail: {
                   userId,
-                  generation: activeDataGeneration,
+                  generation,
                   message: `${toolId} is saved on this device, but its first cloud sync did not finish.`,
                 },
               }));
@@ -2278,9 +2453,13 @@ export function subscribeToToolData<T extends Record<string, unknown>>(
       }
     },
     (error) => {
+      if (!isCurrent()) return;
       console.error(`[THREADMAP] Tool data subscription error (${toolId}):`, error);
     }
   );
 
-  return unsubscribe;
+  return () => {
+    unsubscribed = true;
+    unsubscribe();
+  };
 }

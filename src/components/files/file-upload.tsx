@@ -124,9 +124,10 @@ export function FileUpload({ item }: FileUploadProps) {
     setOpeningSignIn(true);
     setError(null);
     try {
-      // Leaving local/demo mode returns the app to its sign-in screen. Local
-      // items remain stored on this device.
-      await signOut();
+      // This is a local-to-cloud migration path, not the account-menu's secure
+      // sign-out action. Preserve the local workspace so it can still be
+      // exported or revisited after opening the cloud sign-in screen.
+      await signOut({ preserveLocalWorkspace: true });
     } catch (err) {
       console.error('[FileUpload] Could not open sign in:', err);
       setError(t('files.signInOpenError'));

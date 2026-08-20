@@ -29,9 +29,6 @@ import {
   verifyPkceS256,
 } from './security';
 
-export const THREADMAP_AUTHORIZATION_CONSENT_URL =
-  'https://threadmap.app/integrations/authorize';
-
 export const OAUTH_COLLECTIONS = Object.freeze({
   clients: 'mcpOAuthClients',
   authorizationRequests: 'mcpOAuthAuthorizationRequests',
@@ -39,6 +36,8 @@ export const OAUTH_COLLECTIONS = Object.freeze({
   accessTokens: 'mcpOAuthAccessTokens',
   refreshTokens: 'mcpOAuthRefreshTokens',
   tokenFamilies: 'mcpOAuthTokenFamilies',
+  userGrants: 'mcpOAuthUserGrants',
+  registrationLimits: 'mcpRateLimits',
 });
 
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -47,6 +46,10 @@ const DEFAULT_AUTHORIZATION_REQUEST_TTL_SECONDS = 10 * 60;
 const DEFAULT_AUTHORIZATION_CODE_TTL_SECONDS = 5 * 60;
 const MAX_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const MAX_REFRESH_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60;
+const DYNAMIC_CLIENT_TTL_MS = 180 * 24 * 60 * 60_000;
+const REGISTRATION_WINDOW_MS = 60 * 60_000;
+const REGISTRATION_SOURCE_LIMIT = 30;
+const REGISTRATION_GLOBAL_LIMIT = 1_000;
 const ACCOUNT_DELETION_COLLECTION = 'accountDeletionJobs';
 
 type OAuthGrantType = 'authorization_code' | 'refresh_token';
@@ -136,6 +139,8 @@ export function createAuthorizationErrorRedirect(
 
 export interface ThreadmapOAuthConfiguration
   extends OAuthEndpointConfiguration, RedirectUriPolicy {
+  /** Browser UI that owns the authenticated consent decision. */
+  authorizationConsentUrl?: string;
   dynamicClientScopes?: readonly string[];
   accessTokenTtlSeconds?: number;
   refreshTokenTtlSeconds?: number;
@@ -145,6 +150,7 @@ export interface ThreadmapOAuthConfiguration
 
 export interface ResolvedThreadmapOAuthConfiguration
   extends OAuthEndpointConfiguration, RedirectUriPolicy {
+  authorizationConsentUrl: string;
   dynamicClientScopes: string[];
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
@@ -156,6 +162,17 @@ export interface ResolvedThreadmapOAuthConfiguration
 export interface OAuthServiceDependencies {
   now?: () => number;
   generateToken?: (prefix: string, entropyBytes?: number) => string;
+  dynamicClientTtlMs?: number;
+  registrationSourceLimit?: number;
+  registrationGlobalLimit?: number;
+}
+
+export interface McpAuthorizationGrant {
+  clientId: string;
+  clientName: string;
+  authorizedAt: number;
+  lastAuthorizedAt: number;
+  expiresAt?: number;
 }
 
 export interface DynamicClientRegistrationRequest {
@@ -174,7 +191,7 @@ export interface DynamicClientRegistrationResponse {
   client_id: string;
   client_id_issued_at: number;
   client_secret?: string;
-  client_secret_expires_at?: 0;
+  client_secret_expires_at?: number;
   redirect_uris: string[];
   token_endpoint_auth_method: SupportedClientAuthenticationMethod;
   grant_types: OAuthGrantType[];
@@ -266,6 +283,8 @@ interface OAuthClientDocument {
   resource: string;
   createdAt: number;
   updatedAt: number;
+  expiresAt?: number;
+  expireAt?: Date;
   revokedAt?: number;
 }
 
@@ -341,6 +360,18 @@ interface RefreshTokenDocument {
   expireAt: Date;
   consumedAt?: number;
   replacedByHash?: string;
+  revokedAt?: number;
+}
+
+interface UserGrantDocument {
+  userId: string;
+  clientId: string;
+  status: 'active' | 'revoked';
+  authorizedAt: number;
+  lastAuthorizedAt: number;
+  updatedAt: number;
+  expiresAt: number;
+  expireAt: Date;
   revokedAt?: number;
 }
 
@@ -475,6 +506,7 @@ function clientDocument(value: unknown): OAuthClientDocument | null {
       || typeof value.resource !== 'string'
       || typeof value.createdAt !== 'number'
       || typeof value.updatedAt !== 'number'
+      || (value.expiresAt !== undefined && typeof value.expiresAt !== 'number')
       || (value.platform !== 'chatgpt' && value.platform !== 'claude'
         && value.platform !== 'configured' && value.platform !== 'loopback')
       || (value.tokenEndpointAuthMethod !== 'none'
@@ -568,8 +600,27 @@ function refreshTokenDocument(value: unknown): RefreshTokenDocument | null {
   return value as unknown as RefreshTokenDocument;
 }
 
-function ensureActiveClient(client: OAuthClientDocument | null): OAuthClientDocument {
-  if (!client || client.revokedAt !== undefined) {
+function userGrantDocument(value: unknown): UserGrantDocument | null {
+  if (!isRecord(value)
+      || !isValidUserId(value.userId)
+      || typeof value.clientId !== 'string'
+      || (value.status !== 'active' && value.status !== 'revoked')
+      || typeof value.authorizedAt !== 'number'
+      || typeof value.lastAuthorizedAt !== 'number'
+      || typeof value.updatedAt !== 'number'
+      || typeof value.expiresAt !== 'number') {
+    return null;
+  }
+  return value as unknown as UserGrantDocument;
+}
+
+function userGrantId(userId: string, clientId: string): string {
+  return hashOpaqueToken(`mcp-user-grant:${userId}\0${clientId}`);
+}
+
+function ensureActiveClient(client: OAuthClientDocument | null, now = Date.now()): OAuthClientDocument {
+  if (!client || client.revokedAt !== undefined
+      || (client.expiresAt !== undefined && client.expiresAt <= now)) {
     throw new OAuthProtocolError('invalid_client', 'Client authentication failed.', { status: 401 });
   }
   return client;
@@ -579,7 +630,9 @@ export function resolveThreadmapOAuthConfiguration(
   configuration: ThreadmapOAuthConfiguration
 ): ResolvedThreadmapOAuthConfiguration {
   validateOAuthEndpointConfiguration(configuration);
-  validateHttpsUrl(THREADMAP_AUTHORIZATION_CONSENT_URL, 'authorization consent URL', {
+  const authorizationConsentUrl = configuration.authorizationConsentUrl
+    ?? `${new URL(configuration.issuer).origin}/integrations/authorize`;
+  validateHttpsUrl(authorizationConsentUrl, 'authorization consent URL', {
     allowPath: true,
     allowQuery: false,
   });
@@ -603,6 +656,7 @@ export function resolveThreadmapOAuthConfiguration(
 
   return {
     ...configuration,
+    authorizationConsentUrl,
     scopesSupported: supportedScopes,
     dynamicClientScopes,
     configuredRedirectUris,
@@ -656,6 +710,9 @@ export class ThreadmapOAuthService {
   readonly configuration: ResolvedThreadmapOAuthConfiguration;
   private readonly now: () => number;
   private readonly generateToken: (prefix: string, entropyBytes?: number) => string;
+  private readonly dynamicClientTtlMs: number;
+  private readonly registrationSourceLimit: number;
+  private readonly registrationGlobalLimit: number;
 
   constructor(
     private readonly db: Firestore,
@@ -665,6 +722,15 @@ export class ThreadmapOAuthService {
     this.configuration = resolveThreadmapOAuthConfiguration(configuration);
     this.now = dependencies.now || Date.now;
     this.generateToken = dependencies.generateToken || generateOpaqueToken;
+    this.dynamicClientTtlMs = Math.max(60_000, Math.trunc(
+      dependencies.dynamicClientTtlMs ?? DYNAMIC_CLIENT_TTL_MS
+    ));
+    this.registrationSourceLimit = Math.max(1, Math.trunc(
+      dependencies.registrationSourceLimit ?? REGISTRATION_SOURCE_LIMIT
+    ));
+    this.registrationGlobalLimit = Math.max(this.registrationSourceLimit, Math.trunc(
+      dependencies.registrationGlobalLimit ?? REGISTRATION_GLOBAL_LIMIT
+    ));
   }
 
   authorizationServerMetadata() {
@@ -675,13 +741,34 @@ export class ThreadmapOAuthService {
     return createProtectedResourceMetadata(this.configuration);
   }
 
+  /**
+   * Apply the live server policy to every persisted legacy scope set. Tool
+   * scopes are capped by the operator's current policy; offline_access remains
+   * meaningful only as a refresh-token capability and never authorizes a tool.
+   */
+  private effectivePolicyScopes(scopes: readonly string[]): string[] {
+    const allowedToolScopes = new Set(
+      this.configuration.dynamicClientScopes.filter((scope) => scope.startsWith('threadmap.'))
+    );
+    return [...new Set(scopes)].filter((scope) =>
+      scope === 'offline_access' || allowedToolScopes.has(scope)
+    );
+  }
+
+  private hasEffectiveToolScope(scopes: readonly string[]): boolean {
+    return scopes.some((scope) => scope.startsWith('threadmap.'));
+  }
+
   bearerChallenge(requiredScopes: readonly string[] = []): string {
     return createBearerChallenge(this.configuration.protectedResourceMetadataUrl, {
       scope: requiredScopes,
     });
   }
 
-  async registerClient(input: DynamicClientRegistrationRequest | unknown):
+  async registerClient(
+    input: DynamicClientRegistrationRequest | unknown,
+    registrationSubject = 'unknown',
+  ):
   Promise<DynamicClientRegistrationResponse> {
     const request = expectRecord(input, 'Dynamic client metadata must be a JSON object.');
     // A software statement is a signed assertion of client metadata. This server
@@ -733,7 +820,7 @@ export class ThreadmapOAuthService {
     if (!grantTypes.includes('refresh_token')) {
       scopes = scopes.filter((scope) => scope !== 'offline_access');
     }
-    if (scopes.length < 1) {
+    if (!this.hasEffectiveToolScope(scopes)) {
       throw new OAuthProtocolError(
         'invalid_client_metadata',
         'None of the requested scopes are available to dynamically registered clients.'
@@ -759,6 +846,7 @@ export class ThreadmapOAuthService {
     }
 
     const now = this.now();
+    const expiresAt = now + this.dynamicClientTtlMs;
     const clientId = this.generateToken('tmc_', 24);
     const clientSecret = method === 'none' ? undefined : this.generateToken('tmcs_', 32);
     const document: OAuthClientDocument = {
@@ -774,14 +862,65 @@ export class ThreadmapOAuthService {
       resource: this.configuration.resource,
       createdAt: now,
       updatedAt: now,
+      expiresAt,
+      expireAt: new Date(expiresAt),
     };
-    await this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId).create(document);
+    const normalizedSubject = typeof registrationSubject === 'string'
+      ? registrationSubject.slice(0, 512)
+      : 'unknown';
+    const sourceHash = hashOpaqueToken(`mcp-registration-source:${normalizedSubject}`);
+    const windowStart = Math.floor(now / REGISTRATION_WINDOW_MS) * REGISTRATION_WINDOW_MS;
+    const globalQuotaRef = this.db.collection(OAUTH_COLLECTIONS.registrationLimits)
+      .doc(`registration_global_${windowStart}`);
+    const sourceQuotaRef = this.db.collection(OAUTH_COLLECTIONS.registrationLimits)
+      .doc(`registration_source_${sourceHash}_${windowStart}`);
+    const clientRef = this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId);
+    await this.db.runTransaction(async (transaction) => {
+      const [globalQuota, sourceQuota] = await Promise.all([
+        transaction.get(globalQuotaRef),
+        transaction.get(sourceQuotaRef),
+      ]);
+      const quotaCount = (snapshot: { data(): Record<string, unknown> | undefined }) => {
+        const count = Number(snapshot.data()?.count || 0);
+        return Number.isSafeInteger(count) && count >= 0 ? count : 0;
+      };
+      const globalCount = quotaCount(globalQuota);
+      const sourceCount = quotaCount(sourceQuota);
+      if (globalCount >= this.registrationGlobalLimit
+          || sourceCount >= this.registrationSourceLimit) {
+        throw new OAuthProtocolError(
+          'temporarily_unavailable',
+          'Dynamic client registration is temporarily rate limited.',
+          { status: 429 }
+        );
+      }
+      const quotaExpiry = windowStart + (2 * REGISTRATION_WINDOW_MS);
+      transaction.set(globalQuotaRef, {
+        kind: 'oauth-registration-global',
+        windowStart,
+        count: globalCount + 1,
+        updatedAt: now,
+        expireAt: new Date(quotaExpiry),
+      });
+      transaction.set(sourceQuotaRef, {
+        kind: 'oauth-registration-source',
+        subjectHash: sourceHash,
+        windowStart,
+        count: sourceCount + 1,
+        updatedAt: now,
+        expireAt: new Date(quotaExpiry),
+      });
+      transaction.create(clientRef, document);
+    });
 
     return {
       client_id: clientId,
       client_id_issued_at: Math.floor(now / 1_000),
       ...(clientSecret
-        ? { client_secret: clientSecret, client_secret_expires_at: 0 as const }
+        ? {
+            client_secret: clientSecret,
+            client_secret_expires_at: Math.floor(expiresAt / 1_000),
+          }
         : {}),
       redirect_uris: [...redirects.redirectUris],
       token_endpoint_auth_method: method,
@@ -801,8 +940,9 @@ export class ThreadmapOAuthService {
     } catch {
       throw new OAuthProtocolError('invalid_request', 'client_id is invalid.');
     }
+    const now = this.now();
     const clientSnapshot = await this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId).get();
-    const client = ensureActiveClient(clientDocument(clientSnapshot.data()));
+    const client = ensureActiveClient(clientDocument(clientSnapshot.data()), now);
 
     const redirectUri = expectString(
       request.redirect_uri,
@@ -863,14 +1003,14 @@ export class ThreadmapOAuthService {
     // check stays a strict subset test, because from here on the set has been
     // validated and any mismatch is tampering rather than host variance.
     scopes = scopes.filter((scope) => client.scopes.includes(scope));
+    scopes = this.effectivePolicyScopes(scopes);
     if (!client.grantTypes.includes('refresh_token')) {
       scopes = scopes.filter((scope) => scope !== 'offline_access');
     }
-    if (scopes.length < 1) {
+    if (!this.hasEffectiveToolScope(scopes)) {
       throw redirectingError('invalid_scope', 'The client holds none of the requested scopes.');
     }
 
-    const now = this.now();
     const requestToken = this.generateToken('tmar_', 32);
     const requestHash = hashOpaqueToken(requestToken);
     const expiresAt = now + this.configuration.authorizationRequestTtlSeconds * 1_000;
@@ -892,7 +1032,7 @@ export class ThreadmapOAuthService {
       .create(document);
 
     return {
-      location: appendOAuthParameters(THREADMAP_AUTHORIZATION_CONSENT_URL, {
+      location: appendOAuthParameters(this.configuration.authorizationConsentUrl, {
         request: requestToken,
       }),
       expiresAt,
@@ -923,7 +1063,7 @@ export class ThreadmapOAuthService {
     const clientSnapshot = await this.db.collection(OAUTH_COLLECTIONS.clients)
       .doc(request.clientId)
       .get();
-    const client = ensureActiveClient(clientDocument(clientSnapshot.data()));
+    const client = ensureActiveClient(clientDocument(clientSnapshot.data()), now);
     const deletionJobSnapshot = await this.db.collection(ACCOUNT_DELETION_COLLECTION)
       .doc(authenticatedUid)
       .get();
@@ -934,11 +1074,20 @@ export class ThreadmapOAuthService {
         { status: 403 }
       );
     }
+    const effectiveScopes = this.effectivePolicyScopes(
+      request.scopes.filter((scope) => client.scopes.includes(scope))
+    );
+    if (!this.hasEffectiveToolScope(effectiveScopes)) {
+      throw new OAuthProtocolError(
+        'invalid_scope',
+        'This authorization request no longer contains an enabled Threadmap scope.'
+      );
+    }
     return {
       clientId: client.clientId,
       clientName: client.clientName,
       platform: client.platform,
-      scopes: [...request.scopes],
+      scopes: effectiveScopes,
       resource: request.resource,
       createdAt: request.createdAt,
       expiresAt: request.expiresAt,
@@ -973,7 +1122,7 @@ export class ThreadmapOAuthService {
       }
       const clientRef = this.db.collection(OAUTH_COLLECTIONS.clients).doc(request.clientId);
       const clientSnapshot = await transaction.get(clientRef);
-      const client = ensureActiveClient(clientDocument(clientSnapshot.data()));
+      const client = ensureActiveClient(clientDocument(clientSnapshot.data()), now);
       const deletionJobSnapshot = await transaction.get(
         this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(authenticatedUid)
       );
@@ -998,8 +1147,24 @@ export class ThreadmapOAuthService {
           'Approved scopes must be a non-empty subset of the requested scopes.'
         );
       }
+      scopes = this.effectivePolicyScopes(scopes);
+      if (!this.hasEffectiveToolScope(scopes)) {
+        throw new OAuthProtocolError(
+          'invalid_scope',
+          'Approved scopes no longer include an enabled Threadmap capability.'
+        );
+      }
 
       const codeExpiresAt = now + this.configuration.authorizationCodeTtlSeconds * 1_000;
+      const grantRef = this.db.collection(OAUTH_COLLECTIONS.userGrants)
+        .doc(userGrantId(authenticatedUid, client.clientId));
+      const grantSnapshot = await transaction.get(grantRef);
+      const existingGrant = userGrantDocument(grantSnapshot.data());
+      const grantExpiresAt = Math.min(
+        client.expiresAt ?? Number.MAX_SAFE_INTEGER,
+        now + (this.configuration.refreshTokenTtlSeconds * 1_000)
+          + (this.configuration.authorizationCodeTtlSeconds * 1_000)
+      );
       const codeDocument: AuthorizationCodeDocument = {
         status: 'active',
         clientId: request.clientId,
@@ -1021,6 +1186,16 @@ export class ThreadmapOAuthService {
         status: 'approved',
         decidedAt: now,
         userId: authenticatedUid,
+      });
+      transaction.set(grantRef, {
+        userId: authenticatedUid,
+        clientId: client.clientId,
+        status: 'active',
+        authorizedAt: existingGrant?.authorizedAt ?? now,
+        lastAuthorizedAt: now,
+        updatedAt: now,
+        expiresAt: grantExpiresAt,
+        expireAt: new Date(grantExpiresAt),
       });
       return { request, scopes };
     });
@@ -1053,6 +1228,16 @@ export class ThreadmapOAuthService {
         throw new OAuthProtocolError(
           'invalid_request',
           'The authorization request is invalid or expired.'
+        );
+      }
+      const deletionJobSnapshot = await transaction.get(
+        this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(authenticatedUid)
+      );
+      if (deletionJobSnapshot.exists) {
+        throw new OAuthProtocolError(
+          'access_denied',
+          'The Threadmap account is not available for authorization.',
+          { status: 403 }
         );
       }
       transaction.update(requestRef, {
@@ -1144,28 +1329,40 @@ export class ThreadmapOAuthService {
       });
     }
 
-    const [familySnapshot, clientSnapshot, deletionJobSnapshot] = await Promise.all([
+    const [familySnapshot, clientSnapshot, deletionJobSnapshot, grantSnapshot] = await Promise.all([
       this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
         .doc(tokenDocument.tokenFamilyId)
         .get(),
       this.db.collection(OAUTH_COLLECTIONS.clients).doc(tokenDocument.clientId).get(),
       this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(tokenDocument.userId).get(),
+      this.db.collection(OAUTH_COLLECTIONS.userGrants)
+        .doc(userGrantId(tokenDocument.userId, tokenDocument.clientId))
+        .get(),
     ]);
     const family = tokenFamilyDocument(familySnapshot.data());
     const client = clientDocument(clientSnapshot.data());
+    const grant = userGrantDocument(grantSnapshot.data());
     if (!family || family.status !== 'active' || family.expiresAt <= now
         || family.clientId !== tokenDocument.clientId
         || family.userId !== tokenDocument.userId
         || family.resource !== tokenDocument.resource
         || !client || client.revokedAt !== undefined
+        || (client.expiresAt !== undefined && client.expiresAt <= now)
         || client.clientId !== tokenDocument.clientId
         || client.resource !== tokenDocument.resource
+        || grant?.status === 'revoked'
         || deletionJobSnapshot.exists) {
       throw new OAuthProtocolError('invalid_token', 'The access token is invalid or expired.', {
         status: 401,
       });
     }
-    if (!areScopesAllowed(normalizedRequiredScopes, tokenDocument.scopes)) {
+    const effectiveTokenScopes = this.effectivePolicyScopes(tokenDocument.scopes);
+    if (!this.hasEffectiveToolScope(effectiveTokenScopes)) {
+      throw new OAuthProtocolError('invalid_token', 'The access token no longer grants an enabled scope.', {
+        status: 401,
+      });
+    }
+    if (!areScopesAllowed(normalizedRequiredScopes, effectiveTokenScopes)) {
       throw new OAuthProtocolError(
         'insufficient_scope',
         'The access token does not grant the required scope.',
@@ -1175,7 +1372,7 @@ export class ThreadmapOAuthService {
     return {
       userId: tokenDocument.userId,
       clientId: tokenDocument.clientId,
-      scopes: [...tokenDocument.scopes],
+      scopes: effectiveTokenScopes,
       resource: tokenDocument.resource,
       expiresAt: tokenDocument.expiresAt,
       tokenId: tokenHash.slice(0, 16),
@@ -1205,7 +1402,7 @@ export class ThreadmapOAuthService {
       const accessRef = this.db.collection(OAUTH_COLLECTIONS.accessTokens).doc(tokenHash);
       const refreshRef = this.db.collection(OAUTH_COLLECTIONS.refreshTokens).doc(tokenHash);
       const clientSnapshot = await transaction.get(clientRef);
-      const currentClient = ensureActiveClient(clientDocument(clientSnapshot.data()));
+      const currentClient = ensureActiveClient(clientDocument(clientSnapshot.data()), now);
       const accessSnapshot = await transaction.get(accessRef);
       const refreshSnapshot = await transaction.get(refreshRef);
       const access = accessTokenDocument(accessSnapshot.data());
@@ -1238,6 +1435,78 @@ export class ThreadmapOAuthService {
     return {};
   }
 
+  async listAuthorizations(authenticatedUid: string): Promise<McpAuthorizationGrant[]> {
+    this.assertAuthenticatedUser(authenticatedUid);
+    const [deletionSnapshot, grantSnapshots, familySnapshots] = await Promise.all([
+      this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(authenticatedUid).get(),
+      this.db.collection(OAUTH_COLLECTIONS.userGrants)
+        .where('userId', '==', authenticatedUid)
+        .get(),
+      this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
+        .where('userId', '==', authenticatedUid)
+        .get(),
+    ]);
+    if (deletionSnapshot.exists) {
+      throw new OAuthProtocolError(
+        'access_denied',
+        'The Threadmap account is not available for authorization.',
+        { status: 403 }
+      );
+    }
+
+    const now = this.now();
+    const byClient = new Map<string, {
+      authorizedAt: number;
+      lastAuthorizedAt: number;
+      expiresAt?: number;
+      revoked: boolean;
+    }>();
+    for (const snapshot of grantSnapshots.docs) {
+      const grant = userGrantDocument(snapshot.data());
+      if (!grant || grant.expiresAt <= now) continue;
+      byClient.set(grant.clientId, {
+        authorizedAt: grant.authorizedAt,
+        lastAuthorizedAt: grant.lastAuthorizedAt,
+        revoked: grant.status === 'revoked',
+      });
+    }
+    for (const snapshot of familySnapshots.docs) {
+      const family = tokenFamilyDocument(snapshot.data());
+      if (!family || family.status !== 'active' || family.expiresAt <= now) continue;
+      const current = byClient.get(family.clientId);
+      if (current?.revoked) continue;
+      byClient.set(family.clientId, {
+        authorizedAt: Math.min(current?.authorizedAt ?? family.createdAt, family.createdAt),
+        lastAuthorizedAt: Math.max(
+          current?.lastAuthorizedAt ?? family.createdAt,
+          family.lastRotatedAt ?? family.createdAt
+        ),
+        expiresAt: Math.max(current?.expiresAt ?? 0, family.expiresAt),
+        revoked: false,
+      });
+    }
+
+    const activeEntries = [...byClient.entries()].filter(([, grant]) => !grant.revoked);
+    const clients = await Promise.all(activeEntries.map(([clientId]) =>
+      this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId).get()
+    ));
+    return activeEntries.flatMap(([clientId, grant], index) => {
+      const client = clientDocument(clients[index].data());
+      if (!client || client.revokedAt !== undefined
+          || (client.expiresAt !== undefined && client.expiresAt <= now)) return [];
+      const effectiveExpiry = grant.expiresAt === undefined
+        ? client.expiresAt
+        : Math.min(grant.expiresAt, client.expiresAt ?? grant.expiresAt);
+      return [{
+        clientId,
+        clientName: client.clientName,
+        authorizedAt: grant.authorizedAt,
+        lastAuthorizedAt: grant.lastAuthorizedAt,
+        ...(effectiveExpiry !== undefined ? { expiresAt: effectiveExpiry } : {}),
+      }];
+    }).sort((left, right) => right.lastAuthorizedAt - left.lastAuthorizedAt);
+  }
+
   async revokeClient(
     clientIdValue: unknown,
     authenticatedUid: string,
@@ -1253,28 +1522,77 @@ export class ThreadmapOAuthService {
     const clientSnapshot = await this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId).get();
     if (!clientDocument(clientSnapshot.data())) return false;
 
-    // Dynamic OAuth clients are shared registrations. Disconnecting one user
-    // must revoke only that user's token families, never the client for everyone.
-    const familySnapshots = await this.db.collection(OAUTH_COLLECTIONS.tokenFamilies)
-      .where('userId', '==', authenticatedUid)
-      .get();
-    const activeFamilies = familySnapshots.docs.filter((snapshot) => {
-      const family = tokenFamilyDocument(snapshot.data());
-      return family?.clientId === clientId && family.status === 'active';
-    });
-    if (activeFamilies.length === 0) return false;
-
     const now = this.now();
-    for (let offset = 0; offset < activeFamilies.length; offset += 400) {
-      const batch = this.db.batch();
-      for (const snapshot of activeFamilies.slice(offset, offset + 400)) {
-        batch.update(snapshot.ref, {
-          status: 'revoked',
-          revokedAt: now,
-          revocationReason: reason,
-        });
+    const grantRef = this.db.collection(OAUTH_COLLECTIONS.userGrants)
+      .doc(userGrantId(authenticatedUid, clientId));
+    await this.db.runTransaction(async (transaction) => {
+      const [deletionSnapshot, existingGrantSnapshot] = await Promise.all([
+        transaction.get(this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(authenticatedUid)),
+        transaction.get(grantRef),
+      ]);
+      if (deletionSnapshot.exists) {
+        throw new OAuthProtocolError(
+          'access_denied',
+          'The Threadmap account is not available for authorization.',
+          { status: 403 }
+        );
       }
-      await batch.commit();
+      const existing = userGrantDocument(existingGrantSnapshot.data());
+      // A revocation barrier must outlive every token family that could have
+      // been issued immediately before this transaction. Firestore TTL is not
+      // immediate, but the explicit timestamp check keeps listing deterministic.
+      const barrierExpiresAt = Math.max(
+        existing?.expiresAt ?? 0,
+        now + (MAX_REFRESH_TOKEN_TTL_SECONDS * 1_000)
+          + (this.configuration.authorizationCodeTtlSeconds * 1_000)
+      );
+      transaction.set(grantRef, {
+        userId: authenticatedUid,
+        clientId,
+        status: 'revoked',
+        authorizedAt: existing?.authorizedAt ?? now,
+        lastAuthorizedAt: existing?.lastAuthorizedAt ?? now,
+        updatedAt: now,
+        revokedAt: now,
+        expiresAt: barrierExpiresAt,
+        expireAt: new Date(barrierExpiresAt),
+      });
+    });
+
+    // The grant document above is the atomic revocation barrier checked by
+    // code exchange, refresh, and access authentication. The derivative sweep
+    // can therefore be safely retried in bounded batches without a credential
+    // becoming valid again between batches.
+    const collectionNames = [
+      OAUTH_COLLECTIONS.authorizationRequests,
+      OAUTH_COLLECTIONS.authorizationCodes,
+      OAUTH_COLLECTIONS.accessTokens,
+      OAUTH_COLLECTIONS.refreshTokens,
+      OAUTH_COLLECTIONS.tokenFamilies,
+    ] as const;
+    for (const collectionName of collectionNames) {
+      const snapshots = await this.db.collection(collectionName)
+        .where('userId', '==', authenticatedUid)
+        .get();
+      const matching = snapshots.docs.filter((snapshot) =>
+        snapshot.data()?.clientId === clientId
+      );
+      for (let offset = 0; offset < matching.length; offset += 400) {
+        const chunk = matching.slice(offset, offset + 400);
+        const batch = this.db.batch();
+        for (const snapshot of chunk) {
+          if (collectionName === OAUTH_COLLECTIONS.tokenFamilies) {
+            batch.update(snapshot.ref, {
+              status: 'revoked',
+              revokedAt: now,
+              revocationReason: reason,
+            });
+          } else {
+            batch.delete(snapshot.ref);
+          }
+        }
+        await batch.commit();
+      }
     }
     return true;
   }
@@ -1394,7 +1712,7 @@ export class ThreadmapOAuthService {
       });
     }
     const snapshot = await this.db.collection(OAUTH_COLLECTIONS.clients).doc(clientId).get();
-    const client = ensureActiveClient(clientDocument(snapshot.data()));
+    const client = ensureActiveClient(clientDocument(snapshot.data()), this.now());
     if (client.tokenEndpointAuthMethod !== presented.method) {
       throw new OAuthProtocolError('invalid_client', 'Client authentication failed.', {
         status: 401,
@@ -1450,17 +1768,25 @@ export class ThreadmapOAuthService {
       const codeSnapshot = await transaction.get(codeRef);
       const currentClientSnapshot = await transaction.get(clientRef);
       const codeDocument = authorizationCodeDocument(codeSnapshot.data());
-      const currentClient = ensureActiveClient(clientDocument(currentClientSnapshot.data()));
+      const currentClient = ensureActiveClient(clientDocument(currentClientSnapshot.data()), now);
       const deletionJobSnapshot = codeDocument
         ? await transaction.get(
           this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(codeDocument.userId)
         )
         : null;
+      const grantSnapshot = codeDocument
+        ? await transaction.get(
+          this.db.collection(OAUTH_COLLECTIONS.userGrants)
+            .doc(userGrantId(codeDocument.userId, currentClient.clientId))
+        )
+        : null;
+      const grant = userGrantDocument(grantSnapshot?.data());
       if (!codeDocument || codeDocument.status !== 'active' || codeDocument.expiresAt <= now
           || codeDocument.clientId !== currentClient.clientId
           || codeDocument.redirectUri !== redirectUri
           || codeDocument.resource !== resource
           || !verifyPkceS256(verifier, codeDocument.codeChallenge)
+          || grant?.status === 'revoked'
           || deletionJobSnapshot?.exists) {
         throw new OAuthProtocolError(
           'invalid_grant',
@@ -1468,7 +1794,17 @@ export class ThreadmapOAuthService {
         );
       }
 
-      const shouldIssueRefreshToken = codeDocument.scopes.includes('offline_access')
+      const issuedScopes = this.effectivePolicyScopes(
+        codeDocument.scopes.filter((scope) => currentClient.scopes.includes(scope))
+      );
+      if (!this.hasEffectiveToolScope(issuedScopes)) {
+        throw new OAuthProtocolError(
+          'invalid_grant',
+          'The authorization grant no longer contains an enabled Threadmap scope.'
+        );
+      }
+
+      const shouldIssueRefreshToken = issuedScopes.includes('offline_access')
         && currentClient.grantTypes.includes('refresh_token');
       const accessExpiresAt = now + this.configuration.accessTokenTtlSeconds * 1_000;
       const familyExpiresAt = shouldIssueRefreshToken
@@ -1492,7 +1828,7 @@ export class ThreadmapOAuthService {
         clientId: currentClient.clientId,
         userId: codeDocument.userId,
         resource,
-        scopes: [...codeDocument.scopes],
+        scopes: [...issuedScopes],
         tokenFamilyId,
         issuedAt: now,
         expiresAt: accessExpiresAt,
@@ -1512,7 +1848,7 @@ export class ThreadmapOAuthService {
           clientId: currentClient.clientId,
           userId: codeDocument.userId,
           resource,
-          scopes: [...codeDocument.scopes],
+          scopes: [...issuedScopes],
           tokenFamilyId,
           sequence: 0,
           issuedAt: now,
@@ -1526,7 +1862,7 @@ export class ThreadmapOAuthService {
       }
       transaction.update(codeRef, { status: 'consumed', consumedAt: now });
       return {
-        scopes: codeDocument.scopes,
+        scopes: issuedScopes,
         accessExpiresAt,
         shouldIssueRefreshToken,
       };
@@ -1564,16 +1900,24 @@ export class ThreadmapOAuthService {
       const clientRef = this.db.collection(OAUTH_COLLECTIONS.clients).doc(client.clientId);
       const refreshSnapshot = await transaction.get(refreshRef);
       const currentClientSnapshot = await transaction.get(clientRef);
-      const currentClient = ensureActiveClient(clientDocument(currentClientSnapshot.data()));
+      const currentClient = ensureActiveClient(clientDocument(currentClientSnapshot.data()), now);
       const oldRefresh = refreshTokenDocument(refreshSnapshot.data());
       const deletionJobSnapshot = oldRefresh
         ? await transaction.get(
           this.db.collection(ACCOUNT_DELETION_COLLECTION).doc(oldRefresh.userId)
         )
         : null;
+      const grantSnapshot = oldRefresh
+        ? await transaction.get(
+          this.db.collection(OAUTH_COLLECTIONS.userGrants)
+            .doc(userGrantId(oldRefresh.userId, currentClient.clientId))
+        )
+        : null;
+      const grant = userGrantDocument(grantSnapshot?.data());
       if (!oldRefresh || oldRefresh.clientId !== currentClient.clientId
           || oldRefresh.resource !== resource
           || oldRefresh.expiresAt <= now
+          || grant?.status === 'revoked'
           || deletionJobSnapshot?.exists) {
         throw new OAuthProtocolError('invalid_grant', 'The refresh token is invalid or expired.');
       }
@@ -1614,6 +1958,19 @@ export class ThreadmapOAuthService {
           'invalid_scope',
           'Refresh-token scopes may only be narrowed while retaining offline_access.'
         );
+      }
+      scopes = this.effectivePolicyScopes(scopes);
+      if (!this.hasEffectiveToolScope(scopes)) {
+        transaction.update(refreshRef, {
+          status: 'revoked',
+          revokedAt: now,
+        });
+        transaction.update(familyRef, {
+          status: 'revoked',
+          revokedAt: now,
+          revocationReason: 'scope_policy_downgrade',
+        });
+        return { policyRevoked: true as const };
       }
 
       const accessExpiresAt = Math.min(
@@ -1665,6 +2022,12 @@ export class ThreadmapOAuthService {
       return { reused: false as const, scopes, accessExpiresAt };
     });
 
+    if ('policyRevoked' in result) {
+      throw new OAuthProtocolError(
+        'invalid_grant',
+        'The refresh token no longer grants an enabled Threadmap scope.'
+      );
+    }
     if (result.reused) {
       throw new OAuthProtocolError(
         'invalid_grant',

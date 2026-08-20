@@ -1,307 +1,218 @@
-# Threadmap MCP — setup and operations
+# Threadmap MCP setup and operations
 
-Threadmap exposes its item graph over the Model Context Protocol so ChatGPT, Claude,
-and Claude Code can read and manage tasks, projects, habits, goals, notes, and
-events. One standards-compliant server serves all of them.
+**Repository truth reviewed:** 20 August 2026
 
-- **Endpoint:** `https://threadmap.app/mcp` (Streamable HTTP)
-- **Authorization:** OAuth 2.1, authorization code + PKCE S256, dynamic client registration
-- **Owner-scoped:** the server issues tokens for exactly one Threadmap account
+Threadmap exposes its item graph through one stateless Streamable HTTP MCP endpoint:
+`https://threadmap.app/mcp`. Authorization uses OAuth 2.1 authorization code flow with PKCE S256
+and dynamic client registration. Each user consents while authenticated with Firebase, and every
+issued credential remains bound to that user's uid.
 
----
+## Architecture and trust boundary
 
-## 1. Architecture
-
+```text
+MCP host
+  │ discovery, registration, OAuth, MCP
+  ▼
+threadmap.app (Vercel / Next.js)
+  ├─ /integrations/authorize       Firebase-authenticated consent UI
+  └─ environment-aware rewrites
+       ▼
+threadmapMcp (Firebase Functions, europe-west1)
+  ├─ http.ts       routing, Firebase ID-token consent authentication, bearer gate
+  ├─ oauth.ts      client registration, grants, codes, tokens, rotation, revocation
+  ├─ sdk-server.ts per-request MCP server and scope-filtered catalog
+  ├─ tools.ts      23 tool definitions, authorization, quotas, audit records
+  └─ dal.ts        uid-scoped Firestore reads/writes and destructive safeguards
 ```
-threadmap.app  (Vercel / Next.js)
- ├── /integrations/authorize        consent screen (React, Firebase Auth)
- └── rewrites ────────────────────► Cloud Function `threadmapMcp` (us-central1)
-      /mcp                              └── src/mcp/http.ts        router + Node bridge
-      /.well-known/oauth-*                  ├── sdk-server.ts      MCP server factory
-      /api/mcp/oauth/*                      ├── oauth.ts           authorization server
-                                            ├── tools.ts           23 tools, scope + quota + audit
-                                            └── dal.ts             owner-scoped Firestore access
+
+The endpoint is multi-user. There is no `MCP_OWNER_UID`: consent binds an authorization request to
+the Firebase uid that approved it. The MCP data layer builds its principal from the validated
+access token and never accepts a user id in tool input.
+
+Production rewrites point at Firebase project `orbit-9e0b6`. Preview/development rewrites point at
+`threadmap-staging-9e0b6`; only an allowlisted Vercel preview host can influence the staging OAuth
+origin. The Settings connection card derives `/mcp` from the current browser origin, so staging
+does not advertise or authorize the production endpoint. Firebase Functions are in
+`europe-west1`; Vercel compute is independently in `fra1`.
+
+## Non-secret configuration
+
+Start from `functions/.env.example` for local/emulator configuration. Production values belong in
+the Firebase Functions environment, and secrets belong in Secret Manager.
+
+| Variable | Repository default/example | Purpose |
+| --- | --- | --- |
+| `MCP_ORIGIN` | `https://staging.threadmap.app` in the safe staging example; production explicitly uses `https://threadmap.app` | Single public issuer/resource origin from which every OAuth URL is derived |
+| `MCP_DYNAMIC_CLIENT_SCOPES` | `threadmap.read offline_access` | Space-separated maximum scopes available to dynamically registered clients in this deployment |
+| `MCP_ALLOW_LOOPBACK_REDIRECTS` | `false` | Enables RFC 8252 loopback callbacks for local native clients such as Claude Code |
+| `MCP_EXTRA_REDIRECT_URIS` | unset | Space-separated explicit callback additions after security review |
+| `ENFORCE_APP_CHECK` | `false` in the example | Callable-Function App Check switch; enable only after verified client traffic |
+
+`MCP_DISCOVERY_ORIGIN` and `MCP_CONSENT_ORIGIN` are obsolete and must not be used. Discovery,
+consent, token, registration, revocation, and resource URLs derive from `MCP_ORIGIN` so they cannot
+drift to different issuers.
+
+The code default allows read, write, and offline access, but the checked-in operational example is
+intentionally narrower: read plus offline access. Treat write/delete scope enablement as a release
+policy decision. Never add a uid, token, client secret, or redirect-specific credential to a tracked
+environment file.
+
+## Production launch policy
+
+The checked-in production workflow is the authoritative launch contract:
+
+- Dynamically registered clients receive `threadmap.read` and, when requested, `offline_access`.
+  Create, update, completion, archive, linking, and deletion tools are not exposed in production.
+- Browser-hosted ChatGPT and Claude custom connections may use HTTPS callbacks accepted by the
+  redirect policy. Each host must still pass the real-client staging drill before release sign-off.
+- Claude Code is not launch-supported. Its native OAuth flow uses a loopback callback, while
+  production deliberately sets `MCP_ALLOW_LOOPBACK_REDIRECTS=false`. Do not advertise or enable it
+  until its redirect behavior, port binding, consent flow, revocation, and post-revocation denial
+  have passed a security-reviewed compatibility drill.
+
+Enabling a broader scope or another redirect class is a security-policy change, not a routine
+configuration edit. It requires updated consent and product copy, focused authorization tests, a
+staging real-host drill, and an approved release record.
+
+## Public endpoints
+
+```text
+/mcp
+/.well-known/oauth-authorization-server
+/.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/mcp
+/api/mcp/oauth/authorize
+/api/mcp/oauth/token
+/api/mcp/oauth/register
+/api/mcp/oauth/revoke
+/integrations/authorize
 ```
 
-Responsibility split:
+All OAuth endpoints and the resource identifier share the public Threadmap origin. This is required
+for issuer/resource validation and is why clients must use `threadmap.app`, not the raw
+`cloudfunctions.net` URL.
 
-| Layer | Owns |
-|---|---|
-| `@modelcontextprotocol/server` 2.0.0 | Wire protocol: JSON-RPC framing, version negotiation, `server/discover`, `resultType`, 2025-era compatibility |
-| `http.ts` | Routing, bearer verification, consent auth, error shaping, Cloud Functions bridge |
-| `sdk-server.ts` | Registers the tool catalog on a per-request `McpServer`; filters by granted scope |
-| `tools.ts` | Tool catalog, **scope enforcement**, quota accounting, audit records |
-| `dal.ts` | Owner-scoped Firestore reads and writes, idempotency, delete confirmation |
-| `oauth.ts` / `security.ts` / `metadata.ts` | The authorization server |
+## Authorization and mutation controls
 
-The MCP HTTP layer is **stateless**: a fresh server instance is built per request
-from a cheap factory, so no sticky routing is required and horizontal scaling is
-free. Durable state lives in Firestore.
+- Authorization codes require PKCE S256 and expire quickly.
+- Opaque access/refresh credentials are stored only as hashes.
+- Refresh tokens rotate; reuse revokes the token family.
+- RFC 8707 resource binding is checked at authorization, token exchange, refresh, and tool call.
+- Dynamic client redirects are canonicalized and platform constrained; loopback is opt-in.
+- `tools/list` omits tools outside the granted scopes, and dispatch enforces scope independently.
+- Read/write/delete quotas are enforced per principal and recorded without item content or tokens.
+- Writes require the current `expected_revision` and a fresh UUID idempotency key.
+- Permanent deletion requires preview, displayed impact, explicit confirmation, and a short-lived
+  single-use token bound to user, client, item, and revision.
+- Attachments return metadata only; file URLs, storage paths, and contents are excluded.
+- An account-deletion tombstone blocks authorization, refresh, access, and data recreation.
 
-Tool input schemas are the existing JSON Schemas, handed to the SDK through
-`fromJsonSchema` — there is no second copy of the schema to drift.
+Users can list and revoke their own MCP authorizations in Settings. Revocation writes an atomic
+per-user grant barrier checked on access/refresh/code exchange before derivative tokens are swept.
+Deleting one user's grant must not revoke another user's connection to the same dynamic client.
 
----
+## Scope and tool policy
 
-## 2. Configuration
+The server implements 23 tools, but launch clients see only the read tools allowed by production
+policy:
 
-Set these for the `threadmapMcp` function. `MCP_OWNER_UID` is the only required one.
+- `threadmap.read`: overview, agenda, item search/list/detail, tags, attachment metadata, wishlist,
+  Abitur profile, focus-session logs, briefing journal, dispatch plans, settings projection, toolbox.
+- `threadmap.write`: create/update/complete/archive items, habit completion, link/unlink.
+- `threadmap.delete`: preview and confirm permanent item deletion.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `MCP_OWNER_UID` | *(none — required)* | Firebase uid of the single Threadmap account this server serves. Every token, authorization request, and tool call is checked against it. Without it the endpoint returns `503`. |
-| `MCP_ORIGIN` | `https://threadmap.app` | Public origin. Issuer, resource, and all four OAuth endpoints are derived from it. |
-| `MCP_DYNAMIC_CLIENT_SCOPES` | `threadmap.read threadmap.write offline_access` | Scopes a dynamically registered client may hold. **`threadmap.delete` is deliberately excluded** — add it here only if you want agents able to delete. A client asking for more is narrowed to this set, not refused (see below). |
-| `MCP_EXTRA_REDIRECT_URIS` | *(empty)* | Space-separated extra callbacks to allowlist beyond the built-in ChatGPT and Claude ones. |
-| `MCP_ALLOW_LOOPBACK_REDIRECTS` | `false` | Set `true` to accept RFC 8252 loopback callbacks — required for **Claude Code**. |
+`offline_access` controls refresh-token issuance and is not itself a tool scope. A client requesting
+more than policy permits is narrowed to the allowed intersection when at least one scope remains.
+Downstream scope checks remain strict. The write and delete lists above document dormant server
+capability; they are not a promise that those actions are enabled in the production launch.
 
-Find your uid in the Firebase console under Authentication, or in the browser
-console on threadmap.app while signed in:
+## Staging-first deployment
+
+Do not deploy with an implicit Firebase project. The repository default is staging, but commands
+still name the target explicitly:
 
 ```bash
-# functions/.env  (or set them in the Firebase console)
-MCP_OWNER_UID=your-firebase-uid
-MCP_ALLOW_LOOPBACK_REDIRECTS=true
+npm run release:contract
+npm run audit:regions
+npm run deploy:rules:staging
+npm run deploy:functions:staging
 ```
 
----
-
-## 3. Deploy
-
-Run in this order. Steps 1 and 2 are independent of each other; step 3 needs both.
+The retained production sequence lives in `.github/workflows/release.yml`, but an upstream blocker
+currently makes it unavailable until true staging and post-evidence approval are implemented. A
+genuine incident-only break-glass production Functions deployment requires all of the following,
+formal authorization, and the full production preflight:
 
 ```bash
-# 1. Firestore rules, indexes, and the TTL policies for OAuth state
-npm run deploy:rules
+export THREADMAP_RELEASE_SHA=<full-40-character-main-commit>
+export THREADMAP_PRODUCTION_DEPLOY_CONFIRMATION=orbit-9e0b6
+npm run deploy:functions:production
 ```
 
+The guard refuses a dirty tree, non-`main` branch, wrong SHA, wrong project, unknown resource, or
+missing production configuration. It does not replace GitHub environment approval or a rollback
+plan. The Functions codebase name in `firebase.json` is `briefing-cron`; prefer repository scripts
+over hand-written single-Function filters.
+
+## Verification
+
+Static repository gates:
+
 ```bash
-# 2. The MCP function
-npm run deploy:functions
+npm run release:contract
+npm run audit:regions
+(cd functions && npm test)
 ```
 
-```bash
-# 3. Vercel — picks up the rewrites in vercel.json plus the consent page
-git push
-```
-
-**TTL matters.** `firestore.indexes.json` declares `ttl: true` on `expireAt` for nine
-collections (authorization requests, codes, access tokens, refresh tokens, token
-families, idempotency records, delete confirmations, rate limits, audit logs).
-Without step 1, expired OAuth state accumulates forever. Confirm afterwards:
+Unauthenticated discovery probes:
 
 ```bash
-npx firebase firestore:indexes
-```
-
----
-
-## 4. Verify before connecting a host
-
-Discovery is unauthenticated, so `curl` proves most of the wiring.
-
-```bash
-curl -s https://threadmap.app/.well-known/oauth-protected-resource/mcp | jq
-```
-
-Expect `resource` to be `https://threadmap.app/mcp` and `authorization_servers` to
-be `["https://threadmap.app"]`.
-
-```bash
-curl -s https://threadmap.app/.well-known/oauth-authorization-server | jq
-```
-
-Expect `code_challenge_methods_supported: ["S256"]`, a `registration_endpoint`, and
-`none` among `token_endpoint_auth_methods_supported` (the public-client method both
-hosts use with PKCE).
-
-```bash
-curl -si -X POST https://threadmap.app/mcp \
+curl -fsS https://threadmap.app/.well-known/oauth-protected-resource/mcp
+curl -fsS https://threadmap.app/.well-known/oauth-authorization-server
+curl -i -X POST https://threadmap.app/mcp \
   -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' | head -20
+  --data '{"jsonrpc":"2.0","id":1,"method":"ping"}'
 ```
 
-Expect `401` with a `WWW-Authenticate: Bearer resource_metadata="…"` header. That
-header is how a host discovers where to authenticate; if it is missing, hosts will
-fail with an opaque error.
+The unauthenticated MCP request should return `401` and a quoted
+`WWW-Authenticate: Bearer resource_metadata="…"` challenge. Discovery must identify
+`https://threadmap.app/mcp` as the resource and `https://threadmap.app` as the authorization server.
 
-If any of these return Vercel's 404 page, the rewrite is not live. If they return
-`503 temporarily_unavailable`, `MCP_OWNER_UID` is unset.
-
----
-
-## 5. Connect a host
-
-### Claude (claude.ai / Desktop)
-
-Settings → Connectors → Add custom connector → `https://threadmap.app/mcp`.
-Claude registers itself dynamically, sends you to the Threadmap consent screen, and
-completes the flow. Its callback is `https://claude.ai/api/mcp/auth_callback`, which
-is allowlisted.
-
-### ChatGPT
-
-Enable Developer mode in settings, then Plugins → create a developer-mode app with
-`https://threadmap.app/mcp` and OAuth. Its callback is
-`https://chatgpt.com/connector/oauth/{callback_id}`, matched by pattern. Refresh the
-app after changing tools or metadata.
-
-### Claude Code
+The automated production verifier additionally checks OAuth discovery after proving the exact web
+SHA, readiness, actual Vercel region, Firebase project, Firebase Functions region, and quota
+Function reachability:
 
 ```bash
-claude mcp add --transport http threadmap https://threadmap.app/mcp
+npm run release:verify -- --url https://threadmap.app --sha <full-sha>
 ```
 
-Claude Code uses an ephemeral loopback callback, so set
-`MCP_ALLOW_LOOPBACK_REDIRECTS=true` first or registration is refused.
+This command requires `SCRAPE_RATE_LIMIT_SHARED_SECRET` in the protected process environment. Do
+not pass or print it on the command line. The quota probe expects exact `401 invalid_app_check`
+after the shared secret is accepted, establishing secret agreement and App Check enforcement
+without a real user token.
 
-### Claude API MCP connector
+An end-to-end release sign-off must use a real disposable account and host to exercise registration,
+consent, granted-scope display, token exchange, read, any enabled write, disconnect/revocation, and
+post-revocation denial. Do not create probe clients in production unless cleanup is included.
 
-Supported — the connector is tools-only, and this server's core surface is tools, so
-nothing is lost. Pass the access token as the bearer.
+## Troubleshooting
 
----
+| Symptom | First checks |
+| --- | --- |
+| Vercel 404 on `/mcp` | deployed SHA, `VERCEL_ENV`, environment-aware Next rewrites |
+| 503 configuration response | Functions environment, `MCP_ORIGIN`, deployment logs |
+| `invalid_redirect_uri` | exact registered callback, approved platform, loopback flag |
+| `invalid_scope` | dynamic scope policy and the scopes granted on the consent screen |
+| revision conflict | re-read the item and retry with its new revision and a new operation id |
+| refresh token rejected after reuse | expected family revocation; reconnect from the host |
+| one user cannot connect while another can | account-deletion tombstone or per-user revoked grant |
 
-## 6. Tool catalog
+Logs may identify route/client/token ids and scopes but must never include bearer tokens, OAuth
+codes, tool arguments, or item content. Record deployment SHA and project with every investigation.
 
-23 tools. `tools/list` is filtered to the scopes the presented token actually
-carries, so a read-only token is never offered a write tool.
+## Known operational limits
 
-| Scope | Tools |
-|---|---|
-| `threadmap.read` | `get_life_overview`, `get_agenda`, `list_items`, `search_items`, `get_item`, `list_tags`, `list_files_metadata`, `get_wishlist`, `get_abitur_profile`, `get_flight_logs`, `get_briefing_journal`, `get_dispatch_plans`, `get_settings`, `get_toolbox` |
-| `threadmap.write` | `create_item`, `update_item`, `complete_item`, `archive_item`, `set_habit_completion`, `link_items`, `unlink_items` |
-| `threadmap.delete` | `preview_delete_item`, `confirm_delete_item` |
-
-Hosts commonly request every scope the discovery document advertises. Rather than
-refuse the registration, the endpoint grants the intersection with
-`MCP_DYNAMIC_CLIENT_SCOPES` and reports the granted scope in its response — the
-behaviour RFC 7591 §2 and RFC 6749 §3.3 both provide for. So a host asking for
-`threadmap.delete` connects successfully with read and write, and simply never
-sees the two delete tools. Registration is refused only when *nothing* requested
-is grantable.
-
-Write safety, enforced server-side regardless of what a host or model claims:
-
-- Mutations require `expected_revision` and fail on a stale revision.
-- Every write requires a fresh `client_request_id` UUID; replays are idempotent.
-- Deletion is two-stage: `preview_delete_item` returns the impact plus a
-  short-lived, single-use token bound to owner, client, and revision, which
-  `confirm_delete_item` must present.
-- File metadata only — names, MIME types, sizes, timestamps. Never URLs, storage
-  paths, or contents.
-- `get_settings` returns an allowlisted projection; email, bio, tokens, and secrets
-  are excluded.
-
----
-
-## 7. Security model
-
-| Control | Where |
-|---|---|
-| PKCE S256 required; `plain` rejected | `security.ts` |
-| Tokens stored only as SHA-256 hashes; constant-time comparison | `security.ts` |
-| Refresh-token rotation with reuse detection that revokes the whole token family | `oauth.ts` |
-| RFC 8707 resource binding checked on authorize, token, and every call | `oauth.ts` |
-| Redirect URIs allowlisted in canonical form; one platform per dynamic client | `security.ts` |
-| Access tokens capped at one hour | `oauth.ts` |
-| Tokens refused once an account-deletion job exists | `oauth.ts` |
-| Per-tool scope check before dispatch, plus per-kind quotas and an audit record | `tools.ts` |
-| Bounded outputs (60 KB per result, 12 KB per content field) | `dal.ts` |
-| Consent endpoints separated from MCP endpoints, with distinct token parsers | `http.ts` |
-| Browser Origin allowlist on consent endpoints | `http.ts` |
-| No stack traces, Firestore detail, or token material in any error response | `http.ts` |
-
-Two properties worth stating explicitly:
-
-**Item text is data, not instructions.** Notes and titles are the user's own
-content and can contain anything, including text that looks like a command. The
-server never interprets it, and the server `instructions` tell the model the same.
-Nothing an item says can widen a scope, skip a confirmation, or trigger a tool.
-
-**Annotations and host dialogs are not security.** `readOnlyHint`,
-`destructiveHint`, `securitySchemes`, and the host's own approval prompt are all
-advisory. Authorization happens on the server, every call.
-
----
-
-## 8. Compatibility
-
-| Surface | Transport | Status |
-|---|---|---|
-| Claude.ai / Desktop connector | Streamable HTTP | Supported |
-| ChatGPT developer-mode plugin | Streamable HTTP | Supported |
-| Claude Code | Streamable HTTP | Supported with `MCP_ALLOW_LOOPBACK_REDIRECTS=true` |
-| Claude API MCP connector | Streamable HTTP, tools only | Supported |
-
-Protocol revisions: the SDK serves **2026-07-28** and keeps 2025-era Streamable
-HTTP working through its stateless legacy path (`legacy: 'stateless'`, the default).
-Both paths are covered by tests — the end-to-end suite drives a 2025-era client,
-which is what hosts send today.
-
-Not implemented, by choice: prompts, resources, subscriptions, sampling,
-elicitation, and MCP Apps UI. Host support for those differs, and every workflow
-here is tool-driven so nothing depends on them.
-
----
-
-## 9. Operations
-
-**Logs.** The function emits structured JSON to Cloud Logging with
-`component: "mcp"`, carrying route, client id, token id, and scopes. Tokens, tool
-arguments, and item content are never logged.
-
-**Revoking a connection.** Deleting the client document in `mcpOAuthClients`
-invalidates every token derived from it immediately — `authenticateAccessToken`
-re-checks the client on every call.
-
-**Rotating the owner.** Changing `MCP_OWNER_UID` invalidates all existing tokens,
-since tokens are bound to the owner uid.
-
-**Quotas.** Per token, per minute: 120 read, 30 write, 5 delete calls.
-
-### Troubleshooting
-
-| Symptom | Cause |
-|---|---|
-| `503 temporarily_unavailable` | `MCP_OWNER_UID` unset |
-| Vercel 404 on `/mcp` | Rewrites not deployed |
-| `invalid_client` at the token endpoint | Client registered with a different auth method than it is presenting |
-| `redirect_uri is not an approved …` on registration | Claude Code without `MCP_ALLOW_LOOPBACK_REDIRECTS=true`, or a client not on the allowlist |
-| Consent screen says the request is invalid or expired | Authorization requests live 10 minutes; restart from the client |
-| Tool calls return `insufficient_scope` | The scope was never granted — check `MCP_DYNAMIC_CLIENT_SCOPES`, then reconnect |
-| Write returns a revision conflict | The item changed since it was read; re-read and retry |
-
----
-
-## 10. Tests
-
-```bash
-cd functions && npm test
-```
-
-37 tests, no external services required:
-
-| Suite | Covers |
-|---|---|
-| `oauth.test.ts` | PKCE against the RFC 7636 example, redirect classification, resource and scope binding, metadata, TTL caps, error serialization, and the full DCR → consent → code → access → refresh-rotation → replay-revocation flow |
-| `http.test.ts` | Both discovery documents, the bearer gate and its `WWW-Authenticate` challenge, consent auth and Origin checks, method and route handling, open-redirect refusal, the Cloud Functions bridge, and an **end-to-end register → authorize → consent → token → `initialize` → `tools/list` → `tools/call` → refresh → replay** run over HTTP |
-| `sdk-server.test.ts` | Catalog registration and deterministic order, schema round-trip, `_meta.securitySchemes`, scope-filtered listing, and that enforcement is independent of what was advertised |
-| `dal.test.ts` | Content projection: plain text preserved, legacy HTML reduced, script and style removed, truncation |
-
----
-
-## 11. Known limits
-
-- **Bundle size.** The SDK adds ~7.5 MB unpacked, which is cold-start weight. If it
-  becomes noticeable, split `threadmapMcp` into its own codebase so the briefing,
-  push, and deletion functions do not load it.
-- **Single owner.** One `MCP_OWNER_UID` per deployment. Multi-account support would
-  need the consent screen to bind a request to the signed-in uid rather than
-  asserting a configured one.
-- **No `search`/`fetch` compatibility tools.** ChatGPT deep-research retrieval
-  expects that specific pair; `search_items` and `get_item` are the equivalents but
-  are not wire-compatible with it. Add them if that workflow matters.
-- **Content format is inferred.** `htmlToPlainText` detects HTML rather than being
-  told. A plain-text note that literally contains something like `<b>` is treated as
-  markup. A `contentFormat` field on the item would remove the guess.
+- The MCP SDK contributes to Functions cold-start weight; measure before splitting codebases.
+- Search operates on a bounded owner-scoped window rather than a dedicated search index.
+- Host support for MCP prompts/resources/apps differs; Threadmap deliberately exposes tools only.
+- Browser/curl probes cannot replace a real host compatibility test after OAuth changes.

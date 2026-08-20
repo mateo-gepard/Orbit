@@ -37,3 +37,19 @@ export function mfaRecoveryDigest(code: string, secret: string): string {
   }
   return createHmac('sha256', secret).update(`threadmap-mfa-recovery:v1:${normalized}`).digest('hex');
 }
+
+/** A code is usable only while it belongs to the account's current code set. */
+export function isCurrentMfaRecoveryCode(
+  code: Record<string, unknown>,
+  set: Record<string, unknown>,
+  now: number,
+): code is Record<string, unknown> & { uid: string; generationId: string } {
+  return code.status === 'active'
+    && typeof code.uid === 'string'
+    && typeof code.generationId === 'string'
+    && Number(code.expiresAt || 0) > now
+    && set.uid === code.uid
+    && set.generationId === code.generationId
+    && Number(set.expiresAt || 0) > now
+    && Number(set.remaining || 0) > 0;
+}

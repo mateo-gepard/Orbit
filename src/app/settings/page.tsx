@@ -62,6 +62,7 @@ import {
   hasCalendarPermission,
   prepareGoogleCalendarPermission,
   requestCalendarPermission,
+  revokeGoogleCalendarAccess,
 } from '@/lib/google-calendar';
 import {
   createDurableAccountExport,
@@ -197,17 +198,24 @@ function Toggle({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        'relative h-[22px] w-[40px] rounded-full transition-colors duration-200',
-        checked ? 'bg-foreground' : 'bg-foreground/15',
+        'relative -mx-0.5 -my-[11px] flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-200',
         disabled && 'cursor-wait opacity-60'
       )}
     >
       <span
+        aria-hidden="true"
         className={cn(
-          'absolute top-[2px] left-[2px] h-[18px] w-[18px] rounded-full bg-background shadow-sm transition-transform duration-200',
-          checked && 'translate-x-[18px]'
+          'relative h-[22px] w-[40px] rounded-full transition-colors duration-200',
+          checked ? 'bg-foreground' : 'bg-[var(--copy-tertiary)]'
         )}
-      />
+      >
+        <span
+          className={cn(
+            'absolute left-[2px] top-[2px] h-[18px] w-[18px] rounded-full bg-background shadow-sm transition-transform duration-200',
+            checked && 'translate-x-[18px]'
+          )}
+        />
+      </span>
     </button>
   );
 }
@@ -227,7 +235,7 @@ function SelectDropdown<T extends string>({
       aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      className="appearance-none rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 outline-none focus:ring-1 focus:ring-foreground/20 cursor-pointer pr-7 w-full sm:w-auto sm:min-w-[120px]"
+      className="h-11 w-full cursor-pointer appearance-none rounded-lg border border-border/50 bg-background px-3 py-1.5 pr-7 text-[12px] font-medium text-foreground/80 outline-none focus:ring-1 focus:ring-foreground/20 sm:w-auto sm:min-w-[120px] lg:h-9"
       style={{
         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
         backgroundRepeat: 'no-repeat',
@@ -272,7 +280,7 @@ function NumberInput({
         min={min}
         max={max}
         step={step}
-        className="w-[70px] rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-[12px] font-medium text-foreground/80 outline-none focus:ring-1 focus:ring-foreground/20 tabular-nums text-right"
+        className="h-11 w-[70px] rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-right text-[12px] font-medium tabular-nums text-foreground/80 outline-none focus:ring-1 focus:ring-foreground/20 lg:h-9"
       />
       {suffix && <span className="text-[11px] text-muted-foreground/50">{suffix}</span>}
     </div>
@@ -493,13 +501,13 @@ function NotificationsSection({
             permGranted ? 'bg-emerald-500/10' : permDenied ? 'bg-red-500/10' : permUnsupported ? 'bg-amber-500/10' : 'bg-blue-500/10',
           )}>
             {permGranted ? (
-              <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <Check className="h-4 w-4 text-emerald-700 dark:text-emerald-300" />
             ) : permDenied ? (
               <AlertTriangle className="h-4 w-4 text-red-500 dark:text-red-400" />
             ) : permUnsupported ? (
-              <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <Info className="h-4 w-4 text-amber-700 dark:text-amber-300" />
             ) : (
-              <BellRing className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <BellRing className="h-4 w-4 text-blue-700 dark:text-blue-300" />
             )}
           </div>
           <div className="flex-1 min-w-0">
@@ -534,7 +542,7 @@ function NotificationsSection({
             <button
               onClick={handleRequestPermission}
               className={cn(
-                'shrink-0 rounded-lg px-3.5 py-1.5 text-[11px] font-semibold transition-all mt-0.5',
+                'mt-0.5 min-h-11 shrink-0 rounded-lg px-3.5 py-1.5 text-[11px] font-semibold transition-all lg:min-h-9',
                 permDenied
                   ? 'bg-muted/60 text-muted-foreground/40 cursor-not-allowed'
                   : 'bg-foreground text-background hover:opacity-80 active:scale-95',
@@ -564,7 +572,7 @@ function NotificationsSection({
           type="button"
           onClick={() => setNested('notifications', { sound: !settings.notifications.sound })}
           aria-pressed={settings.notifications.sound}
-          className="flex items-center gap-1.5 text-[12px] text-muted-foreground/60"
+          className="flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-[12px] text-muted-foreground/70 lg:min-h-9"
         >
           {settings.notifications.sound ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           {settings.notifications.sound ? t('common.on') : t('common.off')}
@@ -588,7 +596,7 @@ function NotificationsSection({
               type="time"
               value={settings.notifications.dailyBriefingTime}
               onChange={(e) => setNested('notifications', { dailyBriefingTime: e.target.value })}
-              className="rounded-lg border border-border/50 bg-background px-2 py-1 text-[11px] font-mono outline-none"
+              className="h-11 rounded-lg border border-border/50 bg-background px-2 py-1 text-[11px] font-mono outline-none lg:h-9"
             />
           )}
         </div>
@@ -606,7 +614,7 @@ function NotificationsSection({
               type="time"
               value={settings.notifications.eveningBriefingTime}
               onChange={(e) => setNested('notifications', { eveningBriefingTime: e.target.value })}
-              className="rounded-lg border border-border/50 bg-background px-2 py-1 text-[11px] font-mono outline-none"
+              className="h-11 rounded-lg border border-border/50 bg-background px-2 py-1 text-[11px] font-mono outline-none lg:h-9"
             />
           )}
         </div>
@@ -626,9 +634,9 @@ function NotificationsSection({
             onClick={handleTestMorning}
             disabled={testSent === 'morning'}
             className={cn(
-              'flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-medium transition-all',
+              'flex min-h-11 items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-medium transition-all lg:min-h-9',
               testSent === 'morning'
-                ? 'border-green-500/30 bg-green-500/10 text-green-600'
+                ? 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300'
                 : 'hover:bg-muted/40 text-muted-foreground'
             )}
           >
@@ -639,9 +647,9 @@ function NotificationsSection({
             onClick={handleTestEvening}
             disabled={testSent === 'evening'}
             className={cn(
-              'flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-medium transition-all',
+              'flex min-h-11 items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-medium transition-all lg:min-h-9',
               testSent === 'evening'
-                ? 'border-green-500/30 bg-green-500/10 text-green-600'
+                ? 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300'
                 : 'hover:bg-muted/40 text-muted-foreground'
             )}
           >
@@ -675,13 +683,13 @@ function NotificationsSection({
               {fcmStatus === 'registered' ? (
                 <div className="flex items-center gap-1.5">
                   <div className="h-2 w-2 rounded-full bg-emerald-500" />
-                  <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">{t('settings.active')}</span>
+                  <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300">{t('settings.active')}</span>
                 </div>
               ) : fcmStatus === 'unregistered' && user ? (
                 <button
                   onClick={handleEnableBackgroundPush}
                   disabled={pushPending}
-                  className="rounded-lg bg-foreground px-3 py-1.5 text-[10px] font-semibold text-background transition-opacity hover:opacity-80 active:scale-95 disabled:cursor-wait disabled:opacity-50"
+                  className="min-h-11 rounded-lg bg-foreground px-3 py-1.5 text-[10px] font-semibold text-background transition-opacity hover:opacity-80 active:scale-95 disabled:cursor-wait disabled:opacity-50 lg:min-h-9"
                 >
                   {pushPending ? t('settings.enablingPush') : t('settings.enablePush')}
                 </button>
@@ -713,7 +721,7 @@ function NotificationsSection({
                             {device.userAgent ? getDeviceLabel(device.userAgent) : t('settings.unknownDevice')}
                           </p>
                           {device.isCurrentDevice && (
-                            <span className="text-[8px] font-bold uppercase tracking-wider bg-foreground/10 text-foreground/50 px-1.5 py-0.5 rounded">{t('settings.currentDevice')}</span>
+                            <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-foreground">{t('settings.currentDevice')}</span>
                           )}
                         </div>
                         <p className="text-[9px] text-muted-foreground/30">
@@ -732,7 +740,7 @@ function NotificationsSection({
                       onClick={() => handleRemoveDevice(device.docId)}
                       disabled={removingDevice === device.docId}
                       className={cn(
-                        'shrink-0 ml-2 rounded-lg p-1.5 text-muted-foreground/25 hover:text-red-500 hover:bg-red-500/10 transition-all',
+                        'mobile-touch-target ml-2 shrink-0 rounded-lg p-1.5 text-muted-foreground/25 transition-all hover:bg-red-500/10 hover:text-red-500',
                         removingDevice === device.docId && 'opacity-30 pointer-events-none',
                       )}
                       title={t('settings.removeDevice')}
@@ -777,6 +785,8 @@ export default function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [calendarConnecting, setCalendarConnecting] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarAuthorizationState, setCalendarAuthorizationState] = useState<
@@ -807,6 +817,7 @@ export default function SettingsPage() {
   }));
   const accountExportAbortRef = useRef<AbortController | null>(null);
   const deletionInFlightRef = useRef(false);
+  const signOutInFlightRef = useRef(false);
 
   const timezoneDraft = timezoneEditor.savedValue === settings.timezone
     ? timezoneEditor.draft
@@ -996,12 +1007,95 @@ export default function SettingsPage() {
     return true;
   };
 
+  const handleSecureSignOut = async (): Promise<boolean> => {
+    if (signOutInFlightRef.current) return false;
+    signOutInFlightRef.current = true;
+    setSigningOut(true);
+    try {
+      const result = await signOut();
+      if (!result.localCleanupComplete || !result.notificationCleanupComplete) {
+        const warnings = lang === 'de' ? [
+          ...(result.localCleanupComplete ? [] : ['Ein Teil der Browserdaten konnte nicht entfernt werden; dauerhaftes Caching bleibt deaktiviert. Schließe alle Threadmap-Tabs.']),
+          ...(result.notificationCleanupComplete ? [] : ['Die Benachrichtigungsregistrierung konnte nicht vollständig deaktiviert werden. Deaktiviere Threadmap-Benachrichtigungen in den Browser-Einstellungen.']),
+        ] : [
+          ...(result.localCleanupComplete ? [] : ['Some browser data could not be removed; persistent caching remains disabled. Close every Threadmap tab.']),
+          ...(result.notificationCleanupComplete ? [] : ['The notification registration could not be fully disabled. Turn off Threadmap notifications in your browser settings.']),
+        ];
+        toast.warning(warnings.join(' '));
+      }
+      return true;
+    } catch {
+      toast.error(lang === 'de'
+        ? 'Die sichere Abmeldung konnte nicht abgeschlossen werden. Du bist weiterhin angemeldet; versuche es erneut.'
+        : 'Secure sign-out could not finish. You are still signed in; try again.');
+      return false;
+    } finally {
+      setSigningOut(false);
+      signOutInFlightRef.current = false;
+    }
+  };
+
+  const notifyAccountDeletionOutcome = (
+    result: Awaited<ReturnType<typeof deleteAccount>>,
+  ) => {
+    const teardownComplete = result.localCleanupComplete
+      && result.notificationCleanupComplete
+      && result.authCleanupComplete
+      && result.integrationCleanupComplete;
+    if (!teardownComplete) {
+      const status = lang === 'de'
+        ? result.status === 'unknown'
+          ? 'Der Löschstatus konnte nicht bestätigt werden.'
+          : result.status === 'pending'
+            ? 'Die Kontolöschung wurde angenommen und wird im Hintergrund abgeschlossen.'
+            : 'Dein Konto wurde gelöscht.'
+        : result.status === 'unknown'
+          ? 'Deletion status could not be confirmed.'
+          : result.status === 'pending'
+            ? 'Account deletion was accepted and is finishing in the background.'
+            : 'Your account was deleted.';
+      const warnings = lang === 'de' ? [
+        ...(result.authCleanupComplete ? ['Du wurdest abgemeldet.'] : ['Die lokale Abmeldung konnte nicht bestätigt werden.']),
+        ...(result.localCleanupComplete ? [] : ['Ein Teil der Browserdaten konnte nicht entfernt werden; dauerhaftes Caching bleibt deaktiviert. Schließe alle Threadmap-Tabs.']),
+        ...(result.notificationCleanupComplete ? [] : ['Die Benachrichtigungsregistrierung konnte nicht vollständig deaktiviert werden. Deaktiviere Threadmap-Benachrichtigungen in den Browser-Einstellungen.']),
+        ...(result.integrationCleanupComplete ? [] : ['Die Google-Kalenderfreigabe konnte nicht bestätigt werden. Entferne Threadmap gegebenenfalls in den Sicherheitseinstellungen deines Google-Kontos.']),
+        ...(result.status === 'unknown' ? ['Melde dich später erneut an oder kontaktiere den Support, um den Status zu prüfen.'] : []),
+      ] : [
+        ...(result.authCleanupComplete ? ['You were signed out.'] : ['Local sign-out could not be confirmed.']),
+        ...(result.localCleanupComplete ? [] : ['Some browser data could not be removed; persistent caching remains disabled. Close every Threadmap tab.']),
+        ...(result.notificationCleanupComplete ? [] : ['The notification registration could not be fully disabled. Turn off Threadmap notifications in your browser settings.']),
+        ...(result.integrationCleanupComplete ? [] : ['Google Calendar consent could not be confirmed revoked. Remove Threadmap in your Google Account security settings if it is still listed.']),
+        ...(result.status === 'unknown' ? ['Sign in later or contact support to recheck the status.'] : []),
+      ];
+      toast.warning(`${status} ${warnings.join(' ')}`);
+      return;
+    }
+    if (result.status === 'unknown') {
+      toast.warning(lang === 'de'
+        ? 'Der Löschstatus konnte nicht bestätigt werden. Du wurdest sicher abgemeldet und die Kontodaten dieses Geräts wurden entfernt. Melde dich später erneut an oder kontaktiere den Support, um den Status zu prüfen.'
+        : 'Deletion status could not be confirmed. You were securely signed out and this device’s account data was removed. Sign in later or contact support to recheck the status.');
+      return;
+    }
+
+    if (result.status === 'pending') {
+      toast.info(lang === 'de'
+        ? 'Die Kontolöschung wurde sicher vorgemerkt und wird im Hintergrund verarbeitet. Du wurdest abgemeldet und die lokalen Daten dieses Geräts wurden entfernt.'
+        : 'Account deletion is safely queued and processing in the background. You were signed out and this device’s local data was removed.');
+      return;
+    }
+
+    toast.success(lang === 'de'
+      ? 'Dein Konto und die zugehörigen Daten wurden gelöscht.'
+      : 'Your account and its associated data were deleted.');
+  };
+
   const handleDeleteAccount = async (): Promise<boolean> => {
     if (deletionInFlightRef.current) return false;
     deletionInFlightRef.current = true;
     setDeletingAccount(true);
     try {
-      await deleteAccount();
+      const result = await deleteAccount();
+      notifyAccountDeletionOutcome(result);
       return true;
     } catch (error) {
       const currentUser = auth?.currentUser;
@@ -1111,7 +1205,8 @@ export default function SettingsPage() {
       // One retry only. A second recent-login failure becomes an actionable
       // error instead of a loop that could open repeated auth prompts.
       deletionRetryStarted = true;
-      await deleteAccount();
+      const result = await deleteAccount();
+      notifyAccountDeletionOutcome(result);
       setDeletionReauth(null);
     } catch (error) {
       if (deletionRetryStarted && !isRecentLoginRequiredError(error)) {
@@ -1135,10 +1230,30 @@ export default function SettingsPage() {
   const handleCalendarSyncChange = async (enabled: boolean) => {
     if (calendarConnecting) return;
     if (!enabled) {
-      stopGoogleCalendarSync();
-      clearGoogleAccessToken();
-      setCalendarConnected(false);
-      setNested('calendar', { googleCalendarSync: false });
+      setCalendarConnecting(true);
+      let outcome: Awaited<ReturnType<typeof revokeGoogleCalendarAccess>> = 'local-only';
+      try {
+        // Revocation needs the still-valid token. Only clear local credentials
+        // and stop the scheduler after Google has answered (or timed out).
+        outcome = await revokeGoogleCalendarAccess();
+      } catch {
+        outcome = 'local-only';
+      } finally {
+        stopGoogleCalendarSync();
+        clearGoogleAccessToken();
+        setCalendarConnected(false);
+        setNested('calendar', { googleCalendarSync: false });
+        setCalendarConnecting(false);
+      }
+      if (outcome === 'revoked') {
+        toast.success(lang === 'de'
+          ? 'Die Google-Kalendersynchronisierung ist deaktiviert und die Google-Zustimmung für Threadmap wurde widerrufen.'
+          : 'Google Calendar sync is off and Threadmap’s Google consent was revoked.');
+      } else {
+        toast.warning(lang === 'de'
+          ? 'Die Kalendersynchronisierung ist lokal deaktiviert, aber der Widerruf bei Google konnte nicht bestätigt werden. Entferne Threadmap in den Drittanbieter-Verbindungen deines Google-Kontos, um den Zugriff garantiert zu entziehen.'
+          : 'Calendar sync is off locally, but Google consent could not be confirmed as revoked. Remove Threadmap from your Google Account’s third-party connections to guarantee access is withdrawn.');
+      }
       return;
     }
     if (!user || isDemo || user.uid === 'demo-user') {
@@ -1233,10 +1348,10 @@ export default function SettingsPage() {
         <div className="mt-auto pt-4 border-t border-border/30 px-3">
           <button
             type="button"
-            onClick={signOut}
-            className="flex items-center gap-2 text-[12px] text-muted-foreground/50 hover:text-destructive transition-colors"
+            onClick={() => setShowSignOutConfirm(true)}
+            className="flex min-h-11 w-full items-center rounded-lg text-[12px] text-muted-foreground/70 transition-colors hover:text-destructive"
           >
-            {t('settings.signOut')}
+            {lang === 'de' ? 'Abmelden und Gerät vergessen' : 'Sign out and forget device'}
           </button>
         </div>
       </nav>
@@ -1301,7 +1416,7 @@ export default function SettingsPage() {
                     {user?.email || ''}
                   </p>
                   {isDemo && (
-                    <span className="inline-block mt-1 text-[10px] text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full font-medium">
+                    <span className="mt-1 inline-block rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-300">
                       {t('settings.demoMode')}
                     </span>
                   )}
@@ -1314,7 +1429,7 @@ export default function SettingsPage() {
                   value={settings.displayName || user?.displayName || ''}
                   onChange={(e) => set('displayName', e.target.value)}
                   placeholder={user?.displayName || t('settings.yourNamePlaceholder')}
-                  className="w-full sm:w-[180px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20"
+                  className="h-11 w-full rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20 sm:w-[180px] lg:h-9"
                 />
               </SettingRow>
 
@@ -1330,7 +1445,7 @@ export default function SettingsPage() {
                   value={settings.bio}
                   onChange={(e) => set('bio', e.target.value)}
                   placeholder={t('settings.bioPlaceholder')}
-                  className="w-full sm:w-[180px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20"
+                  className="h-11 w-full rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium outline-none focus:ring-1 focus:ring-foreground/20 sm:w-[180px] lg:h-9"
                 />
               </SettingRow>
 
@@ -1357,7 +1472,7 @@ export default function SettingsPage() {
                       })}
                       placeholder="Europe/Berlin"
                       className={cn(
-                        'min-h-9 min-w-0 flex-1 rounded-lg border bg-background px-3 py-1.5 font-mono text-[12px] font-medium outline-none focus:ring-1',
+                        'min-h-11 min-w-0 flex-1 rounded-lg border bg-background px-3 py-1.5 font-mono text-[12px] font-medium outline-none focus:ring-1 lg:min-h-9',
                         timezoneFeedback === 'invalid'
                           ? 'border-destructive/60 focus:ring-destructive/30'
                           : 'border-border/50 focus:ring-foreground/20'
@@ -1365,7 +1480,7 @@ export default function SettingsPage() {
                     />
                     <button
                       type="submit"
-                      className="min-h-9 rounded-lg bg-foreground px-3 text-[12px] font-medium text-background transition-opacity hover:opacity-85"
+                      className="min-h-11 rounded-lg bg-foreground px-3 text-[12px] font-medium text-background transition-opacity hover:opacity-85 lg:min-h-9"
                     >
                       {t('settings.save')}
                     </button>
@@ -1380,7 +1495,7 @@ export default function SettingsPage() {
                         timezoneFeedback === 'invalid'
                           ? 'text-destructive'
                           : timezoneFeedback
-                            ? 'text-emerald-600 dark:text-emerald-400'
+                            ? 'text-emerald-700 dark:text-emerald-300'
                             : 'text-muted-foreground/60'
                       )}
                     >
@@ -1397,7 +1512,7 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={handleTimezoneDetection}
-                      className="min-h-9 shrink-0 rounded-lg border border-border/50 px-3 text-[11px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.04]"
+                      className="min-h-11 shrink-0 rounded-lg border border-border/50 px-3 text-[11px] font-medium text-foreground/75 transition-colors hover:bg-foreground/[0.04] lg:min-h-9"
                     >
                       {t('settings.detectFromDevice')}
                     </button>
@@ -1410,7 +1525,7 @@ export default function SettingsPage() {
                   href="https://github.com/mateo-gepard/Threadmap/issues/new"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-lg border border-border/50 px-3 py-1.5 text-[12px] font-medium text-foreground/80 hover:bg-foreground/[0.04]"
+                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border/50 px-3 py-1.5 text-[12px] font-medium text-foreground/80 hover:bg-foreground/[0.04] lg:min-h-9"
                 >
                   {t('settings.openIssue')} <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
                 </a>
@@ -1436,7 +1551,7 @@ export default function SettingsPage() {
                       onClick={() => handleThemeChange(opt.value)}
                       aria-pressed={settings.theme === opt.value}
                       className={cn(
-                        'flex flex-1 sm:flex-initial items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors',
+                        'flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors sm:flex-initial lg:min-h-9',
                         settings.theme === opt.value
                           ? 'bg-foreground text-background'
                           : 'text-muted-foreground/60 hover:text-foreground'
@@ -1456,7 +1571,7 @@ export default function SettingsPage() {
                     type="color"
                     value={settings.accentColor}
                     onChange={(e) => set('accentColor', e.target.value)}
-                    className="h-7 w-7 rounded-lg border border-border/40 cursor-pointer"
+                    className="mobile-touch-target h-11 w-11 cursor-pointer rounded-lg border border-border/40 lg:h-7 lg:w-7"
                   />
                   <span className="text-[10px] font-mono text-muted-foreground/40">{settings.accentColor}</span>
                 </div>
@@ -1579,7 +1694,7 @@ export default function SettingsPage() {
                 border={false}
               >
                 {installStatus === 'installed' ? (
-                  <span className="flex min-h-11 items-center gap-1.5 text-[12px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="flex min-h-11 items-center gap-1.5 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">
                     <Check className="h-3.5 w-3.5" aria-hidden="true" />
                     {t('settings.installed')}
                   </span>
@@ -1615,7 +1730,9 @@ export default function SettingsPage() {
                   {calendarConnecting && (
                     <span role="status" className="flex items-center gap-1 text-[11px] text-muted-foreground">
                       <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
-                      {t('settings.connecting')}
+                      {settings.calendar.googleCalendarSync
+                        ? (lang === 'de' ? 'Google-Zugriff wird widerrufen…' : 'Revoking Google access…')
+                        : t('settings.connecting')}
                     </span>
                   )}
                   {!calendarConnecting && calendarAuthorizationState === 'loading' && !hasCalendarPermission() && (
@@ -1640,11 +1757,13 @@ export default function SettingsPage() {
                     </span>
                   )}
                   <Toggle
-                    checked={settings.calendar.googleCalendarSync && calendarConnected}
+                    checked={settings.calendar.googleCalendarSync}
                     disabled={calendarConnecting || calendarAuthorizationState === 'loading'}
                     onChange={handleCalendarSyncChange}
                     ariaLabel={settings.calendar.googleCalendarSync && !calendarConnected
-                      ? (t('settings.reconnectGoogleCalendar'))
+                      ? (lang === 'de'
+                          ? 'Google-Kalendersynchronisierung deaktivieren'
+                          : 'Turn off Google Calendar sync')
                       : t('settings.calendarSync')}
                   />
                 </div>
@@ -1806,7 +1925,7 @@ export default function SettingsPage() {
                     onClick={handleExportAllData}
                     disabled={exportingAllData}
                     aria-busy={exportingAllData}
-                    className="flex items-center gap-1.5 rounded-lg bg-foreground text-background px-3 py-1.5 text-[12px] font-medium hover:bg-foreground/90 transition-colors disabled:cursor-wait disabled:opacity-50"
+                    className="flex min-h-11 items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-wait disabled:opacity-50 lg:min-h-9"
                   >
                     {exportingAllData ? <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
                     {exportingAllData ? t('settings.exporting') : t('settings.exportAllData')}
@@ -1815,7 +1934,7 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() => accountExportAbortRef.current?.abort()}
-                      className="rounded-lg border border-border/60 px-3 py-1.5 text-[12px] font-medium hover:bg-muted/50"
+                      className="min-h-11 rounded-lg border border-border/60 px-3 py-1.5 text-[12px] font-medium hover:bg-muted/50 lg:min-h-9"
                     >
                       {t('common.cancel')}
                     </button>
@@ -1876,7 +1995,7 @@ export default function SettingsPage() {
               <SettingRow label={t('settings.exportSettings')} description={t('settings.exportSettingsDesc')}>
                 <button
                   onClick={handleExportData}
-                  className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 hover:bg-foreground/[0.03] transition-colors"
+                  className="flex min-h-11 items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 transition-colors hover:bg-foreground/[0.03] lg:min-h-9"
                 >
                   <Download className="h-3 w-3" />
                   {t('settings.exportSettings')}
@@ -1886,7 +2005,7 @@ export default function SettingsPage() {
               <SettingRow label={t('settings.importSettings')} description={t('settings.importSettingsDesc')}>
                 <button
                   onClick={handleImportData}
-                  className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 hover:bg-foreground/[0.03] transition-colors"
+                  className="flex min-h-11 items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/80 transition-colors hover:bg-foreground/[0.03] lg:min-h-9"
                 >
                   <Upload className="h-3 w-3" />
                   {t('settings.importSettings')}
@@ -1919,7 +2038,7 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() => setShowResetConfirm(true)}
-                      className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-[12px] font-medium text-destructive/80 hover:bg-destructive/5 transition-colors w-fit"
+                      className="flex min-h-11 w-fit items-center gap-1.5 rounded-lg border border-destructive/40 px-3 py-1.5 text-[12px] font-medium text-destructive transition-colors hover:bg-destructive/5 lg:min-h-9"
                     >
                       <RotateCcw className="h-3 w-3" />
                       {t('settings.reset')}
@@ -1935,7 +2054,7 @@ export default function SettingsPage() {
                       type="button"
                       onClick={() => setShowDeleteConfirm(true)}
                       disabled={deletingAccount}
-                      className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-[12px] font-medium text-destructive/80 hover:bg-destructive/5 transition-colors w-fit disabled:cursor-wait disabled:opacity-50"
+                      className="flex min-h-11 w-fit items-center gap-1.5 rounded-lg border border-destructive/40 px-3 py-1.5 text-[12px] font-medium text-destructive transition-colors hover:bg-destructive/5 disabled:cursor-wait disabled:opacity-50 lg:min-h-9"
                     >
                       {deletingAccount ? <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                       {deletingAccount ? t('settings.deleting') : t('settings.deleteAccount')}
@@ -2012,20 +2131,23 @@ export default function SettingsPage() {
                 <p className="mt-1">
                   {t('settings.signOutSignBackIn')}
                 </p>
+                <p className="mt-2 font-medium text-amber-800 dark:text-amber-200">
+                  {lang === 'de'
+                    ? 'Die sichere Abmeldung entfernt die lokalen und Offline-Wiederherstellungsdaten dieses Kontos von diesem Browser. Noch nicht synchronisierte Änderungen gehen verloren.'
+                    : 'Secure sign-out removes this account’s local and offline recovery data from this browser. Changes that have not synced will be lost.'}
+                </p>
                 <Button
                   type="button"
                   variant="link"
                   size="sm"
-                  className="mt-1 h-auto p-0"
-                  disabled={reauthenticatingDeletion}
+                  className="mt-1 min-h-11 p-0"
+                  disabled={reauthenticatingDeletion || signingOut}
                   onClick={() => {
                     closeDeletionReauth();
-                    void signOut().catch(() => {
-                      toast.error(t('settings.couldNotSignOut'));
-                    });
+                    void handleSecureSignOut();
                   }}
                 >
-                  {t('settings.signOutNow')}
+                  {signingOut ? t('common.working') : t('settings.signOutNow')}
                 </Button>
               </div>
             </form>
@@ -2046,6 +2168,11 @@ export default function SettingsPage() {
                 {lang === 'de'
                   ? `Melde dich ab, mit ${deletionReauth.providerLabel || 'deinem ursprünglichen Anbieter'} wieder an und starte die Löschung innerhalb von 10 Minuten erneut. Es wurde nichts gelöscht.`
                   : `Sign out, sign back in with ${deletionReauth.providerLabel || 'your original provider'}, and start deletion again within 10 minutes. Nothing was deleted.`}
+              </p>
+              <p className="mt-2 font-medium text-amber-950 dark:text-amber-100">
+                {lang === 'de'
+                  ? 'Die Abmeldung vergisst dieses Gerät sicher. Lokale und Offline-Wiederherstellungsdaten sowie noch nicht synchronisierte Änderungen werden entfernt.'
+                  : 'Signing out securely forgets this device. Local and offline recovery data, including changes that have not synced, will be removed.'}
               </p>
             </div>
           )}
@@ -2090,20 +2217,36 @@ export default function SettingsPage() {
             {deletionReauth?.method === 'unsupported' && (
               <Button
                 type="button"
-                disabled={reauthenticatingDeletion}
+                disabled={reauthenticatingDeletion || signingOut}
                 onClick={() => {
                   closeDeletionReauth();
-                  void signOut().catch(() => {
-                    toast.error(t('settings.couldNotSignOut'));
-                  });
+                  void handleSecureSignOut();
                 }}
               >
-                {t('settings.signOutNow')}
+                {signingOut ? t('common.working') : t('settings.signOutNow')}
               </Button>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={showSignOutConfirm}
+        onOpenChange={setShowSignOutConfirm}
+        title={isDemo
+          ? (lang === 'de' ? 'Lokalen Modus verlassen und Daten löschen?' : 'Leave local mode and erase its data?')
+          : (lang === 'de' ? 'Abmelden und dieses Gerät vergessen?' : 'Sign out and forget this device?')}
+        description={isDemo
+          ? (lang === 'de'
+              ? 'Der lokale Modus hat keine Cloud-Sicherung. Beim Abmelden werden die lokalen Threadmap-Daten dieses Modus dauerhaft aus diesem Browser entfernt.'
+              : 'Local mode has no cloud backup. Signing out permanently removes this mode’s local Threadmap data from this browser.')
+          : (lang === 'de'
+              ? 'Du wirst abgemeldet und die zwischengespeicherten lokalen sowie Offline-Wiederherstellungsdaten dieses Kontos werden aus diesem Browser entfernt. Änderungen, die noch nicht mit der Cloud synchronisiert wurden, gehen verloren. Dein Cloud-Konto und deine Cloud-Daten werden nicht gelöscht.'
+              : 'You will be signed out and this account’s cached local and offline recovery data will be removed from this browser. Changes that have not synced to the cloud will be lost. Your cloud account and cloud data are not deleted.')}
+        confirmLabel={isDemo
+          ? (lang === 'de' ? 'Lokale Daten löschen und abmelden' : 'Erase local data and sign out')
+          : (lang === 'de' ? 'Abmelden und Gerät vergessen' : 'Sign out and forget device')}
+        onConfirm={handleSecureSignOut}
+      />
       <ConfirmDialog
         open={showResetConfirm}
         onOpenChange={setShowResetConfirm}

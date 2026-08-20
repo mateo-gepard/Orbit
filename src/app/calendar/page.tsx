@@ -340,7 +340,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
             </p>
             <p className="text-[16px] font-semibold mt-0.5">{format(date, 'PPP', { locale: loc })}</p>
           </div>
-          <button type="button" onClick={onClose} disabled={saving} aria-label={t('calendar.closeCreateDialog')} className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-muted/60 disabled:opacity-40 sm:h-8 sm:w-8">
+          <button type="button" onClick={onClose} disabled={saving} aria-label={t('calendar.closeCreateDialog')} className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-muted/60 disabled:opacity-40 lg:h-8 lg:w-8">
             <X className="h-4 w-4 text-muted-foreground/50" />
           </button>
         </div>
@@ -359,14 +359,14 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
         <div className="flex gap-2 mb-4">
           <button type="button" onClick={() => setType('event')} aria-pressed={type === 'event'} className={cn(
             'flex-1 rounded-xl px-3 py-2.5 text-[12px] font-semibold transition-all border-2',
-            type === 'event' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25' : 'text-muted-foreground/40 border-transparent bg-muted/30 hover:bg-muted/50'
+            type === 'event' ? 'border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300' : 'border-transparent bg-muted/30 text-muted-foreground/40 hover:bg-muted/50'
           )}>
             <CalendarDays className="h-3.5 w-3.5 mx-auto mb-1 opacity-70" />
             {t('type.event')}
           </button>
           <button type="button" onClick={() => setType('task')} aria-pressed={type === 'task'} className={cn(
             'flex-1 rounded-xl px-3 py-2.5 text-[12px] font-semibold transition-all border-2',
-            type === 'task' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25' : 'text-muted-foreground/40 border-transparent bg-muted/30 hover:bg-muted/50'
+            type === 'task' ? 'border-amber-500/25 bg-amber-500/10 text-amber-800 dark:text-amber-300' : 'border-transparent bg-muted/30 text-muted-foreground/40 hover:bg-muted/50'
           )}>
             <MapPin className="h-3.5 w-3.5 mx-auto mb-1 opacity-70" />
             {t('type.task')}
@@ -374,11 +374,11 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
         </div>
 
         {type === 'event' && (
-          <div className="flex items-center gap-3 mb-5 bg-muted/20 rounded-xl px-4 py-3 border border-border/20">
+          <div className="flex items-center gap-3 mb-5 bg-muted/20 rounded-xl px-4 border border-border/20 lg:py-3">
             <Clock className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-            <input aria-label={t('calendar.startTime')} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
+            <input aria-label={t('calendar.startTime')} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="h-11 w-[70px] bg-transparent text-[13px] font-medium tabular-nums outline-none lg:h-auto" />
             <ArrowRight className="h-3 w-3 text-muted-foreground/25 shrink-0" />
-            <input aria-label={t('calendar.endTime')} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="bg-transparent text-[13px] font-medium outline-none tabular-nums w-[70px]" />
+            <input aria-label={t('calendar.endTime')} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="h-11 w-[70px] bg-transparent text-[13px] font-medium tabular-nums outline-none lg:h-auto" />
           </div>
         )}
 
@@ -388,7 +388,7 @@ function QuickAddModal({ date, time, onClose, userId, locale: loc }: { date: Dat
           type="submit"
           disabled={!title.trim() || saving}
           className={cn(
-            'w-full rounded-xl py-3 text-[13px] font-bold tracking-wide transition-all uppercase',
+            'min-h-11 w-full rounded-xl py-3 text-[13px] font-bold tracking-wide transition-all uppercase',
             title.trim() && !saving
               ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
               : 'bg-muted/60 text-muted-foreground/25 cursor-not-allowed'
@@ -434,7 +434,7 @@ function AllDayOverflow({
         <button
           type="button"
           aria-label={overflowLabel}
-          className="flex min-h-8 w-full items-center rounded-lg px-2 text-left text-[10px] font-semibold text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25"
+          className="flex min-h-11 w-full items-center rounded-lg px-2 text-left text-[10px] font-semibold text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-8"
         >
           +{events.length} {t('calendar.more')}
         </button>
@@ -458,7 +458,7 @@ function AllDayOverflow({
                 onEventClick(event.item.id);
               }}
               className={cn(
-                'min-h-10 w-full truncate rounded-lg px-2.5 text-left text-[11px] font-semibold transition-all hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/25',
+                'min-h-11 w-full truncate rounded-lg px-2.5 text-left text-[11px] font-semibold transition-all hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-10',
                 color.bg,
                 color.text,
               )}
@@ -1157,7 +1157,7 @@ export default function CalendarPage() {
         <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto">
           {/* Navigation arrows + label */}
           <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">
-            <button type="button" onClick={goPrev} aria-label={previousViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 sm:h-8 sm:w-8">
+            <button type="button" onClick={goPrev} aria-label={previousViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 lg:h-8 lg:w-8">
               <ChevronLeft className="h-4 w-4" />
             </button>
             <h1 className="min-w-0 flex-1 truncate text-center text-[17px] font-bold tracking-tight sm:flex-none lg:text-[19px]">
@@ -1167,7 +1167,7 @@ export default function CalendarPage() {
                 </button>
               )}
             </h1>
-            <button type="button" onClick={goNext} aria-label={nextViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 sm:h-8 sm:w-8">
+            <button type="button" onClick={goNext} aria-label={nextViewLabel[viewMode]} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground/50 transition-all hover:bg-muted/50 hover:text-foreground active:scale-95 lg:h-8 lg:w-8">
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
@@ -1418,8 +1418,8 @@ export default function CalendarPage() {
                 <div className="max-h-[35vh] overflow-y-auto">
                   {mobileDayItems.length === 0 ? (
                     <div className="px-4 py-8 text-center">
-                      <p className="text-[13px] text-muted-foreground/25 font-medium">{t('calendar.noEventsOrTasks')}</p>
-                      <button type="button" onClick={() => setQuickAdd({ date: selectedMobileDay })} className="mt-3 text-[12px] font-semibold text-foreground/60 hover:text-foreground transition-colors">
+                      <p className="text-[13px] text-muted-foreground/60 font-medium">{t('calendar.noEventsOrTasks')}</p>
+                      <button type="button" onClick={() => setQuickAdd({ date: selectedMobileDay })} className="mt-3 inline-flex min-h-11 items-center rounded-lg px-3 text-[12px] font-semibold text-foreground/70 transition-colors hover:text-foreground">
                         {t('calendar.addAnItem')}
                       </button>
                     </div>
@@ -1431,18 +1431,18 @@ export default function CalendarPage() {
                           <button
                             key={item.id}
                             onClick={() => setSelectedItemId(item.id)}
-                            className="flex items-center gap-3 w-full px-4 py-3 text-left active:bg-foreground/[0.03] transition-colors"
+                            className="flex min-h-11 items-center gap-3 w-full px-4 py-3 text-left active:bg-foreground/[0.03] transition-colors"
                           >
                             <div className={cn('w-[3px] self-stretch rounded-full shrink-0', color.accent)} />
                             <div className="flex-1 min-w-0">
                               <span className="text-[14px] font-semibold truncate block leading-tight">{item.title}</span>
                               {(item.startTime || item.type === 'task') && (
-                                <span className="text-[11px] text-muted-foreground/35 mt-0.5 block font-medium">
+                                <span className="text-[11px] text-muted-foreground/60 mt-0.5 block font-medium">
                                   {item.startTime ? `${item.startTime}${item.endTime ? ` – ${item.endTime}` : ''}` : item.type === 'task' ? t('type.task') : ''}
                                 </span>
                               )}
                             </div>
-                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/15 shrink-0" />
+                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
                           </button>
                         );
                       })}

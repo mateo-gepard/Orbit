@@ -1,14 +1,18 @@
 import { initializeApp } from 'firebase-admin/app';
+import { getAppCheck } from 'firebase-admin/app-check';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
 import { defineSecret } from 'firebase-functions/params';
-import { setGlobalOptions } from 'firebase-functions/v2';
+import { setGlobalOptions, type Change } from 'firebase-functions/v2';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import {
+  onDocumentUpdated,
+  type FirestoreEvent,
+} from 'firebase-functions/v2/firestore';
 import * as webpush from 'web-push';
 import { isSafeAttachmentPath, safeAttachmentPaths } from './attachment-paths';
 import {
@@ -18,15 +22,55 @@ import {
   resolveMcpRequestOrigin,
 } from './mcp/config';
 import { createMcpRouter, runMcpRouterOnNode, type McpRouter } from './mcp/http';
-import { createThreadmapOAuthService } from './mcp/oauth';
+import {
+  createThreadmapOAuthService,
+  type ThreadmapOAuthService,
+} from './mcp/oauth';
 import { ThreadmapDal } from './mcp/dal';
 import {
   createMfaRecoveryCodeSet,
+  isCurrentMfaRecoveryCode,
   MFA_RECOVERY_CODE_COUNT,
   mfaRecoveryDigest,
   normalizeMfaRecoveryCode,
 } from './mfa-recovery';
-import { createThreadmapAuthEmailFunction } from './auth-email';
+import {
+  createThreadmapAuthEmailFunction,
+  resolveThreadmapAppOrigin,
+} from './auth-email';
+import {
+  RESUMABLE_UPLOAD_SESSION_RISK_MS,
+  UPLOAD_CLEANUP_INTERVAL_MS,
+  attachmentUploadOriginAllowed,
+  decideUploadCleanup,
+  resumableUploadMetadata,
+  shouldReleaseUploadRegistry,
+} from './upload-cleanup-policy';
+import {
+  ACCOUNT_DELETION_MAX_DOCUMENTS_PER_ATTEMPT,
+  accountDeletionFixedDocumentPaths,
+  accountDeletionPageSize,
+  accountDeletionSweepDecision,
+} from './account-deletion-policy';
+import {
+  ACCOUNT_EXPORT_STORAGE_CONCURRENCY,
+  ACCOUNT_EXPORT_MAX_ATTACHMENT_BYTES,
+  ACCOUNT_EXPORT_MAX_SERIALIZED_BYTES,
+  ACCOUNT_EXPORT_RESPONSE_OVERHEAD_BYTES,
+  accountExportAttachmentCountAllowed,
+  accountExportAttachmentBytesAllowed,
+  accountExportMayReturn,
+  accountExportSerializedByteLength,
+  accountExportSerializedBytesAllowed,
+  mapWithConcurrency,
+  sanitizeAccountExportAuditEvent,
+} from './account-export-policy';
+import { mergeAccountOwnedDocumentIfActive } from './account-write-barrier';
+import {
+  scrapeQuotaExpireAtMillis,
+  securityAuditExpireAtMillis,
+} from './retention-policy';
+import { hasOnlyBackgroundBriefingScheduleFields } from './push-schedule-policy';
 
 initializeApp();
 
@@ -41,8 +85,13 @@ const db = getFirestore();
 const messaging = getMessaging();
 const auth = getAuth();
 const storage = getStorage();
+const adminAppCheck = getAppCheck();
 
-export const sendThreadmapAuthEmail = createThreadmapAuthEmailFunction(auth, db);
+export const sendThreadmapAuthEmail = createThreadmapAuthEmailFunction(
+  auth,
+  db,
+  FUNCTION_REGION,
+);
 
 const vapidPublicKey = defineSecret('VAPID_PUBLIC_KEY');
 const vapidPrivateKey = defineSecret('VAPID_PRIVATE_KEY');
@@ -54,7 +103,20 @@ const MAX_DUE_PER_RUN = 500;
 const LEASE_MS = 2 * 60_000;
 const MAX_RETRY_DELAY_MS = 60 * 60_000;
 const MAX_DELETION_JOBS_PER_RUN = 500;
+// Callable responses have a hard payload limit. Fail explicitly before an
+// unbounded account inventory exhausts function memory; deletion uses its own
+// incremental sweep and is never subject to this export guard.
+const ACCOUNT_EXPORT_MAX_DOCUMENTS = 10_000;
 const RECENT_AUTH_WINDOW_SECONDS = 10 * 60;
+// Firebase refresh tokens and MCP refresh tokens can remain valid after the
+// primary Auth user is removed. Keep the minimal server-only tombstone for
+// twice the maximum MCP refresh-token lifetime (90 days) so stale credentials
+// and delayed uploads cannot recreate a supposedly deleted account.
+const ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS = 180 * 24 * 60 * 60_000;
+// A Cloud Storage resumable-session URI is bearer authorization and can remain
+// usable for one week. Keep deletion in a non-terminal cleanup state for the
+// full provider lifetime plus a small clock/scheduler safety margin, sweeping
+// the owner prefix every hour before publishing a completed tombstone.
 const MAX_PUSH_DEVICES_PER_ACCOUNT = 5;
 const SCRAPE_RATE_WINDOW_MS = 10 * 60_000;
 const SCRAPE_UID_LIMIT = 60;
@@ -260,14 +322,7 @@ function validBriefingTime(value: unknown, field: string): string {
 
 function validatedPushSchedule(value: unknown): PushSchedule {
   const schedule = recordValue(value, 'schedule');
-  if (!hasOnlyKeys(schedule, [
-    'morningEnabled',
-    'morningTime',
-    'eveningEnabled',
-    'eveningTime',
-    'timezoneOffset',
-    'timezone',
-  ])) {
+  if (!hasOnlyBackgroundBriefingScheduleFields(schedule)) {
     throw new HttpsError('invalid-argument', 'The push schedule contains unsupported fields.');
   }
   if (typeof schedule.morningEnabled !== 'boolean' || typeof schedule.eveningEnabled !== 'boolean') {
@@ -463,10 +518,16 @@ async function claimDue(
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) return null;
     const data = snapshot.data() as PushTokenDoc & Record<string, unknown>;
+    if (typeof data.userId !== 'string' || !data.userId) return null;
     const dueAt = Number(data[fields.next] || 0);
     if (!data[fields.enabled] || dueAt <= 0 || dueAt > now) return null;
     if (Number(data.leaseUntil || 0) > now) return null;
     if (Number(data[fields.lastDueAt] || 0) === dueAt) return null;
+    // Serialize the delivery lease against account deletion. A concurrent
+    // tombstone create changes the missing-document read version and forces
+    // this transaction to retry before any external push side effect runs.
+    const deletion = await transaction.get(accountDeletionRef(data.userId));
+    if (deletion.exists) return null;
     transaction.update(ref, {
       leaseUntil: now + LEASE_MS,
       leaseType: type,
@@ -663,7 +724,17 @@ async function processDueType(type: BriefingType, webPushReady: boolean): Promis
   return delivered;
 }
 
-const sendBriefingNotificationsHandler = onSchedule(
+async function sendBriefingNotifications(): Promise<void> {
+  const publicKey = (vapidPublicKey.value() || process.env.VAPID_PUBLIC_KEY || '').trim();
+  const privateKey = (vapidPrivateKey.value() || process.env.VAPID_PRIVATE_KEY || '').trim();
+  const webPushReady = Boolean(publicKey && privateKey);
+  if (webPushReady) webpush.setVapidDetails(VAPID_SUBJECT, publicKey, privateKey);
+  const morning = await processDueType('morning', webPushReady);
+  const evening = await processDueType('evening', webPushReady);
+  console.info(`[THREADMAP] Briefing run delivered ${morning + evening} notification(s).`);
+}
+
+export const sendBriefingNotificationsEu = onSchedule(
   {
     schedule: 'every 1 minutes',
     timeZone: 'UTC',
@@ -672,32 +743,29 @@ const sendBriefingNotificationsHandler = onSchedule(
     region: FUNCTION_REGION,
     secrets: [vapidPublicKey, vapidPrivateKey],
   },
-  async () => {
-    const publicKey = (vapidPublicKey.value() || process.env.VAPID_PUBLIC_KEY || '').trim();
-    const privateKey = (vapidPrivateKey.value() || process.env.VAPID_PRIVATE_KEY || '').trim();
-    const webPushReady = Boolean(publicKey && privateKey);
-    if (webPushReady) webpush.setVapidDetails(VAPID_SUBJECT, publicKey, privateKey);
-    const morning = await processDueType('morning', webPushReady);
-    const evening = await processDueType('evening', webPushReady);
-    console.info(`[THREADMAP] Briefing run delivered ${morning + evening} notification(s).`);
-  }
-);
-
-export const sendBriefingNotificationsEu = onSchedule(
-  {
-    schedule: 'every 1 minutes',
-    timeZone: 'UTC',
-    retryCount: 3,
-    memory: '256MiB',
-    region: 'europe-west1',
-    secrets: [vapidPublicKey, vapidPrivateKey],
-  },
-  sendBriefingNotificationsHandler.run,
+  sendBriefingNotifications,
 );
 
 function requireUid(request: { auth?: { uid: string } | null }): string {
   if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Sign in to continue.');
   return request.auth.uid;
+}
+
+function accountDeletionRef(uid: string): FirebaseFirestore.DocumentReference {
+  return db.doc(`accountDeletionJobs/${uid}`);
+}
+
+function assertAccountActiveSnapshot(snapshot: FirebaseFirestore.DocumentSnapshot): void {
+  if (snapshot.exists) {
+    throw new HttpsError(
+      'failed-precondition',
+      'This account is being deleted or has already been deleted.'
+    );
+  }
+}
+
+async function assertAccountActive(uid: string): Promise<void> {
+  assertAccountActiveSnapshot(await accountDeletionRef(uid).get());
 }
 
 function requireRecentUid(request: {
@@ -778,6 +846,7 @@ export const getMfaRecoveryCodeStatus = onCall(
       throw new HttpsError('invalid-argument', 'The recovery status request contains unsupported fields.');
     }
     const uid = requireUid(request);
+    await assertAccountActive(uid);
     const snapshot = await db.doc(`mfaRecoverySets/${uid}`).get();
     const status = snapshot.data() || {};
     return {
@@ -800,6 +869,7 @@ export const generateMfaRecoveryCodes = onCall(
       throw new HttpsError('invalid-argument', 'The recovery-code request contains unsupported fields.');
     }
     const uid = requireRecentUid(request);
+    await assertAccountActive(uid);
     const user = await auth.getUser(uid);
     if (!user.multiFactor?.enrolledFactors.length) {
       throw new HttpsError('failed-precondition', 'Add an authenticator before creating recovery codes.');
@@ -811,28 +881,39 @@ export const generateMfaRecoveryCodes = onCall(
     const expiresAt = now + MFA_RECOVERY_LIFETIME_MS;
     const generationId = randomUUID();
     const previous = await db.collection('mfaRecoveryCodes').where('uid', '==', uid).limit(100).get();
-    const batch = db.batch();
-    for (const snapshot of previous.docs) batch.delete(snapshot.ref);
-    for (const code of codes) {
-      const digest = mfaRecoveryDigest(code, secret);
-      batch.set(db.doc(`mfaRecoveryCodes/${digest}`), {
+    await db.runTransaction(async (transaction) => {
+      // Reading the tombstone in the same transaction serializes code creation
+      // against account deletion. A concurrent deletion write forces a retry
+      // that observes the account as unavailable.
+      const [deletion, currentSet] = await Promise.all([
+        transaction.get(accountDeletionRef(uid)),
+        transaction.get(db.doc(`mfaRecoverySets/${uid}`)),
+      ]);
+      assertAccountActiveSnapshot(deletion);
+      // The set read serializes concurrent generations. Superseded code docs
+      // may remain until TTL, but recovery validates generationId below.
+      void currentSet;
+      for (const snapshot of previous.docs) transaction.delete(snapshot.ref);
+      for (const code of codes) {
+        const digest = mfaRecoveryDigest(code, secret);
+        transaction.set(db.doc(`mfaRecoveryCodes/${digest}`), {
+          uid,
+          generationId,
+          createdAt: now,
+          expiresAt,
+          status: 'active',
+          expireAt: Timestamp.fromMillis(expiresAt),
+        });
+      }
+      transaction.set(db.doc(`mfaRecoverySets/${uid}`), {
         uid,
         generationId,
-        createdAt: now,
+        generatedAt: now,
         expiresAt,
-        status: 'active',
-        expireAt: Timestamp.fromMillis(expiresAt),
+        remaining: MFA_RECOVERY_CODE_COUNT,
+        updatedAt: now,
       });
-    }
-    batch.set(db.doc(`mfaRecoverySets/${uid}`), {
-      uid,
-      generationId,
-      generatedAt: now,
-      expiresAt,
-      remaining: MFA_RECOVERY_CODE_COUNT,
-      updatedAt: now,
     });
-    await batch.commit();
     console.info(JSON.stringify({ component: 'mfa-recovery', event: 'codes-generated', uid }));
     return { codes, generatedAt: now, expiresAt };
   }
@@ -863,17 +944,19 @@ export const recoverMfaWithCode = onCall(
     const claimedUid = await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(codeRef);
       const code = snapshot.data() || {};
-      const available = snapshot.exists
-        && code.status === 'active'
-        && Number(code.expiresAt || 0) > now
-        && typeof code.uid === 'string';
-      if (!available) return null;
+      if (!snapshot.exists || typeof code.uid !== 'string') return null;
+      const [deletion, currentSet] = await Promise.all([
+        transaction.get(accountDeletionRef(code.uid)),
+        transaction.get(db.doc(`mfaRecoverySets/${code.uid}`)),
+      ]);
+      if (!isCurrentMfaRecoveryCode(code, currentSet.data() || {}, now)) return null;
+      assertAccountActiveSnapshot(deletion);
       transaction.update(codeRef, {
         status: 'consuming',
         claimId,
         claimedAt: now,
       });
-      return code.uid as string;
+      return code.uid;
     });
     if (!claimedUid) {
       throw new HttpsError('invalid-argument', 'That recovery code is invalid or no longer available.');
@@ -887,25 +970,40 @@ export const recoverMfaWithCode = onCall(
       await auth.revokeRefreshTokens(claimedUid);
 
       const allCodes = await db.collection('mfaRecoveryCodes').where('uid', '==', claimedUid).limit(100).get();
-      const batch = db.batch();
-      for (const snapshot of allCodes.docs) batch.delete(snapshot.ref);
-      batch.set(db.doc(`mfaRecoverySets/${claimedUid}`), {
-        uid: claimedUid,
-        remaining: 0,
-        recoveredAt: now,
-        updatedAt: now,
-      }, { merge: true });
-      batch.set(db.collection('mfaRecoveryAudits').doc(), {
-        uid: claimedUid,
-        event: 'mfa-recovered',
-        createdAt: now,
+      const auditRef = db.collection('mfaRecoveryAudits').doc();
+      await db.runTransaction(async (transaction) => {
+        // The Auth operations above cannot share a Firestore transaction, so
+        // gate their derivative persistence again. If deletion started in the
+        // meantime, suppress every account-scoped create and only remove code
+        // snapshots that were already visible.
+        const deletion = await transaction.get(accountDeletionRef(claimedUid));
+        for (const snapshot of allCodes.docs) transaction.delete(snapshot.ref);
+        if (deletion.exists) return;
+        transaction.set(db.doc(`mfaRecoverySets/${claimedUid}`), {
+          uid: claimedUid,
+          remaining: 0,
+          recoveredAt: now,
+          updatedAt: now,
+        }, { merge: true });
+        transaction.set(auditRef, {
+          uid: claimedUid,
+          event: 'mfa-recovered',
+          createdAt: now,
+          expireAt: Timestamp.fromMillis(securityAuditExpireAtMillis(now)),
+        });
       });
-      await batch.commit();
       console.warn(JSON.stringify({ component: 'mfa-recovery', event: 'mfa-recovered', uid: claimedUid }));
       return { success: true };
     } catch (error) {
       await db.runTransaction(async (transaction) => {
-        const snapshot = await transaction.get(codeRef);
+        const [snapshot, deletion] = await Promise.all([
+          transaction.get(codeRef),
+          transaction.get(accountDeletionRef(claimedUid)),
+        ]);
+        if (deletion.exists) {
+          if (snapshot.exists) transaction.delete(codeRef);
+          return;
+        }
         if (snapshot.data()?.claimId === claimId) {
           transaction.update(codeRef, {
             status: 'active',
@@ -996,7 +1094,7 @@ export const upsertThreadmapPushDevice = onCall(
 
     const deviceRef = db.doc(`fcmTokens/${docId}`);
     const registryRef = pushRegistryRef(uid);
-    const tombstoneRef = db.doc(`accountDeletionJobs/${uid}`);
+    const tombstoneRef = accountDeletionRef(uid);
     const replacementRef = replaceDeviceId && replaceDeviceId !== docId
       ? db.doc(`fcmTokens/${replaceDeviceId}`)
       : null;
@@ -1010,9 +1108,7 @@ export const upsertThreadmapPushDevice = onCall(
       const replacementSnapshot = replacementRef
         ? await transaction.get(replacementRef)
         : null;
-      if (tombstoneSnapshot.exists) {
-        throw new HttpsError('failed-precondition', 'This account is being deleted.');
-      }
+      assertAccountActiveSnapshot(tombstoneSnapshot);
       if (replacementSnapshot?.exists && replacementSnapshot.data()?.userId !== uid) {
         throw new HttpsError('permission-denied', 'The replacement device does not belong to this account.');
       }
@@ -1074,16 +1170,14 @@ export const updateThreadmapPushSchedule = onCall(
     const schedule = validatedPushSchedule(data.schedule);
     const deviceRef = db.doc(`fcmTokens/${data.docId}`);
     const registryRef = pushRegistryRef(uid);
-    const tombstoneRef = db.doc(`accountDeletionJobs/${uid}`);
+    const tombstoneRef = accountDeletionRef(uid);
     await db.runTransaction(async (transaction) => {
       const [registrySnapshot, deviceSnapshot, tombstoneSnapshot] = await Promise.all([
         transaction.get(registryRef),
         transaction.get(deviceRef),
         transaction.get(tombstoneRef),
       ]);
-      if (tombstoneSnapshot.exists) {
-        throw new HttpsError('failed-precondition', 'This account is being deleted.');
-      }
+      assertAccountActiveSnapshot(tombstoneSnapshot);
       if (!deviceSnapshot.exists || deviceSnapshot.data()?.userId !== uid) {
         throw new HttpsError('not-found', 'Push device not found.');
       }
@@ -1116,16 +1210,14 @@ export const deleteThreadmapPushDevice = onCall(
     }
     const deviceRef = db.doc(`fcmTokens/${data.docId}`);
     const registryRef = pushRegistryRef(uid);
-    const tombstoneRef = db.doc(`accountDeletionJobs/${uid}`);
+    const tombstoneRef = accountDeletionRef(uid);
     await db.runTransaction(async (transaction) => {
       const [registrySnapshot, deviceSnapshot, tombstoneSnapshot] = await Promise.all([
         transaction.get(registryRef),
         transaction.get(deviceRef),
         transaction.get(tombstoneRef),
       ]);
-      if (tombstoneSnapshot.exists) {
-        throw new HttpsError('failed-precondition', 'This account is being deleted.');
-      }
+      assertAccountActiveSnapshot(tombstoneSnapshot);
       if (deviceSnapshot.exists && deviceSnapshot.data()?.userId !== uid) {
         throw new HttpsError('permission-denied', 'Push device not found.');
       }
@@ -1175,6 +1267,20 @@ export const consumeThreadmapScrapeQuota = onRequest(
       return;
     }
 
+    if (ENFORCE_APP_CHECK) {
+      const appCheckToken = request.get('x-firebase-appcheck') || '';
+      if (!/^[A-Za-z0-9._-]{20,8192}$/.test(appCheckToken)) {
+        response.status(401).json({ error: 'invalid_app_check' });
+        return;
+      }
+      try {
+        await adminAppCheck.verifyToken(appCheckToken);
+      } catch {
+        response.status(401).json({ error: 'invalid_app_check' });
+        return;
+      }
+    }
+
     const authorization = request.get('authorization') || '';
     const bearerMatch = /^Bearer ([A-Za-z0-9._-]{20,8192})$/.exec(authorization);
     if (!bearerMatch) {
@@ -1213,7 +1319,7 @@ export const consumeThreadmapScrapeQuota = onRequest(
     const uidHash = createHash('sha256').update(userId).digest('hex');
     const uidRef = db.doc(`scrapeRateLimits/uid_${uidHash}`);
     const ipRef = db.doc(`scrapeRateLimits/ip_${ipHash}`);
-    const tombstoneRef = db.doc(`accountDeletionJobs/${userId}`);
+    const tombstoneRef = accountDeletionRef(userId);
     try {
       const outcome = await db.runTransaction(async (transaction) => {
         const [uidSnapshot, ipSnapshot, tombstoneSnapshot] = await Promise.all([
@@ -1236,7 +1342,14 @@ export const consumeThreadmapScrapeQuota = onRequest(
           return 'rate-limited' as const;
         }
 
-        const sharedFields = { windowStart, windowEnd, updatedAt: now };
+        const sharedFields = {
+          windowStart,
+          windowEnd,
+          updatedAt: now,
+          expireAt: Timestamp.fromMillis(
+            scrapeQuotaExpireAtMillis(windowEnd, SCRAPE_RATE_WINDOW_MS)
+          ),
+        };
         transaction.set(uidRef, {
           ...sharedFields,
           kind: 'uid',
@@ -1271,15 +1384,32 @@ export const consumeThreadmapScrapeQuota = onRequest(
   }
 );
 
-async function queryAll(query: FirebaseFirestore.Query): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
+async function queryAll(
+  query: FirebaseFirestore.Query,
+  maximum = Number.POSITIVE_INFINITY,
+  acceptPage?: (documents: readonly FirebaseFirestore.QueryDocumentSnapshot[]) => void,
+): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
   const results: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
   while (true) {
-    let pageQuery = query.limit(400);
+    const remaining = maximum - results.length;
+    const pageSize = Number.isFinite(maximum)
+      ? Math.min(400, Math.max(1, remaining + 1))
+      : 400;
+    let pageQuery = query.limit(pageSize);
     if (cursor) pageQuery = pageQuery.startAfter(cursor);
     const snapshot = await pageQuery.get();
+    if (results.length + snapshot.size > maximum) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'This account is too large for the single-file export endpoint. Contact support for a paged export.'
+      );
+    }
+    // Export callers use this hook to enforce the response-byte budget before
+    // retaining another page in memory. Other queryAll users remain unchanged.
+    acceptPage?.(snapshot.docs);
     results.push(...snapshot.docs);
-    if (snapshot.size < 400) break;
+    if (snapshot.size < pageSize) break;
     cursor = snapshot.docs[snapshot.docs.length - 1];
   }
   return results;
@@ -1290,15 +1420,12 @@ async function queryAll(query: FirebaseFirestore.Query): Promise<FirebaseFiresto
  * Security rules validate every new child assignment; this trigger repairs
  * existing children if a project/goal is later converted or archived.
  */
-const repairThreadmapHierarchyHandler = onDocumentUpdated(
-  {
-    document: 'items/{itemId}',
-    region: FUNCTION_REGION,
-    retry: true,
-    timeoutSeconds: 120,
-    memory: '256MiB',
-  },
-  async (event) => {
+async function repairThreadmapHierarchy(
+  event: FirestoreEvent<
+    Change<FirebaseFirestore.QueryDocumentSnapshot> | undefined,
+    { itemId: string }
+  >,
+): Promise<void> {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
     if (!before || !after
@@ -1330,40 +1457,87 @@ const repairThreadmapHierarchyHandler = onDocumentUpdated(
         });
       }));
     }
-  }
-);
+}
 
 export const repairThreadmapHierarchyEu = onDocumentUpdated(
   {
     document: 'items/{itemId}',
-    region: 'europe-west1',
+    region: FUNCTION_REGION,
     retry: true,
     timeoutSeconds: 120,
     memory: '256MiB',
   },
-  repairThreadmapHierarchyHandler.run,
+  repairThreadmapHierarchy,
 );
 
 async function ownedDocuments(uid: string) {
-  const [items, toolData, legacyFlightLogs, analytics, flightLogs, tokens, connections, nudgesFrom, nudgesTo, deletionJobs, uploadIntents, uploadRegistries, recoveryCodes, recoveryAudits] =
-    await Promise.all([
-      queryAll(db.collection('items').where('userId', '==', uid)),
-      queryAll(db.collection('toolData').where('userId', '==', uid)),
-      db.doc(`toolData/${uid}_flightLogs`).get(),
-      queryAll(db.collection('analytics').where('userId', '==', uid)),
-      queryAll(db.collection('flightLogs').where('userId', '==', uid)),
-      queryAll(db.collection('fcmTokens').where('userId', '==', uid)),
-      queryAll(db.collection('connections').where('users', 'array-contains', uid)),
-      queryAll(db.collection('nudges').where('from', '==', uid)),
-      queryAll(db.collection('nudges').where('to', '==', uid)),
-      queryAll(db.collection('deletionJobs').where('userId', '==', uid)),
-      queryAll(db.collection('attachmentUploadIntents').where('userId', '==', uid)),
-      queryAll(db.collection('attachmentUploadRegistries').where('userId', '==', uid)),
-      queryAll(db.collection('mfaRecoveryCodes').where('uid', '==', uid)),
-      queryAll(db.collection('mfaRecoveryAudits').where('uid', '==', uid)),
-    ]);
+  let remaining = ACCOUNT_EXPORT_MAX_DOCUMENTS;
+  let serializedBytes = ACCOUNT_EXPORT_RESPONSE_OVERHEAD_BYTES;
+  const consumeSerializedPage = (
+    documents: readonly FirebaseFirestore.QueryDocumentSnapshot[],
+  ) => {
+    for (const document of documents) {
+      const incoming = accountExportSerializedByteLength(plainData(document));
+      if (!accountExportSerializedBytesAllowed(serializedBytes, incoming)) {
+        throw new HttpsError(
+          'resource-exhausted',
+          'This account exceeds the single-response export size limit. Contact support for a paged export.'
+        );
+      }
+      serializedBytes += incoming;
+    }
+  };
+  const collect = async (query: FirebaseFirestore.Query) => {
+    const documents = await queryAll(query, remaining, consumeSerializedPage);
+    remaining -= documents.length;
+    return documents;
+  };
+
+  // Inventory sequentially so the aggregate export bound is enforced before
+  // the next collection is materialized. This keeps the access endpoint
+  // explicit about its single-response limitation while deletion remains
+  // independently incremental and unbounded over repeated attempts.
+  const items = await collect(db.collection('items').where('userId', '==', uid));
+  const toolData = await collect(db.collection('toolData').where('userId', '==', uid));
+  const legacyFlightLogs = await db.doc(`toolData/${uid}_flightLogs`).get();
+  const analytics = await collect(db.collection('analytics').where('userId', '==', uid));
+  const flightLogs = await collect(db.collection('flightLogs').where('userId', '==', uid));
+  const tokens = await collect(db.collection('fcmTokens').where('userId', '==', uid));
+  const connections = await collect(db.collection('connections').where('users', 'array-contains', uid));
+  const nudgesFrom = await collect(db.collection('nudges').where('from', '==', uid));
+  const nudgesTo = await collect(db.collection('nudges').where('to', '==', uid));
+  const deletionJobs = await collect(db.collection('deletionJobs').where('userId', '==', uid));
+  const uploadIntents = await collect(db.collection('attachmentUploadIntents').where('userId', '==', uid));
+  const uploadRegistries = await collect(db.collection('attachmentUploadRegistries').where('userId', '==', uid));
+  const recoveryCodes = await collect(db.collection('mfaRecoveryCodes').where('uid', '==', uid));
+  const recoveryAudits = await collect(db.collection('mfaRecoveryAudits').where('uid', '==', uid));
+  const mcpAuthorizationRequests = await collect(db.collection('mcpOAuthAuthorizationRequests').where('userId', '==', uid));
+  const mcpAuthorizationCodes = await collect(db.collection('mcpOAuthAuthorizationCodes').where('userId', '==', uid));
+  const mcpAccessTokens = await collect(db.collection('mcpOAuthAccessTokens').where('userId', '==', uid));
+  const mcpRefreshTokens = await collect(db.collection('mcpOAuthRefreshTokens').where('userId', '==', uid));
+  const mcpTokenFamilies = await collect(db.collection('mcpOAuthTokenFamilies').where('userId', '==', uid));
+  const mcpUserGrants = await collect(db.collection('mcpOAuthUserGrants').where('userId', '==', uid));
+  const mcpIdempotency = await collect(db.collection('mcpIdempotency').where('userId', '==', uid));
+  const mcpDeleteConfirmations = await collect(db.collection('mcpDeleteConfirmations').where('userId', '==', uid));
+  const mcpRateLimits = await collect(db.collection('mcpRateLimits').where('userId', '==', uid));
+  const mcpAuditLogs = await collect(db.collection('mcpAuditLogs').where('userId', '==', uid));
   const allToolData: FirebaseFirestore.DocumentSnapshot[] = [...toolData];
   if (legacyFlightLogs.exists && !allToolData.some((entry) => entry.id === legacyFlightLogs.id)) {
+    if (remaining <= 0) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'This account is too large for the single-file export endpoint. Contact support for a paged export.'
+      );
+    }
+    const incoming = accountExportSerializedByteLength(plainData(legacyFlightLogs));
+    if (!accountExportSerializedBytesAllowed(serializedBytes, incoming)) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'This account exceeds the single-response export size limit. Contact support for a paged export.'
+      );
+    }
+    serializedBytes += incoming;
+    remaining -= 1;
     allToolData.push(legacyFlightLogs);
   }
   const nudges = [...new Map([...nudgesFrom, ...nudgesTo].map((entry) => [entry.ref.path, entry])).values()];
@@ -1380,7 +1554,92 @@ async function ownedDocuments(uid: string) {
     uploadRegistries,
     recoveryCodes,
     recoveryAudits,
+    mcpAuthorizationRequests,
+    mcpAuthorizationCodes,
+    mcpAccessTokens,
+    mcpRefreshTokens,
+    mcpTokenFamilies,
+    mcpUserGrants,
+    mcpIdempotency,
+    mcpDeleteConfirmations,
+    mcpRateLimits,
+    mcpAuditLogs,
+    serializedBytes,
   };
+}
+
+function ownedDocumentDeletionQueries(uid: string): FirebaseFirestore.Query[] {
+  return [
+    db.collection('items').where('userId', '==', uid),
+    db.collection('toolData').where('userId', '==', uid),
+    db.collection('analytics').where('userId', '==', uid),
+    db.collection('flightLogs').where('userId', '==', uid),
+    db.collection('fcmTokens').where('userId', '==', uid),
+    db.collection('connections').where('users', 'array-contains', uid),
+    db.collection('nudges').where('from', '==', uid),
+    db.collection('nudges').where('to', '==', uid),
+    db.collection('deletionJobs').where('userId', '==', uid),
+    db.collection('attachmentUploadIntents').where('userId', '==', uid),
+    db.collection('attachmentUploadRegistries').where('userId', '==', uid),
+    db.collection('mfaRecoveryCodes').where('uid', '==', uid),
+    db.collection('mfaRecoveryAudits').where('uid', '==', uid),
+    db.collection('mcpOAuthAuthorizationRequests').where('userId', '==', uid),
+    db.collection('mcpOAuthAuthorizationCodes').where('userId', '==', uid),
+    db.collection('mcpOAuthAccessTokens').where('userId', '==', uid),
+    db.collection('mcpOAuthRefreshTokens').where('userId', '==', uid),
+    db.collection('mcpOAuthTokenFamilies').where('userId', '==', uid),
+    db.collection('mcpOAuthUserGrants').where('userId', '==', uid),
+    db.collection('mcpIdempotency').where('userId', '==', uid),
+    db.collection('mcpDeleteConfirmations').where('userId', '==', uid),
+    db.collection('mcpRateLimits').where('userId', '==', uid),
+    db.collection('mcpAuditLogs').where('userId', '==', uid),
+  ];
+}
+
+async function deleteOwnedDocumentsIncrementally(
+  uid: string,
+  jobRef: FirebaseFirestore.DocumentReference,
+): Promise<{ deleted: number; hasMore: boolean }> {
+  let deleted = 0;
+  for (const query of ownedDocumentDeletionQueries(uid)) {
+    while (deleted < ACCOUNT_DELETION_MAX_DOCUMENTS_PER_ATTEMPT) {
+      const pageSize = accountDeletionPageSize(deleted);
+      const snapshot = await query.limit(pageSize).get();
+      if (snapshot.empty) break;
+
+      const writer = db.bulkWriter();
+      let pageDeleted = 0;
+      for (const document of snapshot.docs) {
+        // Keep the durable deletion barrier out of every generic inventory,
+        // even if a future schema change causes a query to include it.
+        if (document.ref.path === jobRef.path) continue;
+        writer.delete(document.ref);
+        pageDeleted += 1;
+      }
+      await writer.close();
+      deleted += pageDeleted;
+
+      const decision = accountDeletionSweepDecision({
+        deleted,
+        requestedPageSize: pageSize,
+        returnedDocuments: snapshot.size,
+        deletedDocuments: pageDeleted,
+      });
+      if (decision === 'stalled') {
+        throw new Error('Account deletion inventory made no progress.');
+      }
+      if (decision === 'query-drained') break;
+      if (decision === 'attempt-budget-exhausted') {
+        return { deleted, hasMore: true };
+      }
+    }
+    if (deleted >= ACCOUNT_DELETION_MAX_DOCUMENTS_PER_ATTEMPT) {
+      // Conservatively continue on another invocation even if the final page
+      // happened to drain its query exactly at the budget boundary.
+      return { deleted, hasMore: true };
+    }
+  }
+  return { deleted, hasMore: false };
 }
 
 function plainData(snapshot: FirebaseFirestore.DocumentSnapshot) {
@@ -1396,6 +1655,7 @@ interface DeletionJobData {
   nextAttemptAt?: number;
   kind?: 'deletion' | 'upload-intent';
   expiresAt?: number;
+  cleanupUntil?: number;
   cleanupClaimedAt?: number;
   uploadIntentId?: string;
   uploadRegistryId?: string;
@@ -1441,7 +1701,7 @@ async function cleanupDeletionJob(
         if (currentData.uploadIntentId) {
           transaction.delete(db.doc(`attachmentUploadIntents/${currentData.uploadIntentId}`));
         }
-        if (!currentData.registryReleasedAt && registry?.exists) {
+        if (shouldReleaseUploadRegistry(currentData.registryReleasedAt) && registry?.exists) {
           transaction.update(registry.ref, {
             activeCount: Math.max(0, Number(registry.data()?.activeCount || 0) - 1),
             reservedBytes: Math.max(0, Number(registry.data()?.reservedBytes || 0) - Number(currentData.file?.size || 0)),
@@ -1450,25 +1710,41 @@ async function cleanupDeletionJob(
         }
         return 'preserved' as const;
       }
-      if (!forceUploadIntent && Date.now() < Number(currentData.expiresAt || 0)) {
-        return 'wait' as const;
+      const now = Date.now();
+      const decision = decideUploadCleanup({
+        now,
+        createdAt: currentData.createdAt,
+        intentExpiresAt: Number(currentData.expiresAt || 0),
+        cleanupUntil: currentData.cleanupUntil,
+        forceIntentExpiry: forceUploadIntent,
+      });
+      if (decision.phase === 'wait-for-intent') return 'wait' as const;
+
+      const releaseRegistry = shouldReleaseUploadRegistry(currentData.registryReleasedAt);
+      transaction.set(ref, {
+        cleanupClaimedAt: Number(currentData.cleanupClaimedAt || now),
+        cleanupUntil: decision.cleanupUntil,
+        nextAttemptAt: decision.nextAttemptAt,
+        ...(releaseRegistry ? { registryReleasedAt: now } : {}),
+      }, { merge: true });
+      if (currentData.uploadIntentId) {
+        transaction.delete(db.doc(`attachmentUploadIntents/${currentData.uploadIntentId}`));
       }
-      if (!currentData.cleanupClaimedAt) {
-        transaction.update(ref, {
-          cleanupClaimedAt: Date.now(),
-          nextAttemptAt: 0,
-          registryReleasedAt: Date.now(),
+      if (releaseRegistry && registry?.exists) {
+        transaction.update(registry.ref, {
+          activeCount: Math.max(0, Number(registry.data()?.activeCount || 0) - 1),
+          reservedBytes: Math.max(0, Number(registry.data()?.reservedBytes || 0) - Number(currentData.file?.size || 0)),
+          updatedAt: now,
         });
-        if (!currentData.registryReleasedAt && registry?.exists) {
-          transaction.update(registry.ref, {
-            activeCount: Math.max(0, Number(registry.data()?.activeCount || 0) - 1),
-            reservedBytes: Math.max(0, Number(registry.data()?.reservedBytes || 0) - Number(currentData.file?.size || 0)),
-            updatedAt: Date.now(),
-          });
-        }
       }
-      data = currentData;
-      return 'delete' as const;
+      data = {
+        ...currentData,
+        cleanupClaimedAt: Number(currentData.cleanupClaimedAt || now),
+        cleanupUntil: decision.cleanupUntil,
+        nextAttemptAt: decision.nextAttemptAt,
+        ...(releaseRegistry ? { registryReleasedAt: now } : {}),
+      };
+      return 'sweep' as const;
     });
     if (disposition === 'missing' || disposition === 'preserved') return true;
     if (disposition === 'wait') return false;
@@ -1479,22 +1755,50 @@ async function cleanupDeletionJob(
   );
   const failures = results.filter((result) => result.status === 'rejected');
   if (failures.length === 0) {
+    if (data.kind === 'upload-intent') {
+      const decision = decideUploadCleanup({
+        now: Date.now(),
+        createdAt: data.createdAt,
+        intentExpiresAt: Number(data.expiresAt || 0),
+        cleanupUntil: data.cleanupUntil,
+        forceIntentExpiry: true,
+      });
+      if (decision.phase === 'sweep-and-retain') {
+        const finalization = await mergeAccountOwnedDocumentIfActive(db, data.userId, ref, {
+          cleanupUntil: decision.cleanupUntil,
+          nextAttemptAt: decision.nextAttemptAt,
+          lastAttemptAt: Date.now(),
+          lastError: FieldValue.delete(),
+        });
+        // A tombstone means the account-prefix cleanup barrier supersedes this
+        // exact-path job. A missing job must never be recreated after I/O.
+        return finalization === 'blocked' || finalization === 'missing';
+      }
+    }
     const batch = db.batch();
     batch.delete(ref);
     if (data.uploadIntentId) batch.delete(db.doc(`attachmentUploadIntents/${data.uploadIntentId}`));
     await batch.commit();
     return true;
   }
-  await ref.set({
+  const finalization = await mergeAccountOwnedDocumentIfActive(db, data.userId, ref, {
     attempts: FieldValue.increment(1),
     lastAttemptAt: Date.now(),
-    nextAttemptAt: Date.now() + Math.min(
-      24 * 60 * 60_000,
-      (2 ** Math.min(Number(data.attempts || 0) + 1, 8)) * 5 * 60_000
-    ),
+    nextAttemptAt: data.kind === 'upload-intent'
+      ? decideUploadCleanup({
+          now: Date.now(),
+          createdAt: data.createdAt,
+          intentExpiresAt: Number(data.expiresAt || 0),
+          cleanupUntil: data.cleanupUntil,
+          forceIntentExpiry: true,
+        }).nextAttemptAt
+      : Date.now() + Math.min(
+          24 * 60 * 60_000,
+          (2 ** Math.min(Number(data.attempts || 0) + 1, 8)) * 5 * 60_000
+        ),
     lastError: `${failures.length} attachment cleanup operation(s) failed.`,
-  }, { merge: true });
-  return false;
+  });
+  return finalization === 'blocked' || finalization === 'missing';
 }
 
 function uploadJobRef(uid: string, itemId: string, storagePath: string) {
@@ -1504,6 +1808,75 @@ function uploadJobRef(uid: string, itemId: string, storagePath: string) {
 
 function uploadRegistryId(uid: string, itemId: string): string {
   return createHash('sha256').update(`${uid}\0${itemId}`).digest('hex');
+}
+
+async function deleteItemForMcp(input: {
+  userId: string;
+  itemId: string;
+  expectedRevision: number;
+}): Promise<{ deleted: boolean; cleanupPending: boolean }> {
+  const { userId: uid, itemId, expectedRevision } = input;
+  const itemRef = db.doc(`items/${itemId}`);
+  const jobRef = db.doc(`deletionJobs/item_${uid}_${itemId}`);
+  let job: DeletionJobData | null = null;
+  await db.runTransaction(async (transaction) => {
+    const [itemSnapshot, existingJob, deletionSnapshot] = await Promise.all([
+      transaction.get(itemRef),
+      transaction.get(jobRef),
+      transaction.get(accountDeletionRef(uid)),
+    ]);
+    assertAccountActiveSnapshot(deletionSnapshot);
+    if (!itemSnapshot.exists) {
+      if (existingJob.exists && existingJob.data()?.userId === uid) {
+        job = existingJob.data() as DeletionJobData;
+      }
+      return;
+    }
+    const item = itemSnapshot.data() || {};
+    if (item.userId !== uid) throw new HttpsError('not-found', 'Item not found.');
+    if (Number(item.revision || 0) !== expectedRevision) {
+      throw new HttpsError('aborted', 'The item changed before deletion completed.');
+    }
+    const [linkedSnapshot, childSnapshot] = await Promise.all([
+      transaction.get(db.collection('items').where('linkedIds', 'array-contains', itemId)),
+      transaction.get(db.collection('items').where('parentId', '==', itemId)),
+    ]);
+    const references = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+    for (const snapshot of [...linkedSnapshot.docs, ...childSnapshot.docs]) {
+      if (snapshot.id !== itemId && snapshot.data().userId === uid) {
+        references.set(snapshot.id, snapshot);
+      }
+    }
+    if (references.size > 498) {
+      throw new HttpsError('failed-precondition', 'This item has too many relationships to delete safely.');
+    }
+    const now = Date.now();
+    job = {
+      userId: uid,
+      itemId,
+      storagePaths: safeAttachmentPaths(uid, itemId, item.files),
+      createdAt: existingJob.exists ? Number(existingJob.data()?.createdAt || now) : now,
+      attempts: Number(existingJob.data()?.attempts || 0),
+      nextAttemptAt: 0,
+    };
+    transaction.set(jobRef, job, { merge: true });
+    transaction.delete(itemRef);
+    for (const snapshot of references.values()) {
+      const related = snapshot.data();
+      const updates: Record<string, unknown> = {
+        updatedAt: now,
+        revision: Number(related.revision || 0) + 1,
+      };
+      if (Array.isArray(related.linkedIds) && related.linkedIds.includes(itemId)) {
+        updates.linkedIds = FieldValue.arrayRemove(itemId);
+      }
+      if (related.parentId === itemId) updates.parentId = FieldValue.delete();
+      transaction.update(snapshot.ref, updates);
+    }
+  });
+  if (!job) return { deleted: true, cleanupPending: false };
+  const cleaned = await cleanupDeletionJob(jobRef, job);
+  return { deleted: true, cleanupPending: !cleaned };
 }
 
 export const deleteThreadmapItem = onCall(
@@ -1546,10 +1919,12 @@ export const deleteThreadmapItem = onCall(
     let revisionConflict = false;
     let calendarDetached = false;
     await db.runTransaction(async (transaction) => {
-      const [itemSnapshot, existingJob] = await Promise.all([
+      const [itemSnapshot, existingJob, deletionSnapshot] = await Promise.all([
         transaction.get(itemRef),
         transaction.get(jobRef),
+        transaction.get(accountDeletionRef(uid)),
       ]);
+      assertAccountActiveSnapshot(deletionSnapshot);
       if (!itemSnapshot.exists) {
         if (existingJob.exists && existingJob.data()?.userId === uid) {
           job = existingJob.data() as DeletionJobData;
@@ -1567,6 +1942,7 @@ export const deleteThreadmapItem = onCall(
             && item.googleCalendarId === data.expectedGoogleCalendarId) {
           transaction.update(itemRef, {
             googleCalendarId: FieldValue.delete(),
+            googleCalendarOrigin: true,
             calendarSynced: false,
             updatedAt: Date.now(),
             revision: currentRevision + 1,
@@ -1654,10 +2030,12 @@ export const deleteThreadmapAttachment = onCall(
     await db.runTransaction(async (transaction) => {
       // Keep the metadata read, filtered update, and cleanup-job creation in one
       // retrying transaction so concurrent uploads/deletions cannot be lost.
-      const [itemSnapshot, existingJob] = await Promise.all([
+      const [itemSnapshot, existingJob, deletionSnapshot] = await Promise.all([
         transaction.get(itemRef),
         transaction.get(jobRef),
+        transaction.get(accountDeletionRef(uid)),
       ]);
+      assertAccountActiveSnapshot(deletionSnapshot);
       if (!itemSnapshot.exists) {
         if (existingJob.exists && existingJob.data()?.userId === uid) {
           job = existingJob.data() as DeletionJobData;
@@ -1711,13 +2089,6 @@ export const deleteThreadmapAttachment = onCall(
   }
 );
 
-const ATTACHMENT_UPLOAD_ORIGINS = new Set([
-  'https://threadmap.app',
-  'https://www.threadmap.app',
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-]);
-
 /** Reserve an immutable object path and durable orphan-cleanup intent before upload. */
 export const beginThreadmapUpload = onCall(
   {
@@ -1728,8 +2099,19 @@ export const beginThreadmapUpload = onCall(
   },
   async (request) => {
     const uid = requireUid(request);
+    await assertAccountActive(uid);
     const uploadOrigin = request.rawRequest.get('origin') || '';
-    if (!ATTACHMENT_UPLOAD_ORIGINS.has(uploadOrigin)) {
+    let configuredAppOrigin: string;
+    try {
+      configuredAppOrigin = resolveThreadmapAppOrigin();
+    } catch {
+      throw new HttpsError('unavailable', 'Attachment uploads are not configured for this environment.');
+    }
+    if (!attachmentUploadOriginAllowed(
+      uploadOrigin,
+      configuredAppOrigin,
+      process.env.FUNCTIONS_EMULATOR === 'true',
+    )) {
       throw new HttpsError('permission-denied', 'Uploads must start from an approved Threadmap origin.');
     }
     const itemId = typeof request.data?.itemId === 'string' ? request.data.itemId : '';
@@ -1739,7 +2121,7 @@ export const beginThreadmapUpload = onCall(
     if (!itemId || itemId.length > 200 || itemId.includes('/') || !name || name.length > 255) {
       throw new HttpsError('invalid-argument', 'Valid item and file names are required.');
     }
-    if (!Number.isSafeInteger(size) || size < 0 || size > MAX_ATTACHMENT_BYTES) {
+    if (!Number.isSafeInteger(size) || size < 1 || size > MAX_ATTACHMENT_BYTES) {
       throw new HttpsError('invalid-argument', 'The file size is invalid or exceeds 10 MB.');
     }
     if (!ALLOWED_ATTACHMENT_TYPES.has(type)) {
@@ -1783,16 +2165,25 @@ export const beginThreadmapUpload = onCall(
       file,
       createdAt: uploadedAt,
       expiresAt,
+      cleanupUntil: uploadedAt + RESUMABLE_UPLOAD_SESSION_RISK_MS,
       attempts: 0,
       nextAttemptAt: expiresAt,
     } satisfies DeletionJobData;
     await db.runTransaction(async (transaction) => {
-      const [freshItem, existingJob, existingIntent, registrySnapshot] = await Promise.all([
+      const [
+        freshItem,
+        existingJob,
+        existingIntent,
+        registrySnapshot,
+        deletionSnapshot,
+      ] = await Promise.all([
         transaction.get(itemRef),
         transaction.get(uploadJob),
         transaction.get(intentRef),
         transaction.get(registryRef),
+        transaction.get(accountDeletionRef(uid)),
       ]);
+      assertAccountActiveSnapshot(deletionSnapshot);
       if (!freshItem.exists || freshItem.data()?.userId !== uid) {
         throw new HttpsError('permission-denied', 'Item not found.');
       }
@@ -1839,10 +2230,7 @@ export const beginThreadmapUpload = onCall(
     try {
       const [uploadUrl] = await storage.bucket().file(storagePath).createResumableUpload({
         origin: uploadOrigin,
-        metadata: {
-          contentType: type,
-          metadata: { threadmapUploadId: fileId },
-        },
+        metadata: resumableUploadMetadata(size, type, fileId),
         preconditionOpts: { ifGenerationMatch: 0 },
       });
       return { file, expiresAt, uploadUrl };
@@ -1893,12 +2281,14 @@ export const attachThreadmapUpload = onCall(
       const registryRef = job?.uploadRegistryId
         ? db.doc(`attachmentUploadRegistries/${job.uploadRegistryId}`)
         : null;
-      const [freshJob, freshIntent, item, registry] = await Promise.all([
+      const [freshJob, freshIntent, item, registry, deletionSnapshot] = await Promise.all([
         transaction.get(jobRef),
         transaction.get(intentRef),
         transaction.get(db.doc(`items/${itemId}`)),
         registryRef ? transaction.get(registryRef) : Promise.resolve(null),
+        transaction.get(accountDeletionRef(uid)),
       ]);
+      assertAccountActiveSnapshot(deletionSnapshot);
       const fresh = freshJob.data() as DeletionJobData | undefined;
       const intent = freshIntent.data();
       if (!freshJob.exists || fresh?.kind !== 'upload-intent' || fresh.userId !== uid
@@ -1950,6 +2340,7 @@ export const cleanupThreadmapUpload = onCall(
   },
   async (request) => {
     const uid = requireUid(request);
+    await assertAccountActive(uid);
     const itemId = typeof request.data?.itemId === 'string' ? request.data.itemId : '';
     const storagePath = typeof request.data?.storagePath === 'string' ? request.data.storagePath : '';
     if (!itemId || itemId.length > 200 || itemId.includes('/') || storagePath.length > 1200) {
@@ -1986,40 +2377,34 @@ export const cleanupThreadmapUpload = onCall(
       expiresAt: now,
       uploadIntentId: storagePath.split('/').length === 6 ? storagePath.split('/')[4] : undefined,
     };
-    await jobRef.set(job, { merge: true });
+    await db.runTransaction(async (transaction) => {
+      assertAccountActiveSnapshot(await transaction.get(accountDeletionRef(uid)));
+      transaction.set(jobRef, job, { merge: true });
+    });
     const cleaned = await cleanupDeletionJob(jobRef, job, true);
     return { success: true, cleanupPending: !cleaned };
   }
 );
 
-const cleanupDeletedItemFilesHandler = onSchedule(
-  {
-    schedule: 'every 1 hours',
-    timeZone: 'UTC',
-    retryCount: 3,
-    memory: '256MiB',
-    region: FUNCTION_REGION,
-  },
-  async () => {
-    let processed = 0;
-    while (processed < MAX_DELETION_JOBS_PER_RUN) {
-      const pageSize = Math.min(50, MAX_DELETION_JOBS_PER_RUN - processed);
-      const jobs = await db.collection('deletionJobs')
-        .where('nextAttemptAt', '<=', Date.now())
-        .orderBy('nextAttemptAt', 'asc')
-        .limit(pageSize)
-        .get();
-      if (jobs.empty) break;
-      for (let index = 0; index < jobs.docs.length; index += 10) {
-        await Promise.all(jobs.docs.slice(index, index + 10).map(async (snapshot) => {
-          await cleanupDeletionJob(snapshot.ref, snapshot.data() as DeletionJobData);
-        }));
-      }
-      processed += jobs.size;
-      if (jobs.size < pageSize) break;
+async function cleanupDeletedItemFiles(): Promise<void> {
+  let processed = 0;
+  while (processed < MAX_DELETION_JOBS_PER_RUN) {
+    const pageSize = Math.min(50, MAX_DELETION_JOBS_PER_RUN - processed);
+    const jobs = await db.collection('deletionJobs')
+      .where('nextAttemptAt', '<=', Date.now())
+      .orderBy('nextAttemptAt', 'asc')
+      .limit(pageSize)
+      .get();
+    if (jobs.empty) break;
+    for (let index = 0; index < jobs.docs.length; index += 10) {
+      await Promise.all(jobs.docs.slice(index, index + 10).map(async (snapshot) => {
+        await cleanupDeletionJob(snapshot.ref, snapshot.data() as DeletionJobData);
+      }));
     }
+    processed += jobs.size;
+    if (jobs.size < pageSize) break;
   }
-);
+}
 
 export const cleanupDeletedItemFilesEu = onSchedule(
   {
@@ -2027,9 +2412,9 @@ export const cleanupDeletedItemFilesEu = onSchedule(
     timeZone: 'UTC',
     retryCount: 3,
     memory: '256MiB',
-    region: 'europe-west1',
+    region: FUNCTION_REGION,
   },
-  cleanupDeletedItemFilesHandler.run,
+  cleanupDeletedItemFiles,
 );
 
 export const exportThreadmapAccount = onCall(
@@ -2045,6 +2430,7 @@ export const exportThreadmapAccount = onCall(
       throw new HttpsError('invalid-argument', 'The export request contains unsupported fields.');
     }
     const uid = requireExpectedUid(request, data);
+    await assertAccountActive(uid);
     const [documents, authUser, profile, settings, recoverySet] = await Promise.all([
       ownedDocuments(uid),
       auth.getUser(uid),
@@ -2053,14 +2439,36 @@ export const exportThreadmapAccount = onCall(
       db.doc(`mfaRecoverySets/${uid}`).get(),
     ]);
 
-    const fileMetadata: Array<Record<string, unknown> & { itemId: string }> = documents.items.flatMap((item) => {
+    const fileMetadata: Array<Record<string, unknown> & { itemId: string }> = [];
+    let attachmentBytes = 0;
+    for (const item of documents.items) {
       const files = item.data().files;
-      return Array.isArray(files)
-        ? files.map((file: Record<string, unknown>) => ({ ...file, itemId: item.id })) as Array<Record<string, unknown> & { itemId: string }>
-        : [];
-    });
+      if (!Array.isArray(files)) continue;
+      if (!accountExportAttachmentCountAllowed(fileMetadata.length, files.length)) {
+        throw new HttpsError(
+          'resource-exhausted',
+          'This account has too many attachments for the single-file export endpoint. Contact support for a paged export.'
+        );
+      }
+      for (const file of files) {
+        if (file && typeof file === 'object' && !Array.isArray(file)) {
+          const fileSize = Number((file as Record<string, unknown>).size);
+          if (!accountExportAttachmentBytesAllowed(attachmentBytes, fileSize)) {
+            throw new HttpsError(
+              'resource-exhausted',
+              `This account's attachments exceed the ${Math.floor(ACCOUNT_EXPORT_MAX_ATTACHMENT_BYTES / (1024 * 1024))} MiB single-file export limit or contain invalid size metadata. Contact support for a paged export.`
+            );
+          }
+          attachmentBytes += fileSize;
+          fileMetadata.push({ ...(file as Record<string, unknown>), itemId: item.id });
+        }
+      }
+    }
     const bucket = storage.bucket();
-    const files = await Promise.all(fileMetadata.map(async (file) => {
+    const files = await mapWithConcurrency(
+      fileMetadata,
+      ACCOUNT_EXPORT_STORAGE_CONCURRENCY,
+      async (file) => {
       const storagePath = typeof file.storagePath === 'string' ? file.storagePath : null;
       if (!storagePath) return file;
       const itemId = typeof file.itemId === 'string' ? file.itemId : '';
@@ -2073,9 +2481,86 @@ export const exportThreadmapAccount = onCall(
       } catch {
         return { ...file, missingFromStorage: true };
       }
-    }));
+      },
+    );
 
-    return {
+    // Export authorization metadata, never bearer-token/code/secret hashes or
+    // internal document IDs. Legacy grants are reconstructed from token
+    // families so the privacy export remains complete across schema versions.
+    const mcpByClient = new Map<string, {
+      status: 'active' | 'revoked';
+      authorizedAt: number;
+      lastAuthorizedAt: number;
+      expiresAt?: number;
+      scopes: Set<string>;
+    }>();
+    const mergeMcpMetadata = (value: Record<string, unknown>) => {
+      const clientId = typeof value.clientId === 'string' ? value.clientId : '';
+      if (!clientId) return;
+      const existing = mcpByClient.get(clientId);
+      const timestamp = Number(
+        value.authorizedAt || value.createdAt || value.issuedAt || value.decidedAt || 0
+      );
+      const lastTimestamp = Number(
+        value.lastAuthorizedAt || value.lastRotatedAt || value.issuedAt || timestamp
+      );
+      const scopes = new Set(existing?.scopes || []);
+      if (Array.isArray(value.scopes)) {
+        for (const scope of value.scopes) {
+          if (typeof scope === 'string' && scope.length <= 100) scopes.add(scope);
+        }
+      }
+      mcpByClient.set(clientId, {
+        status: value.status === 'revoked' ? 'revoked' : (existing?.status ?? 'active'),
+        authorizedAt: existing?.authorizedAt
+          ? Math.min(existing.authorizedAt, timestamp || existing.authorizedAt)
+          : timestamp,
+        lastAuthorizedAt: Math.max(existing?.lastAuthorizedAt || 0, lastTimestamp),
+        expiresAt: Math.max(existing?.expiresAt || 0, Number(value.expiresAt || 0)) || undefined,
+        scopes,
+      });
+    };
+    for (const snapshot of [
+      ...documents.mcpTokenFamilies,
+      ...documents.mcpAuthorizationCodes,
+      ...documents.mcpAccessTokens,
+      ...documents.mcpRefreshTokens,
+    ]) mergeMcpMetadata(snapshot.data());
+    for (const snapshot of documents.mcpUserGrants) {
+      const value = snapshot.data();
+      mergeMcpMetadata(value);
+      const clientId = typeof value.clientId === 'string' ? value.clientId : '';
+      const current = mcpByClient.get(clientId);
+      if (current && (value.status === 'active' || value.status === 'revoked')) {
+        current.status = value.status;
+      }
+    }
+    const mcpEntries = [...mcpByClient.entries()];
+    const mcpClients = await Promise.all(mcpEntries.map(([clientId]) =>
+      db.doc(`mcpOAuthClients/${clientId}`).get()
+    ));
+    const mcpAuthorizations = mcpEntries.map(([clientId, authorization], index) => ({
+      clientId,
+      clientName: typeof mcpClients[index].data()?.clientName === 'string'
+        ? mcpClients[index].data()!.clientName
+        : 'MCP client',
+      status: authorization.status,
+      authorizedAt: authorization.authorizedAt || null,
+      lastAuthorizedAt: authorization.lastAuthorizedAt || null,
+      expiresAt: authorization.expiresAt || null,
+      scopes: [...authorization.scopes].sort(),
+    })).sort((left, right) => Number(right.lastAuthorizedAt) - Number(left.lastAuthorizedAt));
+
+    const auditEvents = [
+      ...documents.recoveryAudits.map((snapshot) =>
+        sanitizeAccountExportAuditEvent('mfa', snapshot.data())
+      ),
+      ...documents.mcpAuditLogs.map((snapshot) =>
+        sanitizeAccountExportAuditEvent('mcp', snapshot.data())
+      ),
+    ].sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
+
+    const exportPayload = {
       exportedAt: new Date().toISOString(),
       user: {
         uid,
@@ -2093,6 +2578,7 @@ export const exportThreadmapAccount = onCall(
       flightLogs: documents.flightLogs.map(plainData),
       files,
       connections: documents.connections.map(plainData),
+      integrations: { mcpAuthorizations },
       nudges: documents.nudges.map(plainData),
       pushDevices: documents.tokens.map((token) => {
         const data = token.data();
@@ -2111,8 +2597,27 @@ export const exportThreadmapAccount = onCall(
           expiresAt: Number(recoverySet.data()?.expiresAt || 0) || null,
           remaining: Math.max(0, Number(recoverySet.data()?.remaining || 0)),
         } : null,
+        auditEvents,
       },
     };
+    // The page-by-page guard above prevents large collections from being
+    // materialized unchecked. This final exact JSON check also covers fixed
+    // Auth/profile/settings fields and derived/duplicated attachment metadata.
+    const responseBytes = accountExportSerializedByteLength(exportPayload);
+    if (!accountExportSerializedBytesAllowed(0, responseBytes)) {
+      throw new HttpsError(
+        'resource-exhausted',
+        `This export exceeds the ${Math.floor(ACCOUNT_EXPORT_MAX_SERIALIZED_BYTES / (1024 * 1024))} MiB single-response limit. Contact support for a paged export.`
+      );
+    }
+    // Export is a bounded point-in-time read rather than a global transaction.
+    // Recheck the monotonic deletion barrier immediately before returning so a
+    // deletion that began during inventory cannot yield a partial archive.
+    const finalDeletionBarrier = await accountDeletionRef(uid).get();
+    if (!accountExportMayReturn(finalDeletionBarrier.exists)) {
+      assertAccountActiveSnapshot(finalDeletionBarrier);
+    }
+    return exportPayload;
   }
 );
 
@@ -2121,7 +2626,11 @@ interface AccountDeletionJobData {
   createdAt: number;
   attempts: number;
   nextAttemptAt: number;
+  status?: 'deleting' | 'cleanup' | 'completed';
   leaseUntil?: number;
+  completedAt?: number;
+  cleanupUntil?: number;
+  expireAt?: FirebaseFirestore.Timestamp;
 }
 
 async function claimAccountDeletion(
@@ -2132,6 +2641,7 @@ async function claimAccountDeletion(
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) return null;
     const data = snapshot.data() as AccountDeletionJobData;
+    if (data.status === 'completed') return null;
     if (Number(data.leaseUntil || 0) > now) return null;
     transaction.update(ref, { leaseUntil: now + 10 * 60_000, lastAttemptAt: now });
     return data;
@@ -2152,29 +2662,98 @@ async function recordAccountDeletionFailure(
   }, { merge: true });
 }
 
+async function markAccountDeletionCompleted(
+  ref: FirebaseFirestore.DocumentReference,
+): Promise<number> {
+  const completedAt = Date.now();
+  await ref.set({
+    status: 'completed',
+    completedAt,
+    userId: FieldValue.delete(),
+    createdAt: FieldValue.delete(),
+    destructivePhaseCompletedAt: FieldValue.delete(),
+    cleanupUntil: FieldValue.delete(),
+    attempts: FieldValue.delete(),
+    leaseUntil: FieldValue.delete(),
+    nextAttemptAt: FieldValue.delete(),
+    lastAttemptAt: FieldValue.delete(),
+    lastError: FieldValue.delete(),
+    expireAt: Timestamp.fromMillis(completedAt + ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS),
+  }, { merge: true });
+  return completedAt;
+}
+
+async function finalizeAccountDeletionCleanup(
+  data: AccountDeletionJobData,
+  jobRef: FirebaseFirestore.DocumentReference,
+): Promise<{ pending: boolean; completedAt?: number }> {
+  // Resumable upload sessions issued before the tombstone may finish after the
+  // first sweep. Sweep hourly for the entire provider session lifetime, then
+  // sweep once more before declaring the workflow complete.
+  await storage.bucket().deleteFiles({ prefix: `users/${data.userId}/` });
+  const now = Date.now();
+  const cleanupUntil = Number(data.cleanupUntil || 0);
+  if (cleanupUntil > now) {
+    await jobRef.set({
+      status: 'cleanup',
+      leaseUntil: 0,
+      nextAttemptAt: Math.min(cleanupUntil, now + UPLOAD_CLEANUP_INTERVAL_MS),
+      lastError: FieldValue.delete(),
+      // Never let Firestore TTL remove an in-progress write barrier.
+      expireAt: Timestamp.fromMillis(
+        cleanupUntil + ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS
+      ),
+    }, { merge: true });
+    return { pending: true };
+  }
+  return {
+    pending: false,
+    completedAt: await markAccountDeletionCompleted(jobRef),
+  };
+}
+
 async function processAccountDeletion(
   uid: string,
-  jobRef: FirebaseFirestore.DocumentReference
-): Promise<void> {
+  jobRef: FirebaseFirestore.DocumentReference,
+  job: AccountDeletionJobData,
+): Promise<{ pending: boolean; completedAt?: number }> {
+  try {
+    await auth.revokeRefreshTokens(uid);
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'auth/user-not-found') throw error;
+  }
+
   const bucket = storage.bucket();
   await bucket.deleteFiles({ prefix: `users/${uid}/` });
 
-  // Re-query on every retry. BulkWriter is not atomic, but the durable job is
-  // retained outside the deleted collections until every remaining document
-  // and the Auth user are gone.
-  const documents = await ownedDocuments(uid);
-  const refs = new Map<string, FirebaseFirestore.DocumentReference>();
-  for (const group of Object.values(documents)) {
-    for (const snapshot of group) refs.set(snapshot.ref.path, snapshot.ref);
+  // Delete a bounded page at a time and re-query from the beginning after each
+  // successful page. The durable job remains outside this inventory, so very
+  // large accounts make monotonic progress across retries without ever
+  // materializing every document in a 512 MiB instance.
+  const sweep = await deleteOwnedDocumentsIncrementally(uid, jobRef);
+  if (sweep.hasMore) {
+    await jobRef.set({
+      status: 'deleting',
+      leaseUntil: 0,
+      nextAttemptAt: Date.now() + 60_000,
+      lastError: FieldValue.delete(),
+    }, { merge: true });
+    return { pending: true };
   }
-  refs.set(`userSettings/${uid}`, db.doc(`userSettings/${uid}`));
-  refs.set(`users/${uid}`, db.doc(`users/${uid}`));
-  refs.set(`pushDeviceRegistries/${uid}`, pushRegistryRef(uid));
-  refs.set(`mfaRecoverySets/${uid}`, db.doc(`mfaRecoverySets/${uid}`));
+
+  // Fixed-path documents are a bounded final set and do not need a query
+  // inventory. They are removed only after every collection query drained.
+  const refs = new Map<string, FirebaseFirestore.DocumentReference>();
+  for (const path of accountDeletionFixedDocumentPaths(uid)) {
+    refs.set(path, db.doc(path));
+  }
   const scrapeQuotaRef = db.doc(
     `scrapeRateLimits/uid_${createHash('sha256').update(uid).digest('hex')}`
   );
   refs.set(scrapeQuotaRef.path, scrapeQuotaRef);
+  // Keep this invariant explicit so a future inventory consolidation can
+  // never remove the write barrier before the minimal tombstone replaces it.
+  refs.delete(jobRef.path);
   const writer = db.bulkWriter();
   for (const ref of refs.values()) writer.delete(ref);
   await writer.close();
@@ -2184,7 +2763,36 @@ async function processAccountDeletion(
   } catch (error) {
     if ((error as { code?: string }).code !== 'auth/user-not-found') throw error;
   }
-  await jobRef.delete();
+
+  // Close the common race where an already-issued resumable upload completed
+  // while document/Auth deletion was running.
+  await bucket.deleteFiles({ prefix: `users/${uid}/` });
+  const destructivePhaseCompletedAt = Date.now();
+  const deletionStartedAt = Number(job.createdAt || destructivePhaseCompletedAt);
+  const cleanupUntil = deletionStartedAt + RESUMABLE_UPLOAD_SESSION_RISK_MS;
+  if (cleanupUntil <= destructivePhaseCompletedAt) {
+    const completedAt = await markAccountDeletionCompleted(jobRef);
+    return { pending: false, completedAt };
+  }
+  await jobRef.set({
+    userId: uid,
+    status: 'cleanup',
+    destructivePhaseCompletedAt,
+    cleanupUntil,
+    leaseUntil: 0,
+    nextAttemptAt: Math.min(
+      cleanupUntil,
+      destructivePhaseCompletedAt + UPLOAD_CLEANUP_INTERVAL_MS
+    ),
+    lastError: FieldValue.delete(),
+    // The TTL deadline is deliberately beyond both the cleanup window and the
+    // completed-tombstone retention horizon. Completion rewrites it from the
+    // actual final sweep time.
+    expireAt: Timestamp.fromMillis(
+      cleanupUntil + ACCOUNT_DELETION_TOMBSTONE_RETENTION_MS
+    ),
+  }, { merge: true });
+  return { pending: true, completedAt: destructivePhaseCompletedAt };
 }
 
 export const deleteThreadmapAccount = onCall(
@@ -2203,28 +2811,53 @@ export const deleteThreadmapAccount = onCall(
     if (data.userId !== uid) {
       throw new HttpsError('permission-denied', 'The requested account does not match the signed-in account.');
     }
-    const jobRef = db.doc(`accountDeletionJobs/${uid}`);
-    const existing = await jobRef.get();
-    const existingData = existing.data() as Partial<AccountDeletionJobData> | undefined;
-    const job: AccountDeletionJobData = {
-      userId: uid,
-      createdAt: Number(existingData?.createdAt || Date.now()),
-      attempts: Number(existingData?.attempts || 0),
-      nextAttemptAt: 0,
-      leaseUntil: 0,
-    };
-    // The durable tombstone is committed before any destructive step. Rules
-    // deny the account further browser writes while deletion is pending.
-    await jobRef.set(job, { merge: true });
+    const jobRef = accountDeletionRef(uid);
+    const job = await db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(jobRef);
+      if (existing.exists) return existing.data() as AccountDeletionJobData;
+      const created: AccountDeletionJobData = {
+        userId: uid,
+        status: 'deleting',
+        createdAt: Date.now(),
+        attempts: 0,
+        nextAttemptAt: 0,
+        leaseUntil: 0,
+      };
+      // The durable tombstone is committed before any destructive step. Rules
+      // and every Admin mutation transaction read this same document.
+      transaction.create(jobRef, created);
+      return created;
+    });
+    if (job.status === 'completed') {
+      return {
+        success: true,
+        pending: false,
+        status: 'completed' as const,
+        completedAt: Number(job.completedAt || 0) || undefined,
+      };
+    }
+    if (job.status === 'cleanup') {
+      return {
+        success: true,
+        pending: true,
+        status: 'pending' as const,
+        completedAt: Number(job.completedAt || 0) || undefined,
+      };
+    }
     const claimed = await claimAccountDeletion(jobRef);
-    if (!claimed) return { success: true, pending: true };
+    if (!claimed) return { success: true, pending: true, status: 'pending' as const };
     try {
-      await processAccountDeletion(uid, jobRef);
-      return { success: true, pending: false };
+      const outcome = await processAccountDeletion(uid, jobRef, claimed);
+      return {
+        success: true,
+        pending: outcome.pending,
+        status: outcome.pending ? 'pending' as const : 'completed' as const,
+        completedAt: outcome.completedAt,
+      };
     } catch (error) {
       console.error('[THREADMAP] Account deletion queued for retry:', error);
-      await recordAccountDeletionFailure(jobRef, job, error);
-      return { success: true, pending: true };
+      await recordAccountDeletionFailure(jobRef, claimed, error);
+      return { success: true, pending: true, status: 'pending' as const };
     }
   }
 );
@@ -2239,7 +2872,11 @@ export const deleteThreadmapAccount = onCall(
  * settings degrade this one endpoint to `503` instead of breaking every
  * function in the deployment at cold start.
  */
-type McpRouterResult = { router: McpRouter; origin: string } | { error: Error };
+type McpRouterResult = {
+  router: McpRouter;
+  origin: string;
+  oauth: ThreadmapOAuthService;
+} | { error: Error };
 const mcpRouterResults = new Map<string, McpRouterResult>();
 const MAX_MCP_ORIGIN_CACHE_SIZE = 16;
 
@@ -2257,14 +2894,25 @@ function getMcpRouter(rawOrigin?: string): McpRouterResult {
   const cached = mcpRouterResults.get(cacheKey);
   if (cached) return cached;
   try {
+    // Even a trusted staging preview override must not mask a missing baseline
+    // operator configuration. Non-production projects fail closed instead of
+    // silently publishing production OAuth metadata.
+    if (rawOrigin) resolveMcpEndpoints();
     const endpoints = resolveMcpEndpoints(rawOrigin);
     const oauth = createThreadmapOAuthService(db, resolveMcpOAuthConfiguration(endpoints));
     return cacheMcpRouter(cacheKey, {
       origin: endpoints.origin,
+      oauth,
       router: createMcpRouter({
         oauth,
         endpoints,
-        createDataAccess: (principal) => new ThreadmapDal(db, principal),
+        createDataAccess: (principal) => new ThreadmapDal(db, principal, {
+          deleteItem: ({ userId, itemId, expectedRevision }) => deleteItemForMcp({
+            userId,
+            itemId,
+            expectedRevision,
+          }),
+        }),
         verifyUserIdToken: async (idToken) => (await auth.verifyIdToken(idToken)).uid,
         log: (entry) => {
           // Cloud Logging picks structured JSON off stdout. Only identifiers and
@@ -2283,6 +2931,67 @@ function getMcpRouter(rawOrigin?: string): McpRouterResult {
     return cacheMcpRouter(cacheKey, { error: wrapped });
   }
 }
+
+function requireMcpOAuthService(): ThreadmapOAuthService {
+  const resolved = getMcpRouter();
+  if ('error' in resolved) {
+    throw new HttpsError('unavailable', 'MCP authorization management is unavailable.');
+  }
+  return resolved.oauth;
+}
+
+export const listMcpAuthorizations = onCall(
+  {
+    region: FUNCTION_REGION,
+    timeoutSeconds: 30,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, [])) {
+      throw new HttpsError('invalid-argument', 'The authorization list request contains unsupported fields.');
+    }
+    const uid = requireUid(request);
+    await assertAccountActive(uid);
+    try {
+      return { authorizations: await requireMcpOAuthService().listAuthorizations(uid) };
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      console.error('[THREADMAP MCP] Authorization listing failed:', error);
+      throw new HttpsError('unavailable', 'MCP authorizations could not be loaded.');
+    }
+  }
+);
+
+export const revokeMcpAuthorization = onCall(
+  {
+    region: FUNCTION_REGION,
+    timeoutSeconds: 60,
+    memory: '256MiB',
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  },
+  async (request) => {
+    const data = recordValue(request.data, 'request');
+    if (!hasOnlyKeys(data, ['clientId'])) {
+      throw new HttpsError('invalid-argument', 'The authorization revocation request contains unsupported fields.');
+    }
+    const uid = requireUid(request);
+    await assertAccountActive(uid);
+    try {
+      const revoked = await requireMcpOAuthService().revokeClient(
+        data.clientId,
+        uid,
+        'owner_disconnect'
+      );
+      return { success: true, revoked };
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      console.error('[THREADMAP MCP] Authorization revocation failed:', error);
+      throw new HttpsError('unavailable', 'MCP authorization could not be revoked.');
+    }
+  }
+);
 
 export const threadmapMcp = onRequest(
   {
@@ -2315,32 +3024,26 @@ export const threadmapMcp = onRequest(
   }
 );
 
-const retryThreadmapAccountDeletionsHandler = onSchedule(
-  {
-    schedule: 'every 1 hours',
-    timeZone: 'UTC',
-    retryCount: 3,
-    timeoutSeconds: 540,
-    memory: '512MiB',
-    region: FUNCTION_REGION,
-  },
-  async () => {
-    const jobs = await db.collection('accountDeletionJobs')
-      .where('nextAttemptAt', '<=', Date.now())
-      .orderBy('nextAttemptAt', 'asc')
-      .limit(50)
-      .get();
-    for (const snapshot of jobs.docs) {
-      const claimed = await claimAccountDeletion(snapshot.ref);
-      if (!claimed) continue;
-      try {
-        await processAccountDeletion(claimed.userId, snapshot.ref);
-      } catch (error) {
-        await recordAccountDeletionFailure(snapshot.ref, claimed, error);
+async function retryThreadmapAccountDeletions(): Promise<void> {
+  const jobs = await db.collection('accountDeletionJobs')
+    .where('nextAttemptAt', '<=', Date.now())
+    .orderBy('nextAttemptAt', 'asc')
+    .limit(50)
+    .get();
+  for (const snapshot of jobs.docs) {
+    const claimed = await claimAccountDeletion(snapshot.ref);
+    if (!claimed) continue;
+    try {
+      if (claimed.status === 'cleanup') {
+        await finalizeAccountDeletionCleanup(claimed, snapshot.ref);
+      } else {
+        await processAccountDeletion(claimed.userId, snapshot.ref, claimed);
       }
+    } catch (error) {
+      await recordAccountDeletionFailure(snapshot.ref, claimed, error);
     }
   }
-);
+}
 
 export const retryThreadmapAccountDeletionsEu = onSchedule(
   {
@@ -2349,7 +3052,7 @@ export const retryThreadmapAccountDeletionsEu = onSchedule(
     retryCount: 3,
     timeoutSeconds: 540,
     memory: '512MiB',
-    region: 'europe-west1',
+    region: FUNCTION_REGION,
   },
-  retryThreadmapAccountDeletionsHandler.run,
+  retryThreadmapAccountDeletions,
 );

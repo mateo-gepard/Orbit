@@ -131,6 +131,32 @@ function uploadThroughResumableSession(
 }
 
 /**
+ * Revoke a provider-issued resumable session after a failed browser transfer.
+ * The session URL is itself a bearer credential and can otherwise remain
+ * usable after Threadmap's shorter upload-intent record has been cleaned up.
+ */
+async function cancelResumableUploadSession(uploadUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(uploadUrl, {
+      method: 'DELETE',
+      cache: 'no-store',
+      credentials: 'omit',
+      redirect: 'error',
+      referrerPolicy: 'no-referrer',
+      signal: AbortSignal.timeout(5_000),
+    });
+    // The JSON API documents 499 for a successful cancellation; XML uses 204.
+    // 404/410 mean the session is already gone and are equally safe outcomes.
+    return response.status === 204
+      || response.status === 404
+      || response.status === 410
+      || response.status === 499;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Upload a file to Firebase Storage for a specific Threadmap item.
  * The historical `/projects/` namespace is retained for existing objects.
  */
@@ -169,9 +195,16 @@ export async function uploadProjectFile(
     return projectFile;
   } catch (error) {
     console.error('[Storage] Upload failed:', error);
-    void cleanupUnattachedUpload(projectId, projectFile.storagePath).catch((cleanupError) => {
-      console.warn('[Storage] Failed upload cleanup remains queued:', cleanupError);
-    });
+    const [cancelled, cleaned] = await Promise.allSettled([
+      cancelResumableUploadSession(uploadUrl),
+      cleanupUnattachedUpload(projectId, projectFile.storagePath),
+    ]);
+    if (cancelled.status === 'rejected' || cancelled.value !== true) {
+      console.warn('[Storage] The failed resumable session could not be cancelled immediately.');
+    }
+    if (cleaned.status === 'rejected') {
+      console.warn('[Storage] Failed upload cleanup remains queued:', cleaned.reason);
+    }
     throw new Error('Upload failed: ' + (error instanceof Error ? error.message : 'Unknown transfer error.'));
   }
 }

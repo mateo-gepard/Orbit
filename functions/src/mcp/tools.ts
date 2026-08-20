@@ -86,7 +86,6 @@ const ITEM_STATUSES: ItemStatus[] = ['active', 'waiting', 'done', 'archived'];
 
 type JsonSchema = Record<string, unknown>;
 
-const STRING: JsonSchema = { type: 'string' };
 const ITEM_ID_SCHEMA: JsonSchema = { type: 'string', pattern: ITEM_ID_PATTERN, maxLength: 200 };
 const REVISION_SCHEMA: JsonSchema = { type: 'integer', minimum: 1 };
 const REQUEST_ID_SCHEMA: JsonSchema = {

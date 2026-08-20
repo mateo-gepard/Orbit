@@ -36,6 +36,7 @@ const CONSENT_PATHS = Object.freeze({
 
 /** Mirrors the function name so the raw Cloud Functions URL also routes, for curl testing. */
 const FUNCTION_PATH_PREFIX = '/threadmapMcp';
+const REGISTRATION_SOURCE_HEADER = 'x-threadmap-registration-source';
 
 const NO_STORE_HEADERS = Object.freeze({
   'Cache-Control': 'no-store',
@@ -298,17 +299,17 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
           // GET and DELETE are 2025 session operations; the stateless handler
           // answers them itself, so they are delegated rather than pre-refused.
           if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') {
-            return methodNotAllowed('POST');
+            return methodNotAllowed('POST, GET, DELETE');
           }
           return await handleMcp(request);
 
         case MCP_PUBLIC_PATHS.authorizationServerMetadata:
-          if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed('GET');
+          if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed('GET, HEAD');
           return jsonResponse(200, oauth.authorizationServerMetadata());
 
         case MCP_PUBLIC_PATHS.protectedResourceMetadata:
         case MCP_PUBLIC_PATHS.protectedResourceMetadataRoot:
-          if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed('GET');
+          if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed('GET, HEAD');
           return jsonResponse(200, oauth.protectedResourceMetadata());
 
         case MCP_PUBLIC_PATHS.authorize:
@@ -327,7 +328,10 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
 
         case MCP_PUBLIC_PATHS.register:
           if (method !== 'POST') return methodNotAllowed('POST');
-          return jsonResponse(201, await oauth.registerClient(await readRequestParameters(request)));
+          return jsonResponse(201, await oauth.registerClient(
+            await readRequestParameters(request),
+            request.headers.get(REGISTRATION_SOURCE_HEADER) || 'unknown',
+          ));
 
         case MCP_PUBLIC_PATHS.revoke:
           if (method !== 'POST') return methodNotAllowed('POST');
@@ -393,6 +397,8 @@ export interface NodeRequestLike {
   headers: Record<string, string | string[] | undefined>;
   rawBody?: Buffer;
   body?: unknown;
+  ip?: string;
+  socket?: { remoteAddress?: string };
 }
 
 /** The subset of a Cloud Functions response the bridge writes. */
@@ -413,6 +419,13 @@ export function toWebRequest(request: NodeRequestLike, fallbackOrigin: string): 
     const flattened = headerValue(value);
     if (flattened !== undefined) headers.set(name, flattened);
   }
+  // Never trust a caller-supplied copy of the internal quota subject. Cloud
+  // Functions supplies `request.ip`; the socket address is a local fallback.
+  headers.delete(REGISTRATION_SOURCE_HEADER);
+  headers.set(
+    REGISTRATION_SOURCE_HEADER,
+    request.ip || request.socket?.remoteAddress || 'unknown',
+  );
 
   const host = headerValue(request.headers.host) ?? new URL(fallbackOrigin).host;
   const forwardedProto = headerValue(request.headers['x-forwarded-proto']);

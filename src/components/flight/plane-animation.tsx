@@ -1,8 +1,8 @@
 'use client';
 
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import type { FlightPhase, FlightClass } from '@/lib/flight';
+import { AircraftSilhouette } from '@/components/flight/aircraft-silhouette';
 
 interface PlaneAnimationProps {
   phase: FlightPhase;
@@ -71,14 +71,14 @@ export function PlaneAnimation({ phase, phaseProgress, isPaused, flightClass = '
   const planeTop = groundY - (planeStyle.y / 100) * (groundY - 10);
 
   return (
-    <div className="relative w-full h-36 lg:h-44 mx-auto my-2 overflow-hidden rounded-2xl">
+    <div className="motion-surface relative mx-auto my-2 h-36 w-full overflow-hidden rounded-2xl lg:h-44">
       {/* Sky gradient */}
       <div
         className="absolute inset-0 transition-opacity duration-1000"
         style={{
           background: isFlying
-            ? 'linear-gradient(to bottom, oklch(0.75 0.12 230 / 0.06) 0%, oklch(0.85 0.08 220 / 0.03) 60%, transparent 100%)'
-            : 'linear-gradient(to bottom, oklch(0.8 0.04 220 / 0.03) 0%, transparent 60%)',
+            ? 'linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 6%, transparent) 0%, color-mix(in oklab, var(--foreground) 3%, transparent) 60%, transparent 100%)'
+            : 'linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 3%, transparent) 0%, transparent 60%)',
         }}
       />
 
@@ -262,30 +262,19 @@ function SideViewPlane({ isPaused, isFlying, flightClass = 'commercial' }: {
   flightClass?: FlightClass;
 }) {
   const isPrivate = flightClass === 'private';
-  const imageSrc = isPrivate ? '/lg60sidee.png' : '/a380.png';
   
   return (
     <div className={cn('relative', isPrivate ? 'h-14 w-14' : 'h-16 w-16')}>
-      {/* Aircraft Image */}
-      <Image
-        src={imageSrc}
-        alt={isPrivate ? 'Private Jet' : 'Aircraft'}
-        fill
-        sizes="64px"
+      <AircraftSilhouette
+        kind={isPrivate ? 'private' : 'commercial'}
         className={cn(
-          'object-contain transition-all duration-500',
-          isPaused
-            ? 'drop-shadow-[0_0_12px_oklch(0.8_0.15_85/0.4)] brightness-110 saturate-150'
-            : isPrivate
-              ? 'drop-shadow-[0_0_14px_oklch(0.7_0.15_280/0.3)]'
-              : 'drop-shadow-[0_0_14px_oklch(0.7_0.15_230/0.25)]'
+          'h-full w-full transition-all duration-500',
+          isPaused && 'brightness-110 saturate-150'
         )}
         style={{
-          filter: isPaused 
-            ? 'brightness(1.1) saturate(1.5) drop-shadow(0 0 12px rgba(245, 158, 11, 0.4))'
-            : isPrivate
-              ? 'drop-shadow(0 0 14px rgba(168, 85, 247, 0.3))'
-              : 'drop-shadow(0 0 14px rgba(56, 189, 248, 0.25))'
+          filter: isPaused
+            ? 'brightness(1.1) saturate(1.35) drop-shadow(0 0 12px color-mix(in oklab, var(--foreground) 34%, transparent))'
+            : 'drop-shadow(0 0 14px color-mix(in oklab, var(--foreground) 24%, transparent))'
         }}
       />
       

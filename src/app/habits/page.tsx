@@ -506,7 +506,7 @@ export default function HabitsPage() {
                     onClick={() => updateCreateHabitFrequency(frequency)}
                     disabled={creatingHabit}
                     className={cn(
-                      'w-full rounded-lg border border-border/60 px-3 py-2.5 text-left text-sm transition-colors',
+                      'min-h-11 w-full rounded-lg border border-border/60 px-3 py-2.5 text-left text-sm transition-colors',
                       createHabitFrequency === frequency
                         ? 'border-foreground bg-foreground/5 text-foreground'
                         : 'text-muted-foreground hover:bg-foreground/[0.03]'
@@ -531,7 +531,7 @@ export default function HabitsPage() {
                         disabled={creatingHabit}
                         aria-pressed={createHabitCustomDays.includes(idx)}
                         className={cn(
-                          'flex min-h-10 w-full items-center justify-center rounded text-[10px] font-medium',
+                          'flex min-h-11 w-full items-center justify-center rounded text-[10px] font-medium lg:min-h-10',
                           createHabitCustomDays.includes(idx)
                             ? 'bg-foreground text-background'
                             : 'bg-foreground/[0.05] text-muted-foreground'
@@ -597,7 +597,7 @@ export default function HabitsPage() {
             }}
             disabled={creatingHabit || Boolean(toggleError && isTogglePending(toggleError.habitId, toggleError.date))}
             aria-busy={creatingHabit || Boolean(toggleError && isTogglePending(toggleError.habitId, toggleError.date))}
-            className="min-h-9 rounded-lg bg-destructive/10 px-3 font-medium transition-colors hover:bg-destructive/20 disabled:cursor-wait disabled:opacity-60"
+            className="min-h-11 rounded-lg bg-destructive/10 px-3 font-medium transition-colors hover:bg-destructive/20 disabled:cursor-wait disabled:opacity-60 lg:min-h-9"
           >
             {t('common.retry')}
           </button>
@@ -627,19 +627,25 @@ export default function HabitsPage() {
                       aria-label={habitToggleLabel(habit.title, today, completed)}
                       aria-pressed={completed}
                       className={cn(
-                        'relative flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-[1.5px] transition-all',
-                        'before:absolute before:inset-[-8px]',
-                        completed
-                          ? 'border-foreground/20 bg-foreground/10'
-                          : 'border-foreground/20 hover:border-foreground/40'
+                        'relative -m-2.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
                       )}
                     >
-                      {completed && <CheckSquare className="h-3.5 w-3.5 text-foreground/50" />}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'flex h-6 w-6 items-center justify-center rounded-lg border-[1.5px] transition-colors',
+                          completed
+                            ? 'border-[var(--copy-tertiary)] bg-foreground/10'
+                            : 'border-[var(--copy-tertiary)]',
+                        )}
+                      >
+                        {completed && <CheckSquare className="h-3.5 w-3.5 text-foreground" />}
+                      </span>
                     </button>
                     <button
                       onClick={() => setSelectedItemId(habit.id)}
                       className={cn(
-                        'flex-1 text-[14px] font-medium text-left truncate transition-colors',
+                        'min-h-11 flex-1 truncate text-left text-[14px] font-medium transition-colors',
                         completed ? 'text-muted-foreground/50 line-through' : 'text-foreground'
                       )}
                     >
@@ -655,7 +661,7 @@ export default function HabitsPage() {
                     {renderPauseButton(habit)}
                   </div>
                   {/* Week dots */}
-                  <div className="flex items-center justify-around px-4 pb-3">
+                  <div className="flex items-center justify-around px-1 pb-3 sm:px-4">
                     {weekDays.map((day) => {
                       const scheduled = isHabitScheduledForDate(habit, day);
                       const dayCompleted = isHabitCompletedForDate(habit, day);
@@ -678,21 +684,21 @@ export default function HabitsPage() {
                               aria-label={habitToggleLabel(habit.title, day, dayCompleted)}
                               aria-pressed={dayCompleted}
                               className={cn(
-                                'h-8 w-8 rounded-lg flex items-center justify-center transition-all active:scale-90',
+                                'flex h-11 w-11 items-center justify-center rounded-lg transition-all active:scale-90',
                                 dayCompleted
-                                  ? 'bg-foreground/10'
+                                  ? 'border border-[var(--copy-tertiary)] bg-foreground/10'
                                   : isCurrentDay
-                                  ? 'border-[1.5px] border-foreground/25'
+                                  ? 'border-[1.5px] border-[var(--copy-tertiary)]'
                                   : isFuture
                                   ? 'border border-border/30 opacity-30'
-                                  : 'border border-foreground/10'
+                                  : 'border border-[var(--copy-tertiary)]'
                               )}
                             >
-                              {dayCompleted && <CheckSquare className="h-3.5 w-3.5 text-foreground/40" />}
+                              {dayCompleted && <CheckSquare className="h-3.5 w-3.5 text-foreground" />}
                             </button>
                           ) : (
                             <div
-                              className="h-8 w-8 flex items-center justify-center"
+                              className="flex h-11 w-11 items-center justify-center"
                               role="img"
                               aria-label={notScheduledLabel(day)}
                             >
@@ -721,7 +727,7 @@ export default function HabitsPage() {
                   <div className="flex items-center gap-3 px-4 py-3 border-b border-border/40">
                     <button
                       onClick={() => setSelectedItemId(habit.id)}
-                      className="flex-1 text-[14px] font-medium text-left truncate"
+                      className="min-h-11 flex-1 truncate text-left text-[14px] font-medium"
                     >
                       {habit.title}
                     </button>
@@ -735,8 +741,8 @@ export default function HabitsPage() {
                     {renderPauseButton(habit)}
                   </div>
                   {/* Month calendar grid */}
-                  <div className="p-3">
-                    <div className="grid grid-cols-7 gap-1">
+                  <div className="overflow-x-auto p-3">
+                    <div className="grid min-w-[332px] grid-cols-7 gap-1">
                       {calendarHeaderDays.map((day) => (
                         <div
                           key={`mobile-header-${day.toISOString()}`}
@@ -768,21 +774,21 @@ export default function HabitsPage() {
                                 className={cn(
                                   'w-full h-full rounded-md flex flex-col items-center justify-center gap-0.5 transition-all active:scale-90',
                                   dayCompleted
-                                    ? 'bg-foreground/10'
+                                    ? 'border border-[var(--copy-tertiary)] bg-foreground/10'
                                     : isCurrentDay
-                                    ? 'border-[1.5px] border-foreground/25'
+                                    ? 'border-[1.5px] border-[var(--copy-tertiary)]'
                                     : isFuture
                                     ? 'border border-border/30 opacity-30'
-                                    : 'border border-foreground/10'
+                                    : 'border border-[var(--copy-tertiary)]'
                                 )}
                               >
                                 <span className={cn(
                                   'text-[10px] tabular-nums font-medium',
-                                  dayCompleted ? 'text-foreground/40' : 'text-foreground/60'
+                                  dayCompleted ? 'text-muted-foreground' : 'text-foreground/70'
                                 )}>
                                   {format(day, 'd')}
                                 </span>
-                                {dayCompleted && <CheckSquare className="h-2.5 w-2.5 text-foreground/30" />}
+                                {dayCompleted && <CheckSquare className="h-2.5 w-2.5 text-foreground" />}
                               </button>
                             ) : (
                               <div

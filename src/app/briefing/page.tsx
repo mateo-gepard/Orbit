@@ -475,8 +475,8 @@ function BriefingContent() {
 
   return (
     <div className={cn(
-      'min-h-[100dvh] flex flex-col transition-all duration-700',
-      mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4',
+      'min-h-[100dvh] flex flex-col transition-transform duration-300 motion-reduce:transition-none',
+      mounted ? 'translate-y-0' : 'translate-y-2',
       phase === 'morning'
         ? 'bg-gradient-to-b from-foreground/[0.045] via-background to-background dark:from-foreground/[0.045] dark:via-background dark:to-background'
         : phase === 'evening'
@@ -487,8 +487,8 @@ function BriefingContent() {
 
         {/* ── Hero Section ── */}
         <div className={cn(
-          'pt-8 lg:pt-12 space-y-2 transition-all duration-1000 delay-100',
-          mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6',
+          'pt-8 lg:pt-12 space-y-2 transition-transform duration-300 motion-reduce:transition-none',
+          mounted ? 'translate-y-0' : 'translate-y-2',
         )}>
           <div className="flex items-center gap-2 text-muted-foreground/40">
             {phase === 'morning' ? (
@@ -537,8 +537,8 @@ function BriefingContent() {
           // MORNING BRIEFING
           // ═══════════════════════════════════════════════════
           <div className={cn(
-            'space-y-5 transition-all duration-1000 delay-200',
-            mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8',
+            'space-y-5 transition-transform duration-300 motion-reduce:transition-none',
+            mounted ? 'translate-y-0' : 'translate-y-2',
           )}>
 
             {/* Quick Stats Bar */}
@@ -776,8 +776,8 @@ function BriefingContent() {
           // EVENING BRIEFING
           // ═══════════════════════════════════════════════════
           <div className={cn(
-            'space-y-5 transition-all duration-1000 delay-200',
-            mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8',
+            'space-y-5 transition-transform duration-300 motion-reduce:transition-none',
+            mounted ? 'translate-y-0' : 'translate-y-2',
           )}>
 
             {/* Score Cards */}
@@ -915,8 +915,8 @@ function BriefingContent() {
 
             {/* Evening Verdict */}
             <div className={cn(
-              'text-center py-6 transition-all duration-1000 delay-500',
-              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6',
+              'text-center py-6 transition-transform duration-300 motion-reduce:transition-none',
+              mounted ? 'translate-y-0' : 'translate-y-2',
             )}>
               {completionScore !== null && completionScore >= 80 ? (
                 <>
@@ -953,8 +953,8 @@ function BriefingContent() {
           </div>
         ) : (
           <div className={cn(
-            'space-y-5 transition-all duration-1000 delay-200',
-            mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8',
+            'space-y-5 transition-transform duration-300 motion-reduce:transition-none',
+            mounted ? 'translate-y-0' : 'translate-y-2',
           )}>
             <div className="grid grid-cols-3 gap-3">
               <ScoreCard
@@ -1029,15 +1029,15 @@ function BriefingContent() {
 
         {/* ── Action Bar ── */}
         <div className={cn(
-          'space-y-3 transition-all duration-1000 delay-300',
-          mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8',
+          'space-y-3 transition-transform duration-300 motion-reduce:transition-none',
+          mounted ? 'translate-y-0' : 'translate-y-2',
         )}>
           <button
             type="button"
             onClick={completeBriefing}
             disabled={!journalReady || isCompleting}
             aria-busy={isCompleting}
-            className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-[14px] font-semibold bg-foreground text-background hover:opacity-90 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 rounded-2xl border border-transparent bg-foreground py-3.5 text-[14px] font-semibold text-background transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-foreground"
           >
             {phase === 'morning'
               ? t('briefing.saveStartDay')

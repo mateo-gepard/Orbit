@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   createMfaRecoveryCodeSet,
   formatMfaRecoveryCode,
+  isCurrentMfaRecoveryCode,
   mfaRecoveryDigest,
   normalizeMfaRecoveryCode,
 } from './mfa-recovery';
@@ -31,4 +32,34 @@ test('stored recovery digests are keyed and never contain the plaintext code', (
   assert.match(digest, /^[a-f0-9]{64}$/);
   assert.ok(!digest.includes(normalizeMfaRecoveryCode(code)));
   assert.notEqual(digest, mfaRecoveryDigest(code, 'another-secure-test-key-over-32-bytes'));
+});
+
+test('only a code from the account current, unexpired generation is recoverable', () => {
+  const now = 1_000;
+  const currentSet = {
+    uid: 'user-a',
+    generationId: 'generation-b',
+    expiresAt: 2_000,
+    remaining: 10,
+  };
+  const currentCode = {
+    uid: 'user-a',
+    generationId: 'generation-b',
+    status: 'active',
+    expiresAt: 2_000,
+  };
+
+  assert.equal(isCurrentMfaRecoveryCode(currentCode, currentSet, now), true);
+  assert.equal(isCurrentMfaRecoveryCode({
+    ...currentCode,
+    generationId: 'superseded-generation-a',
+  }, currentSet, now), false);
+  assert.equal(isCurrentMfaRecoveryCode(currentCode, {
+    ...currentSet,
+    expiresAt: now,
+  }, now), false);
+  assert.equal(isCurrentMfaRecoveryCode(currentCode, {
+    ...currentSet,
+    remaining: 0,
+  }, now), false);
 });

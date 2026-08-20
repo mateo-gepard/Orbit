@@ -7,6 +7,11 @@ import {
 import { fetchPublicUrl, readResponseText } from '@/lib/server/url-safety';
 import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
 import { decodeNumericEntity, normalizePrice } from '@/lib/server/scrape-parsing';
+import {
+  BoundedJsonError,
+  hasOnlyObjectKeys,
+  readBoundedJsonObject,
+} from '@/lib/server/bounded-json';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — URL Metadata Scraper
@@ -199,7 +204,7 @@ function titleFromUrl(parsed: URL): string | null {
   return cleaned.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 500);
 }
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   const preAuthLimited = checkRateLimit(request, {
     name: 'scrape-auth', max: 30, windowMs: 60_000,
   });
@@ -216,13 +221,19 @@ export async function GET(request: NextRequest) {
   });
   if (rateLimited) return rateLimited;
 
-  const url = request.nextUrl.searchParams.get('url');
-
-  if (!url) {
-    return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
+  let body: Record<string, unknown>;
+  try {
+    body = await readBoundedJsonObject(request);
+  } catch (error) {
+    const status = error instanceof BoundedJsonError ? error.status : 400;
+    return NextResponse.json({ error: 'Invalid product lookup request.' }, { status });
   }
+  if (!hasOnlyObjectKeys(body, ['url']) || typeof body.url !== 'string' || !body.url.trim()) {
+    return NextResponse.json({ error: 'A product URL is required.' }, { status: 400 });
+  }
+  const url = body.url.trim();
   if (url.length > 2_048) {
-    return NextResponse.json({ error: 'URL too long' }, { status: 400 });
+    return NextResponse.json({ error: 'Product URL is too long.' }, { status: 400 });
   }
 
   const sharedRateLimited = await checkDistributedScrapeRateLimit(request, user.uid);

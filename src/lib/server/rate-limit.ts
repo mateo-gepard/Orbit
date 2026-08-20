@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'node:crypto';
+import { firebaseFunctionsOrigin } from '@/lib/deployment-config';
 
 interface Bucket {
   count: number;
@@ -17,6 +18,7 @@ const buckets =
   ((globalThis as typeof globalThis & { __orbitRateLimit?: Map<string, Bucket> }).__orbitRateLimit ??=
     new Map<string, Bucket>());
 const MAX_BUCKETS = 10_000;
+const MAX_APP_CHECK_TOKEN_LENGTH = 4_096;
 let lastBucketSweep = 0;
 
 // This in-memory limiter is a soft per-instance abuse layer. Production-wide
@@ -70,6 +72,7 @@ export async function checkDistributedScrapeRateLimit(
   const secret = process.env.SCRAPE_RATE_LIMIT_SHARED_SECRET;
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const authorization = request.headers.get('authorization');
+  const appCheckToken = request.headers.get('x-firebase-appcheck');
 
   // Local development and unit tests retain the bounded instance limiter. A
   // deployed build fails closed if its shared quota configuration is missing.
@@ -77,6 +80,10 @@ export async function checkDistributedScrapeRateLimit(
     return process.env.NODE_ENV === 'production' ? distributedLimitUnavailable() : null;
   }
   if (!authorization?.startsWith('Bearer ')) return distributedLimitUnavailable();
+  if (process.env.NODE_ENV === 'production'
+      && (!appCheckToken || appCheckToken.length > MAX_APP_CHECK_TOKEN_LENGTH)) {
+    return distributedLimitUnavailable();
+  }
 
   const ipHash = createHmac('sha256', secret)
     .update(getClientIp(request))
@@ -85,13 +92,14 @@ export async function checkDistributedScrapeRateLimit(
   const timeout = setTimeout(() => controller.abort(), 4_000);
   try {
     const response = await fetch(
-      `https://us-central1-${encodeURIComponent(projectId)}.cloudfunctions.net/consumeThreadmapScrapeQuota`,
+      `${firebaseFunctionsOrigin(projectId)}/consumeThreadmapScrapeQuota`,
       {
         method: 'POST',
         headers: {
           Authorization: authorization,
           'Content-Type': 'application/json',
           'X-Threadmap-Scrape-Secret': secret,
+          ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
         },
         body: JSON.stringify({ userId, ipHash }),
         cache: 'no-store',

@@ -71,7 +71,7 @@ export default function AreaPage() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Hash className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <h1 className="truncate text-xl font-semibold tracking-tight">{tag}</h1>
+              <h1 id="area-heading" className="truncate text-xl font-semibold tracking-tight">{tag}</h1>
             </div>
             <p className="mt-1 text-[13px] text-muted-foreground/75">
               {tp('area.itemCount.one', 'area.itemCount.other', areaItems.length)}
@@ -100,7 +100,7 @@ export default function AreaPage() {
         </div>
       </div>
 
-      <main className="px-4 py-4 lg:px-8">
+      <section aria-labelledby="area-heading" className="px-4 py-4 lg:px-8">
         <div className="mx-auto max-w-3xl">
           <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" aria-hidden="true" />
@@ -146,7 +146,7 @@ export default function AreaPage() {
             </div>
           )}
         </div>
-      </main>
+      </section>
     </div>
   );
 }

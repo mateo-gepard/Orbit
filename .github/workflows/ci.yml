@@ -17,15 +17,20 @@ jobs:
     name: App checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      THREADMAP_BUILD_SHA: ${{ github.sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
+
+      - name: Pin npm
+        run: npm install --global npm@11.5.1
 
       - name: Install dependencies
         run: npm ci
@@ -38,6 +43,9 @@ jobs:
 
       - name: Deployment region policy
         run: npm run audit:regions
+
+      - name: Release contract
+        run: npm run release:contract
 
       - name: Lint
         run: npm run lint
@@ -57,16 +65,19 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
 
+      - name: Pin npm
+        run: npm install --global npm@11.5.1
+
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: 21
@@ -83,14 +94,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: functions/package-lock.json
+
+      - name: Pin npm
+        run: npm install --global npm@11.5.1
 
       - name: Install dependencies
         working-directory: functions
@@ -113,3 +127,45 @@ jobs:
       - name: Test functions
         working-directory: functions
         run: node --test 'lib/**/*.test.js'
+
+  browser:
+    name: Browser release smoke
+    needs: app
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: true
+      THREADMAP_BUILD_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Pin npm
+        run: npm install --global npm@11.5.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install browser engines
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Cold-load desktop, Android, and iOS routes
+        run: npm run test:e2e
+
+      - name: Preserve browser evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: browser-smoke-${{ github.sha }}
+          path: |
+            .vercel/playwright-report
+            .vercel/playwright-results
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

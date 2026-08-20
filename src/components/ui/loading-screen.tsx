@@ -41,7 +41,7 @@ export function LoadingScreen() {
         aria-busy="true"
         aria-label="Arbeitsbereich wird geladen"
         className={cn(
-          'fixed inset-0 z-[9999] flex items-center justify-center bg-background transition-opacity duration-300',
+          'motion-surface fixed inset-0 z-[9999] flex items-center justify-center bg-background transition-opacity duration-300',
           mounted ? 'opacity-100' : 'opacity-0'
         )}
       >
@@ -65,7 +65,7 @@ export function LoadingScreen() {
             <h1 className="text-lg font-semibold tracking-tight">
               THREADMAP <span className="text-cyan-600">🩺</span>
             </h1>
-            <p className="text-[11px] text-muted-foreground/60 animate-pulse">
+            <p className="text-[11px] text-foreground">
               {loadingText}
             </p>
           </div>
@@ -81,7 +81,7 @@ export function LoadingScreen() {
       aria-busy="true"
       aria-label={language === 'de' ? 'Arbeitsbereich wird geladen' : 'Loading workspace'}
       className={cn(
-        'fixed inset-0 z-[9999] flex items-center justify-center bg-background transition-opacity duration-300',
+        'motion-surface fixed inset-0 z-[9999] flex items-center justify-center bg-background transition-opacity duration-300',
         mounted ? 'opacity-100' : 'opacity-0'
       )}
     >
@@ -93,7 +93,7 @@ export function LoadingScreen() {
         {/* App name */}
         <div className="flex flex-col items-center gap-1">
           <h1 className="text-lg font-semibold tracking-tight">THREADMAP</h1>
-          <p className="text-[11px] text-muted-foreground/70 motion-safe:animate-pulse">
+          <p className="text-[11px] text-foreground">
             {language === 'de' ? 'Dein Arbeitsbereich wird geladen…' : 'Loading your workspace…'}
           </p>
         </div>

@@ -17,25 +17,117 @@ service cloud.firestore {
           && docId[0:request.auth.uid.size() + 1] == request.auth.uid + '_';
     }
 
-    function validItem(data) {
+    function validItemFields(data, allowLegacyInbox) {
       return data.userId is string
           && data.title is string
           && data.title.size() <= 500
           && data.type in ['task', 'project', 'habit', 'event', 'goal', 'note']
-          && data.status in ['active', 'waiting', 'done', 'archived']
+          && (data.status in ['active', 'waiting', 'done', 'archived']
+              || (allowLegacyInbox && data.status == 'inbox'))
           && data.createdAt is int
           && data.updatedAt is int
           && data.revision is int
           && data.revision >= 1
           && (!('content' in data) || (data.content is string && data.content.size() <= 200000))
+          && (!('completedAt' in data) || data.completedAt is int)
+          && (!('restoredAt' in data) || data.restoredAt is int)
+          && (!('dueDate' in data) || (data.dueDate is string && data.dueDate.size() <= 32))
+          && (!('priority' in data) || data.priority in ['low', 'medium', 'high'])
+          && (!('assignee' in data) || (data.assignee is string && data.assignee.size() <= 200))
+          && (!('checklist' in data) || (data.checklist is list && data.checklist.size() <= 500))
+          && (!('emoji' in data) || (data.emoji is string && data.emoji.size() <= 32))
+          && (!('color' in data) || (data.color is string && data.color.size() <= 64))
+          && (!('tier' in data) || data.tier in [1, 2, 3])
+          && (!('frequency' in data) || data.frequency in ['daily', 'weekly', 'custom'])
+          && (!('customDays' in data)
+              || (data.customDays is list
+                  && data.customDays.size() <= 7
+                  && data.customDays.hasOnly([0, 1, 2, 3, 4, 5, 6])))
+          && (!('habitTime' in data) || (data.habitTime is string && data.habitTime.size() <= 8))
+          && (!('completions' in data) || (data.completions is map && data.completions.size() <= 3660))
+          && (!('startDate' in data) || (data.startDate is string && data.startDate.size() <= 32))
+          && (!('endDate' in data) || (data.endDate is string && data.endDate.size() <= 32))
+          && (!('startTime' in data) || (data.startTime is string && data.startTime.size() <= 8))
+          && (!('endTime' in data) || (data.endTime is string && data.endTime.size() <= 8))
+          && (!('googleCalendarId' in data)
+              || (data.googleCalendarId is string && data.googleCalendarId.size() <= 1024))
+          && (!('googleCalendarOrigin' in data) || data.googleCalendarOrigin is bool)
+          && (!('recurrence' in data)
+              || (data.recurrence is map
+                  && data.recurrence.keys().hasOnly([
+                    'freq', 'interval', 'byWeekday', 'until', 'count', 'exceptions'
+                  ])
+                  && data.recurrence.freq in ['daily', 'weekly', 'monthly', 'yearly']
+                  && data.recurrence.interval is int
+                  && data.recurrence.interval >= 1
+                  && data.recurrence.interval <= 1000
+                  && (!('byWeekday' in data.recurrence)
+                      || (data.recurrence.byWeekday is list
+                          && data.recurrence.byWeekday.size() <= 7
+                          && data.recurrence.byWeekday.hasOnly([0, 1, 2, 3, 4, 5, 6])))
+                  && (!('until' in data.recurrence)
+                      || (data.recurrence.until is string && data.recurrence.until.size() <= 32))
+                  && (!('count' in data.recurrence)
+                      || (data.recurrence.count is int
+                          && data.recurrence.count >= 1
+                          && data.recurrence.count <= 750))
+                  && (!('exceptions' in data.recurrence)
+                      || (data.recurrence.exceptions is list
+                          && data.recurrence.exceptions.size() <= 750))))
+          && (!('googleRecurringEventId' in data)
+              || (data.googleRecurringEventId is string
+                  && data.googleRecurringEventId.size() <= 1024))
+          && (!('timeframe' in data)
+              || data.timeframe in ['quarterly', 'yearly', 'longterm'])
+          && (!('metric' in data) || (data.metric is string && data.metric.size() <= 500))
+          && (!('noteSubtype' in data)
+              || data.noteSubtype in ['idea', 'principle', 'plan', 'journal', 'general'])
+          && (!('parentId' in data) || (data.parentId is string && data.parentId.size() <= 200))
           && (!('linkedIds' in data) || (data.linkedIds is list && data.linkedIds.size() <= 500))
           && (!('tags' in data) || (data.tags is list && data.tags.size() <= 100))
-          && (!('files' in data) || (data.files is list && data.files.size() <= 50));
+          && (!('files' in data) || (data.files is list && data.files.size() <= 50))
+          && (!('myDay' in data) || (data.myDay is string && data.myDay.size() <= 32))
+          && (!('calendarSynced' in data) || data.calendarSynced is bool);
     }
 
-    function existingFilesPreserved(before, after) {
-      return !('files' in before)
-          || (('files' in after) && after.files is list && after.files.hasAll(before.files));
+    function validItemCreate(data) {
+      return data.keys().hasOnly([
+            'userId', 'title', 'type', 'status', 'createdAt', 'updatedAt',
+            'revision', 'content', 'completedAt', 'restoredAt', 'dueDate',
+            'priority', 'assignee', 'checklist', 'emoji', 'color', 'tier',
+            'frequency', 'customDays', 'habitTime', 'completions', 'startDate',
+            'endDate', 'startTime', 'endTime', 'googleCalendarId', 'googleCalendarOrigin', 'recurrence',
+            'googleRecurringEventId', 'timeframe', 'metric', 'noteSubtype',
+            'parentId', 'linkedIds', 'tags', 'files', 'myDay', 'calendarSynced'
+          ])
+          && validItemFields(data, false);
+    }
+
+    function validItemUpdate(before, after) {
+      return after.diff(before).affectedKeys().hasOnly([
+            'userId', 'title', 'type', 'status', 'createdAt', 'updatedAt',
+            'revision', 'content', 'completedAt', 'restoredAt', 'dueDate',
+            'priority', 'assignee', 'checklist', 'emoji', 'color', 'tier',
+            'frequency', 'customDays', 'habitTime', 'completions', 'startDate',
+            'endDate', 'startTime', 'endTime', 'googleCalendarId', 'googleCalendarOrigin', 'recurrence',
+            'googleRecurringEventId', 'timeframe', 'metric', 'noteSubtype',
+            'parentId', 'linkedIds', 'tags', 'files', 'myDay', 'calendarSynced'
+          ])
+          && validItemFields(
+            after,
+            before.status == 'inbox' && after.status == 'inbox'
+          )
+          && (!('googleCalendarOrigin' in before)
+              || before.googleCalendarOrigin != true
+              || (('googleCalendarOrigin' in after) && after.googleCalendarOrigin == true));
+    }
+
+    function clientCreatesWithoutFiles(data) {
+      return !('files' in data) || (data.files is list && data.files.size() == 0);
+    }
+
+    function existingFilesUnchanged(before, after) {
+      return after.get('files', []) == before.get('files', []);
     }
 
     function parentTypeAllowed(childType, parentType) {
@@ -68,39 +160,131 @@ service cloud.firestore {
           && data.revision > 0;
     }
 
-    function validToolDocument(docId, data) {
-      return (validToolMetadata(docId, data, 'abitur')
-                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'profile'])
-                && data.profile is map)
+    function validToolPayload(docId, data) {
+      return (validToolMetadata(docId, data, 'abitur') && data.profile is map)
           || (validToolMetadata(docId, data, 'toolbox')
-                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'enabledTools'])
                 && data.enabledTools is list
                 && data.enabledTools.size() <= 20)
           || (validToolMetadata(docId, data, 'wishlist')
-                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'items', 'duels'])
                 && data.items is list
                 && data.items.size() <= 500
                 && data.duels is list
                 && data.duels.size() <= 2000)
-          || (validToolMetadata(docId, data, 'settings')
-                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'settings'])
-                && data.settings is map)
+          || (validToolMetadata(docId, data, 'settings') && data.settings is map)
           || (validToolMetadata(docId, data, 'briefing-journal')
-                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'version', 'dailyRecords', 'weeklyRecords'])
                 && data.version == 2
                 && data.dailyRecords is list
                 && data.dailyRecords.size() <= 90
                 && data.weeklyRecords is list
                 && data.weeklyRecords.size() <= 26)
           || (validToolMetadata(docId, data, 'dispatch-plans')
-                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'version', 'plans'])
                 && data.version == 2
                 && data.plans is list
                 && data.plans.size() <= 31)
           || (validToolMetadata(docId, data, 'flightLogs')
-                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'logs'])
                 && data.logs is list
                 && data.logs.size() <= 100);
+    }
+
+    function validToolDocument(docId, data) {
+      return validToolPayload(docId, data)
+          && ((data.toolId == 'abitur'
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'profile']))
+              || (data.toolId == 'toolbox'
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'enabledTools']))
+              || (data.toolId == 'wishlist'
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'items', 'duels']))
+              || (data.toolId == 'settings'
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'settings']))
+              || (data.toolId == 'briefing-journal'
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'version', 'dailyRecords', 'weeklyRecords']))
+              || (data.toolId == 'dispatch-plans'
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'version', 'plans']))
+              || (data.toolId == 'flightLogs'
+                && data.keys().hasOnly(['userId', 'toolId', 'updatedAt', 'revision', 'logs'])));
+    }
+
+    function validToolUpdate(docId, before, after) {
+      return validToolPayload(docId, after)
+          && ((after.toolId == 'abitur'
+                && after.diff(before).affectedKeys().hasOnly(['updatedAt', 'revision', 'profile']))
+              || (after.toolId == 'toolbox'
+                && after.diff(before).affectedKeys().hasOnly(['updatedAt', 'revision', 'enabledTools']))
+              || (after.toolId == 'wishlist'
+                && after.diff(before).affectedKeys().hasOnly(['updatedAt', 'revision', 'items', 'duels']))
+              || (after.toolId == 'settings'
+                && after.diff(before).affectedKeys().hasOnly(['updatedAt', 'revision', 'settings']))
+              || (after.toolId == 'briefing-journal'
+                && after.diff(before).affectedKeys().hasOnly(['updatedAt', 'revision', 'version', 'dailyRecords', 'weeklyRecords']))
+              || (after.toolId == 'dispatch-plans'
+                && after.diff(before).affectedKeys().hasOnly(['updatedAt', 'revision', 'version', 'plans']))
+              || (after.toolId == 'flightLogs'
+                && after.diff(before).affectedKeys().hasOnly(['updatedAt', 'revision', 'logs'])));
+    }
+
+    function validAirport(data) {
+      return data is map
+          && data.keys().hasOnly(['code', 'name', 'city', 'region'])
+          && data.code is string
+          && data.code.size() > 0
+          && data.code.size() <= 16
+          && data.name is string
+          && data.name.size() <= 200
+          && data.city is string
+          && data.city.size() <= 200
+          && data.region in ['europe', 'americas', 'asia', 'middle-east', 'africa', 'oceania'];
+    }
+
+    function validFlightLog(docId, data) {
+      return data.keys().hasOnly([
+            'id', 'flightNumber', 'route', 'duration', 'actualDuration',
+            'startedAt', 'endedAt', 'tasks', 'turbulence',
+            'completedNormally', 'debrief', 'userId', 'flightClass'
+          ])
+          && data.id is string
+          && data.id.size() > 0
+          && data.id.size() <= 512
+          && !data.id.matches('.*[/].*')
+          && docId == request.auth.uid + '_' + data.id
+          && data.userId == request.auth.uid
+          && data.flightNumber is string
+          && data.flightNumber.size() > 0
+          && data.flightNumber.size() <= 64
+          && data.route is map
+          && data.route.keys().hasOnly(['from', 'to', 'distanceKm', 'realFlightMin'])
+          && validAirport(data.route.from)
+          && validAirport(data.route.to)
+          && data.route.distanceKm is int
+          && data.route.distanceKm >= 0
+          && data.route.distanceKm <= 50000
+          && data.route.realFlightMin is int
+          && data.route.realFlightMin >= 0
+          && data.route.realFlightMin <= 1440
+          && data.duration is int
+          && data.duration >= 1
+          && data.duration <= 1440
+          && data.actualDuration is int
+          && data.actualDuration >= 0
+          && data.actualDuration <= 604800000
+          && data.startedAt is int
+          && data.startedAt > 0
+          && data.endedAt is int
+          && data.endedAt >= data.startedAt
+          && data.tasks is list
+          && data.tasks.size() <= 500
+          && data.turbulence is list
+          && data.turbulence.size() <= 5000
+          && data.completedNormally is bool
+          && data.debrief is map
+          && data.debrief.keys().hasOnly(['summary', 'nextAction', 'turbulenceTags'])
+          && (!('summary' in data.debrief)
+              || (data.debrief.summary is string && data.debrief.summary.size() <= 10000))
+          && (!('nextAction' in data.debrief)
+              || (data.debrief.nextAction is string && data.debrief.nextAction.size() <= 2000))
+          && (!('turbulenceTags' in data.debrief)
+              || (data.debrief.turbulenceTags is list
+                  && data.debrief.turbulenceTags.size() <= 100))
+          && (!('flightClass' in data) || data.flightClass in ['private', 'commercial']);
     }
 
     match /items/{itemId} {
@@ -108,15 +292,16 @@ service cloud.firestore {
       allow create: if signedIn()
                     && owner(request.resource.data.userId)
                     && validParentReference(itemId, request.resource.data)
-                    && validItem(request.resource.data);
+                    && clientCreatesWithoutFiles(request.resource.data)
+                    && validItemCreate(request.resource.data);
       allow update: if signedIn()
                     && owner(resource.data.userId)
                     && request.resource.data.userId == resource.data.userId
                     && request.resource.data.createdAt == resource.data.createdAt
                     && request.resource.data.revision == resource.data.get('revision', 0) + 1
                     && validParentReference(itemId, request.resource.data)
-                    && existingFilesPreserved(resource.data, request.resource.data)
-                    && validItem(request.resource.data);
+                    && existingFilesUnchanged(resource.data, request.resource.data)
+                    && validItemUpdate(resource.data, request.resource.data);
       // Deletion is server-orchestrated so attachment cleanup and relationship
       // repair cannot be bypassed by a direct SDK call.
       allow delete: if false;
@@ -169,7 +354,7 @@ service cloud.firestore {
                     && ownerPrefixed(docId)
                     && owner(resource.data.userId)
                     && request.resource.data.userId == resource.data.userId
-                    && validToolDocument(docId, request.resource.data)
+                    && validToolUpdate(docId, resource.data, request.resource.data)
                     && request.resource.data.revision == resource.data.revision + 1;
       allow delete: if signedIn()
                     && ownerPrefixed(docId)
@@ -198,13 +383,14 @@ service cloud.firestore {
       allow create: if signedIn()
                     && ownerPrefixed(docId)
                     && owner(request.resource.data.userId)
-                    && request.resource.data.id is string
-                    && request.resource.data.startedAt is int;
+                    && validFlightLog(docId, request.resource.data);
       allow update: if signedIn()
                     && ownerPrefixed(docId)
                     && owner(resource.data.userId)
                     && request.resource.data.userId == resource.data.userId
-                    && request.resource.data.id == resource.data.id;
+                    && request.resource.data.id == resource.data.id
+                    && request.resource.data.startedAt == resource.data.startedAt
+                    && validFlightLog(docId, request.resource.data);
       allow delete: if signedIn() && ownerPrefixed(docId) && owner(resource.data.userId);
     }
 
@@ -270,6 +456,7 @@ service cloud.firestore {
     // must not be forgeable. These blocks are redundant with the catch-all below
     // and exist so the intent is explicit rather than inferred.
     match /mcpOAuthClients/{clientId} { allow read, write: if false; }
+    match /mcpOAuthUserGrants/{grantId} { allow read, write: if false; }
     match /mcpOAuthAuthorizationRequests/{requestHash} { allow read, write: if false; }
     match /mcpOAuthAuthorizationCodes/{codeHash} { allow read, write: if false; }
     match /mcpOAuthAccessTokens/{tokenHash} { allow read, write: if false; }

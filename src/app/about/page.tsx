@@ -52,7 +52,7 @@ export default function AboutThreadmapPage() {
             If you enable Calendar sync, Threadmap asks to view and manage events only on Google calendars you own. Threadmap uses that access to import your events and keep Threadmap calendar events synchronized at your request.
           </p>
           <p>
-            Calendar access is not used for advertising, is not sold, and can be revoked from Threadmap or your Google Account at any time.
+            Calendar access is not used for advertising or sold. Disconnecting in Threadmap removes the local credential and asks Google to revoke the grant; you can always remove Threadmap directly from your Google Account&apos;s third-party connections.
           </p>
         </div>
       </section>

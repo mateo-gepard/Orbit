@@ -115,12 +115,12 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
         {/* Flying pucks decoration */}
         {stage === 'celebrate' && (
           <>
-            <div className="absolute text-2xl animate-bounce" style={{ top: '25%', left: '18%', animationDelay: '0ms', animationDuration: '0.6s' }}>🏒</div>
-            <div className="absolute text-xl animate-bounce" style={{ top: '30%', right: '22%', animationDelay: '150ms', animationDuration: '0.5s' }}>🏑</div>
+            <div className="reduced-motion-static absolute animate-bounce text-2xl" style={{ top: '25%', left: '18%', animationDelay: '0ms', animationDuration: '0.6s' }}>🏒</div>
+            <div className="reduced-motion-static absolute animate-bounce text-xl" style={{ top: '30%', right: '22%', animationDelay: '150ms', animationDuration: '0.5s' }}>🏑</div>
             {isHatTrick && (
               <>
-                <div className="absolute text-2xl animate-bounce" style={{ bottom: '30%', left: '25%', animationDelay: '100ms', animationDuration: '0.7s' }}>🩺</div>
-                <div className="absolute text-xl animate-bounce" style={{ bottom: '25%', right: '18%', animationDelay: '200ms', animationDuration: '0.5s' }}>⚕️</div>
+                <div className="reduced-motion-static absolute animate-bounce text-2xl" style={{ bottom: '30%', left: '25%', animationDelay: '100ms', animationDuration: '0.7s' }}>🩺</div>
+                <div className="reduced-motion-static absolute animate-bounce text-xl" style={{ bottom: '25%', right: '18%', animationDelay: '200ms', animationDuration: '0.5s' }}>⚕️</div>
               </>
             )}
           </>
@@ -128,7 +128,7 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
 
         <div
           className={cn(
-            'relative flex flex-col items-center gap-3 transition-all',
+            'reduced-motion-static relative flex flex-col items-center gap-3 transition-all',
             isHatTrick ? 'duration-700' : 'duration-500',
             stage === 'celebrate' ? 'scale-100 opacity-100' : 'scale-75 opacity-0'
           )}
@@ -137,7 +137,7 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
           <div className="relative">
             <div
               className={cn(
-                'transition-transform',
+                'reduced-motion-static transition-transform',
                 isHatTrick ? 'text-7xl' : 'text-6xl',
                 stage === 'celebrate' ? 'scale-110' : 'scale-100'
               )}
@@ -196,13 +196,13 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
       >
         <div
           className={cn(
-            'flex flex-col items-center gap-2.5 transition-all duration-300',
+            'reduced-motion-static flex flex-col items-center gap-2.5 transition-all duration-300',
             stage === 'celebrate' ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
           )}
         >
           {/* Hockey stick + medical cross combo */}
           <div className="relative flex items-center gap-1">
-            <div className="text-4xl" style={stage === 'celebrate' ? { animation: 'bounce 0.5s ease-in-out' } : undefined}>🏒</div>
+            <div className="reduced-motion-static text-4xl" style={stage === 'celebrate' ? { animation: 'bounce 0.5s ease-in-out' } : undefined}>🏒</div>
             <div className="text-3xl">⚕️</div>
           </div>
 
@@ -233,7 +233,7 @@ export function CompletionAnimation({ type, streak, onComplete }: CompletionAnim
     >
       <div
         className={cn(
-          'flex flex-col items-center gap-2 transition-all duration-300',
+          'reduced-motion-static flex flex-col items-center gap-2 transition-all duration-300',
           stage === 'celebrate' ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
         )}
       >

@@ -18,7 +18,12 @@ const memoryStorage = (): Storage => {
 vi.stubGlobal('localStorage', memoryStorage());
 vi.stubGlobal('window', Object.assign(new EventTarget(), { localStorage: globalThis.localStorage }));
 
-const { useOrbitStore } = await import('./store');
+const {
+  detachThreadmapSyncWithoutPersistence,
+  scopeThreadmapStore,
+  useOrbitStore,
+} = await import('./store');
+const { clearScopedBrowserData, scopedStorageKey } = await import('./account-storage');
 import type { OrbitItem } from './types';
 
 /**
@@ -88,6 +93,28 @@ describe('tag state', () => {
     useOrbitStore.getState()._setSyncUserId('u1');
     useOrbitStore.getState().addCustomTag('research');
     expect(useOrbitStore.getState()._tagsCloudDirty).toBe(true);
+  });
+});
+
+describe('secure account scope teardown', () => {
+  it('does not recreate a cleared UID key during DataProvider teardown and signed-out scoping', async () => {
+    const userId = 'shared-device-user';
+    const accountKey = scopedStorageKey('orbit-tags', userId);
+    await scopeThreadmapStore(userId);
+    useOrbitStore.getState()._setSyncUserId(userId);
+    useOrbitStore.getState().addCustomTag('private-account-tag');
+    expect(globalThis.localStorage.getItem(accountKey)).toContain('private-account-tag');
+
+    clearScopedBrowserData(userId, globalThis.localStorage, null);
+    expect(globalThis.localStorage.getItem(accountKey)).toBeNull();
+
+    // This mirrors the old account effect cleanup followed by the signed-out
+    // setup effect. Neither transition may repopulate the forgotten key.
+    detachThreadmapSyncWithoutPersistence();
+    await scopeThreadmapStore(null);
+    useOrbitStore.getState()._setSyncUserId(null);
+
+    expect(globalThis.localStorage.getItem(accountKey)).toBeNull();
   });
 });
 

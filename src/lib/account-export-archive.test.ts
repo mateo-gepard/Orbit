@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { AccountExport, AccountExportAttachment } from './account-data';
 import {
+  MAX_ACCOUNT_EXPORT_ARCHIVE_ATTACHMENT_BYTES,
+  accountExportArchiveBytesAllowed,
   buildAccountExportArchive,
   redactAccountExportAttachmentUrls,
 } from './account-export-archive';
@@ -56,6 +58,28 @@ async function storedZipEntries(blob: Blob): Promise<Map<string, Uint8Array>> {
 }
 
 describe('durable account export archive', () => {
+  it('enforces the 128 MiB in-memory attachment boundary without overflow', () => {
+    expect(accountExportArchiveBytesAllowed(
+      MAX_ACCOUNT_EXPORT_ARCHIVE_ATTACHMENT_BYTES - 1,
+      1,
+    )).toBe(true);
+    expect(accountExportArchiveBytesAllowed(
+      MAX_ACCOUNT_EXPORT_ARCHIVE_ATTACHMENT_BYTES,
+      1,
+    )).toBe(false);
+    expect(accountExportArchiveBytesAllowed(0, Number.MAX_SAFE_INTEGER)).toBe(false);
+    expect(accountExportArchiveBytesAllowed(0, 1.5)).toBe(false);
+  });
+
+  it('rejects oversized declared attachments before loading any Blob', async () => {
+    const loadAttachment = vi.fn(async () => new Blob(['unused']));
+    await expect(buildAccountExportArchive('user-a', exportFixture([
+      attachment({ size: MAX_ACCOUNT_EXPORT_ARCHIVE_ATTACHMENT_BYTES }),
+      attachment({ id: 'file-2', size: 1 }),
+    ]), { loadAttachment })).rejects.toThrow(/paged export/);
+    expect(loadAttachment).not.toHaveBeenCalled();
+  });
+
   it('creates a complete, useful archive when there are no attachments', async () => {
     const result = await buildAccountExportArchive('user-a', exportFixture());
     const entries = await storedZipEntries(result.blob);

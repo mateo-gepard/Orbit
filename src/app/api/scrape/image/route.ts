@@ -7,6 +7,11 @@ import {
 import { authErrorResponse, requireFirebaseUser } from '@/lib/server/firebase-auth';
 import { readResponseText } from '@/lib/server/url-safety';
 import { AMOUNT_PATTERN, normalizePrice } from '@/lib/server/scrape-parsing';
+import {
+  BoundedJsonError,
+  hasOnlyObjectKeys,
+  readBoundedJsonObject,
+} from '@/lib/server/bounded-json';
 
 // ═══════════════════════════════════════════════════════════
 // Threadmap — Product Image & Price Search (Multi-source)
@@ -315,7 +320,7 @@ async function scrapePrice(query: string, signal: AbortSignal): Promise<string |
 }
 
 // ── Main handler ─────────────────────────────────────────
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   const preAuthLimited = checkRateLimit(request, {
     name: 'scrape-auth', max: 30, windowMs: 60_000,
   });
@@ -332,10 +337,17 @@ export async function GET(request: NextRequest) {
   });
   if (rateLimited) return rateLimited;
 
-  const query = request.nextUrl.searchParams.get('q');
-  if (!query) {
-    return NextResponse.json({ error: 'Missing q parameter' }, { status: 400 });
+  let body: Record<string, unknown>;
+  try {
+    body = await readBoundedJsonObject(request);
+  } catch (error) {
+    const status = error instanceof BoundedJsonError ? error.status : 400;
+    return NextResponse.json({ error: 'Invalid product search request.' }, { status });
   }
+  if (!hasOnlyObjectKeys(body, ['query']) || typeof body.query !== 'string' || !body.query.trim()) {
+    return NextResponse.json({ error: 'A product search term is required.' }, { status: 400 });
+  }
+  const query = body.query.trim();
   if (query.length > 160) {
     return NextResponse.json({ error: 'Query too long' }, { status: 400 });
   }

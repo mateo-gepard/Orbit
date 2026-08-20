@@ -9,6 +9,15 @@
       ]
     },
     {
+      "collectionGroup": "items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "flightLogs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -35,6 +44,18 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "accountDeletionJobs",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "_authEmailRateLimits",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "mfaRecoveryCodes",
       "fieldPath": "expireAt",
       "ttl": true,
@@ -42,6 +63,30 @@
     },
     {
       "collectionGroup": "mfaRecoveryRateLimits",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "mfaRecoveryAudits",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "scrapeRateLimits",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "mcpOAuthClients",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "mcpOAuthUserGrants",
       "fieldPath": "expireAt",
       "ttl": true,
       "indexes": []

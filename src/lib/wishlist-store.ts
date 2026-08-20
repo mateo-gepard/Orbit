@@ -694,7 +694,7 @@ function scheduleSave() {
         pendingMutations: remainingMutations,
         cloudDirty: remainingMutations.length > 0,
       });
-    } catch (error) {
+    } catch {
       if (_syncUserId !== scheduledUserId
           || _scopeGeneration !== scheduledGeneration) return;
       if (typeof window !== 'undefined') {
@@ -952,9 +952,9 @@ export const useWishlistStore = create<WishlistState>()(
 const WISHLIST_STORAGE_KEY = 'orbit-wishlist';
 
 export async function scopeWishlistStore(userId: string | null): Promise<void> {
-  useWishlistStore.getState()._setSyncUserId(null);
   const target = prepareScopedStorage(WISHLIST_STORAGE_KEY, userId);
   useWishlistStore.persist.setOptions({ name: target.key });
+  useWishlistStore.getState()._setSyncUserId(null);
   if (!target.hasPersistedState) {
     useWishlistStore.setState({ items: [], duels: [], deletedItems: {}, pendingMutations: [], cloudDirty: false });
   }

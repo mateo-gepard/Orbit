@@ -9,12 +9,24 @@
 # Prerequisites:
 # - Firebase CLI: npm install -g firebase-tools
 # - Logged in: firebase login
-# - Blaze (pay-as-you-go) plan enabled on your Firebase project
-#   (required for Cloud Functions — free tier is generous)
+# - An approved Firebase billing plan that supports Cloud Functions/Scheduler
 #
 # ═══════════════════════════════════════════════════════════
 
-set -e
+set -euo pipefail
+
+STAGING_PROJECT="threadmap-staging-9e0b6"
+PRODUCTION_PROJECT="orbit-9e0b6"
+PROJECT_ID="${THREADMAP_FIREBASE_PROJECT:-$STAGING_PROJECT}"
+
+if [[ "$PROJECT_ID" != "$STAGING_PROJECT" && "$PROJECT_ID" != "$PRODUCTION_PROJECT" ]]; then
+    echo "❌ THREADMAP_FIREBASE_PROJECT must be $STAGING_PROJECT or $PRODUCTION_PROJECT"
+    exit 1
+fi
+if [[ "$PROJECT_ID" == "$PRODUCTION_PROJECT" && "${THREADMAP_PRODUCTION_DEPLOY_CONFIRMATION:-}" != "$PRODUCTION_PROJECT" ]]; then
+    echo "❌ Production setup refused. Set THREADMAP_PRODUCTION_DEPLOY_CONFIRMATION=$PRODUCTION_PROJECT"
+    exit 1
+fi
 
 echo "═══════════════════════════════════════════════════════════"
 echo "  Threadmap — FCM Background Notifications Setup"
@@ -53,17 +65,19 @@ read -p "Press Enter when done..."
 # Step 4: Install Cloud Function dependencies
 echo ""
 echo "── Step 2: Installing Cloud Function dependencies ────────"
-cd functions
-npm install
-cd ..
+(
+    cd functions
+    npm ci
+)
 echo "✅ Functions dependencies installed"
 
 # Step 5: Build the function
 echo ""
 echo "── Step 3: Building Cloud Function ───────────────────────"
-cd functions
-npm run build
-cd ..
+(
+    cd functions
+    npm run build
+)
 echo "✅ Cloud Function built"
 
 # Step 6: Deploy
@@ -75,15 +89,20 @@ echo "  1. Deploy the Cloud Function (sendBriefingNotifications)"
 echo "  2. Create a Cloud Scheduler job (runs every minute)"
 echo "  3. Update Firestore rules (fcmTokens collection)"
 echo ""
-echo "Note: Cloud Functions require the Blaze (pay-as-you-go) plan."
-echo "Free tier includes 2M invocations/month — more than enough."
+echo "Confirm the target project's approved billing plan, budgets, and alerts before deployment."
 echo ""
 read -p "Deploy now? (y/n) " -n 1 -r
 echo ""
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Deploying..."
-    firebase deploy --only functions,firestore:rules
+    if [[ "$PROJECT_ID" == "$PRODUCTION_PROJECT" ]]; then
+        node scripts/guarded-firebase-deploy.mjs \
+          --project "$PROJECT_ID" \
+          --only functions,firestore:rules,firestore:indexes
+    else
+        firebase deploy --project "$PROJECT_ID" --only functions,firestore:rules,firestore:indexes
+    fi
     echo ""
     echo "✅ Deployed! Background briefings are now active."
     echo ""
@@ -92,7 +111,12 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 else
     echo ""
     echo "Skipped deploy. You can deploy later with:"
-    echo "  firebase deploy --only functions,firestore:rules"
+    if [[ "$PROJECT_ID" == "$PRODUCTION_PROJECT" ]]; then
+        echo "  node scripts/guarded-firebase-deploy.mjs --project $PROJECT_ID --only functions,firestore:rules,firestore:indexes"
+        echo "Production remains subject to the release SHA, clean-main, preflight, confirmation, and approval gates."
+    else
+        echo "  firebase deploy --project $PROJECT_ID --only functions,firestore:rules,firestore:indexes"
+    fi
 fi
 
 echo ""
