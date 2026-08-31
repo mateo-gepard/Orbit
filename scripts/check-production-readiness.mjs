@@ -15,12 +15,13 @@ const requiredProductionEnvironment = [
   'NEXT_PUBLIC_FIREBASE_APP_ID',
   'NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY',
   'NEXT_PUBLIC_FIREBASE_VAPID_KEY',
+  'NEXT_PUBLIC_THREADMAP_PRIVATE_MODE',
+  'THREADMAP_DEPLOYMENT_MODE',
   'SCRAPE_RATE_LIMIT_SHARED_SECRET',
-  'LEGAL_ENTITY_NAME',
   'LEGAL_CONTACT_EMAIL',
-  'LEGAL_POSTAL_ADDRESS',
   'SECURITY_CONTACT_EMAIL',
 ];
+const publicLegalEnvironment = ['LEGAL_ENTITY_NAME', 'LEGAL_POSTAL_ADDRESS'];
 
 function read(file) {
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
@@ -68,11 +69,12 @@ function checkContract() {
   const functionsIndex = read('functions/src/index.ts');
   const uploadCleanupPolicy = read('functions/src/upload-cleanup-policy.ts');
 
-  for (const name of requiredProductionEnvironment) {
+  for (const name of [...requiredProductionEnvironment, ...publicLegalEnvironment]) {
     if (!rootExamples.includes(`${name}=`)) findings.push(`environment examples do not declare ${name}`);
   }
   for (const name of [
     'ENFORCE_APP_CHECK',
+    'THREADMAP_PRIVATE_MODE',
     'MCP_ORIGIN',
     'MCP_ALLOW_LOOPBACK_REDIRECTS',
     'MCP_DYNAMIC_CLIENT_SCOPES',
@@ -82,6 +84,15 @@ function checkContract() {
     'AUTH_EMAIL_FIREBASE_ACTION_HOSTS',
   ]) {
     if (!functionExample.includes(`${name}=`)) findings.push(`functions/.env.example does not declare ${name}`);
+  }
+  if (!read('firestore.rules').includes('request.auth.token.threadmapOwner == true')) {
+    findings.push('Firestore Rules must require the private owner claim');
+  }
+  if (!read('storage.rules').includes('request.auth.token.threadmapOwner == true')) {
+    findings.push('Storage Rules must require the private owner claim');
+  }
+  if (!functionsIndex.includes('privateOwnerAuthorized')) {
+    findings.push('Functions must enforce the private owner claim');
   }
   for (const secretName of ['RESEND_API_KEY', 'AUTH_EMAIL_HMAC_KEY']) {
     if (!functionExample.includes(`# ${secretName}=`)) {
@@ -624,14 +635,29 @@ if (contractMode) {
 checkContract();
 loadEnvConfig(process.cwd());
 
-const missing = requiredProductionEnvironment.filter((name) => !process.env[name]?.trim());
-const placeholder = requiredProductionEnvironment.filter((name) =>
+const deploymentMode = process.env.THREADMAP_DEPLOYMENT_MODE?.trim();
+const modeRequired = deploymentMode === 'public' ? publicLegalEnvironment : [];
+const validatedEnvironment = [...requiredProductionEnvironment, ...modeRequired];
+const missing = validatedEnvironment.filter((name) => !process.env[name]?.trim());
+const placeholder = validatedEnvironment.filter((name) =>
   /example|changeme|placeholder|pre-release|pending|\btbd\b/i.test(process.env[name] || '')
 );
 const invalidEmails = ['LEGAL_CONTACT_EMAIL', 'SECURITY_CONTACT_EMAIL']
   .filter((name) => process.env[name] && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(process.env[name]));
 const invalid = [];
 const productionProject = 'orbit-9e0b6';
+
+if (deploymentMode !== 'private' && deploymentMode !== 'public') {
+  invalid.push('THREADMAP_DEPLOYMENT_MODE must be private or public');
+}
+if (deploymentMode === 'private'
+    && process.env.NEXT_PUBLIC_THREADMAP_PRIVATE_MODE !== 'true') {
+  invalid.push('NEXT_PUBLIC_THREADMAP_PRIVATE_MODE must be true for a private deployment');
+}
+if (deploymentMode === 'public'
+    && process.env.NEXT_PUBLIC_THREADMAP_PRIVATE_MODE !== 'false') {
+  invalid.push('NEXT_PUBLIC_THREADMAP_PRIVATE_MODE must be false for a public deployment');
+}
 
 if (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
     && process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID !== productionProject) {

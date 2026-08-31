@@ -59,7 +59,7 @@ environment secrets, not repository variables or tracked files:
 | Firebase web | `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY`, `NEXT_PUBLIC_FIREBASE_VAPID_KEY` |
 | Server quota | `SCRAPE_RATE_LIMIT_SHARED_SECRET` |
 | Google Workspace Secretary | GitHub variable `GOOGLE_WORKSPACE_CLIENT_ID`; Secret Manager values listed below |
-| Legal/trust | `LEGAL_ENTITY_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_POSTAL_ADDRESS`, `SECURITY_CONTACT_EMAIL` |
+| Private deployment/trust | `THREADMAP_DEPLOYMENT_MODE=private`, `NEXT_PUBLIC_THREADMAP_PRIVATE_MODE=true`, `LEGAL_CONTACT_EMAIL`, `SECURITY_CONTACT_EMAIL` |
 | Firebase deploy | `FIREBASE_TOKEN` while the workflow still uses CLI token authentication |
 
 The Firebase project id must be exactly `orbit-9e0b6`. The Vercel ids must link to the production
@@ -80,6 +80,7 @@ Use `functions/.env.example` as the schema for non-secret configuration. Product
 
 ```env
 ENFORCE_APP_CHECK=true
+THREADMAP_PRIVATE_MODE=true
 MCP_ORIGIN=https://threadmap.app
 MCP_ALLOW_LOOPBACK_REDIRECTS=false
 MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access
@@ -281,8 +282,10 @@ All checkboxes require an owner, timestamp, and evidence link in `RELEASE_DRILL_
   whose validated outputs feed a separate post-evidence production approval/deploy job. Assign a
   stable reviewed HTTPS staging origin and add only that exact origin to staging Storage CORS;
   localhost-only CORS cannot validate the hosted upload flow and wildcard Vercel origins are banned.
-- [ ] Record real controller/legal identity, postal address, working legal/security mailboxes, and
-  counsel approval of Privacy/Terms, lawful bases, retention, age policy, and translations.
+- [ ] Keep the private owner claim limited to the intended account and working legal/security
+  mailboxes. Before offering public registration, switch to public mode and record the real
+  controller/legal identity and postal address, plus appropriate review of Privacy/Terms, lawful
+  bases, retention, age policy, and translations.
 - [ ] Execute/file Google/Firebase and Vercel DPAs/SCCs and maintain a current subprocessor/data-flow
   register. Confirm EU residency/transfer claims with contracts, not only configured regions.
 - [ ] Enable phishing-resistant MFA and preserve recovery codes for GitHub, Google/Firebase,

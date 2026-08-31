@@ -39,6 +39,10 @@ const rulesDescribe = hasEmulators ? describe : describe.skip;
 
 let environment: RulesTestEnvironment;
 
+function privateContext(userId: string) {
+  return environment.authenticatedContext(userId, { threadmapOwner: true });
+}
+
 function validItem(userId = OWNER_ID) {
   return {
     userId,
@@ -122,9 +126,15 @@ afterAll(async () => {
 });
 
 rulesDescribe('Firestore ownership and server-only workflows', () => {
+  it('denies authenticated sessions without the private owner claim', async () => {
+    const unapprovedDb = environment.authenticatedContext(OWNER_ID).firestore();
+    await assertFails(getDoc(doc(unapprovedDb, 'items', 'item-1')));
+    await assertFails(setDoc(doc(unapprovedDb, 'items', 'item-1'), validItem()));
+  });
+
   it('allows valid owner item access but denies cross-account access and direct deletion', async () => {
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
-    const otherDb = environment.authenticatedContext(OTHER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
+    const otherDb = privateContext(OTHER_ID).firestore();
     const itemRef = doc(ownerDb, 'items', 'item-1');
 
     await assertSucceeds(setDoc(itemRef, validItem()));
@@ -134,7 +144,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
   });
 
   it('revalidates item updates and prevents ownership changes', async () => {
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     const itemRef = doc(ownerDb, 'items', 'item-1');
     await setDoc(itemRef, validItem());
 
@@ -151,7 +161,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
   });
 
   it('makes Google Calendar provenance permanent once recorded', async () => {
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     const itemRef = doc(ownerDb, 'items', 'calendar-derived-item');
     await assertSucceeds(setDoc(itemRef, {
       ...validItem(),
@@ -187,7 +197,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
         legacyFutureField: { preserved: true },
       });
     });
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     const itemRef = doc(ownerDb, 'items', 'legacy-item');
 
     await assertSucceeds(updateDoc(itemRef, {
@@ -213,7 +223,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
   });
 
   it('reserves every attachment metadata mutation for server workflows', async () => {
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     const itemRef = doc(ownerDb, 'items', 'item-1');
     const originalFile = {
       id: 'file-1',
@@ -250,7 +260,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
 
   for (const [toolId, payload] of TOOL_SAVE_SHAPES) {
     it(`accepts the actual saveToolData shape for ${toolId}`, async () => {
-      const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
       const toolRef = doc(ownerDb, 'toolData', `${OWNER_ID}_${toolId}`);
 
       await assertSucceeds(setDoc(toolRef, toolDocument(toolId, payload)));
@@ -263,7 +273,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
   }
 
   it('binds tool data to its UID, tool ID, timestamp, allowlisted shape, and monotonic revision', async () => {
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     const validRef = doc(ownerDb, 'toolData', `${OWNER_ID}_settings`);
 
     await assertSucceeds(setDoc(validRef, toolDocument('settings', { settings: {} })));
@@ -291,7 +301,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
         legacyFutureField: { preserved: true },
       });
     });
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     const toolRef = doc(ownerDb, 'toolData', `${OWNER_ID}_settings`);
 
     await assertSucceeds(updateDoc(toolRef, {
@@ -322,8 +332,8 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
       await setDoc(doc(context.firestore(), 'toolData', `${OWNER_ID}_flightLogs`), { logs: [] });
       await setDoc(doc(context.firestore(), 'toolData', `${OWNER_ID}_settings`), { settings: {} });
     });
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
-    const otherDb = environment.authenticatedContext(OTHER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
+    const otherDb = privateContext(OTHER_ID).firestore();
 
     await assertFails(deleteDoc(doc(otherDb, 'toolData', `${OWNER_ID}_flightLogs`)));
     await assertFails(deleteDoc(doc(ownerDb, 'toolData', `${OWNER_ID}_settings`)));
@@ -331,8 +341,8 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
   });
 
   it('keeps push devices owner-readable but reserves every mutation for Cloud Functions', async () => {
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
-    const otherDb = environment.authenticatedContext(OTHER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
+    const otherDb = privateContext(OTHER_ID).firestore();
     const deviceRef = doc(ownerDb, 'fcmTokens', `${OWNER_ID}_fingerprint`);
     await environment.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), 'fcmTokens', `${OWNER_ID}_fingerprint`), {
@@ -365,7 +375,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
   });
 
   it('allows owner flight logs and denies removed/internal collections', async () => {
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     const flightRef = doc(ownerDb, 'flightLogs', `${OWNER_ID}_flight-1`);
     await assertSucceeds(setDoc(flightRef, validFlightLog()));
     await assertFails(setDoc(doc(ownerDb, 'flightLogs', `${OTHER_ID}_flight-1`), {
@@ -392,7 +402,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
         date: '2026-08-06',
       });
     });
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     const historicalRef = doc(ownerDb, 'analytics', 'historical-event');
 
     await assertFails(getDoc(historicalRef));
@@ -416,7 +426,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
         leaseUntil: 0, retryCount: 0,
       });
     });
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
 
     await assertSucceeds(getDocs(query(
       collection(ownerDb, 'flightLogs'),
@@ -441,7 +451,7 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
         nextAttemptAt: 0,
       });
     });
-    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const ownerDb = privateContext(OWNER_ID).firestore();
     await assertFails(getDoc(doc(ownerDb, 'items', 'item-1')));
     await assertFails(setDoc(doc(ownerDb, 'items', 'item-2'), validItem()));
   });
@@ -467,8 +477,8 @@ rulesDescribe('Storage ownership and content limits', () => {
         customMetadata: { threadmapUploadId: intentId },
       });
     });
-    const ownerStorage = environment.authenticatedContext(OWNER_ID).storage();
-    const otherStorage = environment.authenticatedContext(OTHER_ID).storage();
+    const ownerStorage = privateContext(OWNER_ID).storage();
+    const otherStorage = privateContext(OTHER_ID).storage();
 
     await assertSucceeds(getBytes(ref(ownerStorage, path)));
     await assertFails(getBytes(ref(otherStorage, path)));
@@ -509,8 +519,8 @@ rulesDescribe('Storage ownership and content limits', () => {
       );
     });
 
-    const ownerStorage = environment.authenticatedContext(OWNER_ID).storage();
-    const otherStorage = environment.authenticatedContext(OTHER_ID).storage();
+    const ownerStorage = privateContext(OWNER_ID).storage();
+    const otherStorage = privateContext(OTHER_ID).storage();
     const legacyPath = 'projects/legacy-project/old.pdf';
     await assertFails(getBytes(ref(ownerStorage, legacyPath)));
     await assertFails(getBytes(ref(otherStorage, legacyPath)));

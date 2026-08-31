@@ -75,6 +75,7 @@ import {
   securityAuditExpireAtMillis,
 } from './retention-policy';
 import { hasOnlyBackgroundBriefingScheduleFields } from './push-schedule-policy';
+import { privateOwnerAuthorized } from './private-access';
 
 initializeApp();
 
@@ -752,8 +753,13 @@ export const sendBriefingNotificationsEu = onSchedule(
   sendBriefingNotifications,
 );
 
-function requireUid(request: { auth?: { uid: string } | null }): string {
+function requireUid(request: {
+  auth?: { uid: string; token?: Record<string, unknown> } | null;
+}): string {
   if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Sign in to continue.');
+  if (!privateOwnerAuthorized(request.auth.token)) {
+    throw new HttpsError('permission-denied', 'This Threadmap deployment is private.');
+  }
   return request.auth.uid;
 }
 
@@ -775,7 +781,7 @@ async function assertAccountActive(uid: string): Promise<void> {
 }
 
 function requireRecentUid(request: {
-  auth?: { uid: string; token?: { auth_time?: unknown } } | null;
+  auth?: { uid: string; token?: Record<string, unknown> & { auth_time?: unknown } } | null;
 }): string {
   const uid = requireUid(request);
   const authTime = Number(request.auth?.token?.auth_time || 0);
@@ -790,7 +796,7 @@ function requireRecentUid(request: {
 }
 
 function requireExpectedUid(
-  request: { auth?: { uid: string } | null },
+  request: { auth?: { uid: string; token?: Record<string, unknown> } | null },
   data: Record<string, unknown>
 ): string {
   const uid = requireUid(request);
@@ -1299,6 +1305,10 @@ export const consumeThreadmapScrapeQuota = onRequest(
       decodedToken = await auth.verifyIdToken(bearerMatch[1]);
     } catch {
       response.set('WWW-Authenticate', 'Bearer').status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    if (!privateOwnerAuthorized(decodedToken)) {
+      response.status(403).json({ error: 'forbidden' });
       return;
     }
 
@@ -2947,7 +2957,13 @@ function getMcpRouter(
             expectedRevision,
           }),
         }),
-        verifyUserIdToken: async (idToken) => (await auth.verifyIdToken(idToken)).uid,
+        verifyUserIdToken: async (idToken) => {
+          const decodedToken = await auth.verifyIdToken(idToken);
+          if (!privateOwnerAuthorized(decodedToken)) {
+            throw new Error('This Threadmap deployment is private.');
+          }
+          return decodedToken.uid;
+        },
         log: (entry) => {
           // Cloud Logging picks structured JSON off stdout. Only identifiers and
           // outcomes are logged: never tokens, arguments, or item content.

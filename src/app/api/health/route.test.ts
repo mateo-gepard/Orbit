@@ -21,10 +21,10 @@ describe('health route', () => {
       NEXT_PUBLIC_FIREBASE_APP_ID: 'app-id',
       NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY: 'site-key',
       NEXT_PUBLIC_FIREBASE_VAPID_KEY: 'vapid-key',
+      NEXT_PUBLIC_THREADMAP_PRIVATE_MODE: 'true',
+      THREADMAP_DEPLOYMENT_MODE: 'private',
       SCRAPE_RATE_LIMIT_SHARED_SECRET: 'secret',
-      LEGAL_ENTITY_NAME: 'Threadmap Test Entity',
       LEGAL_CONTACT_EMAIL: 'legal@example.test',
-      LEGAL_POSTAL_ADDRESS: 'Test address',
       SECURITY_CONTACT_EMAIL: 'security@example.test',
     }, new Date('2026-08-20T12:00:00.000Z'));
 
@@ -61,8 +61,19 @@ describe('health route', () => {
     });
 
     expect(payload.readiness).toBe('degraded');
-    expect(payload.checks.configuration.missing).toContain('LEGAL_ENTITY_NAME');
+    expect(payload.checks.configuration.missing).toContain('THREADMAP_DEPLOYMENT_MODE');
     expect(payload.checks.configuration.missing).toContain('SCRAPE_RATE_LIMIT_SHARED_SECRET');
+  });
+
+  it('requires public controller identity only in public mode', () => {
+    const payload = buildHealthPayload({
+      NODE_ENV: 'production',
+      VERCEL_ENV: 'production',
+      THREADMAP_DEPLOYMENT_MODE: 'public',
+    });
+
+    expect(payload.checks.configuration.missing).toContain('LEGAL_ENTITY_NAME');
+    expect(payload.checks.configuration.missing).toContain('LEGAL_POSTAL_ADDRESS');
   });
 
   it('treats the explicitly built candidate SHA as authoritative', () => {
