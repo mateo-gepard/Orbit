@@ -747,16 +747,15 @@ export class ThreadmapOAuthService {
    * meaningful only as a refresh-token capability and never authorizes a tool.
    */
   private effectivePolicyScopes(scopes: readonly string[]): string[] {
-    const allowedToolScopes = new Set(
-      this.configuration.dynamicClientScopes.filter((scope) => scope.startsWith('threadmap.'))
-    );
-    return [...new Set(scopes)].filter((scope) =>
-      scope === 'offline_access' || allowedToolScopes.has(scope)
-    );
+    const allowedScopes = new Set(this.configuration.dynamicClientScopes);
+    return [...new Set(scopes)].filter((scope) => allowedScopes.has(scope));
   }
 
   private hasEffectiveToolScope(scopes: readonly string[]): boolean {
-    return scopes.some((scope) => scope.startsWith('threadmap.'));
+    const allowedToolScopes = new Set(
+      this.configuration.dynamicClientScopes.filter((scope) => scope !== 'offline_access')
+    );
+    return scopes.some((scope) => allowedToolScopes.has(scope));
   }
 
   bearerChallenge(requiredScopes: readonly string[] = []): string {

@@ -643,6 +643,86 @@ test('users can list and idempotently revoke only their own client authorization
   );
 });
 
+test('workspace scope survives registration, consent, token exchange, and refresh', async () => {
+  const firestore = new MemoryFirestore();
+  const workspaceConfiguration: ThreadmapOAuthConfiguration = {
+    ...configuration,
+    scopesSupported: ['threadmap.read', 'workspace.read', 'offline_access'],
+    dynamicClientScopes: ['threadmap.read', 'workspace.read', 'offline_access'],
+  };
+  const service = new ThreadmapOAuthService(
+    firestore as unknown as Firestore,
+    workspaceConfiguration,
+  );
+  const registration = await service.registerClient({
+    redirect_uris: [CLAUDE_REDIRECT_URI],
+    token_endpoint_auth_method: 'none',
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    client_name: 'Secretary client',
+    scope: 'threadmap.read workspace.read offline_access',
+    resource: workspaceConfiguration.resource,
+  });
+  assert.deepEqual(registration.scope.split(' '), [
+    'threadmap.read',
+    'workspace.read',
+    'offline_access',
+  ]);
+
+  const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+  const authorization = await service.startAuthorization({
+    response_type: 'code',
+    client_id: registration.client_id,
+    redirect_uri: CLAUDE_REDIRECT_URI,
+    resource: workspaceConfiguration.resource,
+    scope: 'threadmap.read workspace.read offline_access',
+    state: 'workspace-state',
+    code_challenge: createPkceS256Challenge(verifier),
+    code_challenge_method: 'S256',
+  });
+  const requestToken = new URL(authorization.location).searchParams.get('request');
+  if (!requestToken) throw new Error('Missing authorization request handle.');
+  const requestView = await service.getAuthorizationRequest(requestToken, TEST_USER_UID);
+  assert.deepEqual(requestView.scopes, [
+    'threadmap.read',
+    'workspace.read',
+    'offline_access',
+  ]);
+
+  const decision = await service.approveAuthorizationRequest(requestToken, TEST_USER_UID);
+  const code = new URL(decision.location).searchParams.get('code');
+  if (!code) throw new Error('Missing authorization code.');
+  const tokens = await service.exchangeToken({
+    grant_type: 'authorization_code',
+    client_id: registration.client_id,
+    code,
+    redirect_uri: CLAUDE_REDIRECT_URI,
+    code_verifier: verifier,
+    resource: workspaceConfiguration.resource,
+  });
+  assert.deepEqual(tokens.scope.split(' '), [
+    'threadmap.read',
+    'workspace.read',
+    'offline_access',
+  ]);
+  assert.deepEqual(
+    (await service.authenticateAccessToken(tokens.access_token, ['workspace.read'])).scopes,
+    ['threadmap.read', 'workspace.read', 'offline_access'],
+  );
+
+  const refreshed = await service.exchangeToken({
+    grant_type: 'refresh_token',
+    client_id: registration.client_id,
+    refresh_token: tokens.refresh_token,
+    resource: workspaceConfiguration.resource,
+  });
+  assert.deepEqual(refreshed.scope.split(' '), [
+    'threadmap.read',
+    'workspace.read',
+    'offline_access',
+  ]);
+});
+
 test('registration narrows an over-broad scope request instead of refusing it', () => {
   const store = new MemoryFirestore();
   const service = new ThreadmapOAuthService(store as unknown as Firestore, configuration);
