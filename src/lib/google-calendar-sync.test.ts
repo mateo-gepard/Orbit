@@ -46,6 +46,7 @@ vi.mock('./google-calendar', () => ({
 
 import {
   canAcceptInboundGoogleCalendarUpdate,
+  clearGoogleCalendarOutboundJournal,
   googleCalendarImportItemId,
   isPendingGoogleCalendarPush,
   pendingGoogleCalendarPushes,
@@ -144,6 +145,7 @@ describe('Google Calendar outbound queue', () => {
     expect(firestoreMocks.createItem).toHaveBeenCalledWith(
       expect.objectContaining({
         googleCalendarId: 'google-import',
+        googleCalendarOrigin: true,
         userId,
       }),
       { id: await googleCalendarImportItemId(userId, 'google-import') },
@@ -169,7 +171,10 @@ describe('Google Calendar outbound queue', () => {
     await syncGoogleCalendar(userId);
 
     expect(firestoreMocks.createItem).toHaveBeenCalledWith(
-      expect.objectContaining({ googleCalendarId: 'google-source-owner-source-event' }),
+      expect.objectContaining({
+        googleCalendarId: 'google-source-owner-source-event',
+        googleCalendarOrigin: true,
+      }),
       { id: 'source-event' },
     );
   });
@@ -354,5 +359,31 @@ describe('Google Calendar outbound queue', () => {
 
     await syncGoogleCalendar(userId);
     expect(calendarMocks.deleteGoogleEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not recreate a securely cleared journal when a delayed create response arrives', async () => {
+    const userId = 'forgotten-owner';
+    const source = event({
+      id: 'forgotten-event',
+      userId,
+      startDate: '2026-08-06',
+      calendarSynced: false,
+    });
+    testState.items = [source];
+    calendarMocks.syncEventToGoogle.mockImplementationOnce(async () => {
+      testState.items = [];
+      stopGoogleCalendarSync();
+      expect(clearGoogleCalendarOutboundJournal(userId)).toBe(true);
+      return 'google-forgotten';
+    });
+
+    startGoogleCalendarSync(userId);
+    await syncGoogleCalendar(userId);
+
+    startGoogleCalendarSync(userId);
+    await syncGoogleCalendar(userId);
+    expect(calendarMocks.getGoogleEvent).not.toHaveBeenCalled();
+    expect(calendarMocks.findGoogleEventByThreadmapItemId).not.toHaveBeenCalled();
+    expect(calendarMocks.deleteGoogleEvent).not.toHaveBeenCalled();
   });
 });

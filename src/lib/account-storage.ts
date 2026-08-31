@@ -1,7 +1,40 @@
-import { removeLocalStorageVerified, writeLocalStorageVerified } from './verified-storage';
+import {
+  removeLocalStorageVerified,
+  removeStorageVerified,
+  writeLocalStorageVerified,
+  writeStorageVerified,
+} from './verified-storage';
 
 export const DEMO_USER_ID = 'demo-user';
 export const SIGNED_OUT_STORAGE_SCOPE = 'signed-out';
+
+type ScopedStorage = Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'>;
+
+const LEGACY_DEMO_STORAGE_KEYS = [
+  'orbit-items',
+  'orbit-user-settings',
+  'orbit-settings',
+  'orbit-tags',
+  'orbit-flight-logs',
+] as const;
+
+function browserLocalStorage(): ScopedStorage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function browserSessionStorage(): ScopedStorage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
 
 export function scopedStorageKey(baseKey: string, userId: string | null): string {
   return `${baseKey}:${encodeURIComponent(userId || SIGNED_OUT_STORAGE_SCOPE)}`;
@@ -11,16 +44,29 @@ export function scopedStorageKey(baseKey: string, userId: string | null): string
  * Legacy, unscoped browser data can only belong to the explicitly selected
  * local/demo profile. It must never be copied into a signed-in account.
  */
-export function migrateLegacyStorageToDemo(baseKey: string, userId: string | null): void {
-  if (typeof window === 'undefined' || userId !== DEMO_USER_ID) return;
+export function migrateLegacyStorageToDemo(
+  baseKey: string,
+  userId: string | null,
+  storage: ScopedStorage | null = browserLocalStorage(),
+): void {
+  if (!storage || userId !== DEMO_USER_ID) return;
 
   const scopedKey = scopedStorageKey(baseKey, userId);
-  if (window.localStorage.getItem(scopedKey) !== null) return;
+  const legacy = storage.getItem(baseKey);
+  if (legacy === null) return;
 
-  const legacy = window.localStorage.getItem(baseKey);
-  if (legacy !== null) {
-    writeLocalStorageVerified(scopedKey, legacy);
+  const scoped = storage.getItem(scopedKey);
+  if (scoped === null) {
+    // The source is removed only after the same-base scoped copy has been read
+    // back successfully. If quota/browser policy rejects the copy, the legacy
+    // value remains available for a later recovery attempt.
+    writeStorageVerified(storage, scopedKey, legacy);
+  } else if (scoped !== legacy) {
+    // Never overwrite a newer scoped workspace or discard a conflicting
+    // legacy value. The user can still export/recover it explicitly.
+    return;
   }
+  removeStorageVerified(storage, baseKey);
 }
 
 export interface ScopedStoragePreparation {
@@ -68,13 +114,6 @@ export interface AdoptableScopedEntry {
   baseKey: string;
   /** Bytes held under the signed-out scope. */
   size: number;
-}
-
-type ScopedStorage = Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'>;
-
-function browserLocalStorage(): ScopedStorage | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage;
 }
 
 /**
@@ -163,19 +202,29 @@ export function discardSignedOutData(
   return keys.length;
 }
 
-export function clearScopedBrowserData(userId: string): void {
-  if (typeof window === 'undefined') return;
+export function clearScopedBrowserData(
+  userId: string,
+  localStorage: ScopedStorage | null = browserLocalStorage(),
+  sessionStorage: ScopedStorage | null = browserSessionStorage(),
+): void {
   const suffix = `:${encodeURIComponent(userId)}`;
-  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
-    const key = window.localStorage.key(index);
+  for (let index = (localStorage?.length ?? 0) - 1; index >= 0; index -= 1) {
+    const key = localStorage?.key(index);
     if (key?.endsWith(suffix)) {
-      window.localStorage.removeItem(key);
+      localStorage?.removeItem(key);
     }
   }
-  for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
-    const key = window.sessionStorage.key(index);
+  for (let index = (sessionStorage?.length ?? 0) - 1; index >= 0; index -= 1) {
+    const key = sessionStorage?.key(index);
     if (key?.endsWith(suffix)) {
-      window.sessionStorage.removeItem(key);
+      sessionStorage?.removeItem(key);
     }
+  }
+
+  // Old local-mode builds stored personal data without an owner suffix. Only
+  // the demo profile may claim those values, so forgetting that profile also
+  // removes any source keys that could not yet be migrated.
+  if (userId === DEMO_USER_ID && localStorage) {
+    for (const key of LEGACY_DEMO_STORAGE_KEYS) localStorage.removeItem(key);
   }
 }

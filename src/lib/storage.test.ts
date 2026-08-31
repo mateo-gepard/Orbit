@@ -139,6 +139,10 @@ class SuccessfulUploadRequest {
   }
 }
 
+class FailedUploadRequest extends SuccessfulUploadRequest {
+  status = 503;
+}
+
 const TRUSTED_UPLOAD_URL = 'https://storage.googleapis.com/upload/storage/v1/b/threadmap-test/o?uploadType=resumable&upload_id=test';
 
 beforeEach(() => {
@@ -257,5 +261,31 @@ describe('attachment revision and account guards', () => {
 
     expect(setItems).not.toHaveBeenCalled();
     expect(harness.store?.items[0]).toMatchObject({ userId: 'user-b', revision: 1, files: [] });
+  });
+
+  it('cancels the provider session and queues server cleanup after a failed transfer', async () => {
+    vi.stubGlobal('XMLHttpRequest', FailedUploadRequest);
+    const cancel = vi.fn().mockResolvedValue(new Response(null, { status: 499 }));
+    vi.stubGlobal('fetch', cancel);
+    setStore([project(4, [])], 'user-a');
+    setCallable('beginThreadmapUpload', async () => ({
+      data: { file: ownerFile, expiresAt: 1_000, uploadUrl: TRUSTED_UPLOAD_URL },
+    }));
+    const cleanup = vi.fn().mockResolvedValue({
+      data: { success: true, cleanupPending: false },
+    });
+    setCallable('cleanupThreadmapUpload', cleanup);
+
+    await expect(uploadAndAttachProjectFile(uploadFile(), 'project-1', 'user-a'))
+      .rejects.toThrow('Upload failed');
+
+    expect(cancel).toHaveBeenCalledWith(TRUSTED_UPLOAD_URL, expect.objectContaining({
+      method: 'DELETE',
+      cache: 'no-store',
+    }));
+    expect(cleanup).toHaveBeenCalledWith({
+      itemId: 'project-1',
+      storagePath: ownerFile.storagePath,
+    });
   });
 });

@@ -1,6 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
+  "git": {
+    "deploymentEnabled": {
+      "main": false
+    }
+  },
+  "regions": ["fra1"],
   "installCommand": "npm ci",
-  "buildCommand": "npm run build"
+  "buildCommand": "npm run release:contract && npm run build"
 }

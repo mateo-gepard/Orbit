@@ -16,37 +16,57 @@ export const MCP_CONSENT_PATH = '/integrations/authorize';
 
 const STORAGE_KEY = 'threadmap-mcp-consent-return';
 
+type ConsentStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+function browserSessionStorage(): ConsentStorage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 function isConsentPath(value: string): boolean {
   // Must be a same-origin absolute path pointing at the consent screen. The
   // leading `//` check rejects protocol-relative URLs, which are absolute.
   return value.startsWith(`${MCP_CONSENT_PATH}?`) && !value.startsWith('//');
 }
 
-export function storePendingConsentPath(pathWithQuery: string): void {
-  if (typeof window === 'undefined' || !isConsentPath(pathWithQuery)) return;
+export function storePendingConsentPath(
+  pathWithQuery: string,
+  storage: ConsentStorage | null = browserSessionStorage(),
+): void {
+  if (!storage || !isConsentPath(pathWithQuery)) return;
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, pathWithQuery);
+    storage.setItem(STORAGE_KEY, pathWithQuery);
   } catch {
     // A full or unavailable sessionStorage only costs the convenience hop; the
     // client can always restart authorization.
   }
 }
 
-export function readPendingConsentPath(): string | null {
-  if (typeof window === 'undefined') return null;
+export function readPendingConsentPath(
+  storage: ConsentStorage | null = browserSessionStorage(),
+): string | null {
+  if (!storage) return null;
   try {
-    const value = window.sessionStorage.getItem(STORAGE_KEY);
+    const value = storage.getItem(STORAGE_KEY);
     return value && isConsentPath(value) ? value : null;
   } catch {
     return null;
   }
 }
 
-export function clearPendingConsentPath(): void {
-  if (typeof window === 'undefined') return;
+export function clearPendingConsentPath(
+  storage: ConsentStorage | null = browserSessionStorage(),
+): boolean {
+  if (!storage) return false;
   try {
-    window.sessionStorage.removeItem(STORAGE_KEY);
+    storage.removeItem(STORAGE_KEY);
+    return true;
   } catch {
     // Nothing to recover: a stale entry is discarded on the next read anyway.
+    return false;
   }
 }

@@ -11,6 +11,7 @@ import {
   resolveMcpOAuthConfiguration,
 } from './config';
 import { createMcpRouter, normalizeMcpPath, toWebRequest, type McpRouter } from './http';
+import { GOOGLE_WORKSPACE_PATHS, GoogleWorkspaceService } from './google-workspace';
 
 const ORIGIN = 'https://threadmap.test';
 const OWNER_UID = 'threadmap-owner';
@@ -40,6 +41,7 @@ function buildHarness(): Harness {
   const router = createMcpRouter({
     oauth,
     endpoints,
+    googleWorkspace: new GoogleWorkspaceService(firestore, { origin: ORIGIN }),
     createDataAccess: (principal: OAuthPrincipal) => ({
       principal,
       consumeQuota: async () => undefined,
@@ -182,6 +184,36 @@ test('a consent request from an unrecognized browser origin is refused', async (
   assert.deepEqual(await response.json(), { error: 'forbidden_origin' });
 });
 
+test('Google Workspace connection routes require the signed-in owner and same browser origin', async () => {
+  const { router } = buildHarness();
+  assert.equal((await router(get(GOOGLE_WORKSPACE_PATHS.status))).status, 401);
+
+  const forbidden = await router(get(GOOGLE_WORKSPACE_PATHS.status, {
+    origin: 'https://evil.example',
+    authorization: `Bearer ${OWNER_ID_TOKEN}`,
+  }));
+  assert.equal(forbidden.status, 403);
+
+  const status = await router(get(GOOGLE_WORKSPACE_PATHS.status, {
+    origin: ORIGIN,
+    authorization: `Bearer ${OWNER_ID_TOKEN}`,
+  }));
+  assert.equal(status.status, 200);
+  assert.deepEqual(await status.json(), {
+    configured: false,
+    connected: false,
+    connectionUrl: `${ORIGIN}/integrations/google-workspace`,
+    reason: 'server_not_configured',
+  });
+
+  const authorize = await router(postJson(GOOGLE_WORKSPACE_PATHS.authorize, {}, {
+    origin: ORIGIN,
+    authorization: `Bearer ${OWNER_ID_TOKEN}`,
+  }));
+  assert.equal(authorize.status, 503);
+  assert.equal((await authorize.json() as Record<string, unknown>).error, 'server_not_configured');
+});
+
 // ── Method and route handling ───────────────────────────────
 
 test('unknown routes 404 and wrong methods 405 with an Allow header', async () => {
@@ -194,6 +226,13 @@ test('unknown routes 404 and wrong methods 405 with an Allow header', async () =
 
   const metadataPost = await router(postJson(MCP_PUBLIC_PATHS.authorizationServerMetadata, {}));
   assert.equal(metadataPost.status, 405);
+  assert.equal(metadataPost.headers.get('allow'), 'GET, HEAD');
+
+  const mcpPut = await router(new Request(`${ORIGIN}${MCP_PUBLIC_PATHS.mcp}`, {
+    method: 'PUT',
+  }));
+  assert.equal(mcpPut.status, 405);
+  assert.equal(mcpPut.headers.get('allow'), 'POST, GET, DELETE');
 });
 
 test('an invalid authorize request is reported without becoming an open redirector', async () => {
@@ -236,7 +275,7 @@ async function completeAuthorization(router: McpRouter, clientId: string): Promi
     client_id: clientId,
     redirect_uri: CLAUDE_REDIRECT,
     resource: `${ORIGIN}/mcp`,
-    scope: 'threadmap.read threadmap.write offline_access',
+    scope: 'threadmap.read offline_access',
     state: 'opaque-state-from-claude',
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -245,7 +284,7 @@ async function completeAuthorization(router: McpRouter, clientId: string): Promi
   const started = await router(get(authorizeUrl));
   assert.equal(started.status, 302, 'authorization redirects to the consent screen');
   const consentLocation = new URL(started.headers.get('location') ?? '');
-  assert.equal(consentLocation.origin + consentLocation.pathname, 'https://threadmap.app/integrations/authorize');
+  assert.equal(consentLocation.origin + consentLocation.pathname, `${ORIGIN}/integrations/authorize`);
   const requestToken = consentLocation.searchParams.get('request');
   assert.match(String(requestToken), /^tmar_/);
 
@@ -258,7 +297,7 @@ async function completeAuthorization(router: McpRouter, clientId: string): Promi
   const viewBody = await view.json() as Record<string, unknown>;
   assert.equal(viewBody.clientName, 'Claude');
   assert.equal(viewBody.platform, 'claude');
-  assert.deepEqual(viewBody.scopes, ['threadmap.read', 'threadmap.write', 'offline_access']);
+  assert.deepEqual(viewBody.scopes, ['threadmap.read', 'offline_access']);
 
   const approved = await router(postJson(
     '/api/mcp/oauth/consent/approve',
@@ -347,12 +386,12 @@ test('end to end: register, authorize, consent, token, then call a tool over HTT
   assert.equal((initResult.serverInfo as Record<string, unknown>).name, 'threadmap');
   assert.match(String(initResult.instructions), /owner-scoped/);
 
-  // tools/list — scope-filtered to the granted read+write scopes
+  // tools/list — scope-filtered to the least-privilege dynamic grant
   const listed = await rpc(router, accessToken, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
   const tools = (listed.result as { tools: Array<{ name: string }> }).tools;
   const names = tools.map((tool) => tool.name);
   assert.ok(names.includes('list_tags'), 'read tools are offered');
-  assert.ok(names.includes('create_item'), 'write tools are offered');
+  assert.ok(!names.includes('create_item'), 'write tools require explicit operator policy');
   assert.ok(!names.includes('confirm_delete_item'), 'delete was never granted to a dynamic client');
 
   // tools/call
@@ -457,6 +496,25 @@ test('the Node bridge reconstructs method, URL, headers, and body', () => {
   assert.equal(request.method, 'POST');
   assert.equal(request.url, 'https://threadmap.test/mcp?probe=1');
   assert.equal(request.headers.get('authorization'), 'Bearer tmat_example');
+});
+
+test('the Node bridge replaces a spoofed registration source with the trusted peer IP', () => {
+  const request = toWebRequest({
+    method: 'POST',
+    originalUrl: '/api/mcp/oauth/register',
+    ip: '203.0.113.44',
+    headers: {
+      host: 'threadmap.test',
+      'content-type': 'application/json',
+      'x-threadmap-registration-source': 'spoofed-by-caller',
+    },
+    rawBody: Buffer.from('{}', 'utf8'),
+  }, ORIGIN);
+
+  assert.equal(
+    request.headers.get('x-threadmap-registration-source'),
+    '203.0.113.44',
+  );
 });
 
 test('the Node bridge re-serializes a pre-parsed body when rawBody is absent', async () => {

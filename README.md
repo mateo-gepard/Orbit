@@ -15,13 +15,13 @@ The app can run in an explicit local/demo profile without a backend. Signed-in p
 - Works as an installable PWA with iOS-friendly mobile navigation and safe-area handling.
 - Runs in local mode with browser storage when Firebase is not configured.
 - Enables cloud mode with Firebase Auth, Firestore, Storage, Messaging, and Functions.
-- Includes optional Google Calendar sync and web scraping helpers for selected tools.
+- Includes optional Google Calendar sync, a cloud MCP Secretary with separately consented read-only Gmail/Calendar/Drive sources, and web scraping helpers for selected tools.
 
 ## Core Concepts
 
 ### Unified Items
 
-Most of Threadmap revolves around a single `OrbitItem` shape. Different item types share the same base lifecycle and can be linked together:
+Most of Threadmap revolves around a single `ThreadmapItem` shape (`OrbitItem` remains only as a temporary compatibility alias). Different item types share the same base lifecycle and can be linked together:
 
 - `task`
 - `project`
@@ -65,12 +65,12 @@ Threadmap is built around the idea that productivity data should not be isolated
 ### Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- npm
+- npm 11.5.1 (pinned by `packageManager` and `engines`)
 
 ### Install
 
 ```bash
-npm install
+npm ci
 ```
 
 ### Run Locally
@@ -140,8 +140,12 @@ npm run typecheck        # Run TypeScript without emitting files
 npm test                 # Run unit tests with Vitest
 npm run test:watch       # Run Vitest in watch mode
 npm run test:rules       # Run Firestore and Storage rules tests in emulators
-npm run deploy:rules     # Deploy Firestore rules/indexes and Storage rules
-npm run deploy:functions # Deploy Firebase Cloud Functions
+npm run test:e2e         # Cold-load smoke tests: desktop Chromium, Android, iOS WebKit
+npm run release:contract # Secret-free repository/configuration release contract
+npm run release:check    # Production environment preflight (requires production values)
+npm run audit:regions    # Firebase/Vercel region policy and runtime reference scan
+npm run deploy:rules     # Deploy rules to staging (the safe default)
+npm run deploy:functions # Deploy Functions to staging (the safe default)
 ```
 
 Cloud Functions have their own package:
@@ -159,8 +163,9 @@ src/app                 App Router pages, layouts, and API routes
 src/components          Shared UI, shell, item, mobile, file, and tool components
 src/lib                 Store, data access, Firebase, parsing, links, settings, utilities
 src/lib/hooks           Reusable React hooks
+src/service-worker      Deployment-revisioned worker template served at stable /sw.js
 functions               Firebase Cloud Functions
-public                  PWA manifest, service worker, icons, and static assets
+public                  PWA manifest, icons, offline page, and static assets
 firestore.rules         Firestore security rules
 storage.rules           Firebase Storage security rules
 ```
@@ -184,31 +189,46 @@ Reference:
 
 ## Firebase Deployment
 
-Deploy rules after reviewing the project and environment:
+The Firebase CLI default alias and unqualified npm deploy commands point to
+`threadmap-staging-9e0b6`. Production uses `orbit-9e0b6` only through guarded commands that
+require an exact clean `main` commit, an explicit confirmation, and a passing production
+preflight:
 
 ```bash
-firebase deploy --only firestore:rules,storage --project YOUR_PROJECT_ID
+npm run deploy:firebase:staging
 ```
 
-Set VAPID secrets before deploying functions:
+Production deployment is normally performed by `.github/workflows/release.yml`. For an approved
+manual recovery deployment, set both values to the exact release target before invoking a
+production script:
 
 ```bash
-firebase functions:secrets:set VAPID_PUBLIC_KEY --project YOUR_PROJECT_ID
-firebase functions:secrets:set VAPID_PRIVATE_KEY --project YOUR_PROJECT_ID
-firebase functions:secrets:set SCRAPE_RATE_LIMIT_SHARED_SECRET --project YOUR_PROJECT_ID
-firebase deploy --only functions --project YOUR_PROJECT_ID
+export THREADMAP_RELEASE_SHA=<full-40-character-main-commit>
+export THREADMAP_PRODUCTION_DEPLOY_CONFIRMATION=orbit-9e0b6
+npm run deploy:firebase:production
 ```
+
+Never use a bare `firebase deploy`; always pass an explicit project or use the guarded scripts.
+See [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md) for secrets, approvals, and manual gates.
 
 ## App Deployment
 
-Vercel is the production host for the Next.js application. Firebase provides Auth, Firestore, Storage, Messaging, and Functions; it is not configured as a static host. The repository targets Node.js 22 in local development, CI, Vercel, and Cloud Functions.
+Vercel is the production host for the Next.js application. Firebase provides Auth, Firestore,
+Storage, Messaging, and Functions; it is not configured as a static host. Vercel compute is pinned
+to `fra1`; Firebase Functions are pinned independently to `europe-west1`. The repository targets
+Node.js 22 and npm 11.5.1 in local development, CI, Vercel, and Cloud Functions.
 
-```bash
-npm run build
-npx vercel
-```
+Automatic production promotion from `main` is disabled in `vercel.json`. Production release is
+currently unavailable: the checked-in workflow exits before credential use or mutation until a
+true `threadmap-staging-9e0b6` Firebase deployment and staging-configured web artifact are exercised
+in an upstream job, with a separate protected production job approved only after its evidence
+exists. The retained downstream design deploys the compatible Firebase plane mandatorily and
+promotes only the exact staged Vercel artifact after checks.
 
-After deployment, verify `GET /api/health` returns `status: "ok"`, then exercise sign-in, sync, uploads, push, and Google Calendar from the production origin.
+`GET /api/health` is non-cacheable and exposes liveness/readiness, full and short commit SHA,
+deployment identity, executing/configured Vercel region, Firebase project, Firebase Functions
+region, and configuration presence without exposing secret values. The package version (`0.1.0`)
+is a product version; the full commit SHA is the release identity.
 
 ## Quality Checks
 
@@ -219,6 +239,9 @@ npm test
 npm run lint
 npm run typecheck
 npm run test:rules
+npm run test:e2e
+npm run release:contract
+npm run audit:regions
 npm run build
 ```
 

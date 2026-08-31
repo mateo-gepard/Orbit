@@ -35,6 +35,7 @@ import {
   migrateLegacyFlightLogs,
   saveFlightLog,
   setFlightStorageOwner,
+  subscribeToFlightLogs,
 } from './flight';
 
 class MemoryStorage implements Storage {
@@ -84,11 +85,61 @@ beforeEach(() => {
     configurable: true,
     value: new MemoryStorage(),
   });
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: Object.assign(new EventTarget(), { localStorage: globalThis.localStorage }),
+  });
   firestore.onSnapshot.mockReturnValue(vi.fn());
+  firestore.getDocFromServer.mockResolvedValue({ exists: () => false, data: () => undefined });
+  firestore.getDocs.mockResolvedValue({ docs: [] });
+  firestore.writeBatch.mockReturnValue({ delete: vi.fn(), commit: vi.fn() });
   setFlightStorageOwner('owner-user');
 });
 
 describe('flight history retention', () => {
+  it('does not recreate forgotten owner keys when a cloud write settles late', async () => {
+    let releaseWrite!: () => void;
+    let markWriteStarted!: () => void;
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const writeStarted = new Promise<void>((resolve) => { markWriteStarted = resolve; });
+    firestore.setDoc.mockImplementation(async () => {
+      markWriteStarted();
+      await writeGate;
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const pendingSave = saveFlightLog(makeLog('late-write', 1), 'owner-user');
+    await writeStarted;
+    setFlightStorageOwner(null);
+    localStorage.removeItem('orbit-flight-logs:owner-user');
+    localStorage.removeItem('orbit-flight-pending:owner-user');
+    releaseWrite();
+
+    await expect(pendingSave).rejects.toThrow('active account changed');
+    expect(localStorage.getItem('orbit-flight-logs:owner-user')).toBeNull();
+    expect(localStorage.getItem('orbit-flight-pending:owner-user')).toBeNull();
+    consoleError.mockRestore();
+  });
+
+  it('ignores a late snapshot after unsubscribe and secure forget', () => {
+    const received: FlightLog[][] = [];
+    const unsubscribe = subscribeToFlightLogs('owner-user', (logs) => received.push(logs));
+    const snapshotCallback = (firestore.onSnapshot.mock.calls.at(-1) as unknown[] | undefined)?.[1] as
+      | ((snapshot: { docs: ReturnType<typeof cloudDocument>[] }) => void)
+      | undefined;
+    expect(snapshotCallback).toBeTypeOf('function');
+
+    unsubscribe();
+    setFlightStorageOwner(null);
+    localStorage.removeItem('orbit-flight-logs:owner-user');
+    localStorage.removeItem('orbit-flight-pending:owner-user');
+    snapshotCallback?.({ docs: [cloudDocument(makeLog('late-snapshot', 2))] });
+
+    expect(received).toEqual([]);
+    expect(localStorage.getItem('orbit-flight-logs:owner-user')).toBeNull();
+    expect(localStorage.getItem('orbit-flight-pending:owner-user')).toBeNull();
+  });
+
   it('keeps the deterministic latest 100 unique local records', () => {
     const history = Array.from({ length: 105 }, (_, index) => makeLog(`flight-${index}`, index));
     history.push(makeLog('flight-104', 1_000));

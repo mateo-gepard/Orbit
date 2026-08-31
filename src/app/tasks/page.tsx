@@ -16,6 +16,7 @@ import {
   Archive,
   Trash2,
   ListChecks,
+  Check,
 } from 'lucide-react';
 import { useOrbitStore } from '@/lib/store';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -437,7 +438,7 @@ export default function TasksPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className={cn(
-            'w-full rounded-xl border border-border/60 bg-card px-4 py-2.5 text-[14px] lg:py-2 lg:text-[13px]',
+            'min-h-11 w-full rounded-xl border border-border/60 bg-card px-4 py-2.5 pr-12 text-[14px] lg:min-h-0 lg:py-2 lg:pr-4 lg:text-[13px]',
             'placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/10',
             'transition-shadow'
           )}
@@ -447,7 +448,7 @@ export default function TasksPage() {
             type="button"
             onClick={() => setSearchQuery('')}
             aria-label={t('tasks.clearSearch')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground"
+            className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground/60 hover:text-foreground lg:right-1 lg:h-8 lg:w-8"
           >
             <X className="h-4 w-4" />
           </button>
@@ -571,7 +572,7 @@ export default function TasksPage() {
                         setSortAsc(defaultAscending(opt.key));
                       }
                     }}
-                    className="min-h-10 justify-between text-[12px]"
+                    className="min-h-11 justify-between text-[12px] lg:min-h-10"
                   >
                     <span>{t(opt.labelKey)}</span>
                     {sortKey === opt.key && (
@@ -626,7 +627,7 @@ export default function TasksPage() {
                     <DropdownMenuRadioItem
                       key={opt.key}
                       value={opt.key}
-                      className="min-h-10 text-[12px]"
+                      className="min-h-11 text-[12px] lg:min-h-10"
                     >
                       <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
                       {t(opt.labelKey)}
@@ -671,7 +672,7 @@ export default function TasksPage() {
           event.preventDefault();
           void handleInlineCreate();
         }}
-        className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2"
+        className="flex min-h-11 items-center gap-2 rounded-xl border border-border/60 bg-card px-3 lg:py-2"
       >
         <Plus className="h-4 w-4 shrink-0 text-muted-foreground/40" aria-hidden="true" />
         <input
@@ -680,12 +681,12 @@ export default function TasksPage() {
           placeholder={t('tasks.addPlaceholder')}
           aria-label={t('tasks.addLabel')}
           disabled={creatingTask}
-          className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/40"
+          className="h-11 min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/40 lg:h-auto"
         />
         <button
           type="submit"
           disabled={creatingTask || !newTaskTitle.trim()}
-          className="shrink-0 rounded-lg bg-foreground px-2.5 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="min-h-11 shrink-0 rounded-lg bg-foreground px-3 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40 lg:min-h-0 lg:px-2.5"
         >
           {creatingTask ? t('tasks.adding') : t('common.add')}
         </button>
@@ -706,7 +707,7 @@ export default function TasksPage() {
                   onClick={() => toggleGroup(group.key)}
                   aria-expanded={!isCollapsed}
                   className={cn(
-                    'flex items-center gap-2 w-full px-1 py-2 text-left transition-colors',
+                    'flex min-h-11 items-center gap-2 w-full px-1 py-2 text-left transition-colors lg:min-h-0',
                     'hover:bg-foreground/[0.02] rounded-lg active:scale-[0.99]'
                   )}
                 >
@@ -732,15 +733,28 @@ export default function TasksPage() {
                     group.items.map((item) => (
                       selection.selecting ? (
                         <div key={item.id} className="flex items-center gap-2 pl-3">
-                          <input
-                            type="checkbox"
-                            checked={selection.isSelected(item.id)}
-                            onChange={() => selection.toggle(item.id)}
-                            aria-label={t('bulk.selectItem', { title: item.title })}
-                            className="h-4 w-4 shrink-0 accent-current"
-                          />
+                          <label className="relative -ml-3 -mr-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--focus-ring)]">
+                            <input
+                              type="checkbox"
+                              checked={selection.isSelected(item.id)}
+                              onChange={() => selection.toggle(item.id)}
+                              aria-label={t('bulk.selectItem', { title: item.title })}
+                              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                            />
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                'flex h-5 w-5 items-center justify-center rounded border transition-colors',
+                                selection.isSelected(item.id)
+                                  ? 'border-foreground bg-foreground text-background'
+                                  : 'border-[var(--copy-tertiary)] bg-background text-transparent',
+                              )}
+                            >
+                              <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+                            </span>
+                          </label>
                           <div className="min-w-0 flex-1">
-                            <ItemRow item={item} showProject={groupBy !== 'project'} compact enableSwipe={false} />
+                            <ItemRow item={item} showProject={groupBy !== 'project'} compact enableSwipe={false} showCompletion={false} />
                           </div>
                         </div>
                       ) : (

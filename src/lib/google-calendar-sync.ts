@@ -61,6 +61,7 @@ const outboundFlushByOwner = new Map<string, {
   promise: Promise<GoogleCalendarOutboundResult>;
 }>();
 const memoryOutboundJournal = new Map<string, OutboundJournal>();
+const outboundJournalForgetGeneration = new Map<string, number>();
 
 function isOutboundContextCurrent(userId: string, generation: number): boolean {
   return syncOwnerId === userId && syncGeneration === generation;
@@ -119,6 +120,23 @@ function forgetCreatedGoogleEvent(userId: string, itemId: string): void {
   if (!(itemId in journal)) return;
   delete journal[itemId];
   writeOutboundJournal(userId, journal);
+}
+
+/** Remove both durable and in-memory recovery state during secure device forget. */
+export function clearGoogleCalendarOutboundJournal(userId: string | null): boolean {
+  if (!userId) return true;
+  outboundJournalForgetGeneration.set(
+    userId,
+    (outboundJournalForgetGeneration.get(userId) || 0) + 1,
+  );
+  memoryOutboundJournal.delete(userId);
+  if (typeof window === 'undefined') return true;
+  try {
+    removeLocalStorageVerified(outboundJournalStorageKey(userId));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** A false marker is a durable request to push this event before accepting inbound data. */
@@ -234,6 +252,9 @@ async function performSync(userId: string, generation: number): Promise<GoogleCa
       for (const duplicate of matches.slice(1)) {
         await updateItem(duplicate.id, {
           googleCalendarId: undefined,
+          // Older imports predate the durable provenance field. Preserve the
+          // Google-derived classification when detaching any legacy mapping.
+          googleCalendarOrigin: true,
           // Detached duplicates are preserved as ordinary local events. `false`
           // is reserved for an intentional outbound request and would recreate
           // the duplicate in Google on the next pass.
@@ -376,6 +397,7 @@ async function performOutboundFlush(
   }
 
   const currentItems = useOrbitStore.getState().items;
+  const journalForgetGeneration = outboundJournalForgetGeneration.get(userId) || 0;
   const byId = new Map<string, OrbitItem>();
   for (const item of currentItems) {
     if (item.userId === userId && isPendingGoogleCalendarPush(item)) byId.set(item.id, item);
@@ -476,8 +498,17 @@ async function performOutboundFlush(
         );
       }
       const googleCalendarId = await syncEventToGoogle(item);
+      // Secure sign-out/deletion increments the generation and clears the
+      // journal before browser storage is forgotten. A delayed provider
+      // response must not recreate that owner-scoped recovery record.
+      if ((outboundJournalForgetGeneration.get(userId) || 0) !== journalForgetGeneration) {
+        return { success: false, pushed, failed: failed + 1 };
+      }
       if (journalManaged && readOutboundJournal(userId)[item.id] !== googleCalendarId) {
         rememberCreatedGoogleEvent(userId, item.id, googleCalendarId);
+      }
+      if (!isOutboundContextCurrent(userId, generation)) {
+        return { success: false, pushed, failed: failed + 1 };
       }
       const outcome = await finishOutboundGoogleCalendarPush(
         item,
@@ -631,6 +662,7 @@ async function importGoogleEvent(
     title: convertedEvent.title || 'Untitled Event',
     status: 'active',
     googleCalendarId: gcalEvent.id,
+    googleCalendarOrigin: true,
     calendarSynced: true,
     userId,
     tags: [],
@@ -666,6 +698,7 @@ async function updateFromGoogleEvent(
     endDate: convertedEvent.endDate,
     startTime: convertedEvent.startTime,
     endTime: convertedEvent.endTime,
+    googleCalendarOrigin: true,
     calendarSynced: true,
     updatedAt: Date.now(),
     ...(recurrence && { recurrence }),

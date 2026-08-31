@@ -1,6 +1,6 @@
 # Backend Setup
 
-Threadmap works locally without a backend. Firebase is only needed for real accounts, cross-device sync, file uploads, push notifications, and Google Calendar integration.
+Threadmap works locally without a backend. Firebase is needed for real accounts, cross-device sync, file uploads, push notifications, browser Google Calendar sync, and the cloud Threadmap Secretary MCP.
 
 ## 1. Client Environment
 
@@ -32,6 +32,12 @@ Optional integrations:
 - `NEXT_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID`
 - `GOOGLE_SEARCH_API_KEY`
 - `GOOGLE_SEARCH_CX`
+
+Cloud Secretary Google Workspace source (Functions configuration, not browser configuration):
+
+- `GOOGLE_WORKSPACE_CLIENT_ID` — Google OAuth Web application client id
+- `GOOGLE_WORKSPACE_CLIENT_SECRET` — Firebase Functions secret
+- `GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY` — Firebase Functions secret containing 32 random bytes encoded as base64
 
 Server-only scraper protection:
 
@@ -65,15 +71,23 @@ If a previous deployment stored files under `projects/{projectId}/...`, migrate 
 
 ## 4. Functions Secrets
 
-Set VAPID secrets and the private scraper quota handshake before deploying
-functions.
+Set VAPID secrets, the private scraper quota handshake, and the two Google Workspace Secretary
+secrets before deploying Functions with the Google read tools enabled.
 
 ```bash
 firebase functions:secrets:set VAPID_PUBLIC_KEY --project YOUR_PROJECT_ID
 firebase functions:secrets:set VAPID_PRIVATE_KEY --project YOUR_PROJECT_ID
 firebase functions:secrets:set SCRAPE_RATE_LIMIT_SHARED_SECRET --project YOUR_PROJECT_ID
+firebase functions:secrets:set GOOGLE_WORKSPACE_CLIENT_SECRET --project YOUR_PROJECT_ID
+firebase functions:secrets:set GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY --project YOUR_PROJECT_ID
 firebase deploy --only functions --project YOUR_PROJECT_ID
 ```
+
+The Google OAuth client must be a Web application with the exact callback
+`https://YOUR_THREADMAP_ORIGIN/api/mcp/oauth/google/callback`. Enable Gmail, Google Calendar, and
+Google Drive APIs, keep the app in testing mode for a personal deployment, and add the intended
+Google account as a test user. See `MCP_SETUP.md` for the complete scope, consent, and deployment
+contract.
 
 Configure `SCRAPE_RATE_LIMIT_SHARED_SECRET` with the same value for Vercel's
 Development, Preview, and Production environments. The value is used only by

@@ -16,7 +16,15 @@ import {
 } from './calendar-event';
 
 const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
-const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
+/**
+ * Every API operation below is intentionally limited to `calendars/primary`.
+ * Keep consent aligned with that product contract: the broader
+ * `calendar.events` scope also grants access to calendars the user can edit
+ * but does not own.
+ */
+export const GOOGLE_CALENDAR_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events.owned',
+] as const;
 const TOKEN_STORAGE_KEY = 'orbit-google-token';
 const TOKEN_EXPIRY_KEY = 'orbit-google-token-expiry';
 const GOOGLE_IDENTITY_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
@@ -65,8 +73,17 @@ interface GoogleTokenClient {
 interface GoogleTokenClientConfig {
   client_id: string;
   scope: string;
+  include_granted_scopes: boolean;
   callback: (response: GoogleTokenResponse) => void;
 }
+
+interface GoogleRevocationResponse {
+  successful?: boolean;
+  error?: string;
+  error_description?: string;
+}
+
+export type GoogleCalendarRevocationOutcome = 'revoked' | 'local-only';
 
 class GoogleCalendarApiError extends Error {
   constructor(
@@ -302,6 +319,47 @@ export function clearGoogleAccessToken() {
   }
 }
 
+/**
+ * Disconnect Calendar from an explicit user action. Google records consent by
+ * user and OAuth client beyond the lifetime of an individual access token, so
+ * removing our session copy alone is not a true disconnect. Revoke the grant
+ * while a valid token is available, then clear local credentials regardless of
+ * provider/network outcome. Callers can surface `local-only` with a link to the
+ * user's Google Account permissions instead of claiming revocation succeeded.
+ */
+export async function revokeGoogleCalendarAccess(): Promise<GoogleCalendarRevocationOutcome> {
+  const token = getStoredGoogleAccessToken();
+  cancelPendingGoogleCalendarRequests();
+
+  if (!token) {
+    clearGoogleAccessToken();
+    return 'local-only';
+  }
+
+  try {
+    await loadGoogleIdentityServices();
+    const revoke = window.google?.accounts?.oauth2?.revoke;
+    if (typeof revoke !== 'function') return 'local-only';
+
+    const successful = await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      };
+      const timeoutId = window.setTimeout(() => finish(false), 10_000);
+      revoke(token, (response) => finish(response.successful === true));
+    });
+    return successful ? 'revoked' : 'local-only';
+  } catch {
+    return 'local-only';
+  } finally {
+    clearGoogleAccessToken();
+  }
+}
+
 // ═══════════════════════════════════════════════════════════
 // OAuth Flow (Client-Side)
 // ═══════════════════════════════════════════════════════════
@@ -392,7 +450,11 @@ export async function requestCalendarPermission(): Promise<string> {
   return new Promise((resolve, reject) => {
     const client: GoogleTokenClient = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: SCOPES.join(' '),
+      scope: GOOGLE_CALENDAR_SCOPES.join(' '),
+      // Google defaults this to true, which would fold an older broad Calendar
+      // grant into the new token. Keep each token limited to the current,
+      // owner-calendar-only product contract even for returning users.
+      include_granted_scopes: false,
       callback: (response: GoogleTokenResponse) => {
         if (response.error) {
           reject(new Error(response.error));
@@ -599,6 +661,7 @@ export function googleToOrbitEvent(gcalEvent: GCalEvent, userId: string): Partia
     startTime: schedule.startTime,
     endTime: schedule.endTime,
     googleCalendarId: gcalEvent.id,
+    googleCalendarOrigin: true,
     calendarSynced: true,
     userId,
     createdAt: Date.now(),
@@ -756,6 +819,10 @@ declare global {
       accounts: {
         oauth2: {
           initTokenClient: (config: GoogleTokenClientConfig) => GoogleTokenClient;
+          revoke: (
+            accessToken: string,
+            callback: (response: GoogleRevocationResponse) => void,
+          ) => void;
         };
       };
     };

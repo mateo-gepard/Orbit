@@ -10,6 +10,7 @@ import {
   Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ensureAppCheck } from '@/lib/firebase';
 import { useAuth } from '@/components/providers/auth-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -227,9 +228,34 @@ export default function WishlistPage() {
     if (!user || user.uid === 'demo-user') {
       throw new Error('AUTH_REQUIRED');
     }
-    const token = await user.getIdToken();
+    const appCheckTokenPromise = (async (): Promise<string | null> => {
+      try {
+        const appCheck = await ensureAppCheck();
+        if (!appCheck) return null;
+        const { getToken } = await import('firebase/app-check');
+        return (await getToken(appCheck, false)).token;
+      } catch (error) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('APP_CHECK_UNAVAILABLE', { cause: error });
+        }
+        return null;
+      }
+    })();
+    const [token, appCheckToken] = await Promise.all([
+      user.getIdToken(),
+      appCheckTokenPromise,
+    ]);
+
+    // Never call a production scrape endpoint without device attestation. The
+    // surrounding flow translates this internal condition into the existing,
+    // user-safe "lookup unavailable" recovery state.
+    if (!appCheckToken && process.env.NODE_ENV === 'production') {
+      throw new Error('APP_CHECK_UNAVAILABLE');
+    }
     const headers = new Headers(init.headers);
     headers.set('Authorization', `Bearer ${token}`);
+    if (appCheckToken) headers.set('X-Firebase-AppCheck', appCheckToken);
+
     return fetch(input, { ...init, headers, cache: 'no-store' });
   }, [user]);
 
@@ -252,8 +278,13 @@ export default function WishlistPage() {
       let fullUrl = url.trim();
       if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
       const res = await authenticatedScrapeFetch(
-        `/api/scrape?url=${encodeURIComponent(fullUrl)}`,
-        { signal: controller.signal }
+        '/api/scrape',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: fullUrl }),
+          signal: controller.signal,
+        }
       );
       if (!isCurrent()) return;
       if (res.status === 401) {
@@ -281,8 +312,13 @@ export default function WishlistPage() {
       if (title && (!data.image || !data.price)) {
         try {
           const searchRes = await authenticatedScrapeFetch(
-            `/api/scrape/image?q=${encodeURIComponent(title)}`,
-            { signal: controller.signal }
+            '/api/scrape/image',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: title }),
+              signal: controller.signal,
+            }
           );
           if (!isCurrent()) return;
           if (searchRes.ok) {
@@ -569,13 +605,6 @@ export default function WishlistPage() {
             <label htmlFor="wishlist-item-image-url" className="text-xs text-muted-foreground mb-1.5 block">{copy.imageUrl}</label>
             <input id="wishlist-item-image-url" value={formImageUrl} onChange={(e) => setFormImageUrl(e.target.value)} placeholder="https://..." type="url"
               className="min-h-11 w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
-            {formImageUrl && (
-              <div className="mt-3 rounded-lg border border-border overflow-hidden h-40 bg-muted/30">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={formImageUrl} alt="" decoding="async" className="w-full h-full object-contain p-3"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              </div>
-            )}
           </div>
 
           <div>
@@ -631,7 +660,7 @@ export default function WishlistPage() {
             </div>
             <div className="flex items-center gap-3">
               {confidence >= 100 && (
-                <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">{copy.stable}</span>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-700 dark:text-emerald-300">{copy.stable}</span>
               )}
               {duels.length > 0 && (
                 <button type="button" onClick={() => setView('leaderboard')} className="min-h-11 px-2 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -721,7 +750,7 @@ export default function WishlistPage() {
                     {item.imageUrl ? (
                       <div className="flex-1 min-h-0 overflow-hidden bg-muted/20">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt={item.name} decoding="async"
+                        <img src={item.imageUrl} alt={item.name} decoding="async" referrerPolicy="no-referrer"
                           className={cn('w-full h-full object-contain p-3 lg:p-6 transition-transform duration-500', !duelResult && 'group-hover:scale-105')} />
                       </div>
                     ) : (
@@ -789,7 +818,7 @@ export default function WishlistPage() {
             <div className="flex items-center gap-2">
               {confidence > 0 && (
                 <span className={cn('text-[10px] tabular-nums font-medium',
-                  confidence >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}>
+                  confidence >= 100 ? 'text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground')}>
                   {interpolate(copy.confident, { confidence })}
                 </span>
               )}
@@ -837,7 +866,7 @@ export default function WishlistPage() {
                       <div className={cn('rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20',
                         idx === 0 ? 'h-14 w-14' : 'h-11 w-11')}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain p-0.5" />
+                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-contain p-0.5" />
                       </div>
                     ) : (
                       <div className={cn('rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50',
@@ -892,7 +921,7 @@ export default function WishlistPage() {
                     {item.imageUrl ? (
                       <div className="h-8 w-8 rounded overflow-hidden shrink-0 border border-border/40 bg-muted/20">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain" />
+                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                       </div>
                     ) : (
                       <div className="h-8 w-8 rounded flex items-center justify-center shrink-0 bg-muted/20">
@@ -972,7 +1001,7 @@ export default function WishlistPage() {
                 {item.imageUrl ? (
                   <div className="h-11 w-11 rounded-lg overflow-hidden shrink-0 border border-border/50 bg-muted/20">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain p-0.5" />
+                    <img src={item.imageUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-contain p-0.5" />
                   </div>
                 ) : (
                   <div className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0 bg-muted/30 border border-border/50">
@@ -1108,7 +1137,7 @@ export default function WishlistPage() {
                       {heroItem.imageUrl ? (
                         <div className="w-full sm:w-1/2 aspect-square sm:aspect-auto sm:h-64 lg:h-80 flex items-center justify-center p-6 lg:p-12 vault-spotlight">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={heroItem.imageUrl} alt={heroItem.name} loading="eager" fetchPriority="high" decoding="async"
+                          <img src={heroItem.imageUrl} alt={heroItem.name} loading="eager" fetchPriority="high" decoding="async" referrerPolicy="no-referrer"
                             className="max-w-full max-h-full object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-transform duration-700 group-hover:scale-[1.03]" />
                         </div>
                       ) : (
@@ -1123,7 +1152,7 @@ export default function WishlistPage() {
                         {heroItem.price !== undefined && (
                           <p className="text-sm lg:text-base font-medium tabular-nums text-muted-foreground/80 mb-3">
                             {heroItem.priceEstimated && '~'}{formatPrice(heroItem.price, heroItem.currency)}
-                            {heroItem.priceEstimated && <span className="text-[10px] ml-1 text-amber-500">{copy.estimated}</span>}
+                            {heroItem.priceEstimated && <span className="ml-1 text-[10px] text-amber-800 dark:text-amber-300">{copy.estimated}</span>}
                           </p>
                         )}
                         <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
@@ -1197,7 +1226,7 @@ export default function WishlistPage() {
                                 {hasImage ? (
                                   <>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async"
+                                    <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" referrerPolicy="no-referrer"
                                       className="max-w-[80%] max-h-[80%] object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-transform duration-500 group-hover:scale-[1.04]" />
                                   </>
                                 ) : (
@@ -1219,7 +1248,7 @@ export default function WishlistPage() {
                                 <div className="flex items-baseline justify-between mt-1 gap-2">
                                   {item.price !== undefined ? (
                                     <span className={cn('text-[10px] lg:text-[11px] tabular-nums font-medium',
-                                      item.priceEstimated ? 'text-amber-700/70 dark:text-amber-400/60' : 'text-muted-foreground/60')}>
+                                      item.priceEstimated ? 'text-amber-800 dark:text-amber-300' : 'text-muted-foreground/60')}>
                                       {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
                                     </span>
                                   ) : (
@@ -1271,7 +1300,7 @@ export default function WishlistPage() {
               <DialogTitle className="sr-only">{item.name}</DialogTitle>
               {/* Close */}
               <button type="button" onClick={() => setExpandedCard(null)} aria-label={copy.closeDetails}
-                className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground sm:h-9 sm:w-9">
+                className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground lg:h-9 lg:w-9">
                 <X className="h-4 w-4" />
               </button>
 
@@ -1282,7 +1311,7 @@ export default function WishlistPage() {
                 {item.imageUrl ? (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.imageUrl} alt={item.name} decoding="async"
+                    <img src={item.imageUrl} alt={item.name} decoding="async" referrerPolicy="no-referrer"
                       className="max-w-full max-h-[40vh] object-contain drop-shadow-[0_12px_32px_rgba(0,0,0,0.15)]" />
                   </>
                 ) : (
@@ -1306,13 +1335,13 @@ export default function WishlistPage() {
 
                 <div className="flex items-baseline flex-wrap gap-x-4 gap-y-1 mb-4 text-sm text-muted-foreground/70">
                   {item.price !== undefined && (
-                    <span className={cn('font-medium tabular-nums', item.priceEstimated && 'text-amber-600 dark:text-amber-400')}>
+                    <span className={cn('font-medium tabular-nums', item.priceEstimated && 'text-amber-800 dark:text-amber-300')}>
                       {item.priceEstimated && '~'}{formatPrice(item.price, item.currency)}
                       {item.priceEstimated && (
                         <button onClick={() => updateItem(item.id, { priceEstimated: false })}
                           type="button"
                           aria-label={copy.confirmPrice}
-                          className="ml-1.5 inline-flex h-11 w-11 items-center justify-center rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors align-middle sm:h-5 sm:w-5"
+                          className="ml-1.5 inline-flex h-11 w-11 items-center justify-center rounded-full bg-amber-400/80 text-amber-950 hover:bg-emerald-500 hover:text-white transition-colors align-middle lg:h-5 lg:w-5"
                           title={copy.confirmPrice}>
                           <Check className="h-2.5 w-2.5" strokeWidth={3} />
                         </button>
@@ -1375,7 +1404,7 @@ export default function WishlistPage() {
             <div className="flex items-center justify-between mb-3">
               <DialogTitle className="text-sm font-semibold">{copy.addTitle}</DialogTitle>
               <button type="button" onClick={requestCloseQuickAdd} aria-label={copy.closeAdd}
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground sm:h-9 sm:w-9">
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground lg:h-9 lg:w-9">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -1416,14 +1445,6 @@ export default function WishlistPage() {
             {/* Expanded fields */}
             {quickExpanded && (
               <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                {quickImageUrl && (
-                  <div className="rounded-lg border border-border overflow-hidden h-32 bg-muted/10">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={quickImageUrl} alt="" decoding="async" className="w-full h-full object-contain p-2"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  </div>
-                )}
-
                 <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
                   <div className="min-w-0">
                     <label htmlFor="wishlist-quick-price" className="mb-1.5 block text-xs text-muted-foreground">{copy.price}</label>

@@ -76,6 +76,11 @@ const rescheduledTagSyncs = new Set<string>();
 let cloudEchoSuppression: { userId: string; generation: number; until: number } | null = null;
 const TAGS_STORAGE_KEY = 'orbit-tags';
 const LEGACY_TAGS_STORAGE_KEY = 'orbit-settings';
+const suppressedThreadmapPersistStorage = createJSONStorage(() => ({
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+}));
 
 function sanitizeTagList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((tag): tag is string => typeof tag === 'string') : [];
@@ -521,8 +526,36 @@ export const useThreadmapStore = create<ThreadmapStore>()(
  */
 export const useOrbitStore = useThreadmapStore;
 
+/**
+ * Stop cloud/tag work without writing the current in-memory account snapshot.
+ *
+ * Zustand's persist middleware writes the whole partialized state for every
+ * `set`, including `_setSyncUserId(null)`. During account teardown that write
+ * used to recreate the just-forgotten UID-scoped key. Temporarily routing the
+ * bookkeeping-only state change through a no-op storage keeps the transition
+ * observable to subscribers without allowing a post-cleanup resurrection.
+ */
+export function detachThreadmapSyncWithoutPersistence(): void {
+  const previousStorage = useThreadmapStore.persist.getOptions().storage;
+  if (!previousStorage || !suppressedThreadmapPersistStorage) {
+    // The configured store always has storage in browsers. This fallback is
+    // relevant only to non-browser/test runtimes where there is nothing to
+    // persist in the first place.
+    useThreadmapStore.getState()._setSyncUserId(null);
+    return;
+  }
+  useThreadmapStore.persist.setOptions({ storage: suppressedThreadmapPersistStorage });
+  try {
+    useThreadmapStore.getState()._setSyncUserId(null);
+  } finally {
+    useThreadmapStore.persist.setOptions({ storage: previousStorage });
+  }
+}
+
 export async function scopeThreadmapStore(userId: string | null): Promise<void> {
-  useThreadmapStore.getState()._setSyncUserId(null);
+  // Detach before switching names, but never let that bookkeeping write the
+  // outgoing user's payload back to its old key (or into the incoming key).
+  detachThreadmapSyncWithoutPersistence();
   const target = prepareScopedStorage(TAGS_STORAGE_KEY, userId);
   useThreadmapStore.persist.setOptions({ name: target.key });
   if (!target.hasPersistedState) {

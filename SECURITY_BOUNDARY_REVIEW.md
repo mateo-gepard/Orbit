@@ -1,48 +1,146 @@
 # Authentication and tenant-boundary review
 
-Review date: 12 August 2026
-Scope: production and staging authentication, Firestore/Storage isolation, callable Functions, MCP authorization, secrets, preview isolation, and destructive actions.
-Next review due: 12 August 2027, or earlier after a major auth/data-boundary change.
+**Repository review:** 31 August 2026
+**Live verification:** not established for the current working tree
+**Independent reviewer:** required before release
 
 ## Boundary model
 
-Threadmap uses per-user workspaces rather than shared organization tenants. The verified Firebase Authentication UID is the tenant key. UI state is not an authorization boundary.
+Threadmap is a per-user workspace, not a shared-organization tenant system. The verified Firebase
+Authentication uid is the tenant key. Component visibility, Zustand state, localStorage keys,
+route names, request-provided user ids, and MCP content are not authorization boundaries.
 
-## Evidence reviewed
+```mermaid
+flowchart TD
+  I["Firebase ID token / OAuth bearer"] --> P["Validated principal"]
+  P --> R["Firestore and Storage Rules"]
+  P --> F["Callable / HTTP Function checks"]
+  P --> M["MCP grant + scope + DAL"]
+  M --> G["Separate Google OAuth grant + encrypted refresh credential"]
+  T["Account-deletion tombstone"] --> F
+  T --> M
+  C["App Check"] --> A["Abuse resistance"]
+  A -. "does not replace" .-> P
+```
 
-| Boundary | Evidence | Result |
-| --- | --- | --- |
-| Firestore | Rules scope records to the authenticated UID; 19 emulator rule tests include negative cross-user cases | Pass |
-| Storage | Rules bind paths and metadata to the authenticated UID; covered by emulator tests | Pass |
-| Functions | Authentication and App Check are verified before protected operations; production enforcement is enabled | Pass |
-| MCP identity | OAuth access token resolves the owner; the DAL is constructed with that owner and does not accept a caller-provided owner ID | Pass |
-| MCP least privilege | Read/write/delete scopes are separate; ungranted tools are omitted; quotas and tool annotations are enforced | Pass |
-| MCP deletion | Preview plus short-lived owner/client/revision-bound single-use token and explicit destructive metadata | Pass |
-| Secrets | Server secrets remain in managed environments; browser Firebase identifiers are origin-restricted; GitHub push protection is active | Pass |
-| Preview data | Vercel preview/development environments use isolated staging Firebase resources, preview SSO, and preview-host-bound EU MCP metadata | Pass |
-| Function residency | Callable, HTTP, schedule, and event functions run in `europe-west1`; CI rejects US-region regressions | Pass |
-| MFA | TOTP enrollment and sign-in challenge are available to verified cloud accounts | Pass |
-| Sensitive writes | Targeted Google Cloud Data Access audit logging records write/security metadata with 30-day retention | Pass |
+## Boundary inventory
 
-## Automated assurance
+| Surface | Principal source | Server enforcement | Destructive control |
+| --- | --- | --- | --- |
+| Direct Firestore | Firebase request auth uid | deny-by-default Rules and owner fields/paths | Rules plus server Functions for cascades |
+| Direct Storage | Firebase request auth uid | uid path/metadata Rules | registered deletion jobs and cleanup |
+| Callable Functions | verified callable auth | exact uid and input allowlists; App Check where configured | recent-auth/tombstone/idempotent jobs as applicable |
+| Scrape quota HTTP Function | verified Firebase bearer | uid equality, shared secret, hashed quota keys | no destructive data action |
+| Account lifecycle | verified uid | owner-scoped export; tombstone before cleanup | durable deletion state and retry scheduler |
+| Upload lifecycle | verified uid | item owner, reservation, path/size/type/count checks | cancel/cleanup jobs and prefix sweep |
+| MCP consent | Firebase ID token | authenticated uid binds request/grant | approve/deny and per-user revoke |
+| MCP tools | hashed bearer resolving principal | user grant, tombstone, resource, client, scope, quota, DAL owner | revision/idempotency; delete preview/confirm |
+| Google Workspace Secretary | Firebase uid for connect/disconnect; MCP principal for reads | one fixed uid-bound encrypted credential, PKCE/state TTL, separate `workspace.read` scope, bounded provider adapters | provider reads only; disconnect deletes credential even if revocation is unavailable |
+| Local/demo profile | explicit browser profile | no cloud security claim | browser-only deletion |
 
-- CI runs lint, type checking, application tests, production build, dependency audit, license policy, Firebase rule tests, and Functions build/tests.
-- CodeQL, Dependabot security updates, secret scanning, push protection, and protected-branch checks are enabled.
-- Firebase App Check is enforced for Authentication, Firestore, Storage, and protected Functions.
-- Production has PITR, delete protection, scheduled backups, uptime alerting, budget alerts, and a tested staging restore drill.
+## Repository evidence
+
+- Rules suites include authenticated owner paths and negative cross-user cases and run in a
+  dedicated emulator job; they must not be inferred from a unit command that skipped emulators.
+- Application runtime references use one Firebase Functions region constant. A recursive gate scans
+  app and Functions runtime sources for US/divergent endpoints.
+- Functions construct the effective uid from verified credentials and compare any compatibility
+  `userId` input to it; Admin SDK operations do not rely on client UI state.
+- Account deletion creates server-only state used as a barrier for Functions, MCP tokens, and
+  delayed cleanup. Retention covers refresh-token and resumable-upload risk windows.
+- MCP authorization is multi-user: consent binds to the current Firebase uid; user grants and
+  token families preserve isolation when a shared dynamic client serves multiple users.
+- MCP tool inputs contain no owner selector. Queries and writes derive owner identity from the
+  authenticated principal. Outputs are bounded and sensitive settings/file fields are projected.
+- Google Workspace uses a separate provider consent. Refresh credentials are AES-256-GCM encrypted,
+  access tokens remain server-side, Google tools are read-only, and provider content is treated as
+  untrusted data rather than agent instructions.
+- Mutations require revisions and UUID idempotency ids; permanent deletion uses a short-lived,
+  single-use owner/client/item/revision-bound confirmation token.
+- PWA caching excludes APIs and now refuses basic responses marked `private`, `no-store`, or
+  `Set-Cookie`, reducing future risk if personalized HTML is introduced.
+- Application responses deny all parent framing with CSP `frame-ancestors 'none'` and legacy
+  `X-Frame-Options: DENY`; the in-app PDF viewer is a child frame and does not require Threadmap
+  itself to be embeddable.
+- Private application route prefixes carry an HTTP `X-Robots-Tag` noindex directive in addition to
+  robots.txt exclusions, preventing discovered authenticated URLs from being indexed as URL-only
+  results while public trust/marketing pages remain indexable.
+- Production deploy intent uses an explicit Firebase project, exact SHA, clean main tree, and
+  protected staged Vercel artifact. Deployment authority is distinct from app authorization.
+
+## Threat analysis
+
+### Cross-user object access
+
+Attack: substitute another uid/item/path in browser or Function input. Required defenses are
+Rules ownership, server credential-derived uid, query owner filters, path binding, and negative
+tests. A successful UI test alone proves nothing.
+
+### Stale or replayed mutations
+
+Attack: replay a captured MCP write, race a second device, or reuse a deletion token. Required
+defenses are monotonic revisions, idempotency ids, serial/transactional updates, confirmation TTL,
+and single-use consumption.
+
+### Deleted-account resurrection
+
+Attack: use a refresh token, OAuth token, scheduled retry, or resumable upload after account delete.
+Required defenses are a tombstone created before cleanup, checks on every credential/write path,
+token/grant revocation, repeated owner-prefix sweep, and retained tombstone state longer than the
+maximum external credential/session lifetime.
+
+### OAuth client confused deputy
+
+Attack: redirect substitution, overbroad scope, cross-resource token, one user's revoke affecting
+another, or refresh replay. Required defenses are canonical redirect policy, PKCE S256, resource
+indicators, scope intersection plus strict downstream enforcement, uid-scoped grants, hashed tokens,
+rotation/reuse detection, and per-user revocation.
+
+### Google credential or prompt-injection crossover
+
+Attack: steal a refresh credential, bind a callback to another Threadmap user, or place instructions
+inside email/calendar/file content that cause unintended actions. Required defenses are a fixed
+same-origin callback, short-lived one-time state plus PKCE, uid-bound encrypted credential storage,
+server-only access tokens, separate MCP scope enforcement, bounded projections, read-only provider
+scopes/tools, and explicit model instructions that all provider content is untrusted data.
+
+### PWA/cache disclosure
+
+Attack: a shared worker cache stores personalized HTML or query secrets. API routes are excluded,
+navigation cache keys strip query strings, and cache admission rejects private/no-store/cookie
+responses. Future personalized SSR must explicitly re-review the offline strategy; missing private
+headers can still make an unsafe response appear cacheable.
+
+### Preview-to-production crossover
+
+Attack: a preview artifact reads production Firebase or issues OAuth metadata for an attacker host.
+Staging is the repository default; rewrites select production only for `VERCEL_ENV=production`, and
+preview host derivation is staging-only and allowlisted. Live environment values still require
+evidence.
+
+## Automated assurance required for release
+
+- secret-free release contract and recursive region audit;
+- lint, TypeScript, app unit tests, Functions build/tests;
+- Firestore/Storage Rules emulator suite with negative owner cases;
+- Chromium/WebKit route, console, axe, keyboard, overflow, and health smoke;
+- staged and production exact-SHA readiness verification;
+- real two-user and real MCP-host negative tests documented in release evidence.
 
 ## Findings and residual risk
 
-No unresolved critical or high-severity technical tenant-isolation finding was identified in this review.
-
 | Severity | Finding | Required action |
 | --- | --- | --- |
-| Blocker | Vercel is on Hobby, while Revision 3 prohibits free tiers for real services/data | Owner upgrades to a paid organizational plan and records DPA/SCC evidence |
-| Blocker | Controller identity, legal contact/address, DPA/SCC register, and release approval are not complete | Legal/product owner supplies and approves these facts |
-| High operational | Only one confirmed human owner/recovery path | Add a second owner and test account/cloud recovery |
-| Medium | TOTP has no self-service recovery codes | Establish a verified support/admin factor-reset process before promoting MFA as mandatory |
-| Medium | WAF API rate limit is monitoring-only during safe tuning | Review matched production traffic, test enforcement in preview, then publish a 429 policy |
-| Medium | Independent engineer/third-party testing is not yet evidenced | Obtain human boundary sign-off before meaningful exposure; schedule third-party test at scale and at least annually |
-| Low | A moderate dev-only advisory remains through current Firebase tooling | Track the upstream compatible update; production bundles are unaffected |
+| Blocker | Live platform controls, legal identity/agreements, paid org plan, second owner, and exact-SHA release approval are not evidenced for this candidate | close `PRODUCTION_READINESS.md` manual gates |
+| High operational | Current release workflow uses a long-lived Firebase CLI token | migrate to GitHub OIDC/Workload Identity Federation and least-privilege deploy role |
+| High assurance | No independent human tenant-boundary review or current production two-user proof | commission review and retain negative-test evidence |
+| Medium provenance | Web health proves web SHA, but Firebase Functions expose no independent artifact SHA | add signed backend build identity/version endpoint or deployment attestation |
+| Medium cache future-risk | Cache admission depends on correct response privacy headers; Set-Cookie may be hidden from service workers | prohibit personalized navigation caching by design and re-review before SSR user data |
+| Medium abuse | App Check/WAF/quotas and alert delivery are partly console-operated | prove enforcement and measured thresholds; test failure/alert paths |
+| Medium recovery | Backup/restore and multi-plane rollback evidence is historical or pending for the exact candidate | run synthetic staging restore and exact-SHA rollback drills |
+| Medium CSP hardening | Next.js/runtime scripts and styles still require CSP `unsafe-inline`; framing is denied, but nonce/hash migration is not complete | design and verify a nonce-based policy across Next, Firebase Auth, GIS, and reCAPTCHA before removing the compatibility directive |
+| Low tooling | Automated axe cannot establish full WCAG conformance | complete manual assistive-technology and reflow testing |
 
-This document records the technical review. It is not a substitute for the guide's required independent human engineer review or legal approval.
+No document may convert these findings to PASS based only on repository intent. Record live evidence,
+independent reviewer identity, exact SHA, and review expiry. Repeat the review after any significant
+auth, Rules, storage path, account deletion, OAuth, MCP, or cross-region change.

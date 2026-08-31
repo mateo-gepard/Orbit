@@ -6,6 +6,11 @@ import { OAuthProtocolError, createAuthorizationErrorRedirect, serializeOAuthErr
 import { MCP_PUBLIC_PATHS, type ResolvedMcpEndpoints } from './config';
 import { buildThreadmapMcpServer } from './sdk-server';
 import { parseBearerToken } from './security';
+import {
+  GOOGLE_WORKSPACE_PATHS,
+  GoogleWorkspaceOAuthError,
+  type GoogleWorkspaceService,
+} from './google-workspace';
 
 /**
  * Web-standard HTTP surface for the Threadmap MCP integration.
@@ -26,6 +31,10 @@ import { parseBearerToken } from './security';
  *   GET    /api/mcp/oauth/consent                         consent view, Firebase ID token
  *   POST   /api/mcp/oauth/consent/approve                 approve, Firebase ID token
  *   POST   /api/mcp/oauth/consent/deny                    deny, Firebase ID token
+ *   POST   /api/mcp/oauth/google/authorize                start Google OAuth, Firebase ID token
+ *   GET    /api/mcp/oauth/google/callback                 Google OAuth callback
+ *   GET    /api/mcp/oauth/google/status                   connection status, Firebase ID token
+ *   POST   /api/mcp/oauth/google/disconnect               revoke connection, Firebase ID token
  */
 
 const CONSENT_PATHS = Object.freeze({
@@ -36,6 +45,7 @@ const CONSENT_PATHS = Object.freeze({
 
 /** Mirrors the function name so the raw Cloud Functions URL also routes, for curl testing. */
 const FUNCTION_PATH_PREFIX = '/threadmapMcp';
+const REGISTRATION_SOURCE_HEADER = 'x-threadmap-registration-source';
 
 const NO_STORE_HEADERS = Object.freeze({
   'Cache-Control': 'no-store',
@@ -53,6 +63,8 @@ export interface McpHttpDependencies {
   oauth: ThreadmapOAuthService;
   endpoints: ResolvedMcpEndpoints;
   createDataAccess: (principal: OAuthPrincipal) => ThreadmapDataAccess;
+  /** Optional separately-consented, server-side Google Workspace integration. */
+  googleWorkspace?: GoogleWorkspaceService;
   /** Verifies a Threadmap Firebase ID token and resolves its uid. */
   verifyUserIdToken: (idToken: string) => Promise<string>;
   /** Structured, redacted request logging. */
@@ -144,6 +156,13 @@ function oauthErrorResponse(error: unknown): Response {
   return jsonResponse(serialized.status, serialized.body, headers);
 }
 
+function googleWorkspaceErrorResponse(error: GoogleWorkspaceOAuthError): Response {
+  return jsonResponse(error.status, {
+    error: error.code,
+    error_description: error.message.slice(0, 500),
+  });
+}
+
 /**
  * Consent endpoints are called by the Threadmap web app in a browser, so they
  * are the only routes where an Origin check is meaningful. Same-origin requests
@@ -205,6 +224,7 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
     }
     return buildThreadmapMcpServer({
       dataAccess: dependencies.createDataAccess(principal),
+      workspaceAccess: dependencies.googleWorkspace?.accessFor(principal.userId),
       grantedScopes: principal.scopes,
     });
   });
@@ -287,6 +307,42 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
     return jsonResponse(200, { location: result.location });
   }
 
+  async function handleGoogleWorkspaceAuthorize(request: Request): Promise<Response> {
+    if (!dependencies.googleWorkspace) {
+      return jsonResponse(503, { error: 'server_not_configured' });
+    }
+    const uid = await requireUser(request, dependencies);
+    const body = await readRequestParameters(request);
+    if (Object.keys(body).length > 0) {
+      throw new GoogleWorkspaceOAuthError('invalid_request', 'The request contains unsupported fields.');
+    }
+    const result = await dependencies.googleWorkspace.beginAuthorization(uid);
+    log({ route: 'google-workspace.authorize', uid });
+    return jsonResponse(200, result);
+  }
+
+  async function handleGoogleWorkspaceStatus(request: Request): Promise<Response> {
+    if (!dependencies.googleWorkspace) {
+      return jsonResponse(503, { error: 'server_not_configured' });
+    }
+    const uid = await requireUser(request, dependencies);
+    return jsonResponse(200, await dependencies.googleWorkspace.getStatus(uid));
+  }
+
+  async function handleGoogleWorkspaceDisconnect(request: Request): Promise<Response> {
+    if (!dependencies.googleWorkspace) {
+      return jsonResponse(503, { error: 'server_not_configured' });
+    }
+    const uid = await requireUser(request, dependencies);
+    const body = await readRequestParameters(request);
+    if (Object.keys(body).length > 0) {
+      throw new GoogleWorkspaceOAuthError('invalid_request', 'The request contains unsupported fields.');
+    }
+    const result = await dependencies.googleWorkspace.disconnect(uid);
+    log({ route: 'google-workspace.disconnect', uid, providerRevoked: result.providerRevoked });
+    return jsonResponse(200, result);
+  }
+
   return async function route(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = normalizeMcpPath(url.pathname);
@@ -298,17 +354,17 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
           // GET and DELETE are 2025 session operations; the stateless handler
           // answers them itself, so they are delegated rather than pre-refused.
           if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') {
-            return methodNotAllowed('POST');
+            return methodNotAllowed('POST, GET, DELETE');
           }
           return await handleMcp(request);
 
         case MCP_PUBLIC_PATHS.authorizationServerMetadata:
-          if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed('GET');
+          if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed('GET, HEAD');
           return jsonResponse(200, oauth.authorizationServerMetadata());
 
         case MCP_PUBLIC_PATHS.protectedResourceMetadata:
         case MCP_PUBLIC_PATHS.protectedResourceMetadataRoot:
-          if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed('GET');
+          if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed('GET, HEAD');
           return jsonResponse(200, oauth.protectedResourceMetadata());
 
         case MCP_PUBLIC_PATHS.authorize:
@@ -327,7 +383,10 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
 
         case MCP_PUBLIC_PATHS.register:
           if (method !== 'POST') return methodNotAllowed('POST');
-          return jsonResponse(201, await oauth.registerClient(await readRequestParameters(request)));
+          return jsonResponse(201, await oauth.registerClient(
+            await readRequestParameters(request),
+            request.headers.get(REGISTRATION_SOURCE_HEADER) || 'unknown',
+          ));
 
         case MCP_PUBLIC_PATHS.revoke:
           if (method !== 'POST') return methodNotAllowed('POST');
@@ -353,6 +412,33 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
           if (!consentOriginAllowed(request, endpoints)) return jsonResponse(403, { error: 'forbidden_origin' });
           return await handleConsentDecision(request, 'deny');
 
+        case GOOGLE_WORKSPACE_PATHS.authorize:
+          if (method !== 'POST') return methodNotAllowed('POST');
+          if (!consentOriginAllowed(request, endpoints)) return jsonResponse(403, { error: 'forbidden_origin' });
+          return await handleGoogleWorkspaceAuthorize(request);
+
+        case GOOGLE_WORKSPACE_PATHS.callback:
+          if (method !== 'GET') return methodNotAllowed('GET');
+          if (!dependencies.googleWorkspace) {
+            return redirectResponse(`${endpoints.origin}${GOOGLE_WORKSPACE_PATHS.settings}?status=error&reason=server_not_configured`);
+          }
+          try {
+            return redirectResponse((await dependencies.googleWorkspace.completeAuthorization(url.searchParams)).location);
+          } catch (error) {
+            log({ route: 'google-workspace.callback', level: 'warn', result: 'failed' });
+            return redirectResponse(dependencies.googleWorkspace.callbackFailureLocation(error));
+          }
+
+        case GOOGLE_WORKSPACE_PATHS.status:
+          if (method !== 'GET') return methodNotAllowed('GET');
+          if (!consentOriginAllowed(request, endpoints)) return jsonResponse(403, { error: 'forbidden_origin' });
+          return await handleGoogleWorkspaceStatus(request);
+
+        case GOOGLE_WORKSPACE_PATHS.disconnect:
+          if (method !== 'POST') return methodNotAllowed('POST');
+          if (!consentOriginAllowed(request, endpoints)) return jsonResponse(403, { error: 'forbidden_origin' });
+          return await handleGoogleWorkspaceDisconnect(request);
+
         default:
           return jsonResponse(404, { error: 'not_found' });
       }
@@ -369,6 +455,15 @@ export function createMcpRouter(dependencies: McpHttpDependencies): McpRouter {
           message: error.message,
         });
         return oauthErrorResponse(error);
+      }
+      if (error instanceof GoogleWorkspaceOAuthError) {
+        log({
+          route: path,
+          level: 'warn',
+          googleWorkspaceError: error.code,
+          status: error.status,
+        });
+        return googleWorkspaceErrorResponse(error);
       }
       // Never surface an unexpected exception's message: it can carry Firestore
       // detail, internal hostnames, or token material.
@@ -393,6 +488,8 @@ export interface NodeRequestLike {
   headers: Record<string, string | string[] | undefined>;
   rawBody?: Buffer;
   body?: unknown;
+  ip?: string;
+  socket?: { remoteAddress?: string };
 }
 
 /** The subset of a Cloud Functions response the bridge writes. */
@@ -413,6 +510,13 @@ export function toWebRequest(request: NodeRequestLike, fallbackOrigin: string): 
     const flattened = headerValue(value);
     if (flattened !== undefined) headers.set(name, flattened);
   }
+  // Never trust a caller-supplied copy of the internal quota subject. Cloud
+  // Functions supplies `request.ip`; the socket address is a local fallback.
+  headers.delete(REGISTRATION_SOURCE_HEADER);
+  headers.set(
+    REGISTRATION_SOURCE_HEADER,
+    request.ip || request.socket?.remoteAddress || 'unknown',
+  );
 
   const host = headerValue(request.headers.host) ?? new URL(fallbackOrigin).host;
   const forwardedProto = headerValue(request.headers['x-forwarded-proto']);

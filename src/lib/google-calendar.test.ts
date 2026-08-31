@@ -19,9 +19,11 @@ import {
   createGoogleEvent,
   findGoogleEventByThreadmapItemId,
   getGoogleAccessToken,
+  GOOGLE_CALENDAR_SCOPES,
   googleEventIdForOrbitItem,
   orbitToGoogleEvent,
   requestCalendarPermission,
+  revokeGoogleCalendarAccess,
   setGoogleAccessToken,
   setGoogleCalendarOwner,
 } from './google-calendar';
@@ -50,6 +52,12 @@ afterEach(() => {
 });
 
 describe('Google Calendar consent', () => {
+  it('requests only owner-calendar event access', () => {
+    expect(GOOGLE_CALENDAR_SCOPES).toEqual([
+      'https://www.googleapis.com/auth/calendar.events.owned',
+    ]);
+  });
+
   it('allows an authenticated owner to start first-time consent while sync is disabled', async () => {
     expect(() => assertCalendarAccess('calendar-user', false, false)).not.toThrow();
   });
@@ -82,14 +90,19 @@ describe('Google Calendar consent', () => {
   it('rejects a delayed OAuth callback after the signed-in account changes', async () => {
     let callback: ((response: { access_token: string; expires_in?: number }) => void) | undefined;
     const requestAccessToken = vi.fn();
+    const initTokenClient = vi.fn((config: {
+      callback: typeof callback;
+      include_granted_scopes: boolean;
+      scope: string;
+    }) => {
+      callback = config.callback;
+      return { requestAccessToken };
+    });
     vi.stubGlobal('window', {
       google: {
         accounts: {
           oauth2: {
-            initTokenClient: vi.fn((config: { callback: typeof callback }) => {
-              callback = config.callback;
-              return { requestAccessToken };
-            }),
+            initTokenClient,
           },
         },
       },
@@ -100,11 +113,60 @@ describe('Google Calendar consent', () => {
     setGoogleCalendarOwner('account-a');
     const permission = requestCalendarPermission();
     await vi.waitFor(() => expect(requestAccessToken).toHaveBeenCalledOnce());
+    expect(initTokenClient).toHaveBeenCalledWith(expect.objectContaining({
+      include_granted_scopes: false,
+      scope: GOOGLE_CALENDAR_SCOPES.join(' '),
+    }));
 
     setGoogleCalendarOwner('account-b');
     callback?.({ access_token: 'account-a-token', expires_in: 3600 });
 
     await expect(permission).rejects.toThrow('signed-in account changed');
+    expect(getGoogleAccessToken()).toBeNull();
+  });
+
+  it('revokes provider consent before clearing the local Calendar credential', async () => {
+    const revoke = vi.fn((token: string, callback: (result: { successful: boolean }) => void) => {
+      callback({ successful: true });
+    });
+    vi.stubGlobal('window', {
+      google: { accounts: { oauth2: { initTokenClient: vi.fn(), revoke } } },
+      clearTimeout,
+      setTimeout,
+    });
+    vi.stubGlobal('document', {});
+    vi.stubGlobal('sessionStorage', {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+    setGoogleCalendarOwner('calendar-user');
+    setGoogleAccessToken('calendar-token', 3600);
+
+    await expect(revokeGoogleCalendarAccess()).resolves.toBe('revoked');
+    expect(revoke).toHaveBeenCalledWith('calendar-token', expect.any(Function));
+    expect(getGoogleAccessToken()).toBeNull();
+  });
+
+  it('reports a local-only disconnect when Google cannot confirm revocation', async () => {
+    const revoke = vi.fn((_token: string, callback: (result: { successful: boolean }) => void) => {
+      callback({ successful: false });
+    });
+    vi.stubGlobal('window', {
+      google: { accounts: { oauth2: { initTokenClient: vi.fn(), revoke } } },
+      clearTimeout,
+      setTimeout,
+    });
+    vi.stubGlobal('document', {});
+    vi.stubGlobal('sessionStorage', {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+    setGoogleCalendarOwner('calendar-user');
+    setGoogleAccessToken('calendar-token', 3600);
+
+    await expect(revokeGoogleCalendarAccess()).resolves.toBe('local-only');
     expect(getGoogleAccessToken()).toBeNull();
   });
 });

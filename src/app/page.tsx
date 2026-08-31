@@ -43,10 +43,7 @@ import { toast } from 'sonner';
 function LoginScreen({
   onSignIn,
   onDemo,
-  onEmailSignIn,
-  onEmailSignUp,
   onSendEmailLink,
-  onResetPassword,
   emailLinkState,
   emailLinkError,
   onCompleteEmailLink,
@@ -54,19 +51,14 @@ function LoginScreen({
 }: {
   onSignIn: () => Promise<void>;
   onDemo: () => Promise<void>;
-  onEmailSignIn: (email: string, password: string) => Promise<void>;
-  onEmailSignUp: (email: string, password: string, displayName?: string) => Promise<void>;
   onSendEmailLink: (email: string) => Promise<void>;
-  onResetPassword: (email: string) => Promise<void>;
   emailLinkState: 'idle' | 'needs-email' | 'signing-in' | 'error';
   emailLinkError: string | null;
   onCompleteEmailLink: (email: string) => Promise<void>;
   onCancelEmailLink: () => void;
 }) {
-  const [mode, setMode] = useState<'choice' | 'login' | 'signup' | 'email-link' | 'email-link-sent' | 'reset-password' | 'reset-sent'>('choice');
+  const [mode, setMode] = useState<'choice' | 'email-link' | 'email-link-sent'>('choice');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -74,8 +66,10 @@ function LoginScreen({
 
   const firebaseErrorMessage = (code: string) => {
     const map: Record<string, string> = {
-      'auth/user-not-found': t('error.userNotFound'),
-      'auth/wrong-password': t('error.wrongPassword'),
+      // Keep sign-in failures indistinguishable so the public form cannot be
+      // used to confirm whether an email address has a Threadmap account.
+      'auth/user-not-found': t('error.invalidCredential'),
+      'auth/wrong-password': t('error.invalidCredential'),
       'auth/invalid-email': t('error.invalidEmail'),
       'auth/email-already-in-use': t('error.emailInUse'),
       'auth/weak-password': t('error.weakPassword'),
@@ -89,23 +83,6 @@ function LoginScreen({
     const code = (err as { code?: string })?.code || '';
     if (code) return firebaseErrorMessage(code);
     return err instanceof Error ? err.message : t('error.generic');
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSubmitting(true);
-    try {
-      if (mode === 'signup') {
-        await onEmailSignUp(email, password, name || undefined);
-      } else {
-        await onEmailSignIn(email, password);
-      }
-    } catch (err: unknown) {
-      setError(authErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const handleSendLink = async (e: React.FormEvent) => {
@@ -170,7 +147,7 @@ function LoginScreen({
   };
 
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center px-6">
+    <main className="h-[100dvh] overflow-y-auto px-6">
       <nav
         aria-label="Legal and security"
         className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-10 flex justify-center gap-4 px-4 text-[11px] text-muted-foreground"
@@ -179,7 +156,7 @@ function LoginScreen({
         <Link className="transition-colors hover:text-foreground" href="/terms">Terms</Link>
         <Link className="transition-colors hover:text-foreground" href="/security">Security</Link>
       </nav>
-      <div className="w-full max-w-sm space-y-8">
+      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center space-y-8 py-8 pb-24">
         <div className="space-y-2 text-center">
           <div
             aria-hidden="true"
@@ -188,26 +165,17 @@ function LoginScreen({
           />
           <h1 className="text-2xl font-bold tracking-tight mt-4">
             {isCompletingEmailLink ? t('login.confirmEmailLink')
-              : mode === 'signup' ? t('login.createAccount')
               : mode === 'email-link' ? t('login.signInEmailLink')
               : mode === 'email-link-sent' ? t('login.checkInbox')
-              : mode === 'reset-password' ? t('login.resetPassword')
-              : mode === 'reset-sent' ? t('login.resetLinkSent')
               : t('login.welcome')}
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
             {isCompletingEmailLink
               ? t('login.confirmEmailLinkDesc')
-              : mode === 'signup'
-              ? t('login.createAccountDesc')
               : mode === 'email-link'
               ? t('login.emailLinkDesc')
               : mode === 'email-link-sent'
               ? t('login.checkInboxFor').replace('{email}', email)
-              : mode === 'reset-password'
-              ? t('login.resetPasswordDesc')
-              : mode === 'reset-sent'
-              ? t('login.resetLinkSentDesc')
               : t('login.tagline')}
           </p>
         </div>
@@ -224,6 +192,7 @@ function LoginScreen({
               value={email}
               onChange={(e) => { setEmail(e.target.value); setError(''); }}
               required
+              maxLength={320}
               disabled={completingEmailLink}
               className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40 disabled:cursor-wait disabled:opacity-60"
               autoComplete="email"
@@ -288,12 +257,6 @@ function LoginScreen({
             </div>
 
             <button
-              onClick={() => setMode('login')}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-[15px] font-medium text-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
-            >
-              {t('login.signInEmail')}
-            </button>
-            <button
               onClick={() => setMode('email-link')}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-[15px] font-medium text-foreground transition-colors hover:bg-foreground/[0.03] active:scale-[0.98] transition-transform"
             >
@@ -324,7 +287,7 @@ function LoginScreen({
               {t('login.backToLogin')}
             </button>
           </div>
-        ) : mode === 'email-link' ? (
+        ) : (
           <form onSubmit={handleSendLink} className="space-y-3">
             <label htmlFor="email-link-address" className="sr-only">{t('login.emailPlaceholder')}</label>
             <input
@@ -334,6 +297,7 @@ function LoginScreen({
               value={email}
               onChange={(e) => { setEmail(e.target.value); setError(''); }}
               required
+              maxLength={320}
               className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
               autoComplete="email"
               autoFocus
@@ -359,183 +323,14 @@ function LoginScreen({
               )}
             </button>
 
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={() => { setMode('choice'); setError(''); }}
-                className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
-              >
-                {t('login.back')}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMode('login'); setError(''); }}
-                className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
-              >
-                {t('login.usePasswordInstead')}
-              </button>
-            </div>
-          </form>
-        ) : mode === 'reset-password' ? (
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            setError('');
-            setSubmitting(true);
-            try {
-              await onResetPassword(email);
-              setMode('reset-sent');
-            } catch (err: unknown) {
-              setError(authErrorMessage(err));
-            } finally {
-              setSubmitting(false);
-            }
-          }} className="space-y-3">
-            <label htmlFor="reset-email-address" className="sr-only">{t('login.emailPlaceholder')}</label>
-            <input
-              id="reset-email-address"
-              type="email"
-              placeholder={t('login.emailPlaceholder')}
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); setError(''); }}
-              required
-              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
-              autoComplete="email"
-              autoFocus
-            />
-            {error && (
-              <p role="alert" className="text-[12px] text-destructive font-medium px-1">{error}</p>
-            )}
-            <button
-              type="submit"
-              disabled={submitting}
-              aria-busy={submitting}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
-            >
-              {submitting ? (
-                <>
-                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
-                  <span>{t('login.sendResetLink')}</span>
-                </>
-              ) : (
-                t('login.sendResetLink')
-              )}
-            </button>
             <div className="flex items-center justify-center pt-1">
               <button
                 type="button"
-                onClick={() => { setMode('login'); setError(''); }}
-                className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
-              >
-                {t('login.back')}
-              </button>
-            </div>
-          </form>
-        ) : mode === 'reset-sent' ? (
-          <div className="space-y-4 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-foreground/[0.06]">
-              <svg className="h-5 w-5 text-foreground/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-              </svg>
-            </div>
-            <p className="text-[13px] text-muted-foreground">
-              {t('login.resetLinkSentDesc')}
-            </p>
-            <button
-              onClick={() => { setMode('login'); setEmail(''); setError(''); }}
-              className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
-            >
-              {t('login.backToLogin')}
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-3">
-            {mode === 'signup' && (
-              <>
-                <label htmlFor="account-name" className="sr-only">{t('login.namePlaceholder')}</label>
-                <input
-                  id="account-name"
-                  type="text"
-                  placeholder={t('login.namePlaceholder')}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
-                  autoComplete="name"
-                />
-              </>
-            )}
-            <label htmlFor="account-email" className="sr-only">{t('login.emailPlaceholder')}</label>
-            <input
-              id="account-email"
-              type="email"
-              placeholder={t('login.emailPlaceholder')}
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); setError(''); }}
-              required
-              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
-              autoComplete="email"
-              autoFocus
-            />
-            <label htmlFor="account-password" className="sr-only">{t('login.passwordPlaceholder')}</label>
-            <input
-              id="account-password"
-              type="password"
-              placeholder={t('login.passwordPlaceholder')}
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(''); }}
-              required
-              minLength={6}
-              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground/40"
-              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            />
-
-            {error && (
-              <p role="alert" className="text-[12px] text-destructive font-medium px-1">{error}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={submitting}
-              aria-busy={submitting}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-3.5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-transform"
-            >
-              {submitting ? (
-                <>
-                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
-                  <span>{mode === 'signup' ? t('login.createAccount') : t('login.signIn')}</span>
-                </>
-              ) : mode === 'signup' ? (
-                t('login.createAccount')
-              ) : (
-                t('login.signIn')
-              )}
-            </button>
-
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
                 onClick={() => { setMode('choice'); setError(''); }}
                 className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
               >
                 {t('login.back')}
               </button>
-              <div className="flex items-center gap-3">
-                {mode === 'login' && (
-                  <button
-                    type="button"
-                    onClick={() => { setMode('reset-password'); setError(''); }}
-                    className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
-                  >
-                    {t('login.forgotPassword')}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
-                  className="text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
-                >
-                  {mode === 'login' ? t('login.dontHaveAccount') : t('login.alreadyHaveAccount')}
-                </button>
-              </div>
             </div>
           </form>
         )}
@@ -667,10 +462,7 @@ export default function DashboardPage() {
     user,
     loading,
     signInWithGoogle,
-    signInWithEmail,
-    signUpWithEmail,
     sendEmailLink,
-    resetPassword,
     continueAsDemo,
     emailLinkState,
     emailLinkError,
@@ -778,10 +570,7 @@ export default function DashboardPage() {
       <LoginScreen
         onSignIn={signInWithGoogle}
         onDemo={continueAsDemo}
-        onEmailSignIn={signInWithEmail}
-        onEmailSignUp={signUpWithEmail}
         onSendEmailLink={sendEmailLink}
-        onResetPassword={resetPassword}
         emailLinkState={emailLinkState}
         emailLinkError={emailLinkError}
         onCompleteEmailLink={completeEmailLink}

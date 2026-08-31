@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -50,6 +51,28 @@ function validItem(userId = OWNER_ID) {
     linkedIds: [],
     tags: [],
     files: [],
+  };
+}
+
+function validFlightLog(userId = OWNER_ID, id = 'flight-1') {
+  return {
+    id,
+    flightNumber: 'TM-101',
+    route: {
+      from: { code: 'MAD', name: 'Barajas', city: 'Madrid', region: 'europe' },
+      to: { code: 'LHR', name: 'Heathrow', city: 'London', region: 'europe' },
+      distanceKm: 1_200,
+      realFlightMin: 120,
+    },
+    duration: 25,
+    actualDuration: 1_500_000,
+    startedAt: 1,
+    endedAt: 1_500_001,
+    tasks: [],
+    turbulence: [],
+    completedNormally: true,
+    debrief: {},
+    userId,
   };
 }
 
@@ -120,9 +143,76 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
     await assertFails(updateDoc(itemRef, { userId: OTHER_ID, updatedAt: 3, revision: 3 }));
     await assertFails(updateDoc(itemRef, { status: 'invalid', updatedAt: 3, revision: 3 }));
     await assertFails(updateDoc(itemRef, { createdAt: 99, updatedAt: 3, revision: 3 }));
+    await assertFails(updateDoc(itemRef, { unexpected: true, updatedAt: 3, revision: 3 }));
+    await assertFails(setDoc(doc(ownerDb, 'items', 'item-with-extra-field'), {
+      ...validItem(),
+      unexpected: true,
+    }));
   });
 
-  it('allows attachment additions but reserves removals for the cleanup function', async () => {
+  it('makes Google Calendar provenance permanent once recorded', async () => {
+    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const itemRef = doc(ownerDb, 'items', 'calendar-derived-item');
+    await assertSucceeds(setDoc(itemRef, {
+      ...validItem(),
+      type: 'event',
+      googleCalendarId: 'google-event-1',
+      googleCalendarOrigin: true,
+      calendarSynced: true,
+    }));
+
+    await assertSucceeds(updateDoc(itemRef, {
+      googleCalendarId: deleteField(),
+      calendarSynced: false,
+      updatedAt: 2,
+      revision: 2,
+    }));
+    await assertFails(updateDoc(itemRef, {
+      googleCalendarOrigin: false,
+      updatedAt: 3,
+      revision: 3,
+    }));
+    await assertFails(updateDoc(itemRef, {
+      googleCalendarOrigin: deleteField(),
+      updatedAt: 3,
+      revision: 3,
+    }));
+  });
+
+  it('keeps legacy item fields immutable while allowing inbox records to converge', async () => {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'items', 'legacy-item'), {
+        ...validItem(),
+        status: 'inbox',
+        legacyFutureField: { preserved: true },
+      });
+    });
+    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const itemRef = doc(ownerDb, 'items', 'legacy-item');
+
+    await assertSucceeds(updateDoc(itemRef, {
+      title: 'Edited legacy item',
+      updatedAt: 2,
+      revision: 2,
+    }));
+    await assertFails(updateDoc(itemRef, {
+      legacyFutureField: { preserved: false },
+      updatedAt: 3,
+      revision: 3,
+    }));
+    await assertFails(updateDoc(itemRef, {
+      addedUnknownField: true,
+      updatedAt: 3,
+      revision: 3,
+    }));
+    await assertSucceeds(updateDoc(itemRef, {
+      status: 'active',
+      updatedAt: 3,
+      revision: 3,
+    }));
+  });
+
+  it('reserves every attachment metadata mutation for server workflows', async () => {
     const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
     const itemRef = doc(ownerDb, 'items', 'item-1');
     const originalFile = {
@@ -133,18 +223,28 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
       storagePath: `users/${OWNER_ID}/projects/item-1/file-1.txt`,
       uploadedAt: 1,
     };
-    await setDoc(itemRef, { ...validItem(), files: [originalFile] });
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'items', 'item-1'), {
+        ...validItem(),
+        files: [originalFile],
+      });
+    });
 
-    await assertSucceeds(updateDoc(itemRef, {
+    await assertFails(updateDoc(itemRef, {
       files: [originalFile, { ...originalFile, id: 'file-2', name: 'second.txt' }],
       updatedAt: 2,
       revision: 2,
     }));
-    await assertFails(updateDoc(itemRef, { files: [], updatedAt: 3, revision: 3 }));
+    await assertFails(updateDoc(itemRef, { files: [], updatedAt: 2, revision: 2 }));
     await assertFails(updateDoc(itemRef, {
       files: [{ ...originalFile, storagePath: 'projects/item-1/replaced.txt' }],
-      updatedAt: 3,
-      revision: 3,
+      updatedAt: 2,
+      revision: 2,
+    }));
+    await assertSucceeds(updateDoc(itemRef, {
+      title: 'Metadata-only edit',
+      updatedAt: 2,
+      revision: 2,
     }));
   });
 
@@ -182,6 +282,39 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
     await assertFails(setDoc(doc(ownerDb, 'toolData', `${OWNER_ID}_unknown-tool`), {
       ...toolDocument('unknown-tool', {}),
     }));
+  });
+
+  it('allows canonical tool updates without mutating or dropping unknown legacy fields', async () => {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'toolData', `${OWNER_ID}_settings`), {
+        ...toolDocument('settings', { settings: { theme: 'system' } }),
+        legacyFutureField: { preserved: true },
+      });
+    });
+    const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
+    const toolRef = doc(ownerDb, 'toolData', `${OWNER_ID}_settings`);
+
+    await assertSucceeds(updateDoc(toolRef, {
+      settings: { theme: 'dark' },
+      updatedAt: 2,
+      revision: 2,
+    }));
+    await assertFails(updateDoc(toolRef, {
+      legacyFutureField: { preserved: false },
+      updatedAt: 3,
+      revision: 3,
+    }));
+    await assertFails(updateDoc(toolRef, {
+      addedUnknownField: true,
+      updatedAt: 3,
+      revision: 3,
+    }));
+    await assertFails(setDoc(toolRef, toolDocument(
+      'settings',
+      { settings: { theme: 'dark' } },
+      3,
+      3,
+    )));
   });
 
   it('lets only the exact owner clear a verified legacy flight document without userId', async () => {
@@ -233,15 +366,18 @@ rulesDescribe('Firestore ownership and server-only workflows', () => {
 
   it('allows owner flight logs and denies removed/internal collections', async () => {
     const ownerDb = environment.authenticatedContext(OWNER_ID).firestore();
-    await assertSucceeds(setDoc(doc(ownerDb, 'flightLogs', `${OWNER_ID}_flight-1`), {
-      id: 'flight-1',
-      userId: OWNER_ID,
-      startedAt: 1,
-    }));
+    const flightRef = doc(ownerDb, 'flightLogs', `${OWNER_ID}_flight-1`);
+    await assertSucceeds(setDoc(flightRef, validFlightLog()));
     await assertFails(setDoc(doc(ownerDb, 'flightLogs', `${OTHER_ID}_flight-1`), {
-      id: 'flight-1',
-      userId: OWNER_ID,
-      startedAt: 1,
+      ...validFlightLog(),
+    }));
+    await assertFails(updateDoc(flightRef, { unexpected: true }));
+    await assertFails(updateDoc(flightRef, { startedAt: 2, endedAt: 1_500_002 }));
+    await assertFails(updateDoc(flightRef, { tasks: Array.from({ length: 501 }, () => ({})) }));
+    await assertSucceeds(updateDoc(flightRef, {
+      endedAt: 1_600_001,
+      actualDuration: 1_600_000,
+      completedNormally: false,
     }));
     await assertFails(setDoc(doc(ownerDb, 'users', OWNER_ID), { displayName: 'Owner' }));
     await assertFails(setDoc(doc(ownerDb, 'deletionJobs', 'job-1'), { userId: OWNER_ID }));

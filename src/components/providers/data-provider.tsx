@@ -25,7 +25,11 @@ import {
   subscribeToToolData,
   subscribeToUserSettings,
 } from '@/lib/firestore';
-import { scopeThreadmapStore, useThreadmapStore } from '@/lib/store';
+import {
+  detachThreadmapSyncWithoutPersistence,
+  scopeThreadmapStore,
+  useThreadmapStore,
+} from '@/lib/store';
 import { scopeAbiturStore, useAbiturStore } from '@/lib/abitur-store';
 import { scopeToolboxStore, useToolboxStore } from '@/lib/toolbox-store';
 import {
@@ -34,13 +38,22 @@ import {
   useWishlistStore,
   type WishlistCloudData,
 } from '@/lib/wishlist-store';
-import { scopeSettingsStore, useSettingsStore } from '@/lib/settings-store';
+import { quiesceSettingsStore, scopeSettingsStore, useSettingsStore } from '@/lib/settings-store';
 import { setFlightStorageOwner, subscribeToFlightLogs } from '@/lib/flight';
-import { startBriefingScheduler, stopBriefingScheduler } from '@/lib/briefing-notifications';
+import {
+  quiesceLocalNotificationOwner,
+  setLocalNotificationOwner,
+  startBriefingScheduler,
+  startHabitReminderScheduler,
+  stopBriefingScheduler,
+  stopHabitReminderScheduler,
+} from '@/lib/briefing-notifications';
+import { notificationDeliveryPolicy } from '@/lib/notification-delivery-policy';
 import {
   cleanupForegroundMessageHandler,
   hasFCMToken,
   refreshPushSubscription,
+  setFCMRegistrationOwner,
   setupForegroundMessageHandler,
   unregisterFCMToken,
 } from '@/lib/fcm';
@@ -108,10 +121,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     itemsReady: boolean,
   ) => {
     const settings = useSettingsStore.getState().settings;
+    const delivery = notificationDeliveryPolicy({
+      accountId: userId,
+      itemsReady,
+      localOnly,
+      notificationsEnabled: settings.notifications.enabled,
+      habitRemindersEnabled: settings.notifications.habitReminders,
+    });
 
     stopBriefingScheduler();
-    if (localOnly && settings.notifications.enabled) {
+    stopHabitReminderScheduler();
+    if (delivery.localBriefings) {
       startBriefingScheduler(userId, () => useThreadmapStore.getState().items);
+    }
+    if (delivery.foregroundHabitReminders) {
+      startHabitReminderScheduler(userId, () => useThreadmapStore.getState().items);
     }
 
     if (localOnly) {
@@ -128,7 +152,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     if (settings.notifications.enabled && hasFCMToken(userId)) {
-      setupForegroundMessageHandler();
+      setupForegroundMessageHandler(userId);
       void refreshPushSubscription(userId).catch((cause) => {
         console.warn('[THREADMAP] Existing push subscription could not be refreshed:', cause);
       });
@@ -152,7 +176,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let safetyTimer: ReturnType<typeof setTimeout> | null = null;
     let itemsReady = false;
 
-    const isCurrent = () => !cancelled && generationRef.current === generation;
+    let dataContextGeneration: number | null = null;
+    const isCurrent = () => !cancelled
+      && generationRef.current === generation
+      && (dataContextGeneration === null
+        || isFirestoreDataContextCurrent(accountId, dataContextGeneration));
     const finishLoading = () => {
       const remaining = Math.max(0, MIN_LOADING_TIME - (Date.now() - loadingStartedAt));
       loadingTimer = setTimeout(() => {
@@ -168,10 +196,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       clearNotices();
       stopGoogleCalendarSync();
       stopBriefingScheduler();
+      stopHabitReminderScheduler();
+      void setLocalNotificationOwner(accountId);
       cleanupForegroundMessageHandler();
 
-      setFirestoreDataContext(accountId, accountId ? (localOnly ? 'local' : 'cloud') : 'signed-out');
+      dataContextGeneration = setFirestoreDataContext(
+        accountId,
+        accountId ? (localOnly ? 'local' : 'cloud') : 'signed-out',
+      );
       setFlightStorageOwner(accountId);
+      setFCMRegistrationOwner(accountId && !localOnly ? accountId : null);
       setGoogleCalendarOwner(accountId && !localOnly ? accountId : null);
 
       await Promise.all([
@@ -332,14 +366,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
       subscriptions.forEach((unsubscribe) => unsubscribe());
       if (loadingTimer) clearTimeout(loadingTimer);
       if (safetyTimer) clearTimeout(safetyTimer);
-      useThreadmapStore.getState()._setSyncUserId(null);
+      // A normal Zustand `set` writes the partialized tag state. Account
+      // teardown may already have removed that UID-scoped key, so detach
+      // without persistence to prevent recreating personal data after forget.
+      detachThreadmapSyncWithoutPersistence();
       useAbiturStore.getState()._setSyncUserId(null);
       useToolboxStore.getState()._setSyncUserId(null);
       useWishlistStore.getState()._setSyncUserId(null);
-      useSettingsStore.getState()._setSyncUserId(null);
+      quiesceSettingsStore();
       stopGoogleCalendarSync();
       stopBriefingScheduler();
+      stopHabitReminderScheduler();
+      void quiesceLocalNotificationOwner(accountId);
       cleanupForegroundMessageHandler();
+      if (isFirestoreDataContextCurrent(accountId, dataContextGeneration ?? -1)) {
+        setFlightStorageOwner(null);
+        setFCMRegistrationOwner(null);
+        setFirestoreDataContext(null, 'signed-out');
+      }
     };
   }, [accountScopeKey, clearNotices, configureAccountServices, dismissNotice, localOnly, pushNotice, reconnectNonce, userId]);
 

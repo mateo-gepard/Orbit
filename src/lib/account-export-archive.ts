@@ -43,6 +43,17 @@ interface ArchivedAttachment {
   archivePath: string;
 }
 
+export const MAX_ACCOUNT_EXPORT_ARCHIVE_ATTACHMENT_BYTES = 128 * 1024 * 1024;
+
+export function accountExportArchiveBytesAllowed(current: number, incoming: number): boolean {
+  return Number.isSafeInteger(current)
+    && current >= 0
+    && current <= MAX_ACCOUNT_EXPORT_ARCHIVE_ATTACHMENT_BYTES
+    && Number.isSafeInteger(incoming)
+    && incoming >= 0
+    && incoming <= MAX_ACCOUNT_EXPORT_ARCHIVE_ATTACHMENT_BYTES - current;
+}
+
 const REDACTED_ATTACHMENT_KEYS = new Set([
   'url',
   'downloadUrl',
@@ -179,7 +190,7 @@ function assertValidAttachment(value: AccountExportAttachment): void {
     || typeof value.storagePath !== 'string'
     || !value.storagePath
     || typeof value.type !== 'string'
-    || !Number.isFinite(value.size)
+    || !Number.isSafeInteger(value.size)
     || value.size < 0
   ) {
     throw new Error('The server returned incomplete attachment metadata. No backup was downloaded.');
@@ -214,6 +225,20 @@ export async function buildAccountExportArchive(
   const archivedAttachments: ArchivedAttachment[] = [];
   let byteCount = 0;
 
+  // Reject from metadata before retaining the first Blob. The current ZIP
+  // implementation is intentionally in-memory, so the classic 4 GiB format
+  // ceiling is not a defensible device-memory limit.
+  let declaredByteCount = 0;
+  for (const file of data.files) {
+    assertValidAttachment(file);
+    if (!accountExportArchiveBytesAllowed(declaredByteCount, file.size)) {
+      throw new Error(
+        'This account has more than 128 MiB of attachments. Contact support for a paged export; no partial backup was downloaded.'
+      );
+    }
+    declaredByteCount += file.size;
+  }
+
   for (let index = 0; index < data.files.length; index += 1) {
     abortIfRequested(options.signal);
     const file = data.files[index];
@@ -233,6 +258,11 @@ export async function buildAccountExportArchive(
     abortIfRequested(options.signal);
     if (blob.size !== file.size) {
       throw new Error(`Attachment "${file.name}" changed during export. No partial backup was downloaded.`);
+    }
+    if (!accountExportArchiveBytesAllowed(byteCount, blob.size)) {
+      throw new Error(
+        'This account has more than 128 MiB of attachments. Contact support for a paged export; no partial backup was downloaded.'
+      );
     }
     const archivePath = uniqueArchivePath(file, usedPaths);
     const digest = await sha256(blob);

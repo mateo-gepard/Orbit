@@ -61,11 +61,9 @@ export function formatTimestamp(timestamp: number, fmt: string = DATE_FORMAT_FUL
  * The accent picker accepts any hex, so a fixed white or black foreground
  * would be unreadable across half the range.
  *
- * This uses perceived brightness (the YIQ luma weights) rather than WCAG
- * relative luminance. The two disagree right where common accent colours sit:
- * WCAG's 0.179 crossover puts *black* on indigo-500, because the contrast
- * ratios there are near-identical (4.71 vs 4.46) — while every design system,
- * this one included, puts white on it. Brightness matches that expectation.
+ * Use WCAG relative luminance and the 0.179 crossover. Picking the visually
+ * conventional foreground is not sufficient at the boundary: white on the
+ * default indigo is 4.46:1 and fails normal-text contrast, while black passes.
  */
 export function readableForeground(hex: string): '#000000' | '#ffffff' {
   const match = /^#([0-9a-fA-F]{6})$/.exec(hex.trim());
@@ -75,7 +73,13 @@ export function readableForeground(hex: string): '#000000' | '#ffffff' {
   const red = (int >> 16) & 0xff;
   const green = (int >> 8) & 0xff;
   const blue = int & 0xff;
-  const brightness = (red * 299 + green * 587 + blue * 114) / 1000;
+  const linear = (channel: number): number => {
+    const value = channel / 255;
+    return value <= 0.03928
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = (0.2126 * linear(red)) + (0.7152 * linear(green)) + (0.0722 * linear(blue));
 
-  return brightness >= 149 ? '#000000' : '#ffffff';
+  return luminance > 0.179 ? '#000000' : '#ffffff';
 }

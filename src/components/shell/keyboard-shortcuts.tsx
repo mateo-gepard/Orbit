@@ -72,6 +72,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function KeyboardShortcuts() {
   const router = useRouter();
   const { t } = useTranslation();
+  const commandBarOpen = useOrbitStore((state) => state.commandBarOpen);
   const setCommandBarOpen = useOrbitStore((state) => state.setCommandBarOpen);
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -85,6 +86,16 @@ export function KeyboardShortcuts() {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // This listener has to live in the always-mounted shortcut layer. The
+      // command bar itself is mounted only while open, so keeping ⌘/Ctrl+K
+      // inside that component made the shortcut incapable of opening it.
+      if ((event.metaKey || event.ctrlKey)
+          && !event.altKey
+          && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandBarOpen(!commandBarOpen);
+        return;
+      }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (isTypingTarget(event.target)) return;
 
@@ -123,7 +134,7 @@ export function KeyboardShortcuts() {
       window.removeEventListener('keydown', onKeyDown);
       disarm();
     };
-  }, [router, setCommandBarOpen]);
+  }, [commandBarOpen, router, setCommandBarOpen]);
 
   const modifier = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform ?? '')
     ? '⌘'

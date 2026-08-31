@@ -26,9 +26,17 @@ interface ItemRowProps {
   showProject?: boolean;
   compact?: boolean;
   enableSwipe?: boolean;
+  showCompletion?: boolean;
 }
 
-export function ItemRow({ item, showType = false, showProject = false, compact = false, enableSwipe = true }: ItemRowProps) {
+export function ItemRow({
+  item,
+  showType = false,
+  showProject = false,
+  compact = false,
+  enableSwipe = true,
+  showCompletion = true,
+}: ItemRowProps) {
   const setSelectedItemId = useOrbitStore((state) => state.setSelectedItemId);
   const setCompletionAnimation = useOrbitStore((state) => state.setCompletionAnimation);
   const parent = useOrbitStore((state) => item.parentId
@@ -175,23 +183,28 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
       />
 
       {/* Completion toggle — big hit area for mobile */}
-      {(item.type === 'task' || (item.type === 'habit' && canToggleHabitToday)) && item.status !== 'archived' && (
+      {showCompletion && (item.type === 'task' || (item.type === 'habit' && canToggleHabitToday)) && item.status !== 'archived' && (
         <button
           type="button"
           onClick={toggleComplete}
           aria-label={isComplete ? t('itemRow.markIncomplete') : t('itemRow.markComplete')}
           aria-pressed={isComplete}
           className={cn(
-            'relative z-10 flex h-6 w-6 lg:h-[18px] lg:w-[18px] shrink-0 items-center justify-center rounded-full border bg-background/60 shadow-[var(--shadow-hairline)] transition-all',
-            'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
-            isComplete
-              ? 'border-foreground/25 bg-foreground/10 text-foreground/60'
-              : 'border-transparent hover:border-foreground/25 hover:bg-background',
-            // Bigger invisible hit target on mobile
-            'before:absolute before:inset-[-10px] lg:before:inset-[-6px] before:content-[""]'
+            'relative z-10 -m-2.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full outline-none lg:m-0 lg:h-[18px] lg:w-[18px]',
+            'focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-0',
           )}
         >
-          {isComplete && <Check className="h-3 w-3 lg:h-2.5 lg:w-2.5 text-foreground/50" />}
+          <span
+            aria-hidden="true"
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-full border bg-background/60 shadow-[var(--shadow-hairline)] transition-colors lg:h-[18px] lg:w-[18px]',
+              isComplete
+                ? 'border-[var(--copy-tertiary)] bg-foreground/10 text-foreground'
+                : 'border-[var(--copy-tertiary)] group-hover:bg-background',
+            )}
+          >
+            {isComplete && <Check className="h-3 w-3 text-foreground lg:h-2.5 lg:w-2.5" />}
+          </span>
         </button>
       )}
 
@@ -283,7 +296,7 @@ export function ItemRow({ item, showType = false, showProject = false, compact =
           aria-label={t(shouldClearMyDay ? 'itemRow.removeTodayLabel' : 'itemRow.addTodayLabel', { title: item.title })}
           aria-pressed={shouldClearMyDay}
           className={cn(
-            'relative z-10 flex h-9 w-9 items-center justify-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-all shrink-0 shadow-[var(--shadow-hairline)] lg:h-auto lg:w-auto',
+            'relative z-10 flex h-11 w-11 items-center justify-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-all shrink-0 shadow-[var(--shadow-hairline)] lg:h-auto lg:w-auto',
             'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
             'opacity-70 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100',
             isMyDay 

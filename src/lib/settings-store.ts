@@ -20,6 +20,11 @@ export type CompactMode = 'comfortable' | 'compact';
 export type SettingsSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
 const IANA_TIME_ZONE_PATTERN = /^[A-Za-z0-9._+-]+(?:\/[A-Za-z0-9._+-]+)*$/;
+const suppressedSettingsPersistStorage = createJSONStorage(() => ({
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+}));
 
 /**
  * Returns the canonical IANA identifier accepted by the current runtime.
@@ -465,12 +470,12 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       _setSyncUserId: (userId) => {
-        if (_syncUserId !== userId) {
-          _scopeGeneration += 1;
-          if (_saveTimeout) {
-            clearTimeout(_saveTimeout);
-            _saveTimeout = null;
-          }
+        // Every bind is a monotonic cancellation barrier, including a repeat
+        // bind of the same UID during provider restart.
+        _scopeGeneration += 1;
+        if (_saveTimeout) {
+          clearTimeout(_saveTimeout);
+          _saveTimeout = null;
         }
         _syncUserId = userId;
         _localRevision = 0;
@@ -496,13 +501,38 @@ export const useSettingsStore = create<SettingsStore>()(
 
 const SETTINGS_STORAGE_KEY = 'orbit-settings';
 
-export async function scopeSettingsStore(userId: string | null): Promise<void> {
+/**
+ * Stop settings work and suppress persistence until the next explicit scope.
+ * This is synchronous so a stale callback cannot recreate a UID key in the
+ * gap between secure forget and React effect cleanup.
+ */
+export function quiesceSettingsStore(): void {
   useSettingsStore.getState()._setSyncUserId(null);
+  if (suppressedSettingsPersistStorage) {
+    useSettingsStore.persist.setOptions({ storage: suppressedSettingsPersistStorage });
+    // Increment Zustand's own hydration generation so a previously-started
+    // UID rehydrate cannot repopulate memory after this barrier.
+    void useSettingsStore.persist.rehydrate();
+  }
+  useSettingsStore.setState({
+    settings: normalizeSettings(),
+    cloudDirty: false,
+    cloudSaveState: 'idle',
+  });
+}
+
+export async function scopeSettingsStore(userId: string | null): Promise<void> {
   const target = prepareScopedStorage(SETTINGS_STORAGE_KEY, userId);
-  useSettingsStore.persist.setOptions({ name: target.key });
+  useSettingsStore.persist.setOptions({
+    name: target.key,
+    storage: createJSONStorage(() => verifiedLocalStateStorage),
+  });
+  useSettingsStore.getState()._setSyncUserId(null);
+  const scopeGeneration = _scopeGeneration;
   if (!target.hasPersistedState) {
     useSettingsStore.setState({ settings: normalizeSettings(), cloudDirty: false, cloudSaveState: 'idle' });
   }
   await useSettingsStore.persist.rehydrate();
+  if (scopeGeneration !== _scopeGeneration) return;
   if (target.hasPersistedState) useSettingsStore.setState({ cloudSaveState: 'idle' });
 }

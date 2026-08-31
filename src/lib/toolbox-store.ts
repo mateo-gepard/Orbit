@@ -217,9 +217,9 @@ export const useToolboxStore = create<ToolboxStore>()(
 const TOOLBOX_STORAGE_KEY = 'orbit-toolbox';
 
 export async function scopeToolboxStore(userId: string | null): Promise<void> {
-  useToolboxStore.getState()._setSyncUserId(null);
   const target = prepareScopedStorage(TOOLBOX_STORAGE_KEY, userId);
   useToolboxStore.persist.setOptions({ name: target.key });
+  useToolboxStore.getState()._setSyncUserId(null);
   if (!target.hasPersistedState) useToolboxStore.setState({ enabledTools: [], cloudDirty: false });
   await useToolboxStore.persist.rehydrate();
 }

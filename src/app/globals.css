@@ -100,7 +100,9 @@
   --shadow-panel: 0 1px 2px oklch(0.18 0.012 60 / 0.05), 0 18px 44px -32px oklch(0.18 0.012 60 / 0.28);
   --shadow-float: 0 12px 36px -24px oklch(0.18 0.012 60 / 0.42), 0 1px 0 oklch(1 0 0 / 0.7) inset;
   --shadow-pressed: inset 0 1px 2px oklch(0.18 0.012 60 / 0.08);
-  --focus-ring: oklch(0.62 0.018 65 / 0.5);
+  /* Opaque and deliberately neutral so focus remains >=3:1 even when the
+     user-selected accent is too light for a small non-text indicator. */
+  --focus-ring: oklch(0.42 0.018 65);
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 140ms;
@@ -157,7 +159,7 @@
   --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.34), 0 20px 48px -30px oklch(0 0 0 / 0.78);
   --shadow-float: 0 18px 48px -28px oklch(0 0 0 / 0.82), 0 1px 0 oklch(1 0 0 / 0.045) inset;
   --shadow-pressed: inset 0 1px 2px oklch(0 0 0 / 0.42);
-  --focus-ring: oklch(0.72 0.018 75 / 0.5);
+  --focus-ring: oklch(0.78 0.018 75);
   --tap-highlight: oklch(1 0 0 / 0.07);
 }
 
@@ -294,25 +296,57 @@
   /* Low-opacity muted colors make compact interface copy illegible. Preserve
      the four-level hierarchy with opaque, contrast-safe tones on every text
      carrier; SVGs and empty decorative elements retain their quiet opacity. */
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/70"],
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/75"],
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/80"] {
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/70"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/75"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/80"] {
     color: var(--copy-secondary);
   }
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/50"],
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/55"],
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/60"] {
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/50"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/55"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/60"] {
     color: var(--copy-tertiary);
   }
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/40"],
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/45"] {
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/40"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/45"] {
     color: var(--copy-subtle);
   }
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/20"],
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/25"],
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/30"],
-  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class*="text-muted-foreground/35"] {
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/20"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/25"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/30"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-muted-foreground/35"] {
     color: var(--copy-faint-readable);
+  }
+
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/50"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/55"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/60"] {
+    color: var(--copy-tertiary);
+  }
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/10"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/15"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/20"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/25"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/30"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/35"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/40"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-foreground/45"] {
+    color: var(--copy-subtle);
+  }
+
+  :where(input, textarea)[class~="placeholder:text-muted-foreground/25"]::placeholder,
+  :where(input, textarea)[class~="placeholder:text-muted-foreground/30"]::placeholder,
+  :where(input, textarea)[class~="placeholder:text-muted-foreground/35"]::placeholder,
+  :where(input, textarea)[class~="placeholder:text-muted-foreground/40"]::placeholder,
+  :where(input, textarea)[class~="placeholder:text-muted-foreground/45"]::placeholder,
+  :where(input, textarea)[class~="placeholder:text-muted-foreground/50"]::placeholder {
+    color: var(--copy-tertiary);
+    opacity: 1;
+  }
+
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-destructive/60"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-destructive/70"],
+  :where(p, span, label, small, figcaption, time, dt, dd, div, a, button, li)[class~="text-destructive/80"] {
+    color: var(--destructive);
   }
 
   /* Hover-disclosed destructive actions stay discoverable for keyboard users
@@ -364,6 +398,55 @@ html.keyboard-open {
 
   .mobile-touch-target {
     min-width: 44px;
+  }
+
+  [data-slot="button"],
+  [data-slot="input"] {
+    min-height: 44px;
+  }
+
+  [data-slot="button"][data-size^="icon"] {
+    min-width: 44px;
+  }
+}
+
+/* Keep compact checkbox artwork while exposing a real 44px interactive box.
+   This avoids relying on an invisible pseudo-element that accessibility and
+   browser target-size audits cannot identify as clickable. */
+@media (max-width: 1023px), (hover: none), (pointer: coarse) {
+  .touch-checkbox {
+    display: grid !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    margin: -14px !important;
+    place-items: center !important;
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .touch-checkbox::before {
+    width: 16px;
+    height: 16px;
+    grid-area: 1 / 1;
+    content: '';
+    border: 1px solid var(--copy-tertiary);
+    border-radius: 5px;
+    background: var(--background);
+    box-shadow: var(--shadow-hairline);
+  }
+
+  .touch-checkbox[data-state='checked']::before {
+    border-color: var(--primary);
+    background: var(--primary);
+  }
+
+  .touch-checkbox [data-slot='checkbox-indicator'] {
+    z-index: 1;
+    grid-area: 1 / 1;
+    color: var(--primary-foreground);
   }
 }
 
@@ -600,6 +683,31 @@ html.keyboard-open {
   }
 }
 
+/* Utility classes such as `outline-none` live in a later cascade layer than
+   base styles. This unlayered contract keeps every keyboard-focusable control
+   visible, including bespoke fields that do not use the shared primitives. */
+:where(
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary,
+  [role="button"],
+  [role="option"],
+  [role="menuitem"],
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid var(--focus-ring) !important;
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline-color: Highlight !important;
+  }
+}
+
 /* ─── Transitions (GPU-accelerated) ─── */
 @layer utilities {
   /* Apply to animated elements for better mobile performance */
@@ -733,8 +841,22 @@ html.keyboard-open {
 }
 
 .reduce-motion :where(.orbit-pressable, [class*="active:scale"]):active,
-.reduce-motion :where([class*="animate-slide"], [class*="animate-scale-in"], [class*="animate-turbulence"], [class*="animate-contrail"], [class*="animate-ping"], [class*="animate-pulse-glow"], .ptr-spinner) {
+.reduce-motion :where([class*="animate-"], .ptr-spinner) {
   animation: none !important;
+  transform: none !important;
+}
+
+.reduce-motion :where([class*="hover:scale"]):hover,
+.reduce-motion .group:hover :where([class*="group-hover:scale"]) {
+  transform: none !important;
+}
+
+.reduce-motion :where(.reduced-motion-static, .motion-surface *, [class*="transition-all"], [class*="transition-transform"]) {
+  animation: none !important;
+  transition-property: color, background-color, border-color, opacity !important;
+}
+
+.reduce-motion .reduced-motion-static {
   transform: none !important;
 }
 
@@ -747,8 +869,22 @@ html.keyboard-open {
   }
 
   :where(.orbit-pressable, [class*="active:scale"]):active,
-  :where([class*="animate-slide"], [class*="animate-scale-in"], [class*="animate-turbulence"], [class*="animate-contrail"], [class*="animate-ping"], [class*="animate-pulse-glow"], .ptr-spinner) {
+  :where([class*="animate-"], .ptr-spinner) {
     animation: none !important;
+    transform: none !important;
+  }
+
+  :where([class*="hover:scale"]):hover,
+  .group:hover :where([class*="group-hover:scale"]) {
+    transform: none !important;
+  }
+
+  :where(.reduced-motion-static, .motion-surface *, [class*="transition-all"], [class*="transition-transform"]) {
+    animation: none !important;
+    transition-property: color, background-color, border-color, opacity !important;
+  }
+
+  .reduced-motion-static {
     transform: none !important;
   }
 }
@@ -759,14 +895,14 @@ html.keyboard-open {
   --muted-foreground: oklch(0.3 0 0);
   --border: oklch(0.5 0 0);
   --border-subtle: oklch(0.45 0 0 / 0.82);
-  --focus-ring: oklch(0.18 0 0 / 0.78);
+  --focus-ring: oklch(0.18 0 0);
 }
 .dark.high-contrast {
   --foreground: oklch(0.98 0 0);
   --muted-foreground: oklch(0.8 0 0);
   --border: oklch(0.6 0 0);
   --border-subtle: oklch(0.72 0 0 / 0.72);
-  --focus-ring: oklch(0.95 0 0 / 0.72);
+  --focus-ring: oklch(0.95 0 0);
 }
 
 .high-contrast [class*="text-muted-foreground/"] {
@@ -883,12 +1019,60 @@ html.keyboard-open {
   font-size: 18px;
 }
 
-[data-font-size="large"] :where(.text-\[9px\], .text-\[10px\], .text-\[11px\]) {
+[data-font-size="small"] :where(.text-\[7px\], .text-\[8px\], .text-\[9px\], .text-\[10px\], .text-\[11px\]) {
+  font-size: 0.6875rem !important;
+}
+
+[data-font-size="small"] :where(.text-\[12px\], .text-\[13px\]) {
+  font-size: 0.75rem !important;
+}
+
+[data-font-size="small"] :where(.text-\[14px\], .text-\[15px\]) {
+  font-size: 0.875rem !important;
+}
+
+[data-font-size="small"] .text-\[16px\] {
+  font-size: 1rem !important;
+}
+
+[data-font-size="small"] :where(.text-\[17px\], .text-\[18px\], .text-\[19px\]) {
+  font-size: 1.0625rem !important;
+}
+
+[data-font-size="small"] .text-\[20px\] {
+  font-size: 1.25rem !important;
+}
+
+[data-font-size="small"] .text-\[22px\] {
+  font-size: 1.375rem !important;
+}
+
+[data-font-size="large"] :where(.text-\[7px\], .text-\[8px\], .text-\[9px\], .text-\[10px\], .text-\[11px\]) {
   font-size: 0.75rem !important;
 }
 
 [data-font-size="large"] :where(.text-\[12px\], .text-\[13px\]) {
   font-size: 0.875rem !important;
+}
+
+[data-font-size="large"] :where(.text-\[14px\], .text-\[15px\]) {
+  font-size: 1rem !important;
+}
+
+[data-font-size="large"] .text-\[16px\] {
+  font-size: 1.125rem !important;
+}
+
+[data-font-size="large"] :where(.text-\[17px\], .text-\[18px\], .text-\[19px\]) {
+  font-size: 1.25rem !important;
+}
+
+[data-font-size="large"] .text-\[20px\] {
+  font-size: 1.375rem !important;
+}
+
+[data-font-size="large"] .text-\[22px\] {
+  font-size: 1.5rem !important;
 }
 
 .skip-link {
@@ -911,6 +1095,14 @@ html.keyboard-open {
 
 /* Settings contain dense device/status metadata, but it must remain readable. */
 [data-slot="settings-page"] :where(.text-\[8px\], .text-\[9px\], .text-\[10px\]) {
+  font-size: 0.6875rem !important;
+}
+
+[data-font-size="large"] [data-slot="settings-page"] :where(.text-\[8px\], .text-\[9px\], .text-\[10px\]) {
+  font-size: 0.75rem !important;
+}
+
+[data-font-size="small"] [data-slot="settings-page"] :where(.text-\[8px\], .text-\[9px\], .text-\[10px\]) {
   font-size: 0.6875rem !important;
 }
 

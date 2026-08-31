@@ -472,9 +472,9 @@ export const useAbiturStore = create<AbiturState>()(
 const ABITUR_STORAGE_KEY = 'orbit-abitur';
 
 export async function scopeAbiturStore(userId: string | null): Promise<void> {
-  useAbiturStore.getState()._setSyncUserId(null);
   const target = prepareScopedStorage(ABITUR_STORAGE_KEY, userId);
   useAbiturStore.persist.setOptions({ name: target.key });
+  useAbiturStore.getState()._setSyncUserId(null);
   if (!target.hasPersistedState) {
     useAbiturStore.setState({ profile: createDefaultProfile(), cloudDirty: false });
   }

@@ -81,6 +81,13 @@ export interface ThreadmapItem {
   endTime?: string;
   googleCalendarId?: string;
   /**
+   * Durable provenance for content copied from Google Calendar. Once true it
+   * is immutable in Firestore, even if the live Calendar mapping is later
+   * disconnected. Launch MCP policy uses it to keep Google-derived content
+   * outside third-party AI integrations.
+   */
+  googleCalendarOrigin?: boolean;
+  /**
    * A repeating event is one item carrying its rule, expanded by the views
    * that draw it — not one item per occurrence.
    */

@@ -1,129 +1,91 @@
-# Deploy Firebase Storage Security Rules
+# Deploy Firebase Storage rules
 
-Firebase Storage security rules provide an additional layer of protection beyond CORS configuration. These rules enforce:
+Storage access has two independent controls:
 
-- ✅ Authentication requirement
-- ✅ File size limits (10MB max)
-- ✅ Allowed file types only
-- ✅ Project-specific access
+- `storage.rules` authorizes object access.
+- `storage-cors*.json` controls which browser origins may make bucket requests.
 
----
+Deploying one does not deploy or verify the other.
 
-## Method 1: Firebase Console (Recommended)
+## Current rule boundary
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select your project: **orbit-9e0b6**
-3. Navigate to: **Storage** → **Rules**
-4. Copy the contents of `storage.rules` file
-5. Paste into the editor
-6. Click **Publish**
+- The caller must be authenticated, own the `{userId}` path, and have no account-deletion tombstone.
+- Existing legacy one-segment attachment paths are owner-readable but never writable.
+- Current intent-scoped paths are owner-readable, but raw Firebase SDK writes are also denied.
+- New uploads use a server-created resumable session after server-side ownership, quota, MIME, and
+  size validation.
+- Every unmatched path denies reads and writes.
 
----
+The old documentation described a 10 MB/type allowlist inside Storage Rules and broad access for
+any authenticated user. That is no longer the implementation. Limits and upload authorization are
+enforced by the server workflow; Storage Rules keep direct writes closed.
 
-## Method 2: Firebase CLI
+## Verify before deployment
 
-### Prerequisites
-
-```bash
-# Install Firebase CLI
-npm install -g firebase-tools
-
-# Login to Firebase
-firebase login
-
-# Initialize Storage (if not done already)
-firebase init storage
-```
-
-### Deploy
+Use Java 21 for the emulator suite:
 
 ```bash
-# Deploy storage rules only
-firebase deploy --only storage
-
-# Or deploy all Firebase resources
-firebase deploy
+npm ci
+npm run release:contract
+npm run test:rules
 ```
 
-### Verify
+Do not treat skipped emulator tests as a pass.
+
+## Deploy rules to staging
+
+The checked-in bundle deploys Firestore rules/indexes and Storage Rules together so their lifecycle
+contract cannot drift:
 
 ```bash
-# Check deployment status
-firebase projects:list
-firebase storage:rules:get
+npm run deploy:rules:staging
 ```
 
----
+The target is explicitly `threadmap-staging-9e0b6` even though staging is also the default alias.
 
-## Testing After Deployment
+## Deploy rules to production
 
-1. Try uploading a file in your Threadmap app
-2. Check browser console for errors
-3. Verify file appears in Firebase Storage console
-4. Test downloading the file
+Ordinary production release remains blocked pending the true-staging workflow in
+`PRODUCTION_READINESS.md`. For an authorized incident recovery only:
 
----
+```bash
+export THREADMAP_RELEASE_SHA=<full-40-character-main-commit>
+export THREADMAP_PRODUCTION_DEPLOY_CONFIRMATION=orbit-9e0b6
+npm run deploy:rules:production
+```
 
-## Security Notes
+The guard requires the exact clean `main` commit, production configuration, explicit project, and
+an allowlisted resource set. Do not publish in the Firebase Console or run bare `firebase deploy`.
 
-### Current Implementation
+## Configure and verify CORS separately
 
-- **Authentication**: Only signed-in users can access files
-- **File Size**: Max 10MB per file
-- **File Types**: Images, PDFs, Word, Excel, PowerPoint, text, ZIP
-- **Access Control**: Any authenticated user can read/write (basic)
+Staging uses `storage-cors.staging.json`; production uses `storage-cors.json` and contains only the
+approved `threadmap.app` origins. The script validates bucket ownership, applies the selected file,
+reads the live policy back, and compares it semantically:
 
-### Production Enhancement (Optional)
+```bash
+# Staging
+npm run release:contract
+./scripts/setup-storage-cors.sh threadmap-staging-9e0b6
 
-To restrict files to only the project owner, you'd need to:
+# Authorized production recovery only; use the same guard variables as above
+./scripts/setup-storage-cors.sh orbit-9e0b6
+```
 
-1. Add custom metadata to storage files:
-   ```typescript
-   metadata: {
-     customMetadata: {
-       projectId: project.id,
-       userId: user.uid
-     }
-   }
-   ```
+The CORS operation requires an authenticated `gcloud` CLI. Never add wildcard or localhost origins
+to the production policy.
 
-2. Update storage.rules to check ownership via Firestore:
-   ```javascript
-   match /projects/{projectId}/{fileName} {
-     allow read: if isSignedIn() 
-              && firestore.get(/databases/(default)/documents/items/$(projectId)).data.userId == request.auth.uid;
-   }
-   ```
+## Post-deploy tests
 
-This requires enabling Firestore access in Storage rules, which may have performance implications.
+With disposable accounts and synthetic files, retain evidence that:
 
----
+1. An owner can upload through a server-issued session and then download the object.
+2. Direct SDK writes, unauthenticated access, cross-user access, and unapproved origins fail.
+3. Oversized/disallowed uploads fail at the server boundary.
+4. Resumable upload cancellation (`DELETE`) succeeds from an approved origin.
+5. Item deletion, upload cancellation, account deletion, and scheduled cleanup remove or reconcile
+   objects without leaving a readable orphan.
+6. The live CORS policy exactly matches the intended environment file.
 
-## Troubleshooting
-
-### "Insufficient permissions" error
-
-- Check that user is signed in
-- Verify authentication token is valid
-- Check Firebase Console for rule syntax errors
-
-### Files still not uploading after deploying rules
-
-- Ensure CORS is also configured (see `STORAGE_CORS_SETUP.md`)
-- Check browser console for specific error messages
-- Verify file size is under 10MB
-- Confirm file type is in allowed list
-
-### Rule changes not taking effect
-
-- Wait 1-2 minutes for propagation
-- Clear browser cache
-- Try incognito/private browsing mode
-
----
-
-## Related Documentation
-
-- [Firebase Storage Security Rules Guide](https://firebase.google.com/docs/storage/security)
-- [Storage Rules Reference](https://firebase.google.com/docs/reference/security/storage)
-- CORS Setup: See `STORAGE_CORS_SETUP.md`
+See `STORAGE_CORS_SETUP.md`, `PRODUCTION_READINESS.md`, and `RECOVERY_RUNBOOK.md` for the complete
+operational gates.

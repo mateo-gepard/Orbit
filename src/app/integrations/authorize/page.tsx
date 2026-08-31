@@ -49,12 +49,16 @@ function scopeCopy(scope: string, german: boolean): ScopeCopy {
   switch (scope) {
     case 'threadmap.read':
       return german
-        ? { title: 'Deine Threadmap-Einträge lesen', detail: 'Aufgaben, Projekte, Gewohnheiten, Ziele, Notizen und Termine — Dateiinhalte bleiben ausgeschlossen.', tone: 'read' }
-        : { title: 'Read your Threadmap items', detail: 'Tasks, projects, habits, goals, notes and events. File contents are never included.', tone: 'read' };
+        ? { title: 'Deine Threadmap-Daten lesen', detail: 'Aufgaben, Projekte, Gewohnheiten, Ziele, Notizen, nicht mit Google verbundene Termine, Dateimetadaten wie Name/Typ/Größe, Wunschlisten und Vergleiche, Abiturprofil und Ergebnisse, Fokusprotokolle, Briefing-Verlauf, Tagespläne sowie Einstellungen wie Sprache, Wochenstart und Arbeitszeiten. Dateiinhalte und alle mit Google Kalender verbundenen oder daraus stammenden Termine bleiben ausgeschlossen.', tone: 'read' }
+        : { title: 'Read your Threadmap data', detail: 'Tasks, projects, habits, goals, notes, non-Google-connected events, attachment metadata such as name/type/size, wishlist items and rankings, school-exam profile and results, focus logs, briefing history, dispatch plans, and settings such as language, week start, and working hours. File contents and every Google-connected or Google-derived event are excluded.', tone: 'read' };
     case 'threadmap.write':
       return german
         ? { title: 'Einträge erstellen und bearbeiten', detail: 'Neue Einträge anlegen, bestehende ändern, abschließen, archivieren und verknüpfen.', tone: 'write' }
         : { title: 'Create and change items', detail: 'Add new items, edit existing ones, complete, archive and link them.', tone: 'write' };
+    case 'workspace.read':
+      return german
+        ? { title: 'Dein verbundenes Google Workspace lesen', detail: 'Erlaubt diesem Client, über Threadmap schreibgeschützt in Gmail, Google Kalender und Google Drive zu suchen. Google muss separat verbunden werden. Threadmap gibt niemals Google-Zugangsdaten weiter; E-Mails, Termine und Dateien werden nur bei einem passenden Tool-Aufruf abgerufen.', tone: 'read' }
+        : { title: 'Read your connected Google Workspace', detail: 'Lets this client use Threadmap to search Gmail, Google Calendar, and Google Drive in read-only mode. Google must be connected separately. Threadmap never shares Google credentials; email, event, and file data is fetched only for a relevant tool call.', tone: 'read' };
     case 'threadmap.delete':
       return german
         ? { title: 'Einträge endgültig löschen', detail: 'Löschen ist unumkehrbar und erfordert eine zweistufige Bestätigung.', tone: 'delete' }
@@ -252,6 +256,15 @@ function AuthorizeConsent() {
             ? `${platform} bittet um Zugriff auf dein Threadmap-Konto. Du kannst die Verbindung jederzeit in den Einstellungen widerrufen.`
             : `${platform} is asking for access to your Threadmap account. You can revoke this at any time in Settings.`}
         </p>
+        <p className="max-w-sm text-[12px] leading-relaxed text-muted-foreground">
+          {german ? 'Du autorisierst als ' : 'You are authorizing as '}
+          <strong className="font-medium text-foreground">
+            {user?.email || user?.displayName || (german ? 'dieses Konto' : 'this account')}
+          </strong>
+          {german
+            ? '. Wenn das nicht das beabsichtigte Konto ist, lehne die Anfrage ab und wechsle zuerst das Konto.'
+            : '. If this is not the intended account, deny the request and switch accounts first.'}
+        </p>
       </div>
 
       <ul className="flex w-full flex-col gap-2">
@@ -325,8 +338,8 @@ function Problem({ title, detail }: { title: string; detail: string }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
-      <div className="surface-card flex w-full max-w-md flex-col items-center gap-5 rounded-2xl p-6">
+    <main className="flex h-[100dvh] overflow-y-auto bg-background px-4 py-10">
+      <div className="surface-card mx-auto my-auto flex w-full max-w-md flex-col items-center gap-5 rounded-2xl p-6">
         {children}
       </div>
     </main>

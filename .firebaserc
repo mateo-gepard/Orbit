@@ -1,7 +1,8 @@
 {
   "projects": {
-    "default": "orbit-9e0b6",
-    "staging": "threadmap-staging-9e0b6"
+    "default": "threadmap-staging-9e0b6",
+    "staging": "threadmap-staging-9e0b6",
+    "production": "orbit-9e0b6"
   },
   "targets": {},
   "etags": {}

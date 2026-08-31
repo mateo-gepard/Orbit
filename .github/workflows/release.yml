@@ -1,0 +1,265 @@
+name: Production release (blocked pending true staging)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threadmap-production-release
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full commit SHA from main to release
+        required: true
+        type: string
+
+jobs:
+  release-topology-blocker:
+    name: Production release unavailable until true staging exists
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Block production until the true-staging topology gate is implemented
+        run: |
+          echo "::error title=Production release unavailable::Implement a true threadmap-staging-9e0b6 Firebase deploy plus staging-configured Vercel artifact test job, then a separate post-evidence production approval/deploy job."
+          exit 1
+
+  release:
+    name: Verify, stage, and promote exact artifact
+    needs: release-topology-blocker
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    env:
+      CI: true
+      THREADMAP_BUILD_SHA: ${{ inputs.commit }}
+      THREADMAP_RELEASE_SHA: ${{ inputs.commit }}
+      THREADMAP_PRODUCTION_DEPLOY_CONFIRMATION: orbit-9e0b6
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      - name: Verify candidate belongs to main
+        run: |
+          test "$GITHUB_REF_NAME" = "main"
+          [[ "$THREADMAP_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$THREADMAP_RELEASE_SHA"
+          git merge-base --is-ancestor "$THREADMAP_RELEASE_SHA" origin/main
+
+      - name: Verify release credentials are present
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+        run: |
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_AUTOMATION_BYPASS_SECRET FIREBASE_TOKEN SCRAPE_RATE_LIMIT_SHARED_SECRET; do
+            test -n "${!name:-}" || { echo "Missing required production secret: $name"; exit 1; }
+          done
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Pin release CLIs
+        run: |
+          npm install --global npm@11.5.1
+          npm install --global vercel@58.9.5
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Verify source release gates
+        run: |
+          npm run release:contract
+          npm run audit:regions
+          npm run audit:licenses
+          npm audit --audit-level=high
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run test:rules
+
+      - name: Verify production configuration
+        env:
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY }}
+          NEXT_PUBLIC_FIREBASE_VAPID_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_VAPID_KEY }}
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+          LEGAL_ENTITY_NAME: ${{ secrets.LEGAL_ENTITY_NAME }}
+          LEGAL_CONTACT_EMAIL: ${{ secrets.LEGAL_CONTACT_EMAIL }}
+          LEGAL_POSTAL_ADDRESS: ${{ secrets.LEGAL_POSTAL_ADDRESS }}
+          SECURITY_CONTACT_EMAIL: ${{ secrets.SECURITY_CONTACT_EMAIL }}
+        run: npm run release:check
+
+      - name: Verify Functions artifact
+        working-directory: functions
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          node ../scripts/check-licenses.mjs .
+          npm test
+
+      - name: Pull intended Vercel production environment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production
+
+      - name: Verify intended Vercel project link
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npm run release:verify:vercel-link
+
+      - name: Build production artifact
+        env:
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY }}
+          NEXT_PUBLIC_FIREBASE_VAPID_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_VAPID_KEY }}
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+          LEGAL_ENTITY_NAME: ${{ secrets.LEGAL_ENTITY_NAME }}
+          LEGAL_CONTACT_EMAIL: ${{ secrets.LEGAL_CONTACT_EMAIL }}
+          LEGAL_POSTAL_ADDRESS: ${{ secrets.LEGAL_POSTAL_ADDRESS }}
+          SECURITY_CONTACT_EMAIL: ${{ secrets.SECURITY_CONTACT_EMAIL }}
+        run: vercel build --prod
+
+      - name: Stage production artifact without assigning domains
+        id: stage
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          deployment_url="$(vercel deploy --yes --prebuilt --prod --skip-domain)"
+          node -e 'const value = process.argv[1]; const url = new URL(value); if (value !== value.trim() || /[\r\n]/.test(value) || url.protocol !== "https:" || !url.hostname.endsWith(".vercel.app") || url.pathname !== "/" || url.search || url.hash || url.username || url.password) { console.error("Vercel deployment URL was not an HTTPS vercel.app host"); process.exit(1); }' "$deployment_url"
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Install browser engines
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Browser-test staged artifact
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.stage.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: npm run test:e2e
+
+      - name: Preserve staged browser evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: production-browser-smoke-${{ inputs.commit }}
+          path: |
+            .vercel/playwright-report
+            .vercel/playwright-results
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Verify staged runtime identity and dependencies
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          THREADMAP_VERCEL_BYPASS_ORIGIN: ${{ steps.stage.outputs.url }}
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+        run: npm run release:verify -- --url "${{ steps.stage.outputs.url }}" --sha "$THREADMAP_RELEASE_SHA"
+
+      - name: Capture and verify the currently live web release
+        id: current
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          THREADMAP_VERCEL_BYPASS_ORIGIN: https://threadmap.app
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+        run: |
+          current_sha="$(npm run --silent release:read-sha -- https://threadmap.app)"
+          echo "sha=$current_sha" >> "$GITHUB_OUTPUT"
+          npm run release:verify -- --url https://threadmap.app --sha "$current_sha"
+
+      - name: Prepare explicit production Functions configuration
+        working-directory: functions
+        env:
+          GOOGLE_WORKSPACE_CLIENT_ID: ${{ vars.GOOGLE_WORKSPACE_CLIENT_ID }}
+        run: |
+          test -n "$GOOGLE_WORKSPACE_CLIENT_ID"
+          umask 077
+          printf '%s\n' \
+            'ENFORCE_APP_CHECK=true' \
+            'MCP_ORIGIN=https://threadmap.app' \
+            'MCP_ALLOW_LOOPBACK_REDIRECTS=false' \
+            'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access' \
+            "GOOGLE_WORKSPACE_CLIENT_ID=$GOOGLE_WORKSPACE_CLIENT_ID" \
+            'MCP_EXTRA_REDIRECT_URIS=' \
+            'THREADMAP_APP_ORIGIN=https://threadmap.app' \
+            'AUTH_EMAIL_FIREBASE_ACTION_HOSTS=orbit-9e0b6.firebaseapp.com,orbit-9e0b6.web.app' \
+            > .env.orbit-9e0b6
+
+      - name: Deploy compatible Firebase plane
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY }}
+          NEXT_PUBLIC_FIREBASE_VAPID_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_VAPID_KEY }}
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+          LEGAL_ENTITY_NAME: ${{ secrets.LEGAL_ENTITY_NAME }}
+          LEGAL_CONTACT_EMAIL: ${{ secrets.LEGAL_CONTACT_EMAIL }}
+          LEGAL_POSTAL_ADDRESS: ${{ secrets.LEGAL_POSTAL_ADDRESS }}
+          SECURITY_CONTACT_EMAIL: ${{ secrets.SECURITY_CONTACT_EMAIL }}
+        run: npm run deploy:firebase:production
+
+      - name: Re-verify staged artifact after Firebase deployment
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          THREADMAP_VERCEL_BYPASS_ORIGIN: ${{ steps.stage.outputs.url }}
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+        run: npm run release:verify -- --url "${{ steps.stage.outputs.url }}" --sha "$THREADMAP_RELEASE_SHA"
+
+      - name: Re-probe the previous web release after Firebase deployment
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          THREADMAP_VERCEL_BYPASS_ORIGIN: https://threadmap.app
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+        run: npm run release:verify -- --url https://threadmap.app --sha "${{ steps.current.outputs.sha }}"
+
+      - name: Promote the verified artifact
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel promote "${{ steps.stage.outputs.url }}" --yes --timeout 5m
+
+      - name: Verify the production alias
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          THREADMAP_VERCEL_BYPASS_ORIGIN: https://threadmap.app
+          SCRAPE_RATE_LIMIT_SHARED_SECRET: ${{ secrets.SCRAPE_RATE_LIMIT_SHARED_SECRET }}
+        run: npm run release:verify -- --url https://threadmap.app --sha "$THREADMAP_RELEASE_SHA"

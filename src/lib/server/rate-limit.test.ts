@@ -3,9 +3,13 @@ import { NextRequest } from 'next/server';
 import { checkDistributedScrapeRateLimit } from './rate-limit';
 
 function request(headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest('https://threadmap.app/api/scrape?url=https://example.com', {
+  return new NextRequest('https://threadmap.app/api/scrape', {
+    method: 'POST',
+    body: JSON.stringify({ url: 'https://example.com' }),
     headers: {
+      'content-type': 'application/json',
       authorization: 'Bearer firebase-id-token',
+      'x-firebase-appcheck': 'firebase-app-check-token',
       'x-vercel-forwarded-for': '203.0.113.42',
       ...headers,
     },
@@ -36,15 +40,34 @@ describe('distributed scrape rate limiting', () => {
     await expect(checkDistributedScrapeRateLimit(request(), 'owner-1')).resolves.toBeNull();
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('consumeThreadmapScrapeQuota');
+    expect(url).toBe(
+      'https://europe-west1-orbit-test.cloudfunctions.net/consumeThreadmapScrapeQuota',
+    );
     expect(init.headers).toMatchObject({
       Authorization: 'Bearer firebase-id-token',
+      'X-Firebase-AppCheck': 'firebase-app-check-token',
       'X-Threadmap-Scrape-Secret': 'shared-secret',
     });
     const body = JSON.parse(String(init.body));
     expect(body).toMatchObject({ userId: 'owner-1' });
     expect(body.ipHash).toMatch(/^[a-f0-9]{64}$/);
     expect(String(init.body)).not.toContain('203.0.113.42');
+  });
+
+  it('fails closed before the shared request when App Check proof is missing in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('SCRAPE_RATE_LIMIT_SHARED_SECRET', 'shared-secret');
+    vi.stubEnv('NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'orbit-test');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await checkDistributedScrapeRateLimit(
+      request({ 'x-firebase-appcheck': '' }),
+      'owner-1',
+    );
+
+    expect(response?.status).toBe(503);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('returns a bounded 429 response from the shared limiter', async () => {

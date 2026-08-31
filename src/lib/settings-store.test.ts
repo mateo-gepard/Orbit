@@ -1,15 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('./firestore', () => ({
+const firestoreMocks = vi.hoisted(() => ({
   saveToolData: vi.fn(),
 }));
 
+const storageMocks = vi.hoisted(() => ({
+  getItem: vi.fn(() => null),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+}));
+
+vi.mock('./firestore', () => ({
+  saveToolData: firestoreMocks.saveToolData,
+}));
+
 vi.mock('./verified-storage', () => ({
-  verifiedLocalStateStorage: {
-    getItem: vi.fn(() => null),
-    setItem: vi.fn(),
-    removeItem: vi.fn(),
-  },
+  verifiedLocalStateStorage: storageMocks,
 }));
 
 import {
@@ -18,9 +24,35 @@ import {
   isValidIanaTimeZone,
   normalizeIanaTimeZone,
   parseSettingsImport,
+  quiesceSettingsStore,
+  scopeSettingsStore,
   SETTINGS_EXPORT_VERSION,
   useSettingsStore,
 } from './settings-store';
+
+describe('settings lifecycle cancellation', () => {
+  it('does not persist a late cloud completion after synchronous quiesce', async () => {
+    vi.useFakeTimers();
+    let resolveSave!: () => void;
+    const saveGate = new Promise<void>((resolve) => { resolveSave = resolve; });
+    firestoreMocks.saveToolData.mockReturnValueOnce(saveGate);
+
+    useSettingsStore.getState()._setSyncUserId('owner-user');
+    useSettingsStore.getState().update({ theme: 'dark' });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(firestoreMocks.saveToolData).toHaveBeenCalledTimes(1);
+
+    storageMocks.setItem.mockClear();
+    quiesceSettingsStore();
+    resolveSave();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(storageMocks.setItem).not.toHaveBeenCalled();
+    await scopeSettingsStore(null);
+    vi.useRealTimers();
+  });
+});
 
 describe('IANA timezone settings', () => {
   it('trims and canonicalizes valid IANA identifiers', () => {

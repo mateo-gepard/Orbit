@@ -1,5 +1,10 @@
 # Threadmap — Codebase Audit
 
+> **Historical snapshot — superseded for launch decisions.** This report records the repository
+> state audited on 6–7 August 2026. Many findings have since been remediated and its open/fixed
+> counts are intentionally not maintained. Use `CTO_AUDIT_2026-08-20.md` for the current technical
+> assessment and `PRODUCTION_READINESS.md` for the authoritative release gates.
+>
 > Production-launch controls and remaining console/owner actions are tracked separately in `PRODUCTION_READINESS.md`.
 
 **Audited:** 2026-08-06 → 2026-08-07  

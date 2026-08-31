@@ -1,11 +1,21 @@
 [
   {
     "origin": [
-      "https://orbit-gules-ten.vercel.app",
-      "http://localhost:3000"
+      "https://threadmap.app",
+      "https://www.threadmap.app"
     ],
-    "method": ["GET", "HEAD", "PUT", "POST", "DELETE"],
+    "method": ["GET", "HEAD", "POST", "PUT", "DELETE"],
     "maxAgeSeconds": 3600,
-    "responseHeader": ["Content-Type", "Authorization", "Content-Length", "User-Agent", "x-goog-resumable"]
+    "responseHeader": [
+      "Authorization",
+      "Content-Type",
+      "Content-Length",
+      "Content-Range",
+      "Range",
+      "ETag",
+      "User-Agent",
+      "x-goog-resumable",
+      "x-goog-meta-threadmapuploadid"
+    ]
   }
 ]

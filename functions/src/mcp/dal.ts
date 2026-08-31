@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { mergeAccountOwnedDocumentIfActive } from '../account-write-barrier';
+import { securityAuditExpireAtMillis } from '../retention-policy';
 import {
   FieldPath,
   FieldValue,
@@ -81,6 +83,9 @@ export interface ThreadmapItem {
   endDate?: string;
   startTime?: string;
   endTime?: string;
+  googleCalendarId?: string;
+  googleCalendarOrigin?: boolean;
+  calendarSynced?: boolean;
   timeframe?: string;
   metric?: string;
   noteSubtype?: string;
@@ -147,6 +152,20 @@ export interface PageResult<T> {
   items: T[];
   nextCursor?: string;
   partial?: boolean;
+}
+
+export function scanContinuation(input: {
+  scanned: number;
+  scanLimit: number;
+  matched: number;
+  pageLimit: number;
+}): { hasMore: boolean; partial: boolean; boundary: 'selected' | 'last-scanned' } {
+  const scanCapped = input.scanned === input.scanLimit;
+  return {
+    hasMore: input.matched > input.pageLimit || scanCapped,
+    partial: scanCapped && input.matched < input.pageLimit,
+    boundary: input.matched >= input.pageLimit ? 'selected' : 'last-scanned',
+  };
 }
 
 export interface LifeOverviewResult {
@@ -679,6 +698,28 @@ export function coerceOwnedItem(id: string, data: unknown, ownerUid: string): Th
   };
 }
 
+/**
+ * Google Workspace data is outside the launch MCP contract. Treat both the
+ * durable provenance bit and either legacy live-sync marker as derived data,
+ * so older records and disconnected imports fail closed.
+ */
+export function isGoogleCalendarDerivedItem(data: unknown): boolean {
+  if (!ownRecord(data)) return false;
+  return data.googleCalendarOrigin === true
+    || data.calendarSynced === true
+    || (typeof data.googleCalendarId === 'string' && data.googleCalendarId.trim().length > 0);
+}
+
+function coerceMcpVisibleOwnedItem(id: string, data: unknown, ownerUid: string): ThreadmapItem {
+  const item = coerceOwnedItem(id, data, ownerUid);
+  if (isGoogleCalendarDerivedItem(item)) {
+    // Use the same response as a missing/cross-account item. MCP callers must
+    // not be able to enumerate Calendar-derived record identities either.
+    throw new DalError('not_found', 'The requested item was not found.');
+  }
+  return item;
+}
+
 function optionalCommonFields(item: ThreadmapItem): Omit<ItemOutput,
   'id' | 'type' | 'title' | 'status' | 'createdAt' | 'updatedAt' | 'revision'> {
   const result: Omit<ItemOutput,
@@ -686,7 +727,7 @@ function optionalCommonFields(item: ThreadmapItem): Omit<ItemOutput,
   const strings: Array<keyof ItemOutput> = [
     'dueDate', 'priority', 'assignee', 'emoji', 'color', 'tier', 'frequency',
     'habitTime', 'startDate', 'endDate', 'startTime', 'endTime', 'timeframe',
-    'metric', 'noteSubtype', 'parentId', 'myDay',
+    'metric', 'noteSubtype', 'myDay',
   ];
   for (const key of strings) {
     const value = stringField(item[key], key === 'parentId' ? 200 : 500);
@@ -697,8 +738,9 @@ function optionalCommonFields(item: ThreadmapItem): Omit<ItemOutput,
   }
   const tags = stringArray(item.tags, MCP_LIMITS.tags, MCP_LIMITS.tag);
   if (tags) result.tags = tags;
-  const linkedIds = stringArray(item.linkedIds, MCP_LIMITS.linkedItems, 200)?.filter((id) => ITEM_ID.test(id));
-  if (linkedIds) result.linkedIds = linkedIds;
+  // Relationship IDs are deliberately omitted at launch. A native item may
+  // still point at a Calendar-derived parent or linked record, and returning
+  // those opaque identifiers would undermine the non-enumeration boundary.
   if (Array.isArray(item.customDays)) {
     result.customDays = [...new Set(item.customDays.filter((day): day is number =>
       Number.isInteger(day) && day >= 0 && day <= 6))].slice(0, 7);
@@ -895,10 +937,6 @@ interface IdempotentResult<T> {
   replayed: boolean;
 }
 
-function documentExists(snapshot: DocumentSnapshot): boolean {
-  return snapshot.exists;
-}
-
 function safeResultForStorage(value: unknown): JsonValue {
   return sanitizeJsonValue(value, { stringLimit: 12_000, arrayLimit: 500, keyLimit: 500 });
 }
@@ -985,7 +1023,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     const targetIds = (event.targetIds ?? []).filter((idValue) => ITEM_ID.test(idValue)).slice(0, 20);
     const changedFields = (event.changedFields ?? [])
       .filter((field) => /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(field)).slice(0, 50);
-    await ref.set({
+    const audit = {
       userId: this.principal.userId,
       clientId: this.principal.clientId,
       tool: event.tool.slice(0, 100),
@@ -997,7 +1035,14 @@ export class ThreadmapDal implements ThreadmapDataAccess {
       ...(targetIds.length ? { targetIds } : {}),
       ...(changedFields.length ? { changedFields } : {}),
       createdAt: now,
-      expireAt: new Date(now + 180 * 24 * 60 * 60_000),
+      expireAt: new Date(securityAuditExpireAtMillis(now)),
+    };
+    await this.db.runTransaction(async (transaction) => {
+      const deletion = await transaction.get(this.deletionRef());
+      if (deletion.exists) {
+        throw new DalError('account_unavailable', 'This account is being deleted and cannot use MCP tools.');
+      }
+      transaction.create(ref, audit);
     });
   }
 
@@ -1005,11 +1050,14 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     validateItemId(itemId);
     await this.assertAccountActive();
     const snapshot = await this.itemRef(itemId).get();
-    return { snapshot, item: coerceOwnedItem(itemId, documentData(snapshot), this.principal.userId) };
+    return {
+      snapshot,
+      item: coerceMcpVisibleOwnedItem(itemId, documentData(snapshot), this.principal.userId),
+    };
   }
 
   private itemFromSnapshot(snapshot: QueryDocumentSnapshot | DocumentSnapshot): ThreadmapItem {
-    return coerceOwnedItem(snapshot.id, snapshot.data(), this.principal.userId);
+    return coerceMcpVisibleOwnedItem(snapshot.id, snapshot.data(), this.principal.userId);
   }
 
   private async ownedItems(maximum: number): Promise<{ items: ThreadmapItem[]; partial: boolean }> {
@@ -1086,6 +1134,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
   async listItems(input: ListItemsInput): Promise<PageResult<ItemSummary>> {
     const normalized = validateListInput(input);
     await this.assertAccountActive();
+    if (normalized.parentId) await this.ownedSnapshot(normalized.parentId);
     const cursor = decodePageCursor(normalized.cursor);
     let query: Query = this.db.collection(MCP_COLLECTIONS.items)
       .where('userId', '==', this.principal.userId)
@@ -1095,23 +1144,34 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     const scanLimit = Math.min(MCP_LIMITS.searchScan, Math.max(normalized.limit * 5, normalized.limit + 1));
     const snapshot = await query.limit(scanLimit).get();
     const filtered: ThreadmapItem[] = [];
-    let lastScanned: ThreadmapItem | undefined;
+    let lastScanned: CursorPayload | undefined;
     for (const document of snapshot.docs) {
+      const raw = document.data();
+      lastScanned = { updatedAt: toMillis(raw?.updatedAt), id: document.id };
       let item: ThreadmapItem;
       try { item = this.itemFromSnapshot(document); } catch { continue; }
-      lastScanned = item;
       if (!matchesListFilters(item, normalized)) continue;
       filtered.push(item);
       if (filtered.length > normalized.limit) break;
     }
-    const hasMore = filtered.length > normalized.limit
-      || (snapshot.docs.length === scanLimit && filtered.length >= normalized.limit);
+    const continuation = scanContinuation({
+      scanned: snapshot.docs.length,
+      scanLimit,
+      matched: filtered.length,
+      pageLimit: normalized.limit,
+    });
     const selected = filtered.slice(0, normalized.limit);
-    const boundary = selected[selected.length - 1] ?? lastScanned;
+    const boundary = continuation.boundary === 'selected'
+      ? selected.length > 0
+        ? { updatedAt: selected[selected.length - 1].updatedAt, id: selected[selected.length - 1].id }
+        : undefined
+      : lastScanned;
     return {
       items: selected.map((item) => itemForOutput(item, true) as ItemSummary),
-      ...(hasMore && boundary ? { nextCursor: encodePageCursor({ updatedAt: boundary.updatedAt, id: boundary.id }) } : {}),
-      ...(snapshot.docs.length === scanLimit && filtered.length < normalized.limit ? { partial: true } : {}),
+      ...(continuation.hasMore && boundary
+        ? { nextCursor: encodePageCursor({ updatedAt: boundary.updatedAt, id: boundary.id }) }
+        : {}),
+      ...(continuation.partial ? { partial: true } : {}),
     };
   }
 
@@ -1119,6 +1179,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     const queryText = boundedString(input.query, 1, 200, 'query', true).toLocaleLowerCase();
     const normalized = validateListInput(input);
     await this.assertAccountActive();
+    if (normalized.parentId) await this.ownedSnapshot(normalized.parentId);
     const cursor = decodePageCursor(normalized.cursor);
     let query: Query = this.db.collection(MCP_COLLECTIONS.items)
       .where('userId', '==', this.principal.userId)
@@ -1127,23 +1188,34 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     if (cursor) query = query.startAfter(cursor.updatedAt, cursor.id);
     const snapshot = await query.limit(MCP_LIMITS.searchScan).get();
     const matches: ThreadmapItem[] = [];
-    let lastScanned: ThreadmapItem | undefined;
+    let lastScanned: CursorPayload | undefined;
     for (const document of snapshot.docs) {
+      const raw = document.data();
+      lastScanned = { updatedAt: toMillis(raw?.updatedAt), id: document.id };
       let item: ThreadmapItem;
       try { item = this.itemFromSnapshot(document); } catch { continue; }
-      lastScanned = item;
       if (!matchesListFilters(item, normalized)) continue;
       const haystack = `${htmlToPlainText(item.title, MCP_LIMITS.title)}\n${htmlToPlainText(item.content, 8_000)}\n${(item.tags ?? []).join(' ')}`.toLocaleLowerCase();
       if (haystack.includes(queryText)) matches.push(item);
       if (matches.length > normalized.limit) break;
     }
-    const hasMore = matches.length > normalized.limit
-      || (snapshot.docs.length === MCP_LIMITS.searchScan && matches.length >= normalized.limit);
+    const continuation = scanContinuation({
+      scanned: snapshot.docs.length,
+      scanLimit: MCP_LIMITS.searchScan,
+      matched: matches.length,
+      pageLimit: normalized.limit,
+    });
     const selected = matches.slice(0, normalized.limit);
-    const boundary = selected[selected.length - 1] ?? lastScanned;
+    const boundary = continuation.boundary === 'selected'
+      ? selected.length > 0
+        ? { updatedAt: selected[selected.length - 1].updatedAt, id: selected[selected.length - 1].id }
+        : undefined
+      : lastScanned;
     return {
       items: selected.map((item) => itemForOutput(item, true) as ItemSummary),
-      ...(hasMore && boundary ? { nextCursor: encodePageCursor({ updatedAt: boundary.updatedAt, id: boundary.id }) } : {}),
+      ...(continuation.hasMore && boundary
+        ? { nextCursor: encodePageCursor({ updatedAt: boundary.updatedAt, id: boundary.id }) }
+        : {}),
       ...(snapshot.docs.length === MCP_LIMITS.searchScan ? { partial: true } : {}),
     };
   }
@@ -1215,7 +1287,9 @@ export class ThreadmapDal implements ThreadmapDataAccess {
         if (snapshots[0].exists) {
           throw new DalError('idempotency_conflict', 'The deterministic item id is already in use.');
         }
-        if (input.parentId) coerceOwnedItem(input.parentId, snapshots[1].data(), this.principal.userId);
+        if (input.parentId) {
+          coerceMcpVisibleOwnedItem(input.parentId, snapshots[1].data(), this.principal.userId);
+        }
         const item: ThreadmapItem = {
           ...input,
           id,
@@ -1241,7 +1315,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     const result = await this.idempotentMutation<JsonObject>('update_item', clientRequestId,
       { itemId, expectedRevision, patch }, async (transaction, now) => {
         const itemSnapshot = await transaction.get(this.itemRef(itemId));
-        const item = coerceOwnedItem(itemId, itemSnapshot.data(), this.principal.userId);
+        const item = coerceMcpVisibleOwnedItem(itemId, itemSnapshot.data(), this.principal.userId);
         assertExpectedRevision(item.revision, expectedRevision);
         if (patch.parentId && patch.parentId === itemId) {
           throw new DalError('invalid_input', 'An item cannot be its own parent.');
@@ -1249,7 +1323,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
         let parentSnapshot: DocumentSnapshot | undefined;
         if (typeof patch.parentId === 'string') {
           parentSnapshot = await transaction.get(this.itemRef(patch.parentId));
-          coerceOwnedItem(patch.parentId, parentSnapshot.data(), this.principal.userId);
+          coerceMcpVisibleOwnedItem(patch.parentId, parentSnapshot.data(), this.principal.userId);
         }
         const updates: Record<string, unknown> = { updatedAt: now, revision: item.revision + 1 };
         const next: ThreadmapItem = { ...item, updatedAt: now, revision: item.revision + 1 };
@@ -1275,7 +1349,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     const result = await this.idempotentMutation<JsonObject>(tool, clientRequestId,
       { itemId, expectedRevision }, async (transaction, now) => {
         const snapshot = await transaction.get(this.itemRef(itemId));
-        const item = coerceOwnedItem(itemId, snapshot.data(), this.principal.userId);
+        const item = coerceMcpVisibleOwnedItem(itemId, snapshot.data(), this.principal.userId);
         assertExpectedRevision(item.revision, expectedRevision);
         const status: ItemStatus = tool === 'complete_item' ? 'done' : 'archived';
         const next: ThreadmapItem = {
@@ -1315,7 +1389,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     const result = await this.idempotentMutation<JsonObject>('set_habit_completion', clientRequestId,
       { itemId, expectedRevision, date, completed }, async (transaction, now) => {
         const snapshot = await transaction.get(this.itemRef(itemId));
-        const item = coerceOwnedItem(itemId, snapshot.data(), this.principal.userId);
+        const item = coerceMcpVisibleOwnedItem(itemId, snapshot.data(), this.principal.userId);
         assertExpectedRevision(item.revision, expectedRevision);
         if (item.type !== 'habit') throw new DalError('invalid_input', 'Habit completion can only be changed on a habit.');
         const completions: Record<string, boolean> = ownRecord(item.completions)
@@ -1347,8 +1421,8 @@ export class ThreadmapDal implements ThreadmapDataAccess {
           transaction.get(this.itemRef(itemIdA)),
           transaction.get(this.itemRef(itemIdB)),
         ]);
-        const itemA = coerceOwnedItem(itemIdA, snapshotA.data(), this.principal.userId);
-        const itemB = coerceOwnedItem(itemIdB, snapshotB.data(), this.principal.userId);
+        const itemA = coerceMcpVisibleOwnedItem(itemIdA, snapshotA.data(), this.principal.userId);
+        const itemB = coerceMcpVisibleOwnedItem(itemIdB, snapshotB.data(), this.principal.userId);
         assertExpectedRevision(itemA.revision, expectedRevisionA);
         assertExpectedRevision(itemB.revision, expectedRevisionB);
         const linksA = new Set(stringArray(itemA.linkedIds, MCP_LIMITS.linkedItems, 200) ?? []);
@@ -1504,11 +1578,25 @@ export class ThreadmapDal implements ThreadmapDataAccess {
       this.db.collection(MCP_COLLECTIONS.items).where('userId', '==', this.principal.userId)
         .where('linkedIds', 'array-contains', itemId).limit(501).get(),
     ]);
+    const visibleCount = (documents: QueryDocumentSnapshot[]): number => documents.filter((document) => {
+      try {
+        this.itemFromSnapshot(document);
+        return true;
+      } catch {
+        return false;
+      }
+    }).length;
     const now = this.now();
     const expiresAt = now + MCP_LIMITS.confirmationTtlMs;
     const confirmationToken = `tmdc_${this.random(32).toString('base64url')}`;
     const tokenHash = createHash('sha256').update(confirmationToken, 'utf8').digest('base64url');
-    await this.db.collection(MCP_COLLECTIONS.deleteConfirmations).doc(tokenHash).create({
+    const confirmationRef = this.db.collection(MCP_COLLECTIONS.deleteConfirmations).doc(tokenHash);
+    await this.db.runTransaction(async (transaction) => {
+      const deletion = await transaction.get(this.deletionRef());
+      if (deletion.exists) {
+        throw new DalError('account_unavailable', 'This account is being deleted and cannot use MCP tools.');
+      }
+      transaction.create(confirmationRef, {
       userId: this.principal.userId,
       clientId: this.principal.clientId,
       itemId,
@@ -1517,12 +1605,13 @@ export class ThreadmapDal implements ThreadmapDataAccess {
       createdAt: now,
       expiresAt,
       expireAt: new Date(expiresAt),
+      });
     });
     return {
       item: itemForOutput(item, true) as ItemSummary,
       impact: {
-        childCount: Math.min(children.docs.length, 500),
-        linkedReferenceCount: Math.min(linked.docs.length, 500),
+        childCount: Math.min(visibleCount(children.docs), 500),
+        linkedReferenceCount: Math.min(visibleCount(linked.docs), 500),
         attachmentCount: Array.isArray(item.files) ? Math.min(item.files.length, MCP_LIMITS.files) : 0,
       },
       expectedRevision,
@@ -1589,7 +1678,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
         if (confirmationData.status !== 'active') {
           throw new DalError('confirmation_replayed', 'The deletion confirmation was already used.');
         }
-        const item = coerceOwnedItem(itemId, itemSnapshot.data(), this.principal.userId);
+        const item = coerceMcpVisibleOwnedItem(itemId, itemSnapshot.data(), this.principal.userId);
         assertExpectedRevision(item.revision, expectedRevision);
         transaction.update(confirmationRef, {
           status: 'consumed', consumedAt: this.now(), consumedByRequestId: requestId,
@@ -1623,13 +1712,21 @@ export class ThreadmapDal implements ThreadmapDataAccess {
         expectedRevision,
         clientRequestId: requestId,
       });
-    } catch (error) {
-      await idempotencyRef.set({
+    } catch {
+      const finalization = await mergeAccountOwnedDocumentIfActive(
+        this.db,
+        this.principal.userId,
+        idempotencyRef,
+        {
         status: 'retryable',
         leaseUntil: 0,
         updatedAt: this.now(),
         lastErrorCode: 'delete_callback_failed',
-      }, { merge: true });
+        },
+      );
+      if (finalization === 'blocked') {
+        throw new DalError('account_unavailable', 'This account is being deleted and cannot use MCP tools.');
+      }
       throw new DalError('temporarily_unavailable', 'Deletion could not be completed. Retry with the same client_request_id.', {
         retryable: true,
       });
@@ -1640,18 +1737,27 @@ export class ThreadmapDal implements ThreadmapDataAccess {
       cleanupPending: Boolean(callbackResult.cleanupPending),
       replayed: false,
     };
-    await idempotencyRef.set({
-      status: 'succeeded',
-      result: { ...result, replayed: false },
-      leaseUntil: 0,
-      updatedAt: this.now(),
-    }, { merge: true });
+    const finalization = await mergeAccountOwnedDocumentIfActive(
+      this.db,
+      this.principal.userId,
+      idempotencyRef,
+      {
+        status: 'succeeded',
+        result: { ...result, replayed: false },
+        leaseUntil: 0,
+        updatedAt: this.now(),
+      },
+    );
+    if (finalization === 'blocked') {
+      throw new DalError('account_unavailable', 'This account is being deleted and cannot use MCP tools.');
+    }
     return result;
   }
 }
 
 function withoutId(item: ThreadmapItem): Record<string, unknown> {
-  const { id: _id, ...data } = item;
+  const data = { ...item } as Record<string, unknown>;
+  delete data.id;
   return data;
 }
 

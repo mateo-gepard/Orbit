@@ -11,6 +11,10 @@ import { isHabitScheduledForDate, isHabitCompletedForDate, calculateStreak } fro
 import { getDueHabitReminders } from './habit-reminders';
 import { useSettingsStore } from './settings-store';
 import { scopedStorageKey } from './account-storage';
+import {
+  briefingUpdateIsCurrent,
+  nextBriefingScheduleGeneration,
+} from './briefing-schedule-generation';
 
 // ── Permission ─────────────────────────────────────────────
 
@@ -207,6 +211,9 @@ interface BriefingData {
   title: string;
   body: string;
   tag: string;
+  url?: string;
+  type?: 'briefing' | 'habit-reminder';
+  briefingType?: 'morning' | 'evening';
 }
 
 export function generateMorningBriefing(items: OrbitItem[]): BriefingData {
@@ -353,56 +360,92 @@ export function generateEveningBriefing(items: OrbitItem[]): BriefingData {
 
 // ── Send the actual notification ──────────────────────────
 
-async function sendNotification(data: BriefingData) {
+interface NotificationDeliveryContext {
+  ownerId: string;
+  /** Re-checked after every async boundary to prevent cross-account delivery. */
+  isCurrent: () => boolean;
+  /** Opaque, per-runtime marker used only to compensate a stale displayed notification. */
+  marker: number;
+}
+
+async function closeStaleNotification(
+  registration: ServiceWorkerRegistration,
+  tag: string,
+  ownerId: string,
+  marker: number,
+): Promise<void> {
+  try {
+    const notifications = await registration.getNotifications({ tag });
+    for (const notification of notifications) {
+      if (notification.data?.[LOCAL_NOTIFICATION_OWNER_FIELD] === ownerId
+          && notification.data?.deliveryMarker === marker) notification.close();
+    }
+  } catch {
+    // Best effort. The owner/generation guard still prevents scoped writes.
+  }
+}
+
+async function sendNotification(
+  data: BriefingData,
+  context?: NotificationDeliveryContext,
+): Promise<boolean> {
+  const deliveryContext = context ?? localNotificationContext();
+  // Item-derived local notifications must never be displayed without an owner
+  // marker; generic server pushes use a separate service-worker path.
+  if (!deliveryContext) return false;
+  const isCurrent = deliveryContext.isCurrent;
+  if (!isCurrent()) return false;
   if (!hasNotificationPermission()) {
     console.warn('[THREADMAP] sendNotification: no permission');
-    return;
+    return false;
   }
 
   briefingLog('[THREADMAP] sendNotification:', data.title, '|', data.body?.slice(0, 80));
 
-  // Determine briefing page URL from tag
-  const briefingType = data.tag.includes('morning') ? 'morning' : 'evening';
-  const url = `/briefing?type=${briefingType}`;
+  const briefingType = data.briefingType
+    ?? (data.tag.includes('morning') ? 'morning' : 'evening');
+  const url = data.url ?? `/briefing?type=${briefingType}`;
+  const type = data.type ?? 'briefing';
+  const notificationData = {
+    url,
+    type,
+    ...(type === 'briefing' ? { briefingType } : {}),
+    [LOCAL_NOTIFICATION_OWNER_FIELD]: deliveryContext.ownerId,
+    deliveryMarker: deliveryContext.marker,
+  };
 
   // Strategy 1: Show via SW registration directly (most reliable)
   try {
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.ready;
+      if (!isCurrent()) return false;
       await reg.showNotification(data.title, {
         body: data.body,
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: data.tag,
-        data: { url, type: 'briefing', briefingType },
+        data: notificationData,
         renotify: false,
       } as NotificationOptions);
+      if (!isCurrent()) {
+        void closeStaleNotification(
+          reg,
+          data.tag,
+          deliveryContext.ownerId,
+          deliveryContext.marker,
+        );
+        return false;
+      }
       briefingLog('[THREADMAP] Notification shown via SW registration');
-      return;
+      return true;
     }
   } catch (err) {
     console.warn('[THREADMAP] SW showNotification failed:', err);
   }
-
-  // Strategy 2: Plain Notification API (only works when tab is focused)
-  try {
-    const notification = new Notification(data.title, {
-      body: data.body,
-      icon: '/icons/icon-192.png',
-      tag: data.tag,
-      silent: !useSettingsStore.getState().settings.notifications.sound,
-    });
-
-    notification.onclick = () => {
-      window.focus();
-      window.history.pushState(null, '', url);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-      notification.close();
-    };
-    briefingLog('[THREADMAP] Notification shown via Notification API');
-  } catch (err) {
-    console.error('[THREADMAP] All notification strategies failed:', err);
-  }
+  // Do not fall back to `new Notification` for owner-derived content: those
+  // handles are not enumerable after account teardown and could outlive their
+  // owner. Generic server push does not pass through this function.
+  return false;
 }
 
 // ── Push schedule to Service Worker ───────────────────────
@@ -415,6 +458,58 @@ const briefingLog = (...args: unknown[]) => {
 
 let lastSyncedScheduleJson: string | null = null;
 let currentBriefingOwnerId: string | null = null;
+let briefingScheduleGeneration = 0;
+let currentLocalNotificationOwnerId: string | null = null;
+let localNotificationGeneration = 0;
+
+const LOCAL_NOTIFICATION_OWNER_FIELD = 'threadmapLocalOwnerId';
+
+function advanceBriefingScheduleGeneration(): number {
+  briefingScheduleGeneration = nextBriefingScheduleGeneration(briefingScheduleGeneration);
+  return briefingScheduleGeneration;
+}
+
+function advanceLocalNotificationGeneration(): number {
+  localNotificationGeneration = nextBriefingScheduleGeneration(localNotificationGeneration);
+  return localNotificationGeneration;
+}
+
+/**
+ * Bind locally generated, item-derived notifications to one account. Rebinding
+ * invalidates every pre-await delivery immediately and closes only the old
+ * owner's already-displayed notifications in the background.
+ */
+export function setLocalNotificationOwner(ownerId: string | null): Promise<boolean> {
+  const previousOwnerId = currentLocalNotificationOwnerId;
+  if (previousOwnerId === ownerId) return Promise.resolve(true);
+  advanceLocalNotificationGeneration();
+  currentLocalNotificationOwnerId = ownerId;
+  return previousOwnerId
+    ? closeOwnerDerivedNotifications(previousOwnerId)
+    : Promise.resolve(true);
+}
+
+export function quiesceLocalNotificationOwner(ownerId: string | null): Promise<boolean> {
+  if (ownerId && ownerId === currentLocalNotificationOwnerId) {
+    return setLocalNotificationOwner(null);
+  }
+  return closeOwnerDerivedNotifications(ownerId);
+}
+
+function localNotificationContext(
+  expectedOwnerId = currentLocalNotificationOwnerId,
+  additionalGuard: () => boolean = () => true,
+): NotificationDeliveryContext | null {
+  if (!expectedOwnerId || expectedOwnerId !== currentLocalNotificationOwnerId) return null;
+  const generation = localNotificationGeneration;
+  return {
+    ownerId: expectedOwnerId,
+    marker: generation,
+    isCurrent: () => additionalGuard()
+      && generation === localNotificationGeneration
+      && expectedOwnerId === currentLocalNotificationOwnerId,
+  };
+}
 
 export function syncBriefingScheduleToSW() {
   const { settings } = useSettingsStore.getState();
@@ -431,25 +526,35 @@ export function syncBriefingScheduleToSW() {
   const scheduleJson = JSON.stringify(config);
   if (scheduleJson === lastSyncedScheduleJson) return;
   lastSyncedScheduleJson = scheduleJson;
+  const ownerId = config.ownerId;
+  if (!ownerId) return;
+  const generation = advanceBriefingScheduleGeneration();
 
   // Send to SW controller
   if (navigator.serviceWorker.controller) {
     navigator.serviceWorker.controller.postMessage({
       type: 'UPDATE_BRIEFING_SCHEDULE',
+      generation,
       config,
     });
     briefingLog('[THREADMAP] Briefing schedule synced to SW:', config);
   } else {
     // SW not yet controlling — wait for it
-    navigator.serviceWorker.ready.then((reg) => {
-      if (reg.active) {
+    void navigator.serviceWorker.ready.then((reg) => {
+      if (reg.active && briefingUpdateIsCurrent(
+        generation,
+        briefingScheduleGeneration,
+        ownerId,
+        currentBriefingOwnerId,
+      )) {
         reg.active.postMessage({
           type: 'UPDATE_BRIEFING_SCHEDULE',
+          generation,
           config,
         });
         briefingLog('[THREADMAP] Briefing schedule synced to SW (via ready):', config);
       }
-    });
+    }).catch(() => undefined);
   }
 
   // Also register Periodic Background Sync if available (Chrome 80+)
@@ -507,71 +612,146 @@ function setLastFired(type: 'morning' | 'evening') {
   } catch { /* ignore */ }
 }
 
-function getDateStr(): string {
-  return format(new Date(), 'yyyy-MM-dd');
+function getDateStr(date = new Date()): string {
+  return format(date, 'yyyy-MM-dd');
 }
 
 // ── Habit reminders ────────────────────────────────────────
 
-function habitRemindersFiredKey(): string | null {
-  return currentBriefingOwnerId
-    ? scopedStorageKey('orbit-habit-reminders-fired', currentBriefingOwnerId)
-    : null;
+const HABIT_REMINDER_INTERVAL_MS = 60_000;
+const MAX_REMINDER_RECEIPTS_PER_DAY = 10_000;
+
+let habitReminderInterval: ReturnType<typeof setInterval> | null = null;
+let currentHabitReminderOwnerId: string | null = null;
+let currentGetHabitItems: () => OrbitItem[] = () => [];
+let habitReminderGeneration = 0;
+let habitReminderDispatchInFlight: number | null = null;
+
+function advanceHabitReminderGeneration(): number {
+  habitReminderGeneration = nextBriefingScheduleGeneration(habitReminderGeneration);
+  return habitReminderGeneration;
+}
+
+function habitRemindersFiredKey(ownerId: string): string {
+  return scopedStorageKey('orbit-habit-reminders-fired', ownerId);
 }
 
 /** Habit ids already reminded about today, so a reminder fires once. */
-function getRemindedHabitIds(): Set<string> {
+function getRemindedHabitIds(ownerId: string, dateKey: string): Set<string> {
   try {
-    const key = habitRemindersFiredKey();
-    const raw = key ? localStorage.getItem(key) : null;
+    const raw = localStorage.getItem(habitRemindersFiredKey(ownerId));
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as { date?: string; ids?: string[] };
-    if (parsed.date !== getDateStr() || !Array.isArray(parsed.ids)) return new Set();
-    return new Set(parsed.ids.filter((id): id is string => typeof id === 'string'));
+    if (parsed.date !== dateKey || !Array.isArray(parsed.ids)) return new Set();
+    return new Set(parsed.ids
+      .filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 256)
+      .slice(0, MAX_REMINDER_RECEIPTS_PER_DAY));
   } catch {
     return new Set();
   }
 }
 
-function rememberRemindedHabits(ids: Set<string>): void {
+function rememberRemindedHabit(ownerId: string, dateKey: string, habitId: string): void {
   try {
-    const key = habitRemindersFiredKey();
-    if (key) localStorage.setItem(key, JSON.stringify({ date: getDateStr(), ids: [...ids] }));
+    // Re-read immediately before writing so another open tab's receipt is not
+    // routinely overwritten by the set captured at the start of this tick.
+    const ids = getRemindedHabitIds(ownerId, dateKey);
+    ids.add(habitId);
+    localStorage.setItem(habitRemindersFiredKey(ownerId), JSON.stringify({
+      date: dateKey,
+      ids: [...ids].slice(0, MAX_REMINDER_RECEIPTS_PER_DAY),
+    }));
   } catch { /* ignore */ }
 }
 
 /**
- * Fire reminders for habits whose set time has arrived.
- *
- * `habitTime` was persisted by the detail panel and read by nothing at all —
- * no scheduling, no display, no sorting. This is the reader the input has
- * always implied it had.
+ * Fire foreground reminders for one owner. Habit data never enters the server
+ * push registry or the service-worker schedule.
  */
-function fireDueHabitReminders(items: OrbitItem[]): void {
-  const { settings } = useSettingsStore.getState();
-  if (!settings.notifications.enabled || !settings.notifications.habitReminders) return;
-  if (!hasNotificationPermission()) return;
+async function fireDueHabitReminders(
+  ownerId: string,
+  generation: number,
+  getItems: () => OrbitItem[],
+): Promise<void> {
+  if (habitReminderDispatchInFlight === generation) return;
+  habitReminderDispatchInFlight = generation;
+  const now = new Date();
+  const dateKey = getDateStr(now);
+  const isCurrent = () => briefingUpdateIsCurrent(
+    generation,
+    habitReminderGeneration,
+    ownerId,
+    currentHabitReminderOwnerId,
+  ) && getDateStr() === dateKey;
 
-  const due = getDueHabitReminders(items, new Date());
-  if (due.length === 0) return;
+  try {
+    if (!isCurrent()) return;
+    const { settings } = useSettingsStore.getState();
+    if (!settings.notifications.enabled || !settings.notifications.habitReminders) return;
+    if (!hasNotificationPermission()) return;
 
-  const reminded = getRemindedHabitIds();
-  const pending = due.filter((habit) => !reminded.has(habit.id));
-  if (pending.length === 0) return;
+    const due = getDueHabitReminders(getItems(), now);
+    if (due.length === 0) return;
+    const deliveryContext = localNotificationContext(ownerId, isCurrent);
+    if (!deliveryContext) return;
 
-  const german = settings.language === 'de';
-  for (const habit of pending) {
-    reminded.add(habit.id);
-    const streak = calculateStreak(habit);
-    void sendNotification({
-      title: german ? `Zeit für: ${habit.title}` : `Time for: ${habit.title}`,
-      body: streak > 0
-        ? (german ? `${streak} Tage in Folge — halte die Serie.` : `${streak} day streak — keep it going.`)
-        : (german ? 'Heute fällig.' : 'Due today.'),
-      tag: `habit-reminder-${habit.id}-${getDateStr()}`,
-    });
+    const german = settings.language === 'de';
+    for (const habit of due) {
+      if (!isCurrent()) return;
+      // Refresh per item for cross-tab receipts written during this dispatch.
+      if (getRemindedHabitIds(ownerId, dateKey).has(habit.id)) continue;
+      const streak = calculateStreak(habit);
+      const delivered = await sendNotification({
+        title: german ? `Zeit für: ${habit.title}` : `Time for: ${habit.title}`,
+        body: streak > 0
+          ? (german ? `${streak} Tage in Folge — halte die Serie.` : `${streak} day streak — keep it going.`)
+          : (german ? 'Heute fällig.' : 'Due today.'),
+        // A stable daily tag lets the browser coalesce simultaneous tabs.
+        tag: `habit-reminder-${habit.id}-${dateKey}`,
+        url: '/habits',
+        type: 'habit-reminder',
+      }, deliveryContext);
+      if (delivered && isCurrent()) {
+        rememberRemindedHabit(ownerId, dateKey, habit.id);
+      }
+    }
+  } finally {
+    if (habitReminderDispatchInFlight === generation) {
+      habitReminderDispatchInFlight = null;
+    }
   }
-  rememberRemindedHabits(reminded);
+}
+
+export function startHabitReminderScheduler(
+  userId: string,
+  getItems: () => OrbitItem[],
+): void {
+  void setLocalNotificationOwner(userId);
+  if (currentHabitReminderOwnerId !== userId || !habitReminderInterval) {
+    stopHabitReminderScheduler();
+    currentHabitReminderOwnerId = userId;
+    const generation = advanceHabitReminderGeneration();
+    currentGetHabitItems = getItems;
+    const tick = () => {
+      void fireDueHabitReminders(userId, generation, currentGetHabitItems);
+    };
+    // Do not make a freshly opened app wait a full minute and miss the edge of
+    // the five-minute delivery window.
+    tick();
+    habitReminderInterval = setInterval(tick, HABIT_REMINDER_INTERVAL_MS);
+    briefingLog('[THREADMAP] Foreground habit reminder scheduler started');
+    return;
+  }
+  currentGetHabitItems = getItems;
+}
+
+export function stopHabitReminderScheduler(): void {
+  advanceHabitReminderGeneration();
+  if (habitReminderInterval) clearInterval(habitReminderInterval);
+  habitReminderInterval = null;
+  currentHabitReminderOwnerId = null;
+  currentGetHabitItems = () => [];
+  habitReminderDispatchInFlight = null;
 }
 
 // Background scheduling is browser-controlled and may wake late. Deliver a
@@ -606,33 +786,19 @@ export function startBriefingScheduler(userId: string, getItems: () => OrbitItem
   if (!swMessageListenerRegistered && 'serviceWorker' in navigator) {
     swMessageListenerRegistered = true;
     navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data?.type === 'BRIEFING_FIRE') {
+      if (event.data?.type === 'BRIEFING_FIRE'
+          && event.data.ownerId === currentBriefingOwnerId
+          && event.data.generation === briefingScheduleGeneration) {
         const items = currentGetItems();
         if (event.data.briefing === 'morning') {
           // Mark as fired so in-app timer doesn't double-fire
           setLastFired('morning');
           const briefing = generateMorningBriefing(items);
-          navigator.serviceWorker.ready.then((reg) => {
-            reg.showNotification(briefing.title, {
-              body: briefing.body,
-              icon: '/icons/icon-192.png',
-              badge: '/icons/icon-192.png',
-              tag: briefing.tag,
-              data: { url: '/briefing?type=morning', type: 'briefing', briefingType: 'morning' },
-            } as NotificationOptions);
-          }).catch(() => { /* ignore */ });
+          void sendNotification({ ...briefing, briefingType: 'morning' });
         } else if (event.data.briefing === 'evening') {
           setLastFired('evening');
           const briefing = generateEveningBriefing(items);
-          navigator.serviceWorker.ready.then((reg) => {
-            reg.showNotification(briefing.title, {
-              body: briefing.body,
-              icon: '/icons/icon-192.png',
-              badge: '/icons/icon-192.png',
-              tag: briefing.tag,
-              data: { url: '/briefing?type=evening', type: 'briefing', briefingType: 'evening' },
-            } as NotificationOptions);
-          }).catch(() => { /* ignore */ });
+          void sendNotification({ ...briefing, briefingType: 'evening' });
         }
       }
     });
@@ -647,9 +813,6 @@ export function startBriefingScheduler(userId: string, getItems: () => OrbitItem
 
     const today = getDateStr();
     const lastFired = getLastFired();
-
-    // Habit reminders run on the same minute tick as the briefings.
-    fireDueHabitReminders(currentGetItems());
 
     // Morning briefing — only if SW/BRIEFING_FIRE didn't already handle it
     // Use 5-minute window so timer drift doesn't cause misses
@@ -682,22 +845,179 @@ export function startBriefingScheduler(userId: string, getItems: () => OrbitItem
   briefingLog('[THREADMAP] Briefing scheduler started (SW + in-app fallback)');
 }
 
-export function stopBriefingScheduler() {
+function resetBriefingSchedulerRuntime() {
   if (schedulerInterval) {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
   }
-  if (currentBriefingOwnerId && 'serviceWorker' in navigator) {
-    const message = { type: 'CLEAR_BRIEFING_SCHEDULE', ownerId: currentBriefingOwnerId };
-    if (navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage(message);
-    } else {
-      void navigator.serviceWorker.ready.then((registration) => registration.active?.postMessage(message));
-    }
-  }
   currentBriefingOwnerId = null;
   lastSyncedScheduleJson = null;
   currentGetItems = () => [];
+}
+
+export function stopBriefingScheduler() {
+  const ownerId = currentBriefingOwnerId;
+  const generation = advanceBriefingScheduleGeneration();
+  resetBriefingSchedulerRuntime();
+  if (ownerId && 'serviceWorker' in navigator) {
+    const message = { type: 'CLEAR_BRIEFING_SCHEDULE', generation, ownerId };
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(message);
+    } else {
+      void navigator.serviceWorker.ready
+        .then((registration) => registration.active?.postMessage(message))
+        .catch(() => undefined);
+    }
+  }
+}
+
+async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<{
+  complete: boolean;
+  value?: T;
+}> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise.then((value) => ({ complete: true, value })),
+      new Promise<{ complete: false }>((resolve) => {
+        timeout = setTimeout(() => resolve({ complete: false }), Math.max(1, timeoutMs));
+      }),
+    ]);
+  } catch {
+    return { complete: false };
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+/**
+ * Close only locally generated notifications for one owner. Generic server
+ * push has no owner marker and another account has a different marker, so both
+ * remain untouched. A second enumeration acknowledges that closure completed.
+ */
+export async function closeOwnerDerivedNotifications(
+  ownerId: string | null,
+  timeoutMs = 2_000,
+): Promise<boolean> {
+  if (!ownerId || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    return true;
+  }
+  const serviceWorker = navigator.serviceWorker;
+  const lookup = typeof serviceWorker.getRegistration === 'function'
+    ? serviceWorker.getRegistration()
+    : serviceWorker.ready;
+  const registrationResult = await settleWithin(lookup, timeoutMs);
+  if (!registrationResult.complete) return false;
+  const registration = registrationResult.value;
+  if (!registration) return true;
+
+  const firstRead = await settleWithin(registration.getNotifications(), timeoutMs);
+  if (!firstRead.complete || !firstRead.value) return false;
+  for (const notification of firstRead.value) {
+    if (notification.data?.[LOCAL_NOTIFICATION_OWNER_FIELD] === ownerId) {
+      notification.close();
+    }
+  }
+
+  const verification = await settleWithin(registration.getNotifications(), timeoutMs);
+  return Boolean(verification.complete && verification.value?.every(
+    (notification) => notification.data?.[LOCAL_NOTIFICATION_OWNER_FIELD] !== ownerId,
+  ));
+}
+
+async function waitForBriefingWorker(timeoutMs: number): Promise<ServiceWorker | null> {
+  if (navigator.serviceWorker.controller) return navigator.serviceWorker.controller;
+  return new Promise<ServiceWorker | null>((resolve) => {
+    let settled = false;
+    const finish = (worker: ServiceWorker | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      resolve(worker);
+    };
+    const timeout = window.setTimeout(() => finish(null), Math.max(1, timeoutMs));
+    void (async () => {
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        const immediate = registration?.active || registration?.waiting || registration?.installing;
+        if (immediate) {
+          finish(immediate);
+          return;
+        }
+        // `ready` covers a registration that is currently being installed.
+        // The outer timeout prevents a browser with no eventual worker from
+        // blocking secure sign-out indefinitely.
+        const ready = await navigator.serviceWorker.ready;
+        finish(ready.active || ready.waiting || ready.installing || null);
+      } catch {
+        finish(null);
+      }
+    })();
+  });
+}
+
+/**
+ * Clear an account's persisted service-worker briefing schedule and wait for
+ * the worker to confirm the IndexedDB transaction before a secure sign-out
+ * reloads the page. A timeout returns false so callers can warn that on-device
+ * cleanup was incomplete; push transport teardown remains a separate barrier.
+ */
+export async function clearBriefingScheduleForSignOut(
+  ownerId: string | null,
+  timeoutMs = 2_000,
+): Promise<boolean> {
+  const requestedOwnerId = ownerId || currentBriefingOwnerId || currentLocalNotificationOwnerId;
+  // This must happen before any async service-worker cleanup so an in-flight
+  // habit delivery cannot repopulate the owner's daily receipt after forget.
+  stopHabitReminderScheduler();
+  const notificationCleanup = quiesceLocalNotificationOwner(requestedOwnerId);
+  const generation = advanceBriefingScheduleGeneration();
+  resetBriefingSchedulerRuntime();
+  if (!requestedOwnerId || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    return notificationCleanup;
+  }
+
+  let scheduleCleared = false;
+  try {
+    const deadline = Date.now() + Math.max(250, timeoutMs);
+    const worker = await waitForBriefingWorker(Math.max(250, timeoutMs));
+    if (worker) {
+      scheduleCleared = await new Promise<boolean>((resolve) => {
+        const channel = new MessageChannel();
+        let settled = false;
+        const finish = (cleared: boolean) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeout);
+          channel.port1.close();
+          resolve(cleared);
+        };
+        const timeout = window.setTimeout(
+          () => finish(false),
+          Math.max(1, deadline - Date.now()),
+        );
+        channel.port1.onmessage = (event) => {
+          finish(event.data?.type === 'BRIEFING_SCHEDULE_CLEARED'
+            && event.data?.generation === generation
+            && event.data?.ownerId === requestedOwnerId
+            && event.data?.success === true);
+        };
+        worker.postMessage(
+          {
+            type: 'CLEAR_BRIEFING_SCHEDULE',
+            generation,
+            ownerId: requestedOwnerId,
+            acknowledge: true,
+          },
+          [channel.port2],
+        );
+      });
+    }
+  } catch (error) {
+    console.warn('[THREADMAP] Service-worker briefing schedule cleanup failed:', error);
+  }
+  const notificationsClosed = await notificationCleanup;
+  return scheduleCleared && notificationsClosed;
 }
 
 // ── Manual triggers (for testing / on-demand) ─────────────

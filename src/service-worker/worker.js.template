@@ -4,10 +4,12 @@
 // Push credentials stay in the app runtime; this worker handles standards-based
 // Web Push payloads and the Firebase Messaging payload shape without a CDN SDK.
 
-const CACHE_VERSION = 13;
 const CACHE_PREFIX = 'threadmap-';
-const STATIC_CACHE = `${CACHE_PREFIX}static-v${CACHE_VERSION}`;
-const NAVIGATION_CACHE = `${CACHE_PREFIX}navigation-v${CACHE_VERSION}`;
+const RELEASE_REVISION = __THREADMAP_RELEASE_REVISION__;
+const CACHE_REVISION =
+  RELEASE_REVISION.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 80) || 'unversioned';
+const STATIC_CACHE = `${CACHE_PREFIX}static-${CACHE_REVISION}`;
+const NAVIGATION_CACHE = `${CACHE_PREFIX}navigation-${CACHE_REVISION}`;
 const APP_SHELL_URL = '/';
 const OFFLINE_URL = '/offline.html';
 const PRECACHE_URLS = [
@@ -71,10 +73,76 @@ async function deleteState(key) {
   });
 }
 
-async function clearBriefingSchedule(ownerId) {
-  const config = await readState('config');
-  if (config?.ownerId === ownerId) await deleteState('config');
-  if (typeof ownerId === 'string' && ownerId) await deleteState(`last-fired:${ownerId}`);
+function validBriefingGeneration(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function storedBriefingGeneration(value) {
+  return validBriefingGeneration(value) ? value : -1;
+}
+
+async function updateBriefingSchedule(config, generation) {
+  if (!config || typeof config.ownerId !== 'string' || !config.ownerId || !validBriefingGeneration(generation)) {
+    return false;
+  }
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    let applied = false;
+    const request = store.get('generation');
+    request.onsuccess = () => {
+      // Each client operation advances its generation. Equality therefore
+      // means a replay and must not recreate data behind a clear barrier.
+      if (generation <= storedBriefingGeneration(request.result)) return;
+      store.put(generation, 'generation');
+      store.put({ ...config, generation }, 'config');
+      applied = true;
+    };
+    request.onerror = () => transaction.abort();
+    transaction.oncomplete = () => resolve(applied);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+async function clearBriefingSchedule(ownerId, generation) {
+  if (typeof ownerId !== 'string' || !ownerId || !validBriefingGeneration(generation)) return false;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    let success = false;
+    const generationRequest = store.get('generation');
+    generationRequest.onsuccess = () => {
+      const storedGeneration = storedBriefingGeneration(generationRequest.result);
+      const configRequest = store.get('config');
+      const lastFiredRequest = store.get(`last-fired:${ownerId}`);
+      let readsCompleted = 0;
+      const applyClear = () => {
+        readsCompleted += 1;
+        if (readsCompleted !== 2) return;
+        const ownsConfig = configRequest.result?.ownerId === ownerId;
+        const ownerDataAlreadyAbsent = !ownsConfig && lastFiredRequest.result === undefined;
+        if (generation < storedGeneration) {
+          success = ownerDataAlreadyAbsent;
+          return;
+        }
+        store.put(generation, 'generation');
+        if (ownsConfig) store.delete('config');
+        store.delete(`last-fired:${ownerId}`);
+        success = true;
+      };
+      configRequest.onsuccess = applyClear;
+      lastFiredRequest.onsuccess = applyClear;
+      configRequest.onerror = () => transaction.abort();
+      lastFiredRequest.onerror = () => transaction.abort();
+    };
+    generationRequest.onerror = () => transaction.abort();
+    transaction.oncomplete = () => resolve(success);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
 }
 
 function scheduleOwnerKey(config) {
@@ -160,7 +228,12 @@ async function checkAndFireBriefings() {
     if (!enabled || lastFired[type] === today || !isBriefingDueToday(type, time)) continue;
     lastFired[type] = today;
     await writeState(ownerKey, lastFired);
-    const openClients = await notifyClients({ type: 'BRIEFING_FIRE', briefing: type });
+    const openClients = await notifyClients({
+      type: 'BRIEFING_FIRE',
+      briefing: type,
+      ownerId: config.ownerId,
+      generation: config.generation,
+    });
     if (!openClients) await showBriefingNotification(type, config.language);
   }
 }
@@ -181,8 +254,17 @@ async function trimCache(cacheName, maximumEntries) {
   await Promise.all(keys.slice(0, Math.max(0, keys.length - maximumEntries)).map((key) => cache.delete(key)));
 }
 
+function isCacheableResponse(response) {
+  if (!response.ok || response.type !== 'basic') return false;
+  const cacheControl = response.headers.get('cache-control') || '';
+  if (/(?:^|,)\s*(?:private|no-store)\b/i.test(cacheControl)) return false;
+  // `Set-Cookie` is normally hidden from service workers, but checking it
+  // still protects runtimes that expose the header and documents the boundary.
+  return !response.headers.has('set-cookie');
+}
+
 async function cacheResponse(cacheName, request, response, maximumEntries) {
-  if (!response.ok || response.type !== 'basic') return;
+  if (!isCacheableResponse(response)) return;
   const cache = await caches.open(cacheName);
   await cache.put(request, response.clone());
   await trimCache(cacheName, maximumEntries);
@@ -230,6 +312,9 @@ async function precacheAppShell() {
   if (!shellResponse.ok || shellResponse.type !== 'basic') {
     throw new Error('The app shell could not be precached.');
   }
+  // A future personalized SSR shell may deliberately be private. Keep the
+  // static offline document, but never persist or inspect private HTML.
+  if (!isCacheableResponse(shellResponse)) return;
 
   await cache.put(navigationCacheKey(shellRequest), shellResponse.clone());
   const assets = extractAppShellAssets(await shellResponse.text());
@@ -255,7 +340,6 @@ async function navigationWithOfflineFallback(request) {
 
 self.addEventListener('install', (event) => {
   event.waitUntil(precacheAppShell());
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -282,12 +366,27 @@ self.addEventListener('message', (event) => {
   }
 
   if (event.data.type === 'UPDATE_BRIEFING_SCHEDULE') {
-    event.waitUntil(writeState('config', event.data.config).then(checkAndFireBriefings));
+    event.waitUntil(updateBriefingSchedule(event.data.config, event.data.generation)
+      .then((applied) => applied ? checkAndFireBriefings() : undefined));
     return;
   }
 
   if (event.data.type === 'CLEAR_BRIEFING_SCHEDULE') {
-    event.waitUntil(clearBriefingSchedule(event.data.ownerId));
+    event.waitUntil((async () => {
+      let success = false;
+      try {
+        success = await clearBriefingSchedule(event.data.ownerId, event.data.generation);
+      } finally {
+        if (event.data.acknowledge && event.ports?.[0]) {
+          event.ports[0].postMessage({
+            type: 'BRIEFING_SCHEDULE_CLEARED',
+            generation: event.data.generation,
+            ownerId: event.data.ownerId,
+            success,
+          });
+        }
+      }
+    })());
     return;
   }
 

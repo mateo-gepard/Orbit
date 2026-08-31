@@ -18,6 +18,9 @@ vi.stubGlobal('localStorage', memoryStorage());
 vi.stubGlobal('window', Object.assign(new EventTarget(), { localStorage: globalThis.localStorage }));
 
 const {
+  mergeItemSubscriptionPartitions,
+  mergedToolDocumentPayload,
+  normalizeLegacyItemUpdatePayload,
   sanitizeItem,
   setFirestoreDataContext,
   isFirestoreDataContextCurrent,
@@ -146,5 +149,70 @@ describe('sanitizeItem', () => {
 
   it('gives an item without an id a new one', () => {
     expect(sanitizeItem(raw({ id: '' })).id).toBeTruthy();
+  });
+});
+
+describe('legacy item update convergence', () => {
+  it('normalizes inbox in the canonical patch without copying unknown legacy fields', () => {
+    const payload = normalizeLegacyItemUpdatePayload(
+      { status: 'inbox', futureLegacyField: { preserve: true } },
+      { title: 'Updated', updatedAt: 30, revision: 1 },
+    );
+
+    expect(payload).toEqual({
+      title: 'Updated',
+      updatedAt: 30,
+      revision: 1,
+      status: 'active',
+    });
+    expect(payload).not.toHaveProperty('futureLegacyField');
+  });
+
+  it('preserves an explicit status edit on a revisionless legacy record', () => {
+    expect(normalizeLegacyItemUpdatePayload(
+      { status: 'inbox', revision: undefined, unknownLegacyField: 'unchanged' },
+      { status: 'waiting', revision: 1, updatedAt: 30 },
+      true,
+    )).toEqual({ status: 'waiting', revision: 1, updatedAt: 30 });
+  });
+});
+
+describe('mergeItemSubscriptionPartitions', () => {
+  it('keeps a transient cross-partition item only once and prefers its newest revision', () => {
+    const stale = raw({ id: 'moving', status: 'active', revision: 3, updatedAt: 30 });
+    const moved = raw({ id: 'moving', status: 'archived', revision: 4, updatedAt: 40 });
+
+    expect(mergeItemSubscriptionPartitions([stale], [moved])).toEqual([moved]);
+  });
+
+  it('uses the timestamp to resolve equal revisions and returns global recency order', () => {
+    const oldestCopy = raw({ id: 'same', revision: 2, updatedAt: 20 });
+    const newestCopy = raw({ id: 'same', revision: 2, updatedAt: 50, status: 'archived' });
+    const middle = raw({ id: 'middle', revision: 1, updatedAt: 35 });
+
+    expect(mergeItemSubscriptionPartitions([oldestCopy, middle], [newestCopy]))
+      .toEqual([newestCopy, middle]);
+  });
+});
+
+describe('mergedToolDocumentPayload', () => {
+  it('preserves unknown remote fields while canonical merged values and metadata win', () => {
+    expect(mergedToolDocumentPayload(
+      {
+        settings: { theme: 'system' },
+        legacyFutureField: { preserved: true },
+        userId: 'wrong',
+        toolId: 'wrong',
+        updatedAt: 1,
+      },
+      { settings: { theme: 'dark' } },
+      { userId: 'owner', toolId: 'settings', updatedAt: 2 },
+    )).toEqual({
+      settings: { theme: 'dark' },
+      legacyFutureField: { preserved: true },
+      userId: 'owner',
+      toolId: 'settings',
+      updatedAt: 2,
+    });
   });
 });

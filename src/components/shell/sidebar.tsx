@@ -35,6 +35,7 @@ import { useSettingsStore } from '@/lib/settings-store';
 import { useTranslation, type TranslationKey } from '@/lib/i18n';
 // LIFE_AREA_TAGS now managed via store.getAllTags()
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { ThreadmapMark } from '@/components/ui/threadmap-mark';
@@ -44,6 +45,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
 const NAV_SECTIONS: { labelKey?: TranslationKey; items: { href: string; labelKey: TranslationKey; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -85,6 +87,7 @@ export function Sidebar() {
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [deletingTag, setDeletingTag] = useState<string | null>(null);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [isManaging, setIsManaging] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -99,7 +102,7 @@ export function Sidebar() {
   const settingsBio = useSettingsStore((s) => s.settings.bio);
   const showProfilePhoto = useSettingsStore((s) => s.settings.privacy.showProfilePhoto);
   const accentColor = useSettingsStore((s) => s.settings.accentColor);
-  const { t, tp } = useTranslation();
+  const { t, tp, lang } = useTranslation();
   const storeItems = useThreadmapStore((s) => s.items);
   const affectedTagItemCount = deletingTag
     ? storeItems.filter((item) => item.tags?.includes(deletingTag)).length
@@ -181,6 +184,28 @@ export function Sidebar() {
     if (activeTag === tag) setActiveTag(null);
     if (pathname === `/areas/${encodeURIComponent(tag)}`) router.push('/');
     setDeletingTag(null);
+  };
+
+  const handleSecureSignOut = async (): Promise<boolean> => {
+    try {
+      const result = await signOut();
+      if (!result.localCleanupComplete || !result.notificationCleanupComplete) {
+        const warnings = lang === 'de' ? [
+          ...(result.localCleanupComplete ? [] : ['Ein Teil der Browserdaten konnte nicht entfernt werden; dauerhaftes Caching bleibt deaktiviert. Schließe alle Threadmap-Tabs.']),
+          ...(result.notificationCleanupComplete ? [] : ['Die Benachrichtigungsregistrierung konnte nicht vollständig deaktiviert werden. Deaktiviere Threadmap-Benachrichtigungen in den Browser-Einstellungen.']),
+        ] : [
+          ...(result.localCleanupComplete ? [] : ['Some browser data could not be removed; persistent caching remains disabled. Close every Threadmap tab.']),
+          ...(result.notificationCleanupComplete ? [] : ['The notification registration could not be fully disabled. Turn off Threadmap notifications in your browser settings.']),
+        ];
+        toast.warning(warnings.join(' '));
+      }
+      return true;
+    } catch {
+      toast.error(lang === 'de'
+        ? 'Die sichere Abmeldung konnte nicht abgeschlossen werden. Du bist weiterhin angemeldet; versuche es erneut.'
+        : 'Secure sign-out could not finish. You are still signed in; try again.');
+      return false;
+    }
   };
 
   const sidebarPanel = (
@@ -545,16 +570,21 @@ export function Sidebar() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      aria-label={t('sidebar.signOut')}
+                      aria-label={lang === 'de' ? 'Abmelden und Gerät vergessen' : 'Sign out and forget this device'}
                       variant="ghost"
                       size="icon"
                       className="h-11 w-11 shrink-0 text-muted-foreground hover:text-destructive lg:h-7 lg:w-7"
-                      onClick={signOut}
+                      onClick={() => {
+                        setSidebarOpen(false);
+                        setShowSignOutConfirm(true);
+                      }}
                     >
                       <LogOut className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">{t('sidebar.signOut')}</TooltipContent>
+                  <TooltipContent side="top">
+                    {lang === 'de' ? 'Abmelden und Gerät vergessen' : 'Sign out and forget device'}
+                  </TooltipContent>
                 </Tooltip>
               </>
             )}
@@ -618,6 +648,25 @@ export function Sidebar() {
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
+
+      <ConfirmDialog
+        open={showSignOutConfirm}
+        onOpenChange={setShowSignOutConfirm}
+        title={isDemo
+          ? (lang === 'de' ? 'Lokalen Modus verlassen und Daten löschen?' : 'Leave local mode and erase its data?')
+          : (lang === 'de' ? 'Abmelden und dieses Gerät vergessen?' : 'Sign out and forget this device?')}
+        description={isDemo
+          ? (lang === 'de'
+              ? 'Der lokale Modus hat keine Cloud-Sicherung. Beim Abmelden werden die lokalen Threadmap-Daten dieses Modus dauerhaft aus diesem Browser entfernt.'
+              : 'Local mode has no cloud backup. Signing out permanently removes this mode’s local Threadmap data from this browser.')
+          : (lang === 'de'
+              ? 'Du wirst abgemeldet und die zwischengespeicherten lokalen sowie Offline-Wiederherstellungsdaten dieses Kontos werden aus diesem Browser entfernt. Änderungen, die noch nicht mit der Cloud synchronisiert wurden, gehen verloren. Dein Cloud-Konto und deine Cloud-Daten werden nicht gelöscht.'
+              : 'You will be signed out and this account’s cached local and offline recovery data will be removed from this browser. Changes that have not synced to the cloud will be lost. Your cloud account and cloud data are not deleted.')}
+        confirmLabel={isDemo
+          ? (lang === 'de' ? 'Lokale Daten löschen und abmelden' : 'Erase local data and sign out')
+          : (lang === 'de' ? 'Abmelden und Gerät vergessen' : 'Sign out and forget device')}
+        onConfirm={handleSecureSignOut}
+      />
     </TooltipProvider>
   );
 }

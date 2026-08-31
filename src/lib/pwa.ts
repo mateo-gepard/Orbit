@@ -4,6 +4,54 @@
 
 import { isStandalone, isIOS } from './mobile';
 
+const SERVICE_WORKER_RELOAD_KEY = 'threadmap-service-worker-reload';
+const SERVICE_WORKER_UPDATE_INTERVAL_MS = 60 * 60_000;
+const acceptedServiceWorkerUpdates = new WeakMap<ServiceWorkerRegistration, string>();
+
+export const SERVICE_WORKER_REVISION =
+  process.env.NEXT_PUBLIC_THREADMAP_RELEASE?.trim()
+  || process.env.NEXT_PUBLIC_THREADMAP_VERSION?.trim()
+  || 'local';
+
+export function getServiceWorkerUrl(): string {
+  return '/sw.js';
+}
+
+export function activateWaitingServiceWorker(
+  registration: ServiceWorkerRegistration,
+  revision = SERVICE_WORKER_REVISION,
+): boolean {
+  if (!registration.waiting) return false;
+  acceptedServiceWorkerUpdates.set(registration, revision);
+  try {
+    window.sessionStorage.setItem(SERVICE_WORKER_RELOAD_KEY, revision);
+  } catch {
+    // Storage can be disabled in hardened/private contexts. The registration-
+    // scoped in-memory marker still preserves explicit-update consent.
+  }
+  try {
+    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+  } catch {
+    acceptedServiceWorkerUpdates.delete(registration);
+    try {
+      if (window.sessionStorage.getItem(SERVICE_WORKER_RELOAD_KEY) === revision) {
+        window.sessionStorage.removeItem(SERVICE_WORKER_RELOAD_KEY);
+      }
+    } catch {
+      // No marker was persisted in this restricted-storage context.
+    }
+    return false;
+  }
+  return true;
+}
+
+export interface ServiceWorkerUpdateReadyDetail {
+  revision: string;
+  apply: () => boolean;
+  /** Defer this exact waiting worker until a later update-check trigger. */
+  defer: () => void;
+}
+
 /** Check if the app can show an install prompt */
 export function canInstall(): boolean {
   if (isStandalone()) return false;
@@ -91,30 +139,143 @@ export function registerServiceWorker(): () => void {
     return () => {};
   }
 
-  const hadController = Boolean(navigator.serviceWorker.controller);
+  const listenerCleanups: Array<() => void> = [];
+  const observedInstallingWorkers = new WeakSet<ServiceWorker>();
+  const announcedWaitingWorkers = new WeakSet<ServiceWorker>();
+  const deferredWaitingWorkers = new WeakMap<ServiceWorker, number>();
+  let currentRegistration: ServiceWorkerRegistration | null = null;
+  let disposed = false;
   let reloadingForUpdate = false;
+  let updateCheckGeneration = 0;
+  let registrationAttemptInFlight = false;
   const handleControllerChange = () => {
-    // A claimed worker does not replace JavaScript already running in an
-    // installed PWA. Reload once so geometry and data fixes cannot remain
-    // stranded behind an older app shell after deployment.
-    if (!hadController || reloadingForUpdate) return;
-    reloadingForUpdate = true;
+    if (reloadingForUpdate) return;
+    // Reload only after the app explicitly accepted the update. A worker that
+    // activates because every old tab was closed must never overwrite a draft
+    // in a newly controlled page.
+    let explicitlyAccepted = currentRegistration
+      ? acceptedServiceWorkerUpdates.get(currentRegistration) === SERVICE_WORKER_REVISION
+      : false;
+    try {
+      explicitlyAccepted ||= window.sessionStorage.getItem(SERVICE_WORKER_RELOAD_KEY)
+        === SERVICE_WORKER_REVISION;
+    } catch {
+      // The in-memory registration marker remains authoritative for this tab.
+    }
+    if (!explicitlyAccepted) {
+      return;
+    }
     window.dispatchEvent(new CustomEvent('threadmap:app-updated'));
+    reloadingForUpdate = true;
+    if (currentRegistration) acceptedServiceWorkerUpdates.delete(currentRegistration);
+    try {
+      window.sessionStorage.removeItem(SERVICE_WORKER_RELOAD_KEY);
+    } catch {
+      // Reload is still safe because this tab recorded explicit consent in memory.
+    }
     window.location.reload();
   };
   navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
 
+  const announceWaitingWorker = (
+    registration: ServiceWorkerRegistration,
+    observedCheckGeneration = updateCheckGeneration,
+  ) => {
+    const waiting = registration.waiting;
+    if (disposed || !waiting || announcedWaitingWorkers.has(waiting)) return;
+    const deferredAtGeneration = deferredWaitingWorkers.get(waiting);
+    if (deferredAtGeneration !== undefined) {
+      // A dismissal must not bounce straight back from the update() promise
+      // that was already in flight. Re-arm only after a later visibility,
+      // online, or interval-triggered check.
+      if (observedCheckGeneration <= deferredAtGeneration) return;
+      deferredWaitingWorkers.delete(waiting);
+    }
+    announcedWaitingWorkers.add(waiting);
+    window.dispatchEvent(new CustomEvent<ServiceWorkerUpdateReadyDetail>('threadmap:update-ready', {
+      detail: {
+        revision: SERVICE_WORKER_REVISION,
+        apply: () => activateWaitingServiceWorker(registration),
+        defer: () => {
+          if (registration.waiting !== waiting) return;
+          announcedWaitingWorkers.delete(waiting);
+          deferredWaitingWorkers.set(waiting, updateCheckGeneration);
+        },
+      },
+    }));
+  };
+
   const register = async () => {
+    if (disposed || currentRegistration || registrationAttemptInFlight) return;
+    registrationAttemptInFlight = true;
     try {
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
-        updateViaCache: 'none',
-      });
-      await registration.update();
+      const registration = await navigator.serviceWorker.register(
+        getServiceWorkerUrl(),
+        {
+          scope: '/',
+          updateViaCache: 'none',
+        },
+      );
+      if (disposed) return;
+      currentRegistration = registration;
+      announceWaitingWorker(registration);
+      const observeInstallingWorker = (installing: ServiceWorker | null) => {
+        if (!installing || observedInstallingWorkers.has(installing)) return;
+        observedInstallingWorkers.add(installing);
+        const handleStateChange = () => {
+          if (!disposed && installing.state === 'installed' && navigator.serviceWorker.controller) {
+            announceWaitingWorker(registration);
+          }
+        };
+        installing.addEventListener('statechange', handleStateChange);
+        listenerCleanups.push(() => installing.removeEventListener('statechange', handleStateChange));
+        handleStateChange();
+      };
+      const handleUpdateFound = () => {
+        observeInstallingWorker(registration.installing);
+      };
+      registration.addEventListener('updatefound', handleUpdateFound);
+      listenerCleanups.push(() => registration.removeEventListener('updatefound', handleUpdateFound));
+      observeInstallingWorker(registration.installing);
+
+      // A stable script URL lets the browser compare release A with release B.
+      // Check on foreground/network recovery and periodically so a long-lived
+      // SPA can discover B without waiting for a navigation or manual reload.
+      const checkForUpdate = () => {
+        const checkGeneration = ++updateCheckGeneration;
+        void registration.update()
+          .then(() => {
+            if (disposed) return;
+            observeInstallingWorker(registration.installing);
+            announceWaitingWorker(registration, checkGeneration);
+          })
+          .catch(() => {
+            // Offline and transient update failures are retried at the next trigger.
+          });
+      };
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') checkForUpdate();
+      };
+      const updateTimer = window.setInterval(checkForUpdate, SERVICE_WORKER_UPDATE_INTERVAL_MS);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('online', checkForUpdate);
+      listenerCleanups.push(() => window.clearInterval(updateTimer));
+      listenerCleanups.push(() => document.removeEventListener('visibilitychange', handleVisibilityChange));
+      listenerCleanups.push(() => window.removeEventListener('online', checkForUpdate));
+      checkForUpdate();
     } catch {
-      // The application remains usable online if registration is unavailable.
+      // The application remains usable if registration is temporarily
+      // unavailable. A later online transition retries this single-flight.
+    } finally {
+      registrationAttemptInFlight = false;
     }
   };
+
+  const retryRegistrationWhenOnline = () => {
+    if (!currentRegistration) void register();
+  };
+  window.addEventListener('online', retryRegistrationWhenOnline);
+  listenerCleanups.push(() => window.removeEventListener('online', retryRegistrationWhenOnline));
 
   if (document.readyState === 'complete') {
     void register();
@@ -123,8 +284,10 @@ export function registerServiceWorker(): () => void {
   }
 
   return () => {
+    disposed = true;
     window.removeEventListener('load', register);
     navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+    for (const cleanup of listenerCleanups.splice(0)) cleanup();
   };
 }
 

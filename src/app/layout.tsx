@@ -32,7 +32,6 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.svg?v=2", type: "image/svg+xml" },
-      { url: "/favicon.ico?v=2", sizes: "any" },
       { url: "/favicon-16x16.png?v=2", sizes: "16x16", type: "image/png" },
       { url: "/favicon-32x32.png?v=2", sizes: "32x32", type: "image/png" },
     ],
@@ -67,7 +66,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
-        <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
         <link rel="icon" href="/favicon-16x16.png?v=2" sizes="16x16" type="image/png" />
         <link rel="icon" href="/favicon-32x32.png?v=2" sizes="32x32" type="image/png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2" />

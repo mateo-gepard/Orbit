@@ -163,7 +163,7 @@ function BufferedTextFields({
               <button
                 type="button"
                 onClick={() => void onSave()}
-                className="rounded-md px-2 py-1 font-medium text-destructive hover:bg-destructive/10"
+                className="mobile-touch-target rounded-md px-2 py-1 font-medium text-destructive hover:bg-destructive/10 lg:min-h-0 lg:min-w-0"
               >
                 {t('notes.saveFailedRetry')}
               </button>
@@ -263,7 +263,7 @@ function EventScheduleFields({
             value={schedule.startDate}
             disabled={disabled}
             onChange={(event) => updateField('startDate', event.target.value)}
-            className="mt-1 h-9 text-[13px]"
+            className="mt-1 h-11 text-[13px] lg:h-9"
           />
         </div>
         <div>
@@ -274,7 +274,7 @@ function EventScheduleFields({
             value={schedule.startTime}
             disabled={disabled}
             onChange={(event) => updateField('startTime', event.target.value)}
-            className="mt-1 h-9 text-[13px]"
+            className="mt-1 h-11 text-[13px] lg:h-9"
           />
         </div>
       </div>
@@ -287,7 +287,7 @@ function EventScheduleFields({
             value={schedule.endDate}
             disabled={disabled}
             onChange={(event) => updateField('endDate', event.target.value)}
-            className="mt-1 h-9 text-[13px]"
+            className="mt-1 h-11 text-[13px] lg:h-9"
           />
         </div>
         <div>
@@ -298,7 +298,7 @@ function EventScheduleFields({
             value={schedule.endTime}
             disabled={disabled}
             onChange={(event) => updateField('endTime', event.target.value)}
-            className="mt-1 h-9 text-[13px]"
+            className="mt-1 h-11 text-[13px] lg:h-9"
           />
         </div>
       </div>
@@ -316,7 +316,7 @@ function EventScheduleFields({
             type="button"
             onClick={reset}
             disabled={disabled || saving}
-            className="min-h-9 rounded-lg px-3 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] disabled:opacity-50"
+            className="min-h-11 rounded-lg px-3 text-[11px] font-medium text-muted-foreground hover:bg-foreground/[0.05] disabled:opacity-50 lg:min-h-9"
           >
             {t('detail.reset')}
           </button>
@@ -325,7 +325,7 @@ function EventScheduleFields({
           type="button"
           onClick={() => void onSave()}
           disabled={disabled || !dirty || saving || !validation.valid}
-          className="min-h-9 rounded-lg bg-foreground px-3 text-[11px] font-medium text-background disabled:cursor-not-allowed disabled:opacity-40"
+          className="min-h-11 rounded-lg bg-foreground px-3 text-[11px] font-medium text-background disabled:cursor-not-allowed disabled:opacity-40 lg:min-h-9"
         >
           {saving ? (t('detail.saving')) : t('common.save')}
         </button>
@@ -1033,6 +1033,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
         await updateItem(item.id, {
           type: nextType,
           googleCalendarId: undefined,
+          googleCalendarOrigin: true,
           calendarSynced: undefined,
         });
       } else if (nextType === 'event') {
@@ -1076,22 +1077,28 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                 ? (t('detail.thisHabitIsNotScheduled'))
                 : undefined}
               className={cn(
-                'relative flex h-6 w-6 items-center justify-center rounded-full border transition-all shadow-[var(--shadow-hairline)] disabled:cursor-not-allowed disabled:opacity-40',
-                'focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-0',
-                'before:absolute before:inset-[-10px]',
-                isCurrentComplete
-                  ? 'border-green-600 bg-green-600'
-                  : 'border-transparent bg-background/70 hover:border-foreground/25'
+                'relative -m-2.5 flex h-11 w-11 items-center justify-center rounded-full outline-none disabled:cursor-not-allowed disabled:opacity-40',
+                'focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-0',
               )}
             >
-              {isCurrentComplete && <Check className="h-3 w-3 text-white" />}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'flex h-6 w-6 items-center justify-center rounded-full border shadow-[var(--shadow-hairline)] transition-colors',
+                  isCurrentComplete
+                    ? 'border-green-700 bg-green-700 text-white dark:border-green-500 dark:bg-green-500'
+                    : 'border-foreground/25 bg-background/70',
+                )}
+              >
+                {isCurrentComplete && <Check className="h-3 w-3" />}
+              </span>
             </button>
           )}
           <span className="truncate rounded-full border border-border/50 bg-foreground/[0.035] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t(ITEM_TYPE_KEYS[item.type])}</span>
           {isCurrentComplete && (
             <>
               <span className="text-[11px] text-muted-foreground/30">·</span>
-              <span className="text-[11px] text-green-600/80">{t('status.done')}</span>
+              <span className="text-[11px] text-green-700 dark:text-green-300">{t('status.done')}</span>
             </>
           )}
         </div>
@@ -1104,7 +1111,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               setShowLinkGraph(true);
             }}
             aria-label={t('detail.viewLinkGraph')}
-            className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/55 outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 md:h-9 md:w-9"
+            className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/55 outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-9 lg:w-9"
             title={t('detail.viewLinkGraph')}
             type="button"
           >
@@ -1116,7 +1123,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/55 outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 md:h-9 md:w-9"
+                className="orbit-pressable flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground/55 outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/25 lg:h-9 lg:w-9"
                 aria-label={t('common.moreOptions')}
               >
                 <MoreVertical className="h-4 w-4" />
@@ -1134,7 +1141,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                   handleTypeChange(v as ItemType);
                   setOptionsOpen(false);
                 }}>
-                  <SelectTrigger aria-label={t('detail.changeType')} className="mt-1 h-9 text-[12px]"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label={t('detail.changeType')} className="mt-1 h-11 text-[12px] lg:h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {TYPE_OPTIONS.map((type) => (
                       <SelectItem key={type} value={type} className="text-[12px]">{t(ITEM_TYPE_KEYS[type])}</SelectItem>
@@ -1149,7 +1156,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               <div className="px-2 py-2">
                 <FieldLabel>{t('detail.changeStatus')}</FieldLabel>
                 <Select value={item.status} onValueChange={(v) => handleUpdate({ status: v as ItemStatus, completedAt: v === 'done' ? Date.now() : undefined })}>
-                  <SelectTrigger aria-label={t('detail.changeStatus')} className="mt-1 h-9 text-[12px]"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label={t('detail.changeStatus')} className="mt-1 h-11 text-[12px] lg:h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {STATUS_OPTIONS.map((s) => (
                       <SelectItem key={s} value={s} className="capitalize text-[12px]">{t(`status.${s}`)}</SelectItem>
@@ -1196,7 +1203,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                         });
                       }}
                     >
-                      <SelectTrigger aria-label={t('detail.frequency')} className="mt-1 h-9 text-[12px]"><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-label={t('detail.frequency')} className="mt-1 h-11 text-[12px] lg:h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {FREQUENCY_OPTIONS.map((frequency) => (
                           <SelectItem key={frequency} value={frequency} className="text-[12px]">{t(`frequency.${frequency}`)}</SelectItem>
@@ -1234,7 +1241,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                                 : (t('detail.notScheduled'))}`}
                               aria-pressed={scheduledHabitDays.includes(idx)}
                               className={cn(
-                                'flex min-h-10 w-full items-center justify-center rounded text-[10px] font-medium',
+                                'flex min-h-11 w-full items-center justify-center rounded text-[10px] font-medium lg:min-h-10',
                                 scheduledHabitDays.includes(idx)
                                   ? 'bg-foreground text-background'
                                   : 'bg-foreground/[0.05] text-muted-foreground'
@@ -1248,7 +1255,11 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                     )}
 
                     <div className="mt-2">
-                      <Input aria-label={t('detail.habitReminderTime')} type="time" value={item.habitTime || ''} onChange={(e) => handleUpdate({ habitTime: e.target.value || undefined })} className="h-9 text-[11px]" placeholder={t('detail.timePlaceholder')} />
+                      <FieldLabel>{t('detail.habitReminderTime')}</FieldLabel>
+                      <Input aria-label={t('detail.habitReminderTime')} type="time" value={item.habitTime || ''} onChange={(e) => handleUpdate({ habitTime: e.target.value || undefined })} className="mt-1 h-11 text-[11px] lg:h-9" placeholder={t('detail.timePlaceholder')} />
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                        {t('detail.habitReminderTimeDesc')}
+                      </p>
                     </div>
 
 
@@ -1263,7 +1274,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                   <div className="px-2 py-2">
                     <FieldLabel>{t('detail.timeframe')}</FieldLabel>
                     <Select value={item.timeframe || 'quarterly'} onValueChange={(v) => handleUpdate({ timeframe: v as GoalTimeframe })}>
-                      <SelectTrigger aria-label={t('detail.timeframe')} className="mt-1 h-9 text-[12px]"><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-label={t('detail.timeframe')} className="mt-1 h-11 text-[12px] lg:h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {TIMEFRAME_OPTIONS.map((timeframe) => (
                           <SelectItem key={timeframe} value={timeframe} className="text-[12px]">{t(`timeframe.${timeframe}`)}</SelectItem>
@@ -1281,7 +1292,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                   <div className="px-2 py-2">
                     <FieldLabel>{t('detail.category')}</FieldLabel>
                     <Select value={item.noteSubtype || 'general'} onValueChange={(v) => handleUpdate({ noteSubtype: v as NoteSubtype })}>
-                      <SelectTrigger aria-label={t('detail.category')} className="mt-1 h-9 text-[12px]"><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-label={t('detail.category')} className="mt-1 h-11 text-[12px] lg:h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {NOTE_SUBTYPE_OPTIONS.map((subtype) => (
                           <SelectItem key={subtype} value={subtype} className="text-[12px]">{t(`noteSubtype.${subtype}`)}</SelectItem>
@@ -1302,9 +1313,9 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                       onClick={handleSyncToGoogleCalendar}
                       disabled={syncingCalendar || calendarAuthorizationLoading}
                       className={cn(
-                        'flex min-h-10 w-full items-center gap-2 rounded-md px-3 py-2 text-[11px] font-medium transition-colors',
+                        'flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-[11px] font-medium transition-colors lg:min-h-10',
                         item.calendarSynced
-                          ? 'bg-green-500/10 text-green-600'
+                          ? 'bg-green-500/10 text-green-700 dark:text-green-300'
                           : 'bg-foreground/[0.05] text-foreground',
                         (syncingCalendar || calendarAuthorizationLoading) && 'opacity-50'
                       )}
@@ -1334,7 +1345,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                     setOptionsOpen(false);
                     void handleRestore();
                   }}
-                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25"
+                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-sm hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-10"
                 >
                   <RotateCcw className="h-3.5 w-3.5 mr-2" />
                   {t('common.restore')}
@@ -1346,7 +1357,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                     setOptionsOpen(false);
                     handleArchive();
                   }}
-                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25"
+                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-sm hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 lg:min-h-10"
                 >
                   <Archive className="h-3.5 w-3.5 mr-2" />
                   {t('common.archive')}
@@ -1360,7 +1371,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                   setOptionsOpen(false);
                   handleDelete();
                 }}
-                className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-red-600 hover:bg-red-500/10 focus-visible:ring-2 focus-visible:ring-red-500/30 dark:text-red-400"
+                className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-red-700 hover:bg-red-500/10 focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] dark:text-red-400 lg:min-h-10"
               >
                 <Trash2 className="h-3.5 w-3.5 mr-2" />
                 {t('common.delete')}
@@ -1443,7 +1454,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
           {/* Priority (Task) */}
           {item.type === 'task' && (
             <Select value={item.priority || 'none'} onValueChange={(v) => handleUpdate({ priority: v === 'none' ? undefined : v as Priority })}>
-              <SelectTrigger aria-label={t('detail.priority')} className="h-9 text-[13px] w-auto min-w-[100px]">
+              <SelectTrigger aria-label={t('detail.priority')} className="h-11 w-auto min-w-[100px] text-[13px] lg:h-9">
                 <SelectValue placeholder={t('detail.priority')} />
               </SelectTrigger>
               <SelectContent>
@@ -1463,14 +1474,14 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                 type="date"
                 value={item.dueDate || ''}
                 onChange={(e) => handleUpdate({ dueDate: e.target.value || undefined })}
-                className="h-9 text-[13px] w-auto min-w-[140px]"
+                className="h-11 w-auto min-w-[140px] pr-11 text-[13px] lg:h-9 lg:pr-8"
               />
               {item.dueDate && (
                 <button
                   type="button"
                   onClick={() => handleUpdate({ dueDate: undefined })}
                   aria-label={t('detail.clearDueDate')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25"
+                  className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] lg:right-1 lg:h-8 lg:w-8"
                 >
                   <X className="h-3 w-3 text-muted-foreground/50" />
                 </button>
@@ -1484,7 +1495,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               type="button"
               onClick={handleAddToToday}
               aria-pressed={isMyDay}
-              className="surface-card orbit-pressable flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring/25"
+              className="surface-card orbit-pressable flex h-11 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] lg:h-9"
             >
               <Sparkles className="h-3.5 w-3.5" />
               {isMyDay ? t('itemRow.removeBtn') : t('detail.addToToday')}
@@ -1518,14 +1529,14 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
             <FieldLabel>{t('detail.checklist')}</FieldLabel>
             <div className="mt-2 space-y-1">
               {(item.checklist || []).map((check) => (
-                <div key={check.id} className="group flex min-h-9 items-center gap-2.5 rounded-lg px-1.5">
+                <div key={check.id} className="group flex min-h-11 items-center gap-2.5 rounded-lg px-1.5 lg:min-h-9">
                   <Checkbox
                     checked={check.done}
                     onCheckedChange={() => toggleChecklistItem(check.id)}
                     aria-label={`${check.done
                       ? (t('detail.markIncomplete'))
                       : (t('detail.markComplete'))}: ${check.text}`}
-                    className="h-4 w-4"
+                    className="touch-checkbox h-4 w-4"
                   />
                   <span className={cn('text-[14px] flex-1', check.done && 'text-muted-foreground/40 line-through')}>
                     {check.text}
@@ -1537,7 +1548,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                       handleUpdate({ checklist: updated });
                     }}
                     aria-label={`${t('detail.deleteChecklistItem')}: ${check.text}`}
-                    className="rounded-md p-1 opacity-100 transition-opacity hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                    className="flex h-11 w-11 items-center justify-center rounded-md opacity-100 transition-opacity hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] lg:h-7 lg:w-7 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
                   >
                     <X className="h-3 w-3 text-muted-foreground/50" />
                   </button>
@@ -1555,9 +1566,9 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                     }
                   }}
                   placeholder={t('detail.checklistPlaceholder')}
-                  className="flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[13px] outline-none placeholder:text-muted-foreground/30 transition-colors focus:border-border/70 focus:bg-background/50"
+                  className="min-h-11 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[13px] outline-none placeholder:text-muted-foreground/30 transition-colors focus:border-border/70 focus:bg-background/50 lg:min-h-9"
                 />
-                <button type="button" onClick={() => void addChecklistItem()} disabled={!newChecklistText.trim() || checklistSaving} aria-busy={checklistSaving} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40" aria-label={t('detail.addChecklistItem')}>
+                <button type="button" onClick={() => void addChecklistItem()} disabled={!newChecklistText.trim() || checklistSaving} aria-busy={checklistSaving} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40 lg:h-9 lg:w-9" aria-label={t('detail.addChecklistItem')}>
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
@@ -1585,7 +1596,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                 onClick={() => toggleTag(tag)}
                 aria-pressed={validItemTags.includes(tag)}
                 className={cn(
-                  'rounded-lg px-2.5 py-1 text-[12px] font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
+                  'min-h-11 rounded-lg px-2.5 py-1 text-[12px] font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] lg:min-h-0',
                   validItemTags.includes(tag)
                     ? 'bg-foreground text-background shadow-[var(--shadow-soft)]'
                     : 'bg-foreground/[0.06] text-muted-foreground/70 hover:bg-foreground/[0.1]'
@@ -1607,7 +1618,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                 <div className="mt-2">
                   <button
                     onClick={() => navigateToItem(parentItem.id)}
-                    className="surface-card orbit-pressable flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring/25 group"
+                    className="surface-card orbit-pressable group flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
                   >
                     {(() => {
                       const Icon = TYPE_ICONS[parentItem.type];
@@ -1626,7 +1637,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
               <div>
                 <FieldLabel>{t('detail.milestone')}</FieldLabel>
                 <Select value={currentMilestoneId || 'none'} onValueChange={handleMilestoneChange}>
-                  <SelectTrigger aria-label={t('detail.selectMilestone')} className="mt-1.5 h-8 text-[12px]">
+                  <SelectTrigger aria-label={t('detail.selectMilestone')} className="mt-1.5 h-11 text-[12px] lg:h-8">
                     <SelectValue placeholder={t('detail.noMilestone')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -1654,7 +1665,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                       <button
                         key={linked.id}
                         onClick={() => navigateToItem(linked.id)}
-                        className="surface-card orbit-pressable flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring/25 group"
+                        className="surface-card orbit-pressable group flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
                       >
                         <Icon className={cn("h-4 w-4 shrink-0", isDone ? 'text-muted-foreground/30' : 'text-muted-foreground/50')} />
                         <span className={cn("text-[13px] flex-1", isDone ? 'line-through text-muted-foreground/40' : 'text-foreground/90 group-hover:text-foreground')}>
@@ -1681,7 +1692,7 @@ function DetailPanelForItem({ initialItem }: { initialItem: OrbitItem }) {
                       <button
                         key={child.id}
                         onClick={() => navigateToItem(child.id)}
-                        className="surface-card orbit-pressable flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring/25 group"
+                        className="surface-card orbit-pressable group flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
                       >
                         <Icon className={cn("h-4 w-4 shrink-0", isDone ? 'text-muted-foreground/30' : 'text-muted-foreground/50')} />
                         <span className={cn("text-[13px] flex-1", isDone ? 'line-through text-muted-foreground/40' : 'text-foreground/90 group-hover:text-foreground')}>

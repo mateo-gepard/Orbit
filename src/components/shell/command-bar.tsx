@@ -142,18 +142,6 @@ export function CommandBar() {
   // Determine which autocomplete to show
   const showingAutocomplete = suggestedTags.length > 0 || suggestedPriorities.length > 0 || suggestedLinks.length > 0;
 
-  // ⌘K shortcut
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setCommandBarOpen(!commandBarOpen);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandBarOpen, setCommandBarOpen]);
-
   useEffect(() => {
     if (commandBarOpen) {
       setInput('');
@@ -394,18 +382,50 @@ export function CommandBar() {
   const previewTags = normalizedPreviewTag && !parsed.tags.includes(normalizedPreviewTag)
     ? [...parsed.tags, normalizedPreviewTag]
     : parsed.tags;
+  const hasCreateItemOption = Boolean(
+    input.trim()
+      && isCreateMode
+      && suggestedTags.length === 0
+      && (previewTitle || resolvedLink),
+  );
+  const hasCreateTagsOption = Boolean(
+    input.trim()
+      && isCreateMode
+      && suggestedTags.length === 0
+      && !parsed.title.trim()
+      && parsed.tags.length > 0,
+  );
+  const createOptionId = hasCreateItemOption
+    ? 'command-create-item'
+    : hasCreateTagsOption
+      ? 'command-create-tags'
+      : undefined;
+  const visibleResultCount = !showingAutocomplete && !input.startsWith('/')
+    ? filteredItems.length
+    : 0;
+  const leadingOptionCount = suggestedTags.length > 0
+    ? suggestedTags.length
+    : suggestedPriorities.length > 0
+      ? suggestedPriorities.length
+      : suggestedLinks.length > 0
+        ? suggestedLinks.length
+        : visibleResultCount;
+  const createOptionIndex = createOptionId ? leadingOptionCount : -1;
+  const optionCount = leadingOptionCount + (createOptionId ? 1 : 0);
   const activeOptionId = selectedIndex >= 0
-    ? suggestedTags.length > 0
-      ? `command-tag-${Math.min(selectedIndex, suggestedTags.length - 1)}`
-      : suggestedPriorities.length > 0
-        ? `command-priority-${Math.min(selectedIndex, suggestedPriorities.length - 1)}`
-        : suggestedLinks.length > 0
-          ? `command-link-${Math.min(selectedIndex, suggestedLinks.length - 1)}`
-          : filteredItems.length > 0 && !input.startsWith('/')
-            ? `command-result-${Math.min(selectedIndex, filteredItems.length - 1)}`
-            : undefined
-    : undefined;
-  const hasListboxOptions = showingAutocomplete || (filteredItems.length > 0 && !input.startsWith('/'));
+    ? selectedIndex === createOptionIndex && createOptionId
+      ? createOptionId
+      : suggestedTags.length > 0
+        ? `command-tag-${Math.min(selectedIndex, suggestedTags.length - 1)}`
+        : suggestedPriorities.length > 0
+          ? `command-priority-${Math.min(selectedIndex, suggestedPriorities.length - 1)}`
+          : suggestedLinks.length > 0
+            ? `command-link-${Math.min(selectedIndex, suggestedLinks.length - 1)}`
+            : visibleResultCount > 0
+              ? `command-result-${Math.min(selectedIndex, visibleResultCount - 1)}`
+              : undefined
+    : createOptionId;
+  const hasListboxOptions = optionCount > 0;
 
   return (
     <Dialog
@@ -458,8 +478,10 @@ export function CommandBar() {
                   e.preventDefault();
                   if (selectedIndex < 0 && isCreateMode) {
                     void handleSubmit();
-                  } else if (selectedIndex < 0 && filteredItems.length > 0) {
+                  } else if (selectedIndex < 0 && visibleResultCount > 0) {
                     setSelectedIndex(0);
+                  } else if (selectedIndex === createOptionIndex && createOptionId) {
+                    void handleSubmit();
                   } else if (suggestedTags.length > 0) {
                     handleSelectTag(suggestedTags[Math.min(selectedIndex, suggestedTags.length - 1)]);
                   } else if (suggestedPriorities.length > 0) {
@@ -467,7 +489,7 @@ export function CommandBar() {
                   } else if (suggestedLinks.length > 0) {
                     // Always select the link first (fill in title), user presses Enter again to submit
                     handleSelectLink(suggestedLinks[Math.min(selectedIndex, suggestedLinks.length - 1)]);
-                  } else if (filteredItems.length > 0 && !input.startsWith('/')) {
+                  } else if (visibleResultCount > 0) {
                     handleSelectItem(filteredItems[selectedIndex]?.id || filteredItems[0].id);
                   } else {
                     handleSubmit();
@@ -475,24 +497,12 @@ export function CommandBar() {
                 }
                 if (e.key === 'ArrowDown') {
                   e.preventDefault();
-                  const maxIndex = suggestedTags.length > 0 
-                    ? suggestedTags.length - 1 
-                    : suggestedPriorities.length > 0
-                    ? suggestedPriorities.length - 1
-                    : suggestedLinks.length > 0
-                    ? suggestedLinks.length - 1
-                    : filteredItems.length - 1;
+                  const maxIndex = optionCount - 1;
                   if (maxIndex >= 0) setSelectedIndex((i) => Math.min(i + 1, maxIndex));
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
-                  const maxIndex = suggestedTags.length > 0
-                    ? suggestedTags.length - 1
-                    : suggestedPriorities.length > 0
-                    ? suggestedPriorities.length - 1
-                    : suggestedLinks.length > 0
-                    ? suggestedLinks.length - 1
-                    : filteredItems.length - 1;
+                  const maxIndex = optionCount - 1;
                   if (maxIndex >= 0) setSelectedIndex((i) => i < 0 ? maxIndex : Math.max(i - 1, 0));
                 }
               }}
@@ -560,11 +570,11 @@ export function CommandBar() {
                     id={`command-tag-${idx}`}
                     type="button"
                     role="option"
-                    aria-selected={idx === selectedIndex}
+                    aria-selected={activeOptionId === `command-tag-${idx}`}
                     onClick={() => handleSelectTag(tag)}
                     className={cn(
                       COMMAND_ROW,
-                      idx === selectedIndex ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
+                      activeOptionId === `command-tag-${idx}` ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
                     )}
                   >
                     <span className="text-muted-foreground/50">#</span>
@@ -586,11 +596,11 @@ export function CommandBar() {
                     id={`command-priority-${idx}`}
                     type="button"
                     role="option"
-                    aria-selected={idx === selectedIndex}
+                    aria-selected={activeOptionId === `command-priority-${idx}`}
                     onClick={() => handleSelectPriority(priority)}
                     className={cn(
                       COMMAND_ROW,
-                      idx === selectedIndex ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
+                      activeOptionId === `command-priority-${idx}` ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
                     )}
                   >
                     <span className="text-muted-foreground/50">!</span>
@@ -621,11 +631,11 @@ export function CommandBar() {
                       id={`command-link-${idx}`}
                       type="button"
                       role="option"
-                      aria-selected={idx === selectedIndex}
+                      aria-selected={activeOptionId === `command-link-${idx}`}
                       onClick={() => handleSelectLink(item)}
                       className={cn(
                         COMMAND_ROW,
-                        idx === selectedIndex ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
+                        activeOptionId === `command-link-${idx}` ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
                       )}
                     >
                       <Icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
@@ -637,7 +647,7 @@ export function CommandBar() {
                       </span>
                       <span className={cn(
                         'text-[10px] uppercase tracking-wider',
-                        isProject ? 'text-blue-500/60' : 'text-muted-foreground/40'
+                        isProject ? 'text-blue-700 dark:text-blue-300' : 'text-muted-foreground/40'
                       )}>
                         {t(`type.${item.type}`)}
                       </span>
@@ -661,11 +671,11 @@ export function CommandBar() {
                       id={`command-result-${idx}`}
                       type="button"
                       role="option"
-                      aria-selected={idx === selectedIndex}
+                      aria-selected={activeOptionId === `command-result-${idx}`}
                       onClick={() => handleSelectItem(item.id)}
                       className={cn(
                         COMMAND_ROW,
-                        idx === selectedIndex ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
+                        activeOptionId === `command-result-${idx}` ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE
                       )}
                     >
                       <Icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 shrink-0 text-muted-foreground/50" strokeWidth={1.5} />
@@ -677,7 +687,7 @@ export function CommandBar() {
                   );
                 })}
                 {hiddenResultCount > 0 && (
-                  <p className="px-4 py-1.5 text-[10px] text-muted-foreground/40">
+                  <p role="presentation" className="px-4 py-1.5 text-[10px] text-muted-foreground/40">
                     {t('commandBar.moreResults', { count: hiddenResultCount })}
                   </p>
                 )}
@@ -685,7 +695,7 @@ export function CommandBar() {
             )}
 
             {/* Create preview for items with titles */}
-            {input.trim() && isCreateMode && !suggestedTags.length && (previewTitle || resolvedLink) && (
+            {hasCreateItemOption && (
               <div
                 role="group"
                 aria-label={language === 'de'
@@ -701,10 +711,14 @@ export function CommandBar() {
                   id="command-create-item"
                   type="button"
                   role="option"
-                  aria-selected="true"
+                  aria-selected={activeOptionId === 'command-create-item'}
                   onClick={() => handleSubmit()}
                   disabled={submitting}
-                  className={cn(COMMAND_ROW, 'py-3.5 lg:py-2.5', COMMAND_ROW_IDLE)}
+                  className={cn(
+                    COMMAND_ROW,
+                    'py-3.5 lg:py-2.5',
+                    activeOptionId === 'command-create-item' ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE,
+                  )}
                 >
                   <TypeIcon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
@@ -712,7 +726,7 @@ export function CommandBar() {
                     {(previewTags.length > 0 || parsed.priority || parsed.dueDate || resolvedLink) && (
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                         {resolvedLink && (
-                          <span className="text-[10px] text-blue-500/60">@{resolvedLink.title}</span>
+                          <span className="text-[10px] text-blue-700 dark:text-blue-300">@{resolvedLink.title}</span>
                         )}
                         {previewTags.map((tag) => (
                           <span key={tag} className="text-[10px] text-muted-foreground/50">#{tag}</span>
@@ -732,7 +746,7 @@ export function CommandBar() {
             )}
 
             {/* Tag creation preview (when only tags, no title) */}
-            {input.trim() && isCreateMode && !suggestedTags.length && !parsed.title.trim() && parsed.tags.length > 0 && (
+            {hasCreateTagsOption && (
               <div
                 role="group"
                 aria-label={parsed.tags.length === 1 ? t('commandBar.createTag') : t('commandBar.createTags')}
@@ -744,10 +758,14 @@ export function CommandBar() {
                   id="command-create-tags"
                   type="button"
                   role="option"
-                  aria-selected="true"
+                  aria-selected={activeOptionId === 'command-create-tags'}
                   onClick={() => handleSubmit()}
                   disabled={submitting}
-                  className={cn(COMMAND_ROW, 'py-3.5 lg:py-2.5', COMMAND_ROW_IDLE)}
+                  className={cn(
+                    COMMAND_ROW,
+                    'py-3.5 lg:py-2.5',
+                    activeOptionId === 'command-create-tags' ? COMMAND_ROW_ACTIVE : COMMAND_ROW_IDLE,
+                  )}
                 >
                   <Hash className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-muted-foreground/50" strokeWidth={1.5} />
                   <div className="flex-1 min-w-0">
