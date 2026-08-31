@@ -49,7 +49,7 @@ export default function TermsPage() {
       <section>
         <h2>5. Third-party services</h2>
         <p>
-          Optional services such as Google Calendar and MCP-compatible clients are governed by their providers. You control whether to connect them and what scopes to approve. We are not responsible for a third party’s independent service, content, or availability.
+          Optional services such as Google Workspace, Google Calendar synchronization, and MCP-compatible clients are governed by their providers. You control whether to connect them and what scopes to approve. We are not responsible for a third party’s independent service, content, or availability.
         </p>
       </section>
 

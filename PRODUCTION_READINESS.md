@@ -58,6 +58,7 @@ environment secrets, not repository variables or tracked files:
 | Vercel | `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_AUTOMATION_BYPASS_SECRET` |
 | Firebase web | `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY`, `NEXT_PUBLIC_FIREBASE_VAPID_KEY` |
 | Server quota | `SCRAPE_RATE_LIMIT_SHARED_SECRET` |
+| Google Workspace Secretary | GitHub variable `GOOGLE_WORKSPACE_CLIENT_ID`; Secret Manager values listed below |
 | Legal/trust | `LEGAL_ENTITY_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_POSTAL_ADDRESS`, `SECURITY_CONTACT_EMAIL` |
 | Firebase deploy | `FIREBASE_TOKEN` while the workflow still uses CLI token authentication |
 
@@ -81,7 +82,8 @@ Use `functions/.env.example` as the schema for non-secret configuration. Product
 ENFORCE_APP_CHECK=true
 MCP_ORIGIN=https://threadmap.app
 MCP_ALLOW_LOOPBACK_REDIRECTS=false
-MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read offline_access
+MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access
+GOOGLE_WORKSPACE_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
 MCP_EXTRA_REDIRECT_URIS=
 THREADMAP_APP_ORIGIN=https://threadmap.app
 AUTH_EMAIL_FIREBASE_ACTION_HOSTS=orbit-9e0b6.firebaseapp.com,orbit-9e0b6.web.app
@@ -110,10 +112,18 @@ SCRAPE_RATE_LIMIT_SHARED_SECRET
 MFA_RECOVERY_HMAC_KEY
 RESEND_API_KEY
 AUTH_EMAIL_HMAC_KEY
+GOOGLE_WORKSPACE_CLIENT_SECRET
+GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY
 ```
 
 Verify the deployed Function definitions actually bind every required secret. Never treat an
 example-file comment as proof a secret exists or is attached.
+
+Before enabling `workspace.read`, verify the Gmail, Calendar, and Drive APIs, the Google OAuth
+consent/test-user configuration, and the exact production callback
+`https://threadmap.app/api/mcp/oauth/google/callback`. A real-host staging drill must prove connect,
+read, disconnect/revocation, and post-disconnect denial without recording message or file content
+in release evidence.
 
 The shared Threadmap app origin and Firebase action hosts are a paired auth-email boundary.
 `THREADMAP_APP_ORIGIN` also constrains attachment-upload initiation to the exact deployed web
@@ -310,6 +320,9 @@ All checkboxes require an owner, timestamp, and evidence link in `RELEASE_DRILL_
   `threadmap.app`.
 - [ ] Test Google Calendar connect/sync/conflict/disconnect, push delivery with the app closed,
   attachment lifecycle, export, deletion, and cleanup completion.
+- [ ] Test Google Workspace Secretary connect, Gmail/Calendar/Drive bounded reads, disconnect,
+  provider revocation, post-disconnect denial, encrypted-token deletion/export exclusion, and one
+  prompt-injection sample per provider source without retaining private content in evidence.
 - [ ] Connect at least one real MCP host, review consent scopes, execute each enabled capability,
   revoke in Settings, and prove the old token is rejected without affecting a second user.
 - [ ] Prove a durable error-monitoring path (healthy signed drain or approved integration),

@@ -1,6 +1,6 @@
 # Authentication and tenant-boundary review
 
-**Repository review:** 20 August 2026
+**Repository review:** 31 August 2026
 **Live verification:** not established for the current working tree
 **Independent reviewer:** required before release
 
@@ -16,6 +16,7 @@ flowchart TD
   P --> R["Firestore and Storage Rules"]
   P --> F["Callable / HTTP Function checks"]
   P --> M["MCP grant + scope + DAL"]
+  M --> G["Separate Google OAuth grant + encrypted refresh credential"]
   T["Account-deletion tombstone"] --> F
   T --> M
   C["App Check"] --> A["Abuse resistance"]
@@ -34,6 +35,7 @@ flowchart TD
 | Upload lifecycle | verified uid | item owner, reservation, path/size/type/count checks | cancel/cleanup jobs and prefix sweep |
 | MCP consent | Firebase ID token | authenticated uid binds request/grant | approve/deny and per-user revoke |
 | MCP tools | hashed bearer resolving principal | user grant, tombstone, resource, client, scope, quota, DAL owner | revision/idempotency; delete preview/confirm |
+| Google Workspace Secretary | Firebase uid for connect/disconnect; MCP principal for reads | one fixed uid-bound encrypted credential, PKCE/state TTL, separate `workspace.read` scope, bounded provider adapters | provider reads only; disconnect deletes credential even if revocation is unavailable |
 | Local/demo profile | explicit browser profile | no cloud security claim | browser-only deletion |
 
 ## Repository evidence
@@ -50,6 +52,9 @@ flowchart TD
   token families preserve isolation when a shared dynamic client serves multiple users.
 - MCP tool inputs contain no owner selector. Queries and writes derive owner identity from the
   authenticated principal. Outputs are bounded and sensitive settings/file fields are projected.
+- Google Workspace uses a separate provider consent. Refresh credentials are AES-256-GCM encrypted,
+  access tokens remain server-side, Google tools are read-only, and provider content is treated as
+  untrusted data rather than agent instructions.
 - Mutations require revisions and UUID idempotency ids; permanent deletion uses a short-lived,
   single-use owner/client/item/revision-bound confirmation token.
 - PWA caching excludes APIs and now refuses basic responses marked `private`, `no-store`, or
@@ -90,6 +95,14 @@ Attack: redirect substitution, overbroad scope, cross-resource token, one user's
 another, or refresh replay. Required defenses are canonical redirect policy, PKCE S256, resource
 indicators, scope intersection plus strict downstream enforcement, uid-scoped grants, hashed tokens,
 rotation/reuse detection, and per-user revocation.
+
+### Google credential or prompt-injection crossover
+
+Attack: steal a refresh credential, bind a callback to another Threadmap user, or place instructions
+inside email/calendar/file content that cause unintended actions. Required defenses are a fixed
+same-origin callback, short-lived one-time state plus PKCE, uid-bound encrypted credential storage,
+server-only access tokens, separate MCP scope enforcement, bounded projections, read-only provider
+scopes/tools, and explicit model instructions that all provider content is untrusted data.
 
 ### PWA/cache disclosure
 

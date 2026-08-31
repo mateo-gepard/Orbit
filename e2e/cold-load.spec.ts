@@ -69,6 +69,7 @@ const routes = [
   '/security',
   '/terms',
   '/integrations/authorize',
+  '/integrations/google-workspace',
   '/definitely-not-a-threadmap-route',
 ];
 
@@ -263,7 +264,15 @@ test('keyboard reaches primary content and opens the command surface', async ({
   await expect(commandInput).toBeHidden();
 });
 
-for (const path of ['/', '/about', '/privacy', '/terms', '/security', '/integrations/authorize']) {
+for (const path of [
+  '/',
+  '/about',
+  '/privacy',
+  '/terms',
+  '/security',
+  '/integrations/authorize',
+  '/integrations/google-workspace',
+]) {
   test(`keeps the bottom of ${path} reachable in a short viewport`, async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 360 });
     const response = await page.goto(path, { waitUntil: 'domcontentloaded' });

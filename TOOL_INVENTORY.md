@@ -1,6 +1,6 @@
 # Threadmap tool inventory
 
-Last reviewed: 12 August 2026
+Last reviewed: 31 August 2026
 
 | Field | Value |
 | --- | --- |
@@ -18,7 +18,7 @@ Last reviewed: 12 August 2026
 | Staging project | `threadmap-staging-9e0b6` |
 | Primary data region | European Union for Firestore, Storage, and Functions |
 | Authentication | Email/password, email link, Google, optional TOTP MFA |
-| Integrations | Optional Google Calendar and user-authorized MCP clients |
+| Integrations | Optional browser Google Calendar sync, user-authorized MCP clients, and separately consented read-only Google Workspace Secretary sources |
 | Incident runbook | `INCIDENT_RESPONSE.md` |
 | Recovery runbook | `RECOVERY_RUNBOOK.md` |
 | Data register | `DATA_GOVERNANCE.md` |

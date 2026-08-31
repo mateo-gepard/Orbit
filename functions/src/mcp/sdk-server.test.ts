@@ -9,6 +9,7 @@ import { buildThreadmapMcpServer, toolRequiredScope } from './sdk-server';
 
 const ALL_SCOPES = [
   THREADMAP_MCP_SCOPES.read,
+  THREADMAP_MCP_SCOPES.workspaceRead,
   THREADMAP_MCP_SCOPES.write,
   THREADMAP_MCP_SCOPES.delete,
 ];
@@ -96,6 +97,11 @@ test('tool metadata survives the round trip, including input schemas', async () 
   assert.equal(listTags.title, 'List tags');
   assert.match(listTags.description ?? '', /owner-scoped/);
   assert.equal(listTags.annotations?.readOnlyHint, true);
+
+  const gmailSearch = tools.find((tool) => tool.name === 'search_gmail');
+  assert.ok(gmailSearch, 'Google Workspace tools are advertised with their scope');
+  assert.equal(gmailSearch.annotations?.readOnlyHint, true);
+  assert.equal(gmailSearch.annotations?.openWorldHint, true);
 
   // The reused JSON Schema must cross the wire in full, nesting included —
   // create_item takes { item: {...}, client_request_id }, not flat item fields.

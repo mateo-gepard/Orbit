@@ -135,10 +135,11 @@ Writes use expected revisions plus idempotency ids. Permanent deletion is a prev
 with a short-lived owner/client/revision-bound token. File tools expose metadata, never file URLs,
 paths, or content.
 
-There are 23 tools across `threadmap.read`, `threadmap.write`, and `threadmap.delete`. The server
+There are 30 tools across `threadmap.read`, `workspace.read`, `threadmap.write`, and `threadmap.delete`. The server
 filters `tools/list` to granted scopes and enforces the required scope again before dispatch. The
-checked-in Functions example intentionally defaults dynamic clients to `threadmap.read` plus
-`offline_access`; widening write or delete access is an explicit production policy decision.
+checked-in Functions example intentionally defaults dynamic clients to `threadmap.read`,
+`workspace.read`, and `offline_access`; the Google source still requires separate provider consent,
+and widening write or delete access is an explicit production policy decision.
 
 See `MCP_SETUP.md` for configuration and operational verification.
 

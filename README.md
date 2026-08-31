@@ -15,7 +15,7 @@ The app can run in an explicit local/demo profile without a backend. Signed-in p
 - Works as an installable PWA with iOS-friendly mobile navigation and safe-area handling.
 - Runs in local mode with browser storage when Firebase is not configured.
 - Enables cloud mode with Firebase Auth, Firestore, Storage, Messaging, and Functions.
-- Includes optional Google Calendar sync and web scraping helpers for selected tools.
+- Includes optional Google Calendar sync, a cloud MCP Secretary with separately consented read-only Gmail/Calendar/Drive sources, and web scraping helpers for selected tools.
 
 ## Core Concepts
 

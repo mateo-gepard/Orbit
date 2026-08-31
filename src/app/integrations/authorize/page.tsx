@@ -55,6 +55,10 @@ function scopeCopy(scope: string, german: boolean): ScopeCopy {
       return german
         ? { title: 'Einträge erstellen und bearbeiten', detail: 'Neue Einträge anlegen, bestehende ändern, abschließen, archivieren und verknüpfen.', tone: 'write' }
         : { title: 'Create and change items', detail: 'Add new items, edit existing ones, complete, archive and link them.', tone: 'write' };
+    case 'workspace.read':
+      return german
+        ? { title: 'Dein verbundenes Google Workspace lesen', detail: 'Erlaubt diesem Client, über Threadmap schreibgeschützt in Gmail, Google Kalender und Google Drive zu suchen. Google muss separat verbunden werden. Threadmap gibt niemals Google-Zugangsdaten weiter; E-Mails, Termine und Dateien werden nur bei einem passenden Tool-Aufruf abgerufen.', tone: 'read' }
+        : { title: 'Read your connected Google Workspace', detail: 'Lets this client use Threadmap to search Gmail, Google Calendar, and Google Drive in read-only mode. Google must be connected separately. Threadmap never shares Google credentials; email, event, and file data is fetched only for a relevant tool call.', tone: 'read' };
     case 'threadmap.delete':
       return german
         ? { title: 'Einträge endgültig löschen', detail: 'Löschen ist unumkehrbar und erfordert eine zweistufige Bestätigung.', tone: 'delete' }

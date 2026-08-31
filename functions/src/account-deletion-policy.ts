@@ -7,6 +7,9 @@ export function accountDeletionFixedDocumentPaths(userId: string): string[] {
     `users/${userId}`,
     `pushDeviceRegistries/${userId}`,
     `mfaRecoverySets/${userId}`,
+    // Contains the encrypted Google refresh credential. It is server-only and
+    // must be removed before the Auth identity is deleted.
+    `googleWorkspaceConnections/${userId}`,
     // This legacy singleton predates the userId field used by the paged
     // toolData query, so it must be named explicitly during deletion.
     `toolData/${userId}_flightLogs`,

@@ -11,6 +11,7 @@ import {
   resolveMcpOAuthConfiguration,
 } from './config';
 import { createMcpRouter, normalizeMcpPath, toWebRequest, type McpRouter } from './http';
+import { GOOGLE_WORKSPACE_PATHS, GoogleWorkspaceService } from './google-workspace';
 
 const ORIGIN = 'https://threadmap.test';
 const OWNER_UID = 'threadmap-owner';
@@ -40,6 +41,7 @@ function buildHarness(): Harness {
   const router = createMcpRouter({
     oauth,
     endpoints,
+    googleWorkspace: new GoogleWorkspaceService(firestore, { origin: ORIGIN }),
     createDataAccess: (principal: OAuthPrincipal) => ({
       principal,
       consumeQuota: async () => undefined,
@@ -180,6 +182,36 @@ test('a consent request from an unrecognized browser origin is refused', async (
   }));
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: 'forbidden_origin' });
+});
+
+test('Google Workspace connection routes require the signed-in owner and same browser origin', async () => {
+  const { router } = buildHarness();
+  assert.equal((await router(get(GOOGLE_WORKSPACE_PATHS.status))).status, 401);
+
+  const forbidden = await router(get(GOOGLE_WORKSPACE_PATHS.status, {
+    origin: 'https://evil.example',
+    authorization: `Bearer ${OWNER_ID_TOKEN}`,
+  }));
+  assert.equal(forbidden.status, 403);
+
+  const status = await router(get(GOOGLE_WORKSPACE_PATHS.status, {
+    origin: ORIGIN,
+    authorization: `Bearer ${OWNER_ID_TOKEN}`,
+  }));
+  assert.equal(status.status, 200);
+  assert.deepEqual(await status.json(), {
+    configured: false,
+    connected: false,
+    connectionUrl: `${ORIGIN}/integrations/google-workspace`,
+    reason: 'server_not_configured',
+  });
+
+  const authorize = await router(postJson(GOOGLE_WORKSPACE_PATHS.authorize, {}, {
+    origin: ORIGIN,
+    authorization: `Bearer ${OWNER_ID_TOKEN}`,
+  }));
+  assert.equal(authorize.status, 503);
+  assert.equal((await authorize.json() as Record<string, unknown>).error, 'server_not_configured');
 });
 
 // ── Method and route handling ───────────────────────────────

@@ -8,9 +8,13 @@ const REQUIRED_PRODUCTION_VALUES = Object.freeze({
   ENFORCE_APP_CHECK: 'true',
   MCP_ORIGIN: 'https://threadmap.app',
   MCP_ALLOW_LOOPBACK_REDIRECTS: 'false',
-  MCP_DYNAMIC_CLIENT_SCOPES: 'threadmap.read offline_access',
+  MCP_DYNAMIC_CLIENT_SCOPES: 'threadmap.read workspace.read offline_access',
   THREADMAP_APP_ORIGIN: 'https://threadmap.app',
   AUTH_EMAIL_FIREBASE_ACTION_HOSTS: 'orbit-9e0b6.firebaseapp.com,orbit-9e0b6.web.app',
+});
+
+const REQUIRED_PRODUCTION_PATTERNS = Object.freeze({
+  GOOGLE_WORKSPACE_CLIENT_ID: /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/,
 });
 
 const EMPTY_PRODUCTION_VALUES = Object.freeze([
@@ -59,6 +63,9 @@ export function assertProductionFunctionsEnvironment(options = {}) {
   for (const [key, expected] of Object.entries(REQUIRED_PRODUCTION_VALUES)) {
     if (environment[key] !== expected) mismatches.push(key);
   }
+  for (const [key, pattern] of Object.entries(REQUIRED_PRODUCTION_PATTERNS)) {
+    if (typeof environment[key] !== 'string' || !pattern.test(environment[key])) mismatches.push(key);
+  }
   for (const key of EMPTY_PRODUCTION_VALUES) {
     if (typeof environment[key] === 'string' && environment[key].trim()) {
       mismatches.push(key);
@@ -77,6 +84,7 @@ export function assertProductionFunctionsEnvironment(options = {}) {
     files: files.map((file) => path.basename(file)),
     checkedKeys: [
       ...Object.keys(REQUIRED_PRODUCTION_VALUES),
+      ...Object.keys(REQUIRED_PRODUCTION_PATTERNS),
       ...EMPTY_PRODUCTION_VALUES,
     ],
   };

@@ -466,6 +466,8 @@ service cloud.firestore {
     match /mcpDeleteConfirmations/{tokenHash} { allow read, write: if false; }
     match /mcpRateLimits/{quotaId} { allow read, write: if false; }
     match /mcpAuditLogs/{auditId} { allow read, write: if false; }
+    match /googleWorkspaceConnections/{userId} { allow read, write: if false; }
+    match /googleWorkspaceOAuthStates/{stateHash} { allow read, write: if false; }
 
     match /{document=**} {
       allow read, write: if false;

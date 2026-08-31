@@ -12,6 +12,7 @@ import {
 test('dynamic registration defaults to least-privilege read access', () => {
   assert.deepEqual([...MCP_DEFAULT_DYNAMIC_CLIENT_SCOPES], [
     'threadmap.read',
+    'workspace.read',
     'offline_access',
   ]);
 });

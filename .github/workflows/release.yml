@@ -202,13 +202,17 @@ jobs:
 
       - name: Prepare explicit production Functions configuration
         working-directory: functions
+        env:
+          GOOGLE_WORKSPACE_CLIENT_ID: ${{ vars.GOOGLE_WORKSPACE_CLIENT_ID }}
         run: |
+          test -n "$GOOGLE_WORKSPACE_CLIENT_ID"
           umask 077
           printf '%s\n' \
             'ENFORCE_APP_CHECK=true' \
             'MCP_ORIGIN=https://threadmap.app' \
             'MCP_ALLOW_LOOPBACK_REDIRECTS=false' \
-            'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read offline_access' \
+            'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access' \
+            "GOOGLE_WORKSPACE_CLIENT_ID=$GOOGLE_WORKSPACE_CLIENT_ID" \
             'MCP_EXTRA_REDIRECT_URIS=' \
             'THREADMAP_APP_ORIGIN=https://threadmap.app' \
             'AUTH_EMAIL_FIREBASE_ACTION_HOSTS=orbit-9e0b6.firebaseapp.com,orbit-9e0b6.web.app' \

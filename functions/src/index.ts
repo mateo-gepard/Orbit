@@ -28,6 +28,10 @@ import {
 } from './mcp/oauth';
 import { ThreadmapDal } from './mcp/dal';
 import {
+  GoogleWorkspaceService,
+  type GoogleWorkspaceConfiguration,
+} from './mcp/google-workspace';
+import {
   createMfaRecoveryCodeSet,
   isCurrentMfaRecoveryCode,
   MFA_RECOVERY_CODE_COUNT,
@@ -97,6 +101,8 @@ const vapidPublicKey = defineSecret('VAPID_PUBLIC_KEY');
 const vapidPrivateKey = defineSecret('VAPID_PRIVATE_KEY');
 const scrapeRateLimitSharedSecret = defineSecret('SCRAPE_RATE_LIMIT_SHARED_SECRET');
 const mfaRecoveryHmacKey = defineSecret('MFA_RECOVERY_HMAC_KEY');
+const googleWorkspaceClientSecret = defineSecret('GOOGLE_WORKSPACE_CLIENT_SECRET');
+const googleWorkspaceTokenEncryptionKey = defineSecret('GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY');
 const VAPID_SUBJECT = 'mailto:notifications@threadmap.app';
 const PAGE_SIZE = 100;
 const MAX_DUE_PER_RUN = 500;
@@ -1593,6 +1599,7 @@ function ownedDocumentDeletionQueries(uid: string): FirebaseFirestore.Query[] {
     db.collection('mcpDeleteConfirmations').where('userId', '==', uid),
     db.collection('mcpRateLimits').where('userId', '==', uid),
     db.collection('mcpAuditLogs').where('userId', '==', uid),
+    db.collection('googleWorkspaceOAuthStates').where('userId', '==', uid),
   ];
 }
 
@@ -2431,12 +2438,13 @@ export const exportThreadmapAccount = onCall(
     }
     const uid = requireExpectedUid(request, data);
     await assertAccountActive(uid);
-    const [documents, authUser, profile, settings, recoverySet] = await Promise.all([
+    const [documents, authUser, profile, settings, recoverySet, googleWorkspaceConnection] = await Promise.all([
       ownedDocuments(uid),
       auth.getUser(uid),
       db.doc(`users/${uid}`).get(),
       db.doc(`userSettings/${uid}`).get(),
       db.doc(`mfaRecoverySets/${uid}`).get(),
+      db.doc(`googleWorkspaceConnections/${uid}`).get(),
     ]);
 
     const fileMetadata: Array<Record<string, unknown> & { itemId: string }> = [];
@@ -2551,6 +2559,22 @@ export const exportThreadmapAccount = onCall(
       scopes: [...authorization.scopes].sort(),
     })).sort((left, right) => Number(right.lastAuthorizedAt) - Number(left.lastAuthorizedAt));
 
+    // Export connection metadata only. The encrypted refresh credential is a
+    // bearer secret even though it is ciphertext, so it never enters an export.
+    const googleWorkspaceData = googleWorkspaceConnection.data() || {};
+    const googleWorkspace = googleWorkspaceConnection.exists ? {
+      connected: googleWorkspaceData.status === 'active',
+      needsReauthorization: googleWorkspaceData.status === 'reauthorization_required',
+      email: typeof googleWorkspaceData.email === 'string'
+        ? googleWorkspaceData.email.slice(0, 320)
+        : null,
+      scopes: Array.isArray(googleWorkspaceData.scopes)
+        ? googleWorkspaceData.scopes.filter((scope): scope is string => typeof scope === 'string').slice(0, 20)
+        : [],
+      connectedAt: Number(googleWorkspaceData.connectedAt || 0) || null,
+      updatedAt: Number(googleWorkspaceData.updatedAt || 0) || null,
+    } : null;
+
     const auditEvents = [
       ...documents.recoveryAudits.map((snapshot) =>
         sanitizeAccountExportAuditEvent('mfa', snapshot.data())
@@ -2578,7 +2602,7 @@ export const exportThreadmapAccount = onCall(
       flightLogs: documents.flightLogs.map(plainData),
       files,
       connections: documents.connections.map(plainData),
-      integrations: { mcpAuthorizations },
+      integrations: { mcpAuthorizations, googleWorkspace },
       nudges: documents.nudges.map(plainData),
       pushDevices: documents.tokens.map((token) => {
         const data = token.data();
@@ -2889,8 +2913,11 @@ function cacheMcpRouter(key: string, result: McpRouterResult): McpRouterResult {
   return result;
 }
 
-function getMcpRouter(rawOrigin?: string): McpRouterResult {
-  const cacheKey = rawOrigin ?? 'configured-origin';
+function getMcpRouter(
+  rawOrigin?: string,
+  googleWorkspaceConfiguration?: Omit<GoogleWorkspaceConfiguration, 'origin'>,
+): McpRouterResult {
+  const cacheKey = `${rawOrigin ?? 'configured-origin'}:${googleWorkspaceConfiguration ? 'workspace' : 'core'}`;
   const cached = mcpRouterResults.get(cacheKey);
   if (cached) return cached;
   try {
@@ -2900,12 +2927,19 @@ function getMcpRouter(rawOrigin?: string): McpRouterResult {
     if (rawOrigin) resolveMcpEndpoints();
     const endpoints = resolveMcpEndpoints(rawOrigin);
     const oauth = createThreadmapOAuthService(db, resolveMcpOAuthConfiguration(endpoints));
+    const googleWorkspace = googleWorkspaceConfiguration
+      ? new GoogleWorkspaceService(db, {
+        ...googleWorkspaceConfiguration,
+        origin: endpoints.origin,
+      })
+      : undefined;
     return cacheMcpRouter(cacheKey, {
       origin: endpoints.origin,
       oauth,
       router: createMcpRouter({
         oauth,
         endpoints,
+        googleWorkspace,
         createDataAccess: (principal) => new ThreadmapDal(db, principal, {
           deleteItem: ({ userId, itemId, expectedRevision }) => deleteItemForMcp({
             userId,
@@ -3004,6 +3038,7 @@ export const threadmapMcp = onRequest(
     // issued, so no additional invoker restriction applies.
     invoker: 'public',
     cors: false,
+    secrets: [googleWorkspaceClientSecret, googleWorkspaceTokenEncryptionKey],
   },
   async (request, response) => {
     const requestOrigin = resolveMcpRequestOrigin({
@@ -3011,7 +3046,11 @@ export const threadmapMcp = onRequest(
       forwardedHost: request.get('x-forwarded-host'),
       forwardedProto: request.get('x-forwarded-proto'),
     });
-    const resolved = getMcpRouter(requestOrigin);
+    const resolved = getMcpRouter(requestOrigin, {
+      clientId: process.env.GOOGLE_WORKSPACE_CLIENT_ID,
+      clientSecret: googleWorkspaceClientSecret.value(),
+      tokenEncryptionKey: googleWorkspaceTokenEncryptionKey.value(),
+    });
     if ('error' in resolved) {
       response.setHeader('Cache-Control', 'no-store');
       response.status(503).json({

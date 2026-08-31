@@ -53,6 +53,7 @@ export const MCP_PUBLIC_PATHS = Object.freeze({
 
 export const MCP_SUPPORTED_SCOPES = Object.freeze([
   THREADMAP_MCP_SCOPES.read,
+  THREADMAP_MCP_SCOPES.workspaceRead,
   THREADMAP_MCP_SCOPES.write,
   THREADMAP_MCP_SCOPES.delete,
   'offline_access',
@@ -69,6 +70,7 @@ export const MCP_SUPPORTED_SCOPES = Object.freeze([
  */
 export const MCP_DEFAULT_DYNAMIC_CLIENT_SCOPES = Object.freeze([
   THREADMAP_MCP_SCOPES.read,
+  THREADMAP_MCP_SCOPES.workspaceRead,
   'offline_access',
 ]);
 

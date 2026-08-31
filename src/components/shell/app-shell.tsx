@@ -33,8 +33,21 @@ const CompletionAnimation = dynamic(
   { ssr: false }
 );
 
-const PUBLIC_PATHS = new Set(['/', '/about', '/privacy', '/security', '/terms']);
-const STANDALONE_PUBLIC_PATHS = new Set(['/about', '/privacy', '/security', '/terms']);
+const PUBLIC_PATHS = new Set([
+  '/',
+  '/about',
+  '/privacy',
+  '/security',
+  '/terms',
+  '/integrations/google-workspace',
+]);
+const STANDALONE_PUBLIC_PATHS = new Set([
+  '/about',
+  '/privacy',
+  '/security',
+  '/terms',
+  '/integrations/google-workspace',
+]);
 
 function ShellLoadingFrame({ german }: { german: boolean }) {
   return (

@@ -13,6 +13,12 @@ test('fixed account deletion inventory includes legacy singleton data', () => {
   ));
 });
 
+test('fixed account deletion inventory removes the encrypted Google credential', () => {
+  assert.ok(accountDeletionFixedDocumentPaths('user-one').includes(
+    'googleWorkspaceConnections/user-one',
+  ));
+});
+
 test('account deletion sweep keeps every in-memory page bounded', () => {
   assert.equal(accountDeletionPageSize(0), 200);
   assert.equal(accountDeletionPageSize(1_950), 50);

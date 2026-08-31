@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { httpsCallable } from 'firebase/functions';
 import {
   Check,
@@ -27,6 +28,7 @@ const CAPABILITIES = [
   'Find and read your Threadmap items',
   'Review agendas, tags, relationships, and attachment metadata',
   'Inspect wishlist, study, flight, briefing, and settings data',
+  'Search separately connected Gmail, Google Calendar, and Google Drive sources',
 ];
 
 const CLIENTS = [
@@ -386,6 +388,20 @@ export function McpSettings() {
         </p>
       </InfoCard>
 
+      <InfoCard icon={ShieldCheck} title="Google Workspace source">
+        <p className="text-sm leading-6 text-muted-foreground">
+          {german
+            ? 'Verbinde Google separat, damit derselbe Threadmap Secretary E-Mails, Termine und Drive-Dateien als Quellen prüfen kann. Der Zugriff ist schreibgeschützt und die Google-Zugangsdaten werden nie an den MCP-Client weitergegeben.'
+            : 'Connect Google separately so the same Threadmap Secretary can verify email, events, and Drive files as sources. Access is read-only, and Google credentials are never shared with the MCP client.'}
+        </p>
+        <Button asChild variant="outline" className="mt-4 min-h-11">
+          <Link href="/integrations/google-workspace">
+            <ShieldCheck aria-hidden="true" className="size-4" />
+            {german ? 'Google Workspace verwalten' : 'Manage Google Workspace'}
+          </Link>
+        </Button>
+      </InfoCard>
+
       <div className="grid gap-5 lg:grid-cols-2">
         <InfoCard icon={KeyRound} title="What the connection can do">
           <ul className="space-y-3">
@@ -396,8 +412,9 @@ export function McpSettings() {
           <p className="mt-4 rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
             Production connections are read-only at launch. They cannot create, update, complete,
             archive, link, or delete items. Any future write access will require a new scope policy,
-            consent, and release review. Every Google-connected or Google-derived event is excluded
-            from MCP tools, including Threadmap events while they remain connected to Google.
+            consent, and release review. Google-connected or Google-derived copies inside Threadmap
+            remain excluded from Threadmap item tools; after separate Google authorization, the
+            Secretary can read the provider source directly through the workspace.read scope.
           </p>
         </InfoCard>
 

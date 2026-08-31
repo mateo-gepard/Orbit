@@ -40,6 +40,14 @@ export interface AccountExport {
       expiresAt: number | null;
       scopes: string[];
     }>;
+    googleWorkspace?: {
+      connected: boolean;
+      needsReauthorization: boolean;
+      email: string | null;
+      scopes: string[];
+      connectedAt: number | null;
+      updatedAt: number | null;
+    } | null;
   };
   nudges: unknown[];
   pushDevices?: unknown[];

@@ -76,6 +76,7 @@ function checkContract() {
     'MCP_ORIGIN',
     'MCP_ALLOW_LOOPBACK_REDIRECTS',
     'MCP_DYNAMIC_CLIENT_SCOPES',
+    'GOOGLE_WORKSPACE_CLIENT_ID',
     'MCP_EXTRA_REDIRECT_URIS',
     'THREADMAP_APP_ORIGIN',
     'AUTH_EMAIL_FIREBASE_ACTION_HOSTS',
@@ -87,8 +88,8 @@ function checkContract() {
       findings.push(`functions/.env.example must document Secret Manager prerequisite ${secretName}`);
     }
   }
-  if (!functionExample.includes('MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read offline_access')) {
-    findings.push('functions/.env.example must use space-separated threadmap.read and offline_access scopes');
+  if (!functionExample.includes('MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access')) {
+    findings.push('functions/.env.example must use the read-only Threadmap, Workspace, and offline scopes');
   }
   if (!functionExample.includes('MCP_ORIGIN=https://staging.threadmap.app')) {
     findings.push('functions/.env.example must keep the safe staging MCP origin');
@@ -469,7 +470,8 @@ function checkContract() {
     'ENFORCE_APP_CHECK=true',
     'MCP_ORIGIN=https://threadmap.app',
     'MCP_ALLOW_LOOPBACK_REDIRECTS=false',
-    'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read offline_access',
+    'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access',
+    'GOOGLE_WORKSPACE_CLIENT_ID',
     'THREADMAP_APP_ORIGIN=https://threadmap.app',
     'AUTH_EMAIL_FIREBASE_ACTION_HOSTS=orbit-9e0b6.firebaseapp.com,orbit-9e0b6.web.app',
   ]) {

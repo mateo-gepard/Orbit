@@ -1,8 +1,8 @@
 # Threadmap MCP setup and operations
 
-**Repository truth reviewed:** 20 August 2026
+**Repository truth reviewed:** 31 August 2026
 
-Threadmap exposes its item graph through one stateless Streamable HTTP MCP endpoint:
+Threadmap exposes its organization graph and separately-consented Google Workspace sources through one stateless Streamable HTTP MCP endpoint:
 `https://threadmap.app/mcp`. Authorization uses OAuth 2.1 authorization code flow with PKCE S256
 and dynamic client registration. Each user consents while authenticated with Firebase, and every
 issued credential remains bound to that user's uid.
@@ -21,8 +21,9 @@ threadmapMcp (Firebase Functions, europe-west1)
   ├─ http.ts       routing, Firebase ID-token consent authentication, bearer gate
   ├─ oauth.ts      client registration, grants, codes, tokens, rotation, revocation
   ├─ sdk-server.ts per-request MCP server and scope-filtered catalog
-  ├─ tools.ts      23 tool definitions, authorization, quotas, audit records
-  └─ dal.ts        uid-scoped Firestore reads/writes and destructive safeguards
+  ├─ tools.ts      30 tool definitions, authorization, quotas, audit records
+  ├─ dal.ts        uid-scoped Firestore reads/writes and destructive safeguards
+  └─ google-workspace.ts encrypted provider OAuth, Gmail/Calendar/Drive read adapters
 ```
 
 The endpoint is multi-user. There is no `MCP_OWNER_UID`: consent binds an authorization request to
@@ -43,7 +44,8 @@ the Firebase Functions environment, and secrets belong in Secret Manager.
 | Variable | Repository default/example | Purpose |
 | --- | --- | --- |
 | `MCP_ORIGIN` | `https://staging.threadmap.app` in the safe staging example; production explicitly uses `https://threadmap.app` | Single public issuer/resource origin from which every OAuth URL is derived |
-| `MCP_DYNAMIC_CLIENT_SCOPES` | `threadmap.read offline_access` | Space-separated maximum scopes available to dynamically registered clients in this deployment |
+| `MCP_DYNAMIC_CLIENT_SCOPES` | `threadmap.read workspace.read offline_access` | Space-separated maximum scopes available to dynamically registered clients in this deployment |
+| `GOOGLE_WORKSPACE_CLIENT_ID` | Google OAuth web-client id | Non-secret client identifier for the separate server-side Google Workspace connection |
 | `MCP_ALLOW_LOOPBACK_REDIRECTS` | `false` | Enables RFC 8252 loopback callbacks for local native clients such as Claude Code |
 | `MCP_EXTRA_REDIRECT_URIS` | unset | Space-separated explicit callback additions after security review |
 | `ENFORCE_APP_CHECK` | `false` in the example | Callable-Function App Check switch; enable only after verified client traffic |
@@ -52,17 +54,41 @@ the Firebase Functions environment, and secrets belong in Secret Manager.
 consent, token, registration, revocation, and resource URLs derive from `MCP_ORIGIN` so they cannot
 drift to different issuers.
 
-The code default allows read, write, and offline access, but the checked-in operational example is
-intentionally narrower: read plus offline access. Treat write/delete scope enablement as a release
-policy decision. Never add a uid, token, client secret, or redirect-specific credential to a tracked
-environment file.
+The code default allows Threadmap read, Google Workspace read, and offline access, but no writes.
+Treat write/delete scope enablement as a release policy decision. Never add a uid, token, client
+secret, or redirect-specific credential to a tracked environment file.
+
+The Cloud Function also requires Secret Manager values `GOOGLE_WORKSPACE_CLIENT_SECRET` and
+`GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY`. Generate the latter as 32 random bytes (for example,
+`openssl rand -base64 32`). The OAuth client's exact redirect URI is
+`https://threadmap.app/api/mcp/oauth/google/callback` in production. Enable the Gmail, Google
+Calendar, and Google Drive APIs. Google OAuth projects left in Testing mode expire authorizations
+(including refresh tokens) after seven days when these Workspace scopes are requested. A durable
+personal deployment should use an External / In production audience and accept the unverified-app
+warning/user cap, or complete Google's verification process. A true staging project remains in
+Testing with only explicit test users.
+
+Set the two secrets without placing their values on a command line or in a tracked file:
+
+```bash
+firebase functions:secrets:set GOOGLE_WORKSPACE_CLIENT_SECRET --project YOUR_PROJECT_ID
+firebase functions:secrets:set GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY --project YOUR_PROJECT_ID
+```
+
+Create a **Web application** OAuth client in Google Cloud. Configure the production redirect above
+and the matching staging callback before staging tests. The browser-only
+`NEXT_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID` is a different integration boundary and is not a substitute
+for the server client id/secret pair.
 
 ## Production launch policy
 
 The checked-in production workflow is the authoritative launch contract:
 
-- Dynamically registered clients receive `threadmap.read` and, when requested, `offline_access`.
+- Dynamically registered clients receive `threadmap.read`, `workspace.read`, and, when requested, `offline_access`.
   Create, update, completion, archive, linking, and deletion tools are not exposed in production.
+- `workspace.read` only permits calls through Threadmap. Gmail, Calendar, and Drive still remain
+  unavailable until that Threadmap user completes the separate Google consent at
+  `/integrations/google-workspace`.
 - Browser-hosted ChatGPT and Claude custom connections may use HTTPS callbacks accepted by the
   redirect policy. Each host must still pass the real-client staging drill before release sign-off.
 - Claude Code is not launch-supported. Its native OAuth flow uses a loopback callback, while
@@ -85,7 +111,12 @@ staging real-host drill, and an approved release record.
 /api/mcp/oauth/token
 /api/mcp/oauth/register
 /api/mcp/oauth/revoke
+/api/mcp/oauth/google/authorize
+/api/mcp/oauth/google/callback
+/api/mcp/oauth/google/status
+/api/mcp/oauth/google/disconnect
 /integrations/authorize
+/integrations/google-workspace
 ```
 
 All OAuth endpoints and the resource identifier share the public Threadmap origin. This is required
@@ -105,6 +136,8 @@ for issuer/resource validation and is why clients must use `threadmap.app`, not 
 - Permanent deletion requires preview, displayed impact, explicit confirmation, and a short-lived
   single-use token bound to user, client, item, and revision.
 - Attachments return metadata only; file URLs, storage paths, and contents are excluded.
+- Google refresh credentials are AES-256-GCM encrypted at rest, access tokens remain server-side,
+  and only bounded source projections cross the MCP tool boundary.
 - An account-deletion tombstone blocks authorization, refresh, access, and data recreation.
 
 Users can list and revoke their own MCP authorizations in Settings. Revocation writes an atomic
@@ -113,16 +146,20 @@ Deleting one user's grant must not revoke another user's connection to the same 
 
 ## Scope and tool policy
 
-The server implements 23 tools, but launch clients see only the read tools allowed by production
+The server implements 30 tools, but launch clients see only the read tools allowed by production
 policy:
 
 - `threadmap.read`: overview, agenda, item search/list/detail, tags, attachment metadata, wishlist,
   Abitur profile, focus-session logs, briefing journal, dispatch plans, settings projection, toolbox.
+- `workspace.read`: Google connection status, Gmail search/thread reads, Calendar list/event reads,
+  and Drive search/text-readable file reads. These tools are read-only and require separate Google
+  consent; provider content is untrusted data, not agent instructions.
 - `threadmap.write`: create/update/complete/archive items, habit completion, link/unlink.
 - `threadmap.delete`: preview and confirm permanent item deletion.
 
-`offline_access` controls refresh-token issuance and is not itself a tool scope. A client requesting
-more than policy permits is narrowed to the allowed intersection when at least one scope remains.
+`offline_access` controls Threadmap MCP refresh-token issuance and is not itself a tool scope. A
+client requesting more than policy permits is narrowed to the allowed intersection when at least
+one scope remains.
 Downstream scope checks remain strict. The write and delete lists above document dormant server
 capability; they are not a promise that those actions are enabled in the production launch.
 
