@@ -75,6 +75,8 @@ import { isRecentLoginRequiredError } from '@/lib/auth-reauth';
 import { isMobile, isStandalone } from '@/lib/mobile';
 import { setFirestoreDataContext } from '@/lib/firestore';
 
+const PRIVATE_DEPLOYMENT = process.env.NEXT_PUBLIC_THREADMAP_PRIVATE_MODE === 'true';
+
 const MfaChallengeDialog = dynamic(
   () => import('@/components/auth/mfa-challenge-dialog').then((module) => module.MfaChallengeDialog),
   { ssr: false },
@@ -499,6 +501,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (cancelled || observedFirebaseUidRef.current !== nextUid) return;
         }
         if (firebaseUser) {
+          if (PRIVATE_DEPLOYMENT) {
+            let owner = false;
+            try {
+              const token = await firebaseUser.getIdTokenResult(true);
+              owner = token.claims.threadmapOwner === true;
+            } catch (error) {
+              console.error('[THREADMAP Auth] Private access check failed:', error);
+            }
+            if (!owner) {
+              await firebaseSignOut(firebaseAuth).catch(() => undefined);
+              if (cancelled) return;
+              setUser(null);
+              setIsDemo(false);
+              setLoading(false);
+              toast.error('This is a private Threadmap deployment.');
+              return;
+            }
+          }
           setLocalModeEnabled(false);
           setUser(firebaseUser);
           setIsDemo(false);

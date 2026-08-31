@@ -15,6 +15,7 @@ const GUARDED_DEPLOY_SOURCE = fs.readFileSync(
 
 const SAFE_POLICY = [
   'ENFORCE_APP_CHECK=true',
+  'THREADMAP_PRIVATE_MODE=true',
   'MCP_ORIGIN=https://threadmap.app',
   'MCP_ALLOW_LOOPBACK_REDIRECTS=false',
   'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access',

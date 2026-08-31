@@ -12,16 +12,29 @@ export default function PrivacyPage() {
   return (
     <LegalPage eyebrow="Your data" title="Privacy policy">
       <p>
-        This policy explains how <strong>{legalConfig.operatorName}</strong> processes personal data when you use Threadmap at {legalConfig.serviceUrl}. It applies to the hosted web app, account features, notifications, file storage, and optional integrations.
+        This policy explains how Threadmap processes personal data at {legalConfig.serviceUrl}. It applies to the hosted web app, account features, notifications, file storage, and optional integrations.
       </p>
+
+      {legalConfig.privateDeployment ? (
+        <p>
+          This is a private, single-user deployment. Public registration and third-party workspace access are not offered; authenticated data and integration access require the operator&apos;s private owner credential.
+        </p>
+      ) : null}
 
       <section>
         <h2>1. Who is responsible</h2>
-        <p>
-          The data controller is <strong>{legalConfig.operatorName}</strong>. Contact us at{' '}
-          <a href={`mailto:${legalConfig.contactEmail}`}>{legalConfig.contactEmail}</a>.
-          {legalConfig.postalAddress ? <> Postal address: {legalConfig.postalAddress}.</> : null}
-        </p>
+        {legalConfig.privateDeployment ? (
+          <p>
+            This private deployment is operated solely for its owner. For privacy or account questions, contact{' '}
+            <a href={`mailto:${legalConfig.contactEmail}`}>{legalConfig.contactEmail}</a>.
+          </p>
+        ) : (
+          <p>
+            The data controller is <strong>{legalConfig.operatorName}</strong>. Contact us at{' '}
+            <a href={`mailto:${legalConfig.contactEmail}`}>{legalConfig.contactEmail}</a>.
+            {legalConfig.postalAddress ? <> Postal address: {legalConfig.postalAddress}.</> : null}
+          </p>
+        )}
       </section>
 
       <section>

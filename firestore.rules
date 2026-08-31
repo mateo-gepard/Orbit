@@ -4,6 +4,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
       return request.auth != null
+          && request.auth.token.threadmapOwner == true
           && !exists(/databases/$(database)/documents/accountDeletionJobs/$(request.auth.uid));
     }
 

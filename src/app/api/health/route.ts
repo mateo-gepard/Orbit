@@ -15,12 +15,14 @@ const PRODUCTION_CONFIGURATION = [
   'NEXT_PUBLIC_FIREBASE_APP_ID',
   'NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY',
   'NEXT_PUBLIC_FIREBASE_VAPID_KEY',
+  'NEXT_PUBLIC_THREADMAP_PRIVATE_MODE',
+  'THREADMAP_DEPLOYMENT_MODE',
   'SCRAPE_RATE_LIMIT_SHARED_SECRET',
-  'LEGAL_ENTITY_NAME',
   'LEGAL_CONTACT_EMAIL',
-  'LEGAL_POSTAL_ADDRESS',
   'SECURITY_CONTACT_EMAIL',
 ] as const;
+
+const PUBLIC_LEGAL_CONFIGURATION = ['LEGAL_ENTITY_NAME', 'LEGAL_POSTAL_ADDRESS'] as const;
 
 // These explicit references are replaced at build time by Next.js. Keep them
 // as fallbacks because dynamically indexing process.env does not inline values
@@ -51,8 +53,11 @@ export function buildHealthPayload(
   ]) || EMBEDDED_RELEASE || `local-${version}`;
   const firebaseProjectId = environment.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || null;
   const isProduction = environment.VERCEL_ENV === 'production';
+  const requiredConfiguration = environment.THREADMAP_DEPLOYMENT_MODE === 'public'
+    ? [...PRODUCTION_CONFIGURATION, ...PUBLIC_LEGAL_CONFIGURATION]
+    : PRODUCTION_CONFIGURATION;
   const missingConfiguration = isProduction
-    ? PRODUCTION_CONFIGURATION.filter((name) => !environment[name]?.trim())
+    ? requiredConfiguration.filter((name) => !environment[name]?.trim())
     : [];
 
   return {
