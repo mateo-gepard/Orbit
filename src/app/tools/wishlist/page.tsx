@@ -605,13 +605,6 @@ export default function WishlistPage() {
             <label htmlFor="wishlist-item-image-url" className="text-xs text-muted-foreground mb-1.5 block">{copy.imageUrl}</label>
             <input id="wishlist-item-image-url" value={formImageUrl} onChange={(e) => setFormImageUrl(e.target.value)} placeholder="https://..." type="url"
               className="min-h-11 w-full border border-border bg-transparent px-3 py-2.5 text-sm rounded-lg placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-foreground/20 transition-all" />
-            {formImageUrl && (
-              <div className="mt-3 rounded-lg border border-border overflow-hidden h-40 bg-muted/30">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={formImageUrl} alt="" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-contain p-3"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              </div>
-            )}
           </div>
 
           <div>
@@ -1452,14 +1445,6 @@ export default function WishlistPage() {
             {/* Expanded fields */}
             {quickExpanded && (
               <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                {quickImageUrl && (
-                  <div className="rounded-lg border border-border overflow-hidden h-32 bg-muted/10">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={quickImageUrl} alt="" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-contain p-2"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  </div>
-                )}
-
                 <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
                   <div className="min-w-0">
                     <label htmlFor="wishlist-quick-price" className="mb-1.5 block text-xs text-muted-foreground">{copy.price}</label>

@@ -18,8 +18,10 @@ function argument(name) {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
-function abort(message) {
-  console.error(`Release target verification failed: ${message}`);
+function abort() {
+  // Keep verifier output free of provider responses and credential-bearing URLs.
+  // Detailed failures belong in the protected CI trace, not a copied console line.
+  console.error('Release target verification failed.');
   process.exit(1);
 }
 
@@ -189,9 +191,13 @@ if (!resourceResponse.ok) {
   abort(`MCP protected-resource discovery returned ${resourceResponse.status}`);
 }
 const resource = await resourceResponse.json();
+const authorizationServers = new Set(
+  Array.isArray(resource.authorization_servers)
+    ? resource.authorization_servers.filter((value) => typeof value === 'string')
+    : [],
+);
 if (resource.resource !== `${expectedMcpOrigin}/mcp`
-    || !Array.isArray(resource.authorization_servers)
-    || !resource.authorization_servers.includes(expectedMcpOrigin)) {
+    || !authorizationServers.has(expectedMcpOrigin)) {
   abort(`MCP protected-resource discovery does not match the canonical ${profile.name} origin`);
 }
 

@@ -294,7 +294,10 @@ function checkContract() {
   if ((stagingCorsRule.origin || []).some((origin) => /^https:\/\/(?:www\.)?threadmap\.app$/.test(origin))) {
     findings.push('storage-cors.staging.json must not duplicate production origins');
   }
-  if (!(stagingCorsRule.origin || []).includes('https://staging.threadmap.app')) {
+  const stagingCorsOrigins = new Set(
+    (stagingCorsRule.origin || []).filter((origin) => typeof origin === 'string'),
+  );
+  if (!stagingCorsOrigins.has(new URL('https://staging.threadmap.app').origin)) {
     findings.push('storage-cors.staging.json must include the configured stable staging origin');
   }
   for (const [file, rule] of [
@@ -480,7 +483,8 @@ function checkContract() {
     }
   }
   const capabilitiesBlock = mcpSettings.match(/const CAPABILITIES = \[([\s\S]*?)\n\];/)?.[1] || '';
-  if (mcpSettings.includes('https://threadmap.app/mcp')
+  const hardCodedProductionMcpLiteral = /['"]https:\/\/threadmap\.app\/mcp['"]/;
+  if (hardCodedProductionMcpLiteral.test(mcpSettings)
       || !mcpSettings.includes('new URL(MCP_ENDPOINT_PATH, window.location.origin).href')) {
     findings.push('MCP Settings must derive its endpoint from the current deployment origin');
   }
