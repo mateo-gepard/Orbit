@@ -248,6 +248,66 @@ test('the MCP launch boundary excludes Google-derived items from every item surf
   );
 });
 
+test('native parent relationships survive MCP create, update, get, list, and search reads', async () => {
+  const store = new MemoryFirestore();
+  const dal = new ThreadmapDal(store as unknown as Firestore, TEST_PRINCIPAL, {
+    randomBytes: (size) => Buffer.alloc(size, 5),
+  });
+  const project = await dal.createItem(
+    { type: 'project', title: 'Hierarchy project' },
+    '00000000-0000-4000-8000-000000000041',
+  );
+  const created = await dal.createItem(
+    { type: 'task', title: 'Created child', parentId: project.item.id },
+    '00000000-0000-4000-8000-000000000042',
+  );
+  assert.equal(created.item.parentId, project.item.id);
+  assert.equal((await dal.getItem(created.item.id)).parentId, project.item.id);
+
+  const unparented = await dal.createItem(
+    { type: 'task', title: 'Updated child' },
+    '00000000-0000-4000-8000-000000000043',
+  );
+  const updated = await dal.updateItem(
+    unparented.item.id,
+    unparented.item.revision,
+    { parentId: project.item.id },
+    '00000000-0000-4000-8000-000000000044',
+  );
+  assert.equal(updated.item.parentId, project.item.id);
+  assert.equal((await dal.getItem(unparented.item.id)).parentId, project.item.id);
+
+  const listed = await dal.listItems({ parentId: project.item.id, limit: 10 });
+  assert.deepEqual(
+    listed.items.map((item) => [item.title, item.parentId]).sort(),
+    [['Created child', project.item.id], ['Updated child', project.item.id]],
+  );
+  const searched = await dal.searchItems({
+    query: 'child',
+    parentId: project.item.id,
+    limit: 10,
+  });
+  assert.ok(searched.items.every((item) => item.parentId === project.item.id));
+});
+
+test('MCP hierarchy writes reject parent types that Threadmap cannot preserve', async () => {
+  const store = new MemoryFirestore();
+  const dal = new ThreadmapDal(store as unknown as Firestore, TEST_PRINCIPAL, {
+    randomBytes: (size) => Buffer.alloc(size, 6),
+  });
+  const taskParent = await dal.createItem(
+    { type: 'task', title: 'Not a valid parent' },
+    '00000000-0000-4000-8000-000000000045',
+  );
+  await assert.rejects(
+    dal.createItem(
+      { type: 'task', title: 'Invalid child', parentId: taskParent.item.id },
+      '00000000-0000-4000-8000-000000000046',
+    ),
+    (error) => error instanceof DalError && error.code === 'invalid_input',
+  );
+});
+
 test('audit creation cannot land after an account deletion barrier', async () => {
   const store = new DeletionBarrierFirestore();
   const dal = new ThreadmapDal(store as unknown as Firestore, TEST_PRINCIPAL);

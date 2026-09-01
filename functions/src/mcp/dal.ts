@@ -720,7 +720,17 @@ function coerceMcpVisibleOwnedItem(id: string, data: unknown, ownerUid: string):
   return item;
 }
 
-function optionalCommonFields(item: ThreadmapItem): Omit<ItemOutput,
+function assertHierarchyParentAllowed(childType: ItemType, parent: ThreadmapItem): void {
+  const allowed = parent.status !== 'archived'
+    && ((childType === 'goal' && parent.type === 'project')
+      || (['task', 'event', 'note', 'habit'] as ItemType[]).includes(childType)
+        && (parent.type === 'project' || parent.type === 'goal'));
+  if (!allowed) {
+    throw new DalError('invalid_input', `A ${parent.type} cannot be the parent of a ${childType}.`);
+  }
+}
+
+function optionalCommonFields(item: ThreadmapItem, includeParentId = false): Omit<ItemOutput,
   'id' | 'type' | 'title' | 'status' | 'createdAt' | 'updatedAt' | 'revision'> {
   const result: Omit<ItemOutput,
     'id' | 'type' | 'title' | 'status' | 'createdAt' | 'updatedAt' | 'revision'> = {};
@@ -730,17 +740,22 @@ function optionalCommonFields(item: ThreadmapItem): Omit<ItemOutput,
     'metric', 'noteSubtype', 'myDay',
   ];
   for (const key of strings) {
-    const value = stringField(item[key], key === 'parentId' ? 200 : 500);
+    const value = stringField(item[key], 500);
     if (value !== undefined) (result as Record<string, unknown>)[key] = value;
+  }
+  if (includeParentId) {
+    const parentId = stringField(item.parentId, 200);
+    if (parentId !== undefined) result.parentId = parentId;
   }
   if (typeof item.completedAt === 'number' && Number.isFinite(item.completedAt)) {
     result.completedAt = Math.trunc(item.completedAt);
   }
   const tags = stringArray(item.tags, MCP_LIMITS.tags, MCP_LIMITS.tag);
   if (tags) result.tags = tags;
-  // Relationship IDs are deliberately omitted at launch. A native item may
-  // still point at a Calendar-derived parent or linked record, and returning
-  // those opaque identifiers would undermine the non-enumeration boundary.
+  // Linked IDs remain omitted. A native item may still point at a
+  // Calendar-derived linked record, and returning that opaque identifier would
+  // undermine the non-enumeration boundary. Parent IDs are emitted only after
+  // the caller verifies that the referenced parent is MCP-visible.
   if (Array.isArray(item.customDays)) {
     result.customDays = [...new Set(item.customDays.filter((day): day is number =>
       Number.isInteger(day) && day >= 0 && day <= 6))].slice(0, 7);
@@ -762,8 +777,9 @@ function optionalCommonFields(item: ThreadmapItem): Omit<ItemOutput,
   return result;
 }
 
-export function itemForOutput(item: ThreadmapItem, summary = false): ItemOutput | ItemSummary {
-  const common = optionalCommonFields(item);
+export function itemForOutput(item: ThreadmapItem, summary = false,
+  includeParentId = false): ItemOutput | ItemSummary {
+  const common = optionalCommonFields(item, includeParentId);
   if (summary) {
     const result: ItemSummary = {
       id: item.id,
@@ -1076,19 +1092,40 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     return { items, partial: snapshot.docs.length > maximum };
   }
 
+  private async visibleParentIds(items: readonly ThreadmapItem[]): Promise<Set<string>> {
+    const parentIds = [...new Set(items.flatMap((item) =>
+      typeof item.parentId === 'string' && ITEM_ID.test(item.parentId) ? [item.parentId] : []))];
+    const visible = new Set<string>();
+    const snapshots = await Promise.all(parentIds.map((parentId) => this.itemRef(parentId).get()));
+    for (const snapshot of snapshots) {
+      try {
+        visible.add(this.itemFromSnapshot(snapshot).id);
+      } catch {
+        // Missing, cross-account, and Google-derived parents remain redacted.
+      }
+    }
+    return visible;
+  }
+
   async getLifeOverview(input: { date?: string; timezone?: string }): Promise<LifeOverviewResult> {
     const timezone = validateTimezone(input.timezone);
     const asOfDate = input.date === undefined ? dateInTimezone(this.now(), timezone) : validateDate(input.date, 'date');
     const { items, partial } = await this.ownedItems(MCP_LIMITS.aggregateScan);
+    const visibleParentIds = new Set(items.map((item) => item.id));
+    const output = (item: ThreadmapItem) => itemForOutput(
+      item,
+      true,
+      typeof item.parentId === 'string' && visibleParentIds.has(item.parentId),
+    ) as ItemSummary;
     const active = items.filter((item) => item.status === 'active' || item.status === 'waiting');
     const today = active.filter((item) => item.dueDate === asOfDate || item.myDay === asOfDate)
-      .sort(compareAgendaItems).slice(0, 20).map((item) => itemForOutput(item, true) as ItemSummary);
+      .sort(compareAgendaItems).slice(0, 20).map(output);
     const overdue = active.filter((item) => item.type === 'task' && typeof item.dueDate === 'string'
       && item.dueDate < asOfDate).sort(compareAgendaItems).slice(0, 20)
-      .map((item) => itemForOutput(item, true) as ItemSummary);
+      .map(output);
     const byType = (type: ItemType) => active.filter((item) => item.type === type)
       .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 20)
-      .map((item) => itemForOutput(item, true) as ItemSummary);
+      .map(output);
     const counts: Record<string, number> = { total: items.length };
     for (const type of ITEM_TYPES) counts[type] = items.filter((item) => item.type === type).length;
     for (const status of ITEM_STATUSES) counts[status] = items.filter((item) => item.status === status).length;
@@ -1115,17 +1152,23 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     }
     const timezone = validateTimezone(input.timezone);
     const { items, partial } = await this.ownedItems(MCP_LIMITS.aggregateScan);
+    const visibleParentIds = new Set(items.map((item) => item.id));
+    const output = (item: ThreadmapItem) => itemForOutput(
+      item,
+      true,
+      typeof item.parentId === 'string' && visibleParentIds.has(item.parentId),
+    ) as ItemSummary;
     const active = items.filter((item) => item.status === 'active' || item.status === 'waiting');
     const tasks = active.filter((item) => item.type === 'task'
       && ((typeof item.dueDate === 'string' && inDateRange(item.dueDate, startDate, endDate))
         || (typeof item.myDay === 'string' && inDateRange(item.myDay, startDate, endDate))))
-      .sort(compareAgendaItems).slice(0, 100).map((item) => itemForOutput(item, true) as ItemSummary);
+      .sort(compareAgendaItems).slice(0, 100).map(output);
     const events = active.filter((item) => item.type === 'event' && typeof item.startDate === 'string'
       && item.startDate <= endDate && (typeof item.endDate === 'string' ? item.endDate : item.startDate) >= startDate)
-      .sort(compareAgendaItems).slice(0, 100).map((item) => itemForOutput(item, true) as ItemSummary);
+      .sort(compareAgendaItems).slice(0, 100).map(output);
     const dates = enumerateDates(startDate, endDate);
     const habits = active.filter((item) => item.type === 'habit').slice(0, 100).map((item) => ({
-      ...(itemForOutput(item, true) as ItemSummary),
+      ...output(item),
       scheduledDates: dates.filter((date) => habitScheduledOn(item, date)),
     })).filter((item) => item.scheduledDates.length > 0);
     return { startDate, endDate, timezone, tasks, events, habits, partial };
@@ -1166,8 +1209,13 @@ export class ThreadmapDal implements ThreadmapDataAccess {
         ? { updatedAt: selected[selected.length - 1].updatedAt, id: selected[selected.length - 1].id }
         : undefined
       : lastScanned;
+    const visibleParentIds = await this.visibleParentIds(selected);
     return {
-      items: selected.map((item) => itemForOutput(item, true) as ItemSummary),
+      items: selected.map((item) => itemForOutput(
+        item,
+        true,
+        typeof item.parentId === 'string' && visibleParentIds.has(item.parentId),
+      ) as ItemSummary),
       ...(continuation.hasMore && boundary
         ? { nextCursor: encodePageCursor({ updatedAt: boundary.updatedAt, id: boundary.id }) }
         : {}),
@@ -1211,8 +1259,13 @@ export class ThreadmapDal implements ThreadmapDataAccess {
         ? { updatedAt: selected[selected.length - 1].updatedAt, id: selected[selected.length - 1].id }
         : undefined
       : lastScanned;
+    const visibleParentIds = await this.visibleParentIds(selected);
     return {
-      items: selected.map((item) => itemForOutput(item, true) as ItemSummary),
+      items: selected.map((item) => itemForOutput(
+        item,
+        true,
+        typeof item.parentId === 'string' && visibleParentIds.has(item.parentId),
+      ) as ItemSummary),
       ...(continuation.hasMore && boundary
         ? { nextCursor: encodePageCursor({ updatedAt: boundary.updatedAt, id: boundary.id }) }
         : {}),
@@ -1222,7 +1275,12 @@ export class ThreadmapDal implements ThreadmapDataAccess {
 
   async getItem(itemId: string): Promise<ItemOutput> {
     const { item } = await this.ownedSnapshot(itemId);
-    return itemForOutput(item, false) as ItemOutput;
+    const visibleParentIds = await this.visibleParentIds([item]);
+    return itemForOutput(
+      item,
+      false,
+      typeof item.parentId === 'string' && visibleParentIds.has(item.parentId),
+    ) as ItemOutput;
   }
 
   private idempotencyRef(tool: string, requestId: string) {
@@ -1288,7 +1346,12 @@ export class ThreadmapDal implements ThreadmapDataAccess {
           throw new DalError('idempotency_conflict', 'The deterministic item id is already in use.');
         }
         if (input.parentId) {
-          coerceMcpVisibleOwnedItem(input.parentId, snapshots[1].data(), this.principal.userId);
+          const parent = coerceMcpVisibleOwnedItem(
+            input.parentId,
+            snapshots[1].data(),
+            this.principal.userId,
+          );
+          assertHierarchyParentAllowed(input.type, parent);
         }
         const item: ThreadmapItem = {
           ...input,
@@ -1302,7 +1365,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
           linkedIds: [],
         };
         transaction.create(itemRef, withoutId(item));
-        return itemForOutput(item, false) as unknown as JsonObject;
+        return itemForOutput(item, false, Boolean(input.parentId)) as unknown as JsonObject;
       });
     return { item: result.value as unknown as ItemOutput, replayed: result.replayed };
   }
@@ -1323,7 +1386,12 @@ export class ThreadmapDal implements ThreadmapDataAccess {
         let parentSnapshot: DocumentSnapshot | undefined;
         if (typeof patch.parentId === 'string') {
           parentSnapshot = await transaction.get(this.itemRef(patch.parentId));
-          coerceMcpVisibleOwnedItem(patch.parentId, parentSnapshot.data(), this.principal.userId);
+          const parent = coerceMcpVisibleOwnedItem(
+            patch.parentId,
+            parentSnapshot.data(),
+            this.principal.userId,
+          );
+          assertHierarchyParentAllowed(item.type, parent);
         }
         const updates: Record<string, unknown> = { updatedAt: now, revision: item.revision + 1 };
         const next: ThreadmapItem = { ...item, updatedAt: now, revision: item.revision + 1 };
@@ -1337,7 +1405,7 @@ export class ThreadmapDal implements ThreadmapDataAccess {
           }
         }
         transaction.update(this.itemRef(itemId), updates);
-        return itemForOutput(next, false) as unknown as JsonObject;
+        return itemForOutput(next, false, typeof patch.parentId === 'string') as unknown as JsonObject;
       });
     return { item: result.value as unknown as ItemOutput, replayed: result.replayed };
   }
