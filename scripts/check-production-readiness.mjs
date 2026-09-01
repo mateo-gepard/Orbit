@@ -484,7 +484,7 @@ function checkContract() {
     'ENFORCE_APP_CHECK=true',
     'MCP_ORIGIN=https://threadmap.app',
     'MCP_ALLOW_LOOPBACK_REDIRECTS=false',
-    'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access',
+    'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read threadmap.write offline_access',
     'GOOGLE_WORKSPACE_CLIENT_ID',
     'THREADMAP_APP_ORIGIN=https://threadmap.app',
     'AUTH_EMAIL_FIREBASE_ACTION_HOSTS=orbit-9e0b6.firebaseapp.com,orbit-9e0b6.web.app',

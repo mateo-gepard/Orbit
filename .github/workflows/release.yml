@@ -216,7 +216,7 @@ jobs:
             'THREADMAP_PRIVATE_MODE=true' \
             'MCP_ORIGIN=https://threadmap.app' \
             'MCP_ALLOW_LOOPBACK_REDIRECTS=false' \
-            'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read offline_access' \
+            'MCP_DYNAMIC_CLIENT_SCOPES=threadmap.read workspace.read threadmap.write offline_access' \
             "GOOGLE_WORKSPACE_CLIENT_ID=$GOOGLE_WORKSPACE_CLIENT_ID" \
             'MCP_EXTRA_REDIRECT_URIS=' \
             'THREADMAP_APP_ORIGIN=https://threadmap.app' \
