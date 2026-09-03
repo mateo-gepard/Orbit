@@ -95,7 +95,7 @@ export class MemoryQuery {
   }
 
   where(field: string, operator: string, value: unknown): MemoryQuery {
-    if (operator !== '==' && operator !== 'array-contains') {
+    if (operator !== '==' && operator !== 'in' && operator !== 'array-contains') {
       throw new Error(`Unsupported memory query operator: ${operator}`);
     }
     return new MemoryQuery(
@@ -131,9 +131,13 @@ export class MemoryQuery {
     const matches = this.store.query(this.collectionName)
       .filter((snapshot) => this.filters.every((filter) => {
         const candidate = snapshot.data()?.[filter.field];
-        return filter.operator === 'array-contains'
-          ? Array.isArray(candidate) && candidate.includes(filter.value)
-          : candidate === filter.value;
+        if (filter.operator === 'array-contains') {
+          return Array.isArray(candidate) && candidate.includes(filter.value);
+        }
+        if (filter.operator === 'in') {
+          return Array.isArray(filter.value) && filter.value.includes(candidate);
+        }
+        return candidate === filter.value;
       }))
       .sort((left, right) => {
         for (const ordering of this.orderings) {

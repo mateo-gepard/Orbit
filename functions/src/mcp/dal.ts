@@ -1180,9 +1180,13 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     if (normalized.parentId) await this.ownedSnapshot(normalized.parentId);
     const cursor = decodePageCursor(normalized.cursor);
     let query: Query = this.db.collection(MCP_COLLECTIONS.items)
-      .where('userId', '==', this.principal.userId)
-      .orderBy('updatedAt', 'desc')
-      .orderBy(FieldPath.documentId(), 'desc');
+      .where('userId', '==', this.principal.userId);
+    if (normalized.statuses?.length === 1) {
+      query = query.where('status', '==', normalized.statuses[0]);
+    } else if (normalized.statuses?.length) {
+      query = query.where('status', 'in', normalized.statuses);
+    }
+    query = query.orderBy('updatedAt', 'desc').orderBy(FieldPath.documentId(), 'desc');
     if (cursor) query = query.startAfter(cursor.updatedAt, cursor.id);
     const scanLimit = Math.min(MCP_LIMITS.searchScan, Math.max(normalized.limit * 5, normalized.limit + 1));
     const snapshot = await query.limit(scanLimit).get();
@@ -1230,9 +1234,13 @@ export class ThreadmapDal implements ThreadmapDataAccess {
     if (normalized.parentId) await this.ownedSnapshot(normalized.parentId);
     const cursor = decodePageCursor(normalized.cursor);
     let query: Query = this.db.collection(MCP_COLLECTIONS.items)
-      .where('userId', '==', this.principal.userId)
-      .orderBy('updatedAt', 'desc')
-      .orderBy(FieldPath.documentId(), 'desc');
+      .where('userId', '==', this.principal.userId);
+    if (normalized.statuses?.length === 1) {
+      query = query.where('status', '==', normalized.statuses[0]);
+    } else if (normalized.statuses?.length) {
+      query = query.where('status', 'in', normalized.statuses);
+    }
+    query = query.orderBy('updatedAt', 'desc').orderBy(FieldPath.documentId(), 'desc');
     if (cursor) query = query.startAfter(cursor.updatedAt, cursor.id);
     const snapshot = await query.limit(MCP_LIMITS.searchScan).get();
     const matches: ThreadmapItem[] = [];

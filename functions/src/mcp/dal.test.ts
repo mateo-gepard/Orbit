@@ -102,6 +102,38 @@ test('sparse filter and search scans always expose a continuation at the scan ca
   });
 });
 
+test('status-filtered listing queries archived records directly instead of returning an empty partial page', async () => {
+  const store = new MemoryFirestore();
+  for (let index = 0; index < 30; index += 1) {
+    store.set('items', `active-${index}`, {
+      userId: TEST_PRINCIPAL.userId,
+      type: 'task',
+      title: `Active ${index}`,
+      status: 'active',
+      createdAt: 100 + index,
+      updatedAt: 100 + index,
+      revision: 1,
+    });
+  }
+  for (let index = 0; index < 3; index += 1) {
+    store.set('items', `archived-${index}`, {
+      userId: TEST_PRINCIPAL.userId,
+      type: 'task',
+      title: `Archived ${index}`,
+      status: 'archived',
+      createdAt: index,
+      updatedAt: index,
+      revision: 1,
+    });
+  }
+  const dal = new ThreadmapDal(store as unknown as Firestore, TEST_PRINCIPAL);
+  const result = await dal.listItems({ statuses: ['archived'], limit: 5 });
+
+  assert.deepEqual(result.items.map((item) => item.id), ['archived-2', 'archived-1', 'archived-0']);
+  assert.equal(result.partial, undefined);
+  assert.equal(result.nextCursor, undefined);
+});
+
 test('Google Calendar provenance detection fails closed across current and legacy markers', () => {
   assert.equal(isGoogleCalendarDerivedItem({ googleCalendarOrigin: true }), true);
   assert.equal(isGoogleCalendarDerivedItem({ googleCalendarId: 'google-event' }), true);
